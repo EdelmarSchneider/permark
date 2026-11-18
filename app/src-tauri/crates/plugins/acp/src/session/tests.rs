@@ -9,45 +9,70 @@ use std::time::{Duration, Instant};
 use permark_core::events::{CoreEvent, EventSink};
 use serde_json::{json, Value};
 
+use super::permission::inside;
 use super::*;
-use crate::agents::{platforms, Choice, Plan, CHOICE_FILE};
+use crate::agents::{platforms, Choice, Launch, Plan, CHOICE_FILE};
+use crate::dto::AgentNeed;
 use crate::testing;
 use permark_core::state::StateFile;
 
 /// Longest wait for something a fake agent does.
 const WAIT: Duration = Duration::from_secs(20);
 
+/// A value tests wait on (set by other threads).
 #[derive(Default)]
-struct Events {
-    list: Mutex<Vec<Value>>,
+struct Watched<T> {
+    value: Mutex<T>,
     changed: Condvar,
 }
+
+impl<T: Clone + std::fmt::Debug> Watched<T> {
+    // poison-tolerant: a failed wait must not fail the teardown that still emits
+    fn get(&self) -> T {
+        lock(&self.value).clone()
+    }
+
+    fn update(&self, change: impl FnOnce(&mut T)) {
+        change(&mut lock(&self.value));
+        self.changed.notify_all();
+    }
+
+    /// Waits until `test` holds; answers the value then.
+    fn wait_for(&self, what: &str, wait: Duration, test: impl Fn(&T) -> bool) -> T {
+        let started = Instant::now();
+        let mut value = lock(&self.value);
+        while !test(&value) {
+            let left = wait.saturating_sub(started.elapsed());
+            if left.is_zero() {
+                let now = format!("{value:#?}");
+                drop(value);
+                panic!("no {what}; now: {now}");
+            }
+            value = self
+                .changed
+                .wait_timeout(value, left)
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .0;
+        }
+        value.clone()
+    }
+}
+
+/// The events the window got.
+type Events = Watched<Vec<Value>>;
 
 impl EventSink for Events {
     fn emit(&self, event: CoreEvent) {
         if let CoreEvent::Plugin { name, payload } = event {
             assert_eq!(name, "acp:update");
-            self.list.lock().unwrap().push(payload);
-            self.changed.notify_all();
+            self.update(|list| list.push(payload));
         }
     }
 }
 
 impl Events {
     fn all(&self) -> Vec<Value> {
-        self.list.lock().unwrap().clone()
-    }
-
-    /// Waits until `test` holds for the events so far; answers them.
-    fn wait_for(&self, what: &str, wait: Duration, test: impl Fn(&[Value]) -> bool) -> Vec<Value> {
-        let started = Instant::now();
-        let mut list = self.list.lock().unwrap();
-        while !test(&list) {
-            let left = wait.saturating_sub(started.elapsed());
-            assert!(!left.is_zero(), "no {what}; events: {list:#?}");
-            list = self.changed.wait_timeout(list, left).unwrap().0;
-        }
-        list.clone()
+        self.get()
     }
 
     fn of_type(&self, kind: &str) -> Vec<Value> {
@@ -68,21 +93,15 @@ impl Events {
     }
 }
 
-fn wait_until(what: &str, test: impl Fn() -> bool) {
-    let started = Instant::now();
-    while !test() {
-        assert!(started.elapsed() < WAIT, "no {what}");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
 /// The fake agent's side of the pipes.
 struct Peer {
     from_client: BufReader<PipeReader>,
     to_client: PipeWriter,
     stderr: PipeWriter,
     /// Every message the client sent, in order.
-    seen: Arc<Mutex<Vec<Value>>>,
+    seen: Arc<Watched<Vec<Value>>>,
+    /// Its `initialize` answer says it takes embedded resources.
+    embedded: bool,
     /// The session's folder, from `session/new`.
     cwd: PathBuf,
     auth: Arc<Auth>,
@@ -120,7 +139,7 @@ impl Peer {
             return None;
         }
         let message: Value = serde_json::from_str(&line).unwrap();
-        self.seen.lock().unwrap().push(message.clone());
+        self.seen.update(|seen| seen.push(message.clone()));
         Some(message)
     }
 
@@ -161,9 +180,37 @@ impl Peer {
     fn in_copy(&self, path: &str) -> String {
         self.cwd.join(path).display().to_string()
     }
+
+    /// Reads the client's messages until one `test` accepts (`None`: its stdin closed first).
+    fn until(&mut self, test: impl Fn(&Value) -> bool) -> Option<Value> {
+        loop {
+            let message = self.next()?;
+            if test(&message) {
+                return Some(message);
+            }
+        }
+    }
+
+    /// Writes into the copy as the agent's own tools do.
+    fn write(&self, path: &str, text: &str) {
+        let abs = self.cwd.join(path);
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(abs, text).unwrap();
+    }
 }
 
-/// What the fake does with one prompt: `Some(stop reason)` answers it; `None` exits without answering.
+/// What a turn returns when it answered the prompt itself.
+const ANSWERED: &str = "(answered)";
+
+/// The text of a prompt message.
+fn prompt_text(message: &Value) -> &str {
+    message["params"]["prompt"][0]["text"]
+        .as_str()
+        .unwrap_or_default()
+}
+
+/// What the fake does with one prompt: `Some(stop reason)` answers it ([`ANSWERED`]: it did itself); `None` exits
+/// without answering.
 type Turn = Arc<dyn Fn(&mut Peer, &Value) -> Option<&'static str> + Send + Sync>;
 
 fn agent_loop(mut peer: Peer, turn: &Turn) {
@@ -184,7 +231,7 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
             "initialize" => json!({
                 "protocolVersion": 1,
                 "agentCapabilities": {
-                    "promptCapabilities": { "image": true, "embeddedContext": true },
+                    "promptCapabilities": { "image": true, "embeddedContext": peer.embedded },
                     "mcpCapabilities": { "http": true, "sse": true },
                     "loadSession": true,
                 },
@@ -218,6 +265,7 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
                 continue;
             }
             "session/prompt" => match turn(&mut peer, &message) {
+                Some(ANSWERED) => continue,
                 Some(reason) => json!({ "stopReason": reason }),
                 None => return,
             },
@@ -233,9 +281,15 @@ type StartFolder = (PathBuf, Vec<String>);
 /// What the test sees of the fake agents it started.
 #[derive(Clone, Default)]
 struct Fake {
-    seen: Arc<Mutex<Vec<Value>>>,
+    seen: Arc<Watched<Vec<Value>>>,
     launches: Arc<AtomicUsize>,
-    stops: Arc<AtomicUsize>,
+    stops: Arc<Watched<usize>>,
+    /// Paths looked at when each agent starts.
+    watch: Arc<Mutex<Vec<PathBuf>>>,
+    /// Of `watch`, those present at each start.
+    present: Arc<Mutex<Vec<Vec<PathBuf>>>>,
+    /// The agents started from now on take no embedded resources.
+    plain: Arc<AtomicBool>,
     /// What each start was asked to run.
     plans: Arc<Mutex<Vec<Plan>>>,
     /// Each start's folder.
@@ -247,7 +301,16 @@ struct Fake {
 
 impl Fake {
     fn seen(&self) -> Vec<Value> {
-        self.seen.lock().unwrap().clone()
+        self.seen.get()
+    }
+
+    fn stopped(&self, count: usize) {
+        self.stops
+            .wait_for("agent stopped", WAIT, |stops| *stops == count);
+    }
+
+    fn count(&self, method: &str) -> usize {
+        self.methods().iter().filter(|m| *m == method).count()
     }
 
     fn plans(&self) -> Vec<Plan> {
@@ -261,11 +324,16 @@ impl Fake {
             .collect()
     }
 
+    /// The client's answer to the agent's request `id` (waits for it).
     fn reply_to(&self, id: &Value) -> Value {
-        self.seen()
+        let is_reply = |m: &Value| m["id"] == *id && m.get("method").is_none();
+        self.seen
+            .wait_for(&format!("reply to {id}"), WAIT, |seen| {
+                seen.iter().any(is_reply)
+            })
             .into_iter()
-            .find(|m| m["id"] == *id && m.get("method").is_none())
-            .unwrap_or_else(|| panic!("no reply to {id}: {:#?}", self.seen()))
+            .find(is_reply)
+            .unwrap()
     }
 
     fn launch(&self, turn: Turn) -> Launch {
@@ -280,6 +348,15 @@ impl Fake {
                 .lock()
                 .unwrap()
                 .push((cwd.to_path_buf(), names));
+            let present = fake
+                .watch
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|path| path.exists())
+                .cloned()
+                .collect();
+            fake.present.lock().unwrap().push(present);
             let (stop_tx, stop_rx) = mpsc::channel::<()>();
             let (agent_in, client_out) = std::io::pipe()?;
             let (client_in, agent_out) = std::io::pipe()?;
@@ -289,6 +366,7 @@ impl Fake {
                 to_client: agent_out,
                 stderr: agent_err,
                 seen: Arc::clone(&fake.seen),
+                embedded: !fake.plain.load(Ordering::SeqCst),
                 cwd: cwd.to_path_buf(),
                 auth: Arc::clone(&fake.auth),
                 deaf: fake.deaf.load(Ordering::SeqCst).then_some(stop_rx),
@@ -304,7 +382,7 @@ impl Fake {
                     // its stdin is closed by now: the fake's loop ends (a deaf one: on this signal)
                     drop(stop_tx);
                     let _ = agent.join();
-                    stops.fetch_add(1, Ordering::SeqCst);
+                    stops.update(|stops| *stops += 1);
                 }),
             })
         })
@@ -419,6 +497,34 @@ impl Fx {
         list.into_iter()
             .find(|e| e["type"] == "permission")
             .unwrap()
+    }
+
+    /// The card of the agent's question `request_id` (the JSON text of its id).
+    fn card(&self, request_id: &str) -> Value {
+        let is_card = |e: &Value| e["type"] == "permission" && e["requestId"] == request_id;
+        self.events
+            .wait_for(&format!("card {request_id}"), WAIT, |list| {
+                list.iter().any(is_card)
+            })
+            .into_iter()
+            .find(is_card)
+            .unwrap()
+    }
+
+    fn reject(&self, request_id: &str) {
+        self.session
+            .answer(&AnswerArgs {
+                request_id: request_id.to_owned(),
+                option_id: Some("reject".to_owned()),
+            })
+            .unwrap();
+    }
+
+    fn turns_ended(&self, count: usize) -> Vec<Value> {
+        self.events.wait_for("turn ends", WAIT, |list| {
+            list.iter().filter(|e| e["type"] == "turnEnd").count() == count
+                && list.last().is_some_and(|e| e["type"] == "status")
+        })
     }
 }
 
@@ -826,11 +932,17 @@ fn unknown_news_and_account_status_never_reach_the_window() {
     assert_eq!(fx.fake.reply_to(&json!(41))["error"]["code"], -32601);
 }
 
+/// The agent's last words come as they would read in a terminal (no color codes), never with account news, and the
+/// window words the error itself (a code).
 #[test]
 fn an_agent_that_exits_mid_turn_reports_its_last_words() {
     let fx = Fx::new(|peer, _| {
         peer.stderr
-            .write_all(b"[session/create] phase=validate-cwd\nfatal: the model is gone\n")
+            .write_all(
+                b"[session/create] phase=validate-cwd\n\
+                  {\"method\":\"_auth/status_update\",\"params\":{\"email\":\"person@example.com\"}}\n\
+                  \x1b[31mfatal:\x1b[0m the model is gone\r\n",
+            )
             .unwrap();
         None
     });
@@ -842,16 +954,19 @@ fn an_agent_that_exits_mid_turn_reports_its_last_words() {
     let error = list
         .iter()
         .find(|e| e["state"] == "error")
-        .and_then(|e| e["error"].as_str())
-        .unwrap()
-        .to_owned();
-    assert!(error.contains("fatal: the model is gone"), "{error}");
+        .map(|e| e["error"].clone())
+        .unwrap();
+    assert_eq!(
+        error,
+        json!({
+            "code": "exited",
+            "stderr": "[session/create] phase=validate-cwd\nfatal: the model is gone",
+        })
+    );
     let status = fx.session.status();
     assert_eq!(status.state, AcpState::Error);
-    assert_eq!(status.error.as_deref(), Some(error.as_str()));
-    wait_until("agent stopped", || {
-        fx.fake.stops.load(Ordering::SeqCst) == 1
-    });
+    assert_eq!(serde_json::to_value(status.error).unwrap(), error);
+    fx.fake.stopped(1);
 }
 
 #[test]
@@ -865,9 +980,7 @@ fn new_conversation_stops_the_agent_and_the_next_prompt_starts_a_fresh_one() {
     let dir = fx.copy_dir();
     fx.session.reset();
     assert_eq!(fx.session.status().state, AcpState::Idle);
-    wait_until("agent stopped", || {
-        fx.fake.stops.load(Ordering::SeqCst) == 1
-    });
+    fx.fake.stopped(1);
     fx.ask("Two.");
     fx.events.wait_for("second turn", WAIT, |list| {
         list.iter().filter(|e| e["type"] == "turnEnd").count() == 2
@@ -893,7 +1006,7 @@ fn shutdown_stops_the_agent_before_answering() {
     fx.ask("One.");
     fx.events.turn_end();
     fx.session.shutdown();
-    assert_eq!(fx.fake.stops.load(Ordering::SeqCst), 1);
+    assert_eq!(fx.fake.stops.get(), 1);
     assert_eq!(fx.session.status().state, AcpState::Idle);
 }
 
@@ -965,12 +1078,6 @@ fn choose_agent(id: &str) -> ChooseArgs {
         agent: Some(id.to_owned()),
         command: None,
     }
-}
-
-fn turns_ended(fx: &Fx, count: usize) {
-    fx.events.wait_for("turn ends", WAIT, |list| {
-        list.iter().filter(|e| e["type"] == "turnEnd").count() == count
-    });
 }
 
 #[test]
@@ -1045,11 +1152,9 @@ fn a_new_choice_applies_at_the_next_start() {
     let dir = fx.copy_dir();
     fx.session.choose(&choose_agent("gemini")).unwrap();
     assert_eq!(fx.session.status().state, AcpState::Idle);
-    wait_until("agent stopped", || {
-        fx.fake.stops.load(Ordering::SeqCst) == 1
-    });
+    fx.fake.stopped(1);
     fx.ask("Two.");
-    turns_ended(&fx, 2);
+    fx.turns_ended(2);
     let plans = fx.fake.plans();
     assert_eq!(
         plans[0].args,
@@ -1070,7 +1175,7 @@ fn a_new_choice_applies_at_the_next_start() {
     assert!(status.chosen);
     assert_eq!(status.agent_name, None);
     fx.ask("Three.");
-    turns_ended(&fx, 3);
+    fx.turns_ended(3);
     let plan = &fx.fake.plans()[2];
     assert_eq!(plan.program, own);
     assert_eq!(plan.args, ["--acp"]);
@@ -1105,11 +1210,11 @@ fn choosing_is_refused_while_the_agent_works() {
         })
         .unwrap();
     fx.events.turn_end();
-    assert_eq!(fx.fake.stops.load(Ordering::SeqCst), 0);
+    assert_eq!(fx.fake.stops.get(), 0);
 }
 
-/// `auth_required` at `session/new`: the person sees the agent's ways to sign in; a terminal way only tries again,
-/// an agent way has the agent sign in, then the waiting prompt goes on.
+/// `auth_required` at `session/new`: the person sees the agent's ways to sign in; after a terminal way a fresh agent
+/// starts (it reads the new sign-in at its start); an agent way has the agent sign in, then the waiting prompt goes on.
 #[test]
 fn an_agent_that_needs_a_sign_in_asks_for_it_and_the_prompt_goes_on_after() {
     let fx = Fx::new(|peer, _| {
@@ -1159,7 +1264,7 @@ fn an_agent_that_needs_a_sign_in_asks_for_it_and_the_prompt_goes_on_after() {
     assert_eq!(unknown.detail.as_deref(), Some("unknownMethod"));
     assert_eq!(fx.session.status().state, AcpState::NeedsLogin);
 
-    // a terminal way: the person signs in outside; only tried again (still refused here)
+    // a terminal way: the person signs in outside; a fresh agent starts (still refused here)
     fx.session
         .login(&LoginArgs {
             method_id: Some("claude-ai-login".to_owned()),
@@ -1169,8 +1274,10 @@ fn an_agent_that_needs_a_sign_in_asks_for_it_and_the_prompt_goes_on_after() {
         list.iter().filter(|e| e["state"] == "needsLogin").count() == 2
     });
     let again = list.iter().rfind(|e| e["state"] == "needsLogin").unwrap();
-    assert_eq!(again["error"], "The agent still needs you to sign in.");
+    assert_eq!(again["error"], json!({ "code": "stillNeedsLogin" }));
     assert!(!fx.fake.methods().contains(&"authenticate".to_owned()));
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 2);
+    fx.fake.stopped(1);
 
     // an agent way: the agent signs in, then the prompt goes on in a new session
     fx.session
@@ -1184,6 +1291,7 @@ fn an_agent_that_needs_a_sign_in_asks_for_it_and_the_prompt_goes_on_after() {
         [
             "initialize",
             "session/new",
+            "initialize",
             "session/new",
             "authenticate",
             "session/new",
@@ -1201,7 +1309,7 @@ fn an_agent_that_needs_a_sign_in_asks_for_it_and_the_prompt_goes_on_after() {
     assert_eq!(prompt["params"]["prompt"][0]["text"], "Hello.");
     assert_eq!(fx.events.of_type("text")[0]["text"], "Signed in.");
     assert_eq!(fx.session.status().state, AcpState::Ready);
-    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 1);
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 2);
     let none = fx.session.login(&LoginArgs::default()).unwrap_err();
     assert_eq!(none.detail.as_deref(), Some("noLogin"));
 }
@@ -1282,7 +1390,7 @@ fn an_agent_that_stops_reading_never_holds_up_the_shutdown() {
         let _ = done_tx.send(());
     });
     assert!(done_rx.recv_timeout(WAIT).is_ok(), "the shutdown hangs");
-    assert_eq!(fx.fake.stops.load(Ordering::SeqCst), 1);
+    assert_eq!(fx.fake.stops.get(), 1);
 }
 
 /// Inside a strict Snap no program of the computer can start: the status says so, the prompt fails with the reason.
@@ -1304,6 +1412,594 @@ fn inside_a_snap_the_status_says_no_agent_can_start() {
         list.iter().any(|e| e["state"] == "error")
     });
     let error = list.iter().find(|e| e["state"] == "error").unwrap();
-    assert!(error["error"].as_str().unwrap().contains("Snap"), "{error}");
+    // nothing to start it with: the status's `needs` (snap) says why
+    assert_eq!(error["error"], json!({ "code": "notFound" }));
     assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 0);
+}
+
+/// Claude's three options, without ids of its own: the request's.
+fn reject_reply(fx: &Fx, id: &Value) {
+    assert_eq!(
+        fx.fake.reply_to(id)["result"],
+        json!({ "outcome": { "outcome": "selected", "optionId": "reject" } })
+    );
+}
+
+/// Writing an agent's own settings in the copy is never allowed by rule, even where the path is inside the copy: they
+/// would load at its next start. Named by a location or only by the tool's input, the person decides.
+#[test]
+fn an_edit_of_agent_settings_in_the_copy_gets_a_card() {
+    let fx = Fx::new(|peer, _| {
+        let settings = peer.in_copy(".claude/settings.local.json");
+        let mut call = edit_of(&settings);
+        call["title"] = json!("Write .claude/settings.local.json");
+        peer.ask(&json!(1), &call);
+        peer.until(|m| m["id"] == 1)?;
+        // a move named inside the copy whose input puts the file where servers are read from
+        let notes = peer.in_copy("notes.md");
+        peer.ask(
+            &json!(2),
+            &json!({
+                "toolCallId": "toolu_move", "title": "Move notes.md", "kind": "move",
+                "locations": [{ "path": notes }],
+                "rawInput": { "source": notes, "destination": ".mcp.json" },
+            }),
+        );
+        peer.until(|m| m["id"] == 2)?;
+        Some("end_turn")
+    });
+    fx.ask("Allow every command.");
+    let card = fx.card("1");
+    assert_eq!(card["kind"], "edit");
+    assert_eq!(card["detail"], ".claude/settings.local.json");
+    fx.reject("1");
+    let card = fx.card("2");
+    assert_eq!(card["kind"], "move");
+    fx.reject("2");
+    fx.events.turn_end();
+    reject_reply(&fx, &json!(1));
+    reject_reply(&fx, &json!(2));
+}
+
+/// Agent settings the agent wrote into the copy (any depth, files and folders) are gone before the next agent starts
+/// and before the next prompt reaches the running one; the agent's other files stay.
+#[test]
+fn agent_settings_in_the_copy_are_gone_before_each_start_and_prompt() {
+    let fx = Fx::new(|peer, message| {
+        match prompt_text(message) {
+            "Plant." => {
+                peer.write(
+                    ".claude/settings.json",
+                    "{\"permissions\":{\"allow\":[\"Bash(*)\"]}}",
+                );
+                peer.write(".mcp.json", "{\"mcpServers\":{}}");
+                peer.write("docs/.gemini/settings.json", "{}");
+                peer.write(".codex/config.toml", "x = 1");
+                peer.write(".claude/commands/tidy.md", "Tidy the notes.");
+            }
+            "Plant again." => peer.write(".mcp.json", "{}"),
+            _ => {
+                let left = peer.cwd.join(".mcp.json").exists();
+                peer.text(if left { "present" } else { "absent" });
+            }
+        }
+        Some("end_turn")
+    });
+    fx.ask("Plant.");
+    fx.events.turn_end();
+    let copy = fx.copy_dir();
+    let planted: Vec<PathBuf> = [
+        ".claude/settings.json",
+        ".mcp.json",
+        "docs/.gemini/settings.json",
+        ".codex",
+        ".claude/commands/tidy.md",
+    ]
+    .iter()
+    .map(|path| copy.join(path))
+    .collect();
+    assert!(planted.iter().all(|path| path.exists()));
+    *fx.fake.watch.lock().unwrap() = planted.clone();
+    fx.session.reset();
+    fx.ask("Plant again.");
+    fx.turns_ended(2);
+    // at the second start only the agent's instructions were left
+    assert_eq!(
+        fx.fake.present.lock().unwrap()[1],
+        [copy.join(".claude/commands/tidy.md")]
+    );
+    // the same agent's next prompt finds the copy cleared again
+    fx.ask("Look.");
+    fx.turns_ended(3);
+    assert_eq!(fx.events.of_type("text").last().unwrap()["text"], "absent");
+}
+
+/// A question is routed on everything the agent told of its tool call: a bare question about an edit of the copy
+/// it announced before is allowed; a search naming no place, and the same edit once an update moved it out of the
+/// copy, get cards showing what was told.
+#[test]
+fn questions_are_routed_on_everything_told_of_the_tool_call() {
+    let project = tempfile::tempdir().unwrap();
+    let outside = project.path().join("notes.md").display().to_string();
+    let fx = Fx::new(move |peer, _| {
+        let notes = peer.in_copy("notes.md");
+        peer.update(&json!({
+            "sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Edit notes.md", "kind": "edit",
+            "status": "pending", "locations": [{ "path": notes }], "rawInput": { "file_path": notes },
+        }));
+        peer.ask(&json!(1), &json!({ "toolCallId": "t1" }));
+        peer.until(|m| m["id"] == 1)?;
+        peer.ask(
+            &json!(2),
+            &json!({ "toolCallId": "t2", "title": "Grep token", "kind": "search" }),
+        );
+        peer.until(|m| m["id"] == 2)?;
+        peer.update(&json!({
+            "sessionUpdate": "tool_call_update", "toolCallId": "t1",
+            "locations": [{ "path": outside }], "rawInput": { "file_path": outside },
+        }));
+        peer.ask(&json!(3), &json!({ "toolCallId": "t1" }));
+        peer.until(|m| m["id"] == 3)?;
+        Some("end_turn")
+    });
+    fx.ask("Edit the notes.");
+    let search = fx.card("2");
+    assert_eq!(
+        (&search["title"], &search["kind"], &search["detail"]),
+        (&json!("Grep token"), &json!("search"), &json!(""))
+    );
+    fx.reject("2");
+    let moved = fx.card("3");
+    assert_eq!(
+        (&moved["title"], &moved["kind"]),
+        (&json!("Edit notes.md"), &json!("edit"))
+    );
+    assert_eq!(
+        moved["detail"],
+        project.path().join("notes.md").display().to_string()
+    );
+    fx.reject("3");
+    fx.events.turn_end();
+    assert_eq!(
+        fx.fake.reply_to(&json!(1))["result"],
+        json!({ "outcome": { "outcome": "selected", "optionId": "allow-once" } })
+    );
+    assert_eq!(fx.events.of_type("permission").len(), 2);
+}
+
+/// Allowed by rule only: a thought, or a read | search | edit | delete | move that names a place and keeps every
+/// place it names (a move's destination among them) inside the copy and off agent settings.
+#[test]
+fn only_plain_work_on_the_copy_is_allowed_by_rule() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.md"), "a").unwrap();
+    let copy = Vault::new(Root::open(dir.path()).unwrap());
+    let root = copy.main().path().to_path_buf();
+    let other = tempfile::tempdir().unwrap();
+    let out = other.path().join("x.md");
+    let tool = |kind: Option<ToolKind>, locations: &[&Path], input: Value| ToolLine {
+        kind,
+        locations: locations.iter().map(|p| p.to_path_buf()).collect(),
+        raw_input: Some(input),
+        ..ToolLine::default()
+    };
+    let a = root.join("a.md");
+    let none = json!({});
+    let allowed = |line: &ToolLine| plain_work(line, &copy);
+
+    assert!(allowed(&tool(Some(ToolKind::Think), &[], none.clone())));
+    for kind in [
+        ToolKind::Read,
+        ToolKind::Search,
+        ToolKind::Edit,
+        ToolKind::Delete,
+        ToolKind::Move,
+    ] {
+        assert!(allowed(&tool(Some(kind), &[&a], none.clone())), "{kind:?}");
+        assert!(
+            !allowed(&tool(Some(kind), &[], none.clone())),
+            "{kind:?} nowhere"
+        );
+        assert!(
+            !allowed(&tool(Some(kind), &[&out], none.clone())),
+            "{kind:?} out"
+        );
+    }
+    for kind in [
+        None,
+        Some(ToolKind::Execute),
+        Some(ToolKind::Fetch),
+        Some(ToolKind::SwitchMode),
+        Some(ToolKind::Other),
+    ] {
+        assert!(!allowed(&tool(kind, &[&a], none.clone())), "{kind:?}");
+    }
+    // agent settings | machinery, as a location or in the input, whatever the kind
+    for kept in [
+        ".claude/settings.json",
+        ".mcp.json",
+        "sub/.git/hooks/pre-commit",
+        ".codex/config.toml",
+        ".aiignore",
+    ] {
+        let path = root.join(kept);
+        assert!(
+            !allowed(&tool(Some(ToolKind::Edit), &[&path], none.clone())),
+            "{kept}"
+        );
+        assert!(
+            !allowed(&tool(Some(ToolKind::Think), &[&path], none.clone())),
+            "{kept}"
+        );
+        assert!(
+            !allowed(&tool(Some(ToolKind::Edit), &[&a], json!({ "path": kept }))),
+            "{kept} in the input"
+        );
+    }
+    // a move: its destination counts (relative: from the copy's folder)
+    let moving = |to: Value| tool(Some(ToolKind::Move), &[&a], json!({ "destination": to }));
+    assert!(allowed(&moving(json!("b.md"))));
+    assert!(allowed(&moving(json!(root.join("sub/b.md")))));
+    assert!(!allowed(&moving(json!(out))));
+    assert!(!allowed(&moving(json!("../b.md"))));
+    // a search of a folder outside the copy, named only in its input
+    assert!(!allowed(&tool(
+        Some(ToolKind::Search),
+        &[&a],
+        json!({ "path": other.path() })
+    )));
+}
+
+#[test]
+fn a_card_shows_the_command_else_the_places_else_the_address() {
+    let dir = tempfile::tempdir().unwrap();
+    let copy = Vault::new(Root::open(dir.path()).unwrap());
+    let root = copy.main().path().to_path_buf();
+    let line = |locations: Vec<PathBuf>, input: Value| ToolLine {
+        locations,
+        raw_input: Some(input),
+        ..ToolLine::default()
+    };
+    assert_eq!(
+        detail(
+            &line(
+                vec![root.join("a.md")],
+                json!({ "command": ["git", "status"] })
+            ),
+            &copy
+        ),
+        "git status"
+    );
+    assert_eq!(
+        detail(
+            &line(vec![root.join("docs").join("a.md")], json!({})),
+            &copy
+        ),
+        "docs/a.md"
+    );
+    assert_eq!(
+        detail(&line(Vec::new(), json!({ "file_path": "notes.md" })), &copy),
+        "notes.md"
+    );
+    assert_eq!(
+        detail(
+            &line(Vec::new(), json!({ "url": "https://example.com/" })),
+            &copy
+        ),
+        "https://example.com/"
+    );
+}
+
+/// An agent that does not take embedded resources gets the passage as text and a link to its lines.
+#[test]
+fn without_embedded_context_the_passage_goes_as_text_and_a_link() {
+    let fx = Fx::new(|_, _| Some("end_turn"));
+    fx.fake.plain.store(true, Ordering::SeqCst);
+    fx.session
+        .prompt(PromptArgs {
+            text: "Shorten this.".to_owned(),
+            selection: Some(PromptSelection {
+                path: "notes.md".to_owned(),
+                from_line: 2,
+                to_line: 3,
+                text: "Line two of the notes.\nLine three of the notes.\n".to_owned(),
+            }),
+            document: Some("notes.md".to_owned()),
+        })
+        .unwrap();
+    fx.events.turn_end();
+    let file = url::Url::from_file_path(fx.copy_dir().join("notes.md")).unwrap();
+    let prompt = fx
+        .fake
+        .seen()
+        .into_iter()
+        .find(|m| m["method"] == "session/prompt")
+        .unwrap()["params"]["prompt"]
+        .clone();
+    assert_eq!(
+        prompt,
+        json!([
+            { "type": "text", "text": "Shorten this." },
+            {
+                "type": "text",
+                "text": "Passage from notes.md, lines 2-3:\n```\nLine two of the notes.\nLine three of the notes.\n```",
+            },
+            { "type": "resource_link", "name": "notes.md", "uri": format!("{file}#L2:3") },
+            { "type": "resource_link", "name": "notes.md", "uri": file.to_string() },
+        ])
+    );
+}
+
+#[test]
+fn a_passage_is_fenced_longer_than_any_backticks_in_it() {
+    assert_eq!(
+        passage_text("a.md", 1, 1, "plain"),
+        "Passage from a.md, lines 1-1:\n```\nplain\n```"
+    );
+    assert_eq!(
+        passage_text("a.md", 4, 6, "```js\nx\n```\n"),
+        "Passage from a.md, lines 4-6:\n````\n```js\nx\n```\n````"
+    );
+}
+
+/// The agent withdraws a question (`$/cancel_request`): it is answered "request cancelled" and its card goes.
+#[test]
+fn a_withdrawn_question_is_answered_and_its_card_goes() {
+    let fx = Fx::new(|peer, _| {
+        peer.ask(
+            &json!(9),
+            &json!({ "toolCallId": "toolu_bash", "title": "Run the tests", "kind": "execute",
+                     "rawInput": { "command": "npm test" } }),
+        );
+        peer.send(&json!({
+            "jsonrpc": "2.0", "method": "$/cancel_request", "params": { "requestId": 9 },
+        }));
+        peer.until(|m| m["id"] == 9)?;
+        peer.text("Never mind.");
+        Some("end_turn")
+    });
+    fx.ask("Run the tests.");
+    fx.card("9");
+    fx.events.turn_end();
+    assert_eq!(
+        fx.events.of_type("permissionDone"),
+        [json!({ "type": "permissionDone", "requestId": "9" })]
+    );
+    assert_eq!(fx.fake.reply_to(&json!(9))["error"]["code"], -32800);
+    let late = fx.session.answer(&AnswerArgs {
+        request_id: "9".to_owned(),
+        option_id: Some("allow-once".to_owned()),
+    });
+    assert_eq!(late.unwrap_err().detail.as_deref(), Some("noQuestion"));
+    // exactly one answer
+    assert_eq!(
+        fx.fake
+            .seen()
+            .iter()
+            .filter(|m| m["id"] == 9 && m.get("method").is_none())
+            .count(),
+        1
+    );
+}
+
+/// A question still open when the turn ends is answered `cancelled`: every request of the agent gets one answer.
+#[test]
+fn a_question_still_open_at_the_turn_end_is_answered_cancelled() {
+    let fx = Fx::new(|peer, _| {
+        peer.ask(
+            &json!(4),
+            &json!({ "toolCallId": "toolu_fetch", "title": "Fetch", "kind": "fetch" }),
+        );
+        Some("end_turn")
+    });
+    fx.ask("Look this up.");
+    fx.events.turn_end();
+    assert_eq!(
+        fx.events.of_type("permissionDone"),
+        [json!({ "type": "permissionDone", "requestId": "4" })]
+    );
+    assert_eq!(
+        fx.fake.reply_to(&json!(4))["result"],
+        json!({ "outcome": { "outcome": "cancelled" } })
+    );
+}
+
+/// Stop while the copy is brought up to date, before the prompt is on its way: the prompt never reaches the agent and
+/// the turn ends `cancelled` (no `session/cancel` for a prompt it never had).
+#[test]
+fn stop_before_the_prompt_is_sent_keeps_it_from_the_agent() {
+    let fx = Fx::new(|peer, _| {
+        peer.text("ok");
+        Some("end_turn")
+    });
+    fx.ask("One.");
+    fx.events.turn_end();
+    // the copy busy: the turn waits before its prompt
+    let held = fx.copy.lock().unwrap();
+    fx.ask("Two.");
+    fx.events.wait_for("second working", WAIT, |list| {
+        list.iter().filter(|e| e["state"] == "working").count() == 2
+    });
+    fx.session.cancel();
+    drop(held);
+    let list = fx.turns_ended(2);
+    assert_eq!(
+        list.iter().rfind(|e| e["type"] == "turnEnd").unwrap()["stopReason"],
+        "cancelled"
+    );
+    assert_eq!(fx.session.status().state, AcpState::Ready);
+    assert_eq!(fx.fake.count("session/prompt"), 1);
+    assert_eq!(fx.fake.count("session/cancel"), 0);
+}
+
+/// Stop during the start: the agent stops, the turn ends `cancelled` and the prompt never reaches any agent.
+#[test]
+fn stop_during_the_start_ends_the_turn_and_stops_the_agent() {
+    let fx = Fx::new(|peer, message| {
+        peer.text(prompt_text(message));
+        Some("end_turn")
+    });
+    // the copy busy: the start waits before the agent's program
+    let held = fx.copy.lock().unwrap();
+    fx.ask("One.");
+    fx.session.cancel();
+    drop(held);
+    let states: Vec<Value> = fx
+        .events
+        .all()
+        .iter()
+        .map(|e| e.get("state").cloned().unwrap_or_else(|| e["type"].clone()))
+        .collect();
+    assert_eq!(states, [json!("starting"), json!("turnEnd"), json!("idle")]);
+    assert_eq!(
+        fx.events.of_type("turnEnd")[0],
+        json!({ "type": "turnEnd", "stopReason": "cancelled", "changed": 0 })
+    );
+    // the next prompt starts the one agent that ever ran
+    fx.ask("Two.");
+    fx.turns_ended(2);
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 1);
+    let texts: Vec<Value> = fx
+        .events
+        .of_type("text")
+        .iter()
+        .map(|e| e["text"].clone())
+        .collect();
+    assert_eq!(texts, [json!("Two.")]);
+}
+
+/// After Stop the agent may still ask before it ends its turn: answered `cancelled` at once, no card.
+#[test]
+fn a_question_after_stop_is_answered_cancelled_without_a_card() {
+    let fx = Fx::new(|peer, _| {
+        peer.text("On it.");
+        peer.until(|m| m["method"] == "session/cancel")?;
+        peer.ask(
+            &json!(11),
+            &json!({ "toolCallId": "toolu_bash", "title": "Clean up", "kind": "execute",
+                     "rawInput": { "command": "rm -rf build" } }),
+        );
+        peer.until(|m| m["id"] == 11)?;
+        Some("cancelled")
+    });
+    fx.ask("Build it.");
+    fx.events.wait_for("reply", WAIT, |list| {
+        list.iter().any(|e| e["type"] == "text")
+    });
+    fx.session.cancel();
+    assert_eq!(fx.events.turn_end()["stopReason"], "cancelled");
+    assert_eq!(fx.events.of_type("permission"), Vec::<Value>::new());
+    assert_eq!(
+        fx.fake.reply_to(&json!(11))["result"],
+        json!({ "outcome": { "outcome": "cancelled" } })
+    );
+}
+
+/// An agent answering a cancelled prompt with an error instead of its stop reason: the turn still ends `cancelled`.
+#[test]
+fn an_error_answer_to_a_cancelled_prompt_ends_it_as_cancelled() {
+    let fx = Fx::new(|peer, message| {
+        let id = message["id"].clone();
+        peer.text("On it.");
+        peer.until(|m| m["method"] == "session/cancel")?;
+        peer.send(&json!({
+            "jsonrpc": "2.0", "id": id, "error": { "code": -32603, "message": "aborted" },
+        }));
+        Some(ANSWERED)
+    });
+    fx.ask("Build it.");
+    fx.events.wait_for("reply", WAIT, |list| {
+        list.iter().any(|e| e["type"] == "text")
+    });
+    fx.session.cancel();
+    assert_eq!(fx.events.turn_end()["stopReason"], "cancelled");
+    let last = fx.events.all().last().cloned().unwrap();
+    assert_eq!(
+        last,
+        json!({ "type": "status", "state": "ready", "error": null })
+    );
+}
+
+/// A stop reason, a tool kind of a later protocol release: the turn ends normally (`other`), the tool shows as
+/// `other`; a refused prompt says the agent's own words.
+#[test]
+fn news_of_a_later_release_reads_as_other_and_a_refusal_keeps_its_words() {
+    let fx = Fx::new(|peer, message| {
+        if prompt_text(message) == "Refuse." {
+            let id = message["id"].clone();
+            peer.send(&json!({
+                "jsonrpc": "2.0", "id": id, "error": { "code": -32602, "message": "Too long." },
+            }));
+            return Some(ANSWERED);
+        }
+        peer.update(&json!({
+            "sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Plan", "kind": "future_kind",
+        }));
+        Some("future_reason")
+    });
+    fx.ask("One.");
+    let end = fx.events.turn_end();
+    assert_eq!(end["stopReason"], "other");
+    assert_eq!(fx.events.of_type("tool")[0]["kind"], "other");
+    assert_eq!(fx.events.all().last().unwrap()["error"], Value::Null);
+    fx.ask("Refuse.");
+    let list = fx.turns_ended(2);
+    assert_eq!(
+        list.iter().rfind(|e| e["type"] == "turnEnd").unwrap()["stopReason"],
+        "error"
+    );
+    assert_eq!(
+        list.last().unwrap()["error"],
+        json!({ "code": "refused", "message": "Too long." })
+    );
+}
+
+/// A passage of a file agents may not see never reaches the agent (refused before anything starts); such an open
+/// document | one the copy leaves out is not named.
+#[test]
+fn a_passage_of_a_hidden_file_is_refused_and_a_hidden_document_is_not_named() {
+    let fx = Fx::new(|_, _| Some("end_turn"));
+    std::fs::write(fx.project.path().join(".aiignore"), "secret.md\n").unwrap();
+    std::fs::write(fx.project.path().join("secret.md"), "the key\n").unwrap();
+    let passage = |path: &str| PromptArgs {
+        text: "What is this?".to_owned(),
+        selection: Some(PromptSelection {
+            path: path.to_owned(),
+            from_line: 1,
+            to_line: 1,
+            text: "the key".to_owned(),
+        }),
+        document: None,
+    };
+    for hidden in ["secret.md", ".git/config"] {
+        let refused = fx.session.prompt(passage(hidden)).unwrap_err();
+        assert_eq!(refused.kind, ErrorKind::Denied, "{hidden}");
+        assert_eq!(refused.detail.as_deref(), Some("hiddenFromAgents"));
+    }
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 0);
+
+    for (round, document) in ["secret.md", ".claude/settings.json"].iter().enumerate() {
+        fx.session
+            .prompt(PromptArgs {
+                text: "Hello.".to_owned(),
+                selection: None,
+                document: Some((*document).to_owned()),
+            })
+            .unwrap();
+        fx.turns_ended(round + 1);
+    }
+    let prompts: Vec<Value> = fx
+        .fake
+        .seen()
+        .into_iter()
+        .filter(|m| m["method"] == "session/prompt")
+        .map(|m| m["params"]["prompt"].clone())
+        .collect();
+    assert_eq!(
+        prompts,
+        [
+            json!([{ "type": "text", "text": "Hello." }]),
+            json!([{ "type": "text", "text": "Hello." }])
+        ]
+    );
 }

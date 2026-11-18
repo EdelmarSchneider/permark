@@ -73,6 +73,80 @@ fn the_snapshot_parses_and_lists_the_main_agents() {
     assert!(raw["fetched"].is_string());
 }
 
+/// `x.y.z`, digits only: an exact version (no range, tag or `latest`).
+fn exact_version(version: &str) -> bool {
+    let parts: Vec<&str> = version.split('.').collect();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// Variables that change how a runner loads code or finds programs: never set by a catalog entry.
+fn loader_variable(name: &str) -> bool {
+    let name = name.to_ascii_uppercase();
+    ["NODE_OPTIONS", "NODE_PATH", "PATH"].contains(&name.as_str())
+        || ["LD_", "DYLD_", "PYTHON", "UV_", "NPM_CONFIG_"]
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+}
+
+/// What the app may start from the shipped catalog: each package pinned to one exact version (`npx`: `name@x.y.z`,
+/// `uvx`: `name==x.y.z` | `name@x.y.z`), and no entry setting a variable that changes how code loads or where
+/// programs are found. The refresh script refuses such entries; this guards the file it wrote.
+#[test]
+fn the_snapshot_pins_every_package_and_sets_no_loader_variable() {
+    let pinned = |package: &str, uv: bool| {
+        // a scoped npm name starts with `@`: the version follows the last one
+        let at = package.rfind('@').filter(|at| *at > 0);
+        let version = match (uv, package.split_once("==")) {
+            (true, Some((name, version))) => Some((name, version)),
+            _ => at.map(|at| (&package[..at], &package[at + 1..])),
+        };
+        version.is_some_and(|(name, version)| !name.is_empty() && exact_version(version))
+    };
+    assert!(pinned("@scope/name@1.2.3", false));
+    assert!(pinned("name==0.10.1", true));
+    for loose in [
+        "name",
+        "@scope/name",
+        "name@latest",
+        "name@^1.2.3",
+        "name@1.2",
+        "name@1.2.3-beta.1",
+        "name>=1.0",
+    ] {
+        assert!(!pinned(loose, loose.contains('=')), "{loose}");
+    }
+    assert!(loader_variable("node_options") && loader_variable("LD_PRELOAD"));
+    assert!(loader_variable("npm_config_registry") && loader_variable("PYTHONPATH"));
+    assert!(!loader_variable("FAST_AGENT_MODEL"));
+
+    for listed in snapshot() {
+        let d = &listed.distribution;
+        if let Some(npx) = &d.npx {
+            assert!(
+                pinned(&npx.package, false),
+                "{}: {}",
+                listed.id,
+                npx.package
+            );
+        }
+        if let Some(uvx) = &d.uvx {
+            assert!(pinned(&uvx.package, true), "{}: {}", listed.id, uvx.package);
+        }
+        let env = d
+            .npx
+            .iter()
+            .chain(d.uvx.iter())
+            .flat_map(|p| p.env.keys())
+            .chain(d.binary.values().flat_map(|b| b.env.keys()));
+        for name in env {
+            assert!(!loader_variable(name), "{}: {name}", listed.id);
+        }
+    }
+}
+
 #[test]
 fn agents_without_a_way_to_run_here_are_left_out() {
     let ids = |platforms: &[&str]| -> Vec<String> {

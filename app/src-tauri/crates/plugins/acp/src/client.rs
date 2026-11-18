@@ -7,7 +7,9 @@
 //! - an error answer keeps its JSON-RPC code ([`CallError::Refused`]): `auth_required` asks the person to sign in.
 //! - writes: one writer thread takes whole lines from a queue, in order, and flushes each; a caller only queues (a full
 //!   pipe of an agent that stopped reading never holds up a stop, a cancel or the reader thread's replies).
-//! - the agent's stderr is drained into a short tail ([`TAIL_CAP`]) for error reports; it is never written anywhere.
+//! - the agent's stderr is drained into a short tail ([`TAIL_CAP`]) for error reports, cleaned as it comes: terminal
+//!   color | cursor codes and other control characters removed, lines naming account news dropped; it is never
+//!   written anywhere.
 //! - end of the agent's output (it exited) | [`Connection::close`] -> every waiting call answers `Closed`.
 
 use std::collections::{HashMap, VecDeque};
@@ -20,6 +22,7 @@ use std::time::Duration;
 use agent_client_protocol_schema::v1::{
     Error as RpcError, ErrorCode, JsonRpcMessage, Notification, Request, RequestId, Response,
 };
+use permark_core::settings::is_unsafe_char;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -46,7 +49,8 @@ pub struct AgentPipes {
 
 /// What the reader thread hands on. Runs on the reader thread: quick, never waiting on the agent.
 pub trait Inbox: Send + Sync + 'static {
-    fn notification(&self, method: &str, params: Option<Value>);
+    /// The agent tells something (`connection`: to answer a request the notice withdraws).
+    fn notification(&self, connection: &Connection, method: &str, params: Option<Value>);
     /// The agent asks something; every request MUST get one [`Connection::reply`] (now or later).
     fn request(&self, connection: &Connection, id: RequestId, method: &str, params: Option<Value>);
     /// The agent's output ended (it exited | was stopped).
@@ -182,7 +186,7 @@ impl Connection {
     fn dispatch(&self, message: Incoming, inbox: &dyn Inbox) {
         match (message.method, message.id) {
             (Some(method), Some(id)) => inbox.request(self, id, &method, message.params),
-            (Some(method), None) => inbox.notification(&method, message.params),
+            (Some(method), None) => inbox.notification(self, &method, message.params),
             (None, Some(RequestId::Number(id))) => {
                 let answer = match message.error {
                     Some(error) => Answer::Failed {
@@ -220,6 +224,15 @@ impl Connection {
         params: P,
         wait: Option<Duration>,
     ) -> Result<R, CallError> {
+        self.request(method, params)?.wait(wait)
+    }
+
+    /// Queues the call of `method` (never waits on the agent: the caller may hold a lock that orders it against
+    /// other lines); [`Pending::wait`] takes its answer.
+    ///
+    /// # Errors
+    /// `Closed`: the agent is gone | its stdin closed.
+    pub fn request<P: Serialize>(&self, method: &str, params: P) -> Result<Pending<'_>, CallError> {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::sync_channel(1);
         {
@@ -238,20 +251,11 @@ impl Connection {
             lock(&self.waiting).calls.remove(&id);
             return Err(CallError::Closed);
         }
-        let answer = match wait {
-            Some(wait) => rx.recv_timeout(wait).map_err(|e| match e {
-                RecvTimeoutError::Timeout => CallError::TimedOut,
-                RecvTimeoutError::Disconnected => CallError::Closed,
-            }),
-            None => rx.recv().map_err(|_| CallError::Closed),
-        };
-        if answer.is_err() {
-            lock(&self.waiting).calls.remove(&id);
-        }
-        match answer? {
-            Answer::Done(value) => serde_json::from_value(value).map_err(|_| CallError::Unreadable),
-            Answer::Failed { code, message } => Err(CallError::Refused { code, message }),
-        }
+        Ok(Pending {
+            connection: self,
+            id,
+            answer: rx,
+        })
     }
 
     /// Sends a notification.
@@ -303,12 +307,43 @@ impl Connection {
         waiting.calls.clear();
     }
 
-    /// The newest `max_chars` characters of the agent's stderr, after waiting up to `wait` for the stream to end
-    /// (an exiting agent writes its last words just before).
+    /// The newest `max_bytes` (whole characters) of the agent's cleaned stderr, after waiting up to `wait` for the
+    /// stream to end (an exiting agent writes its last words just before).
     #[must_use]
-    pub fn stderr_tail(&self, max_chars: usize, wait: Duration) -> String {
+    pub fn stderr_tail(&self, max_bytes: usize, wait: Duration) -> String {
         self.tail.settle(wait);
-        self.tail.text(max_chars)
+        self.tail.text(max_bytes)
+    }
+}
+
+/// A call on its way: its answer comes once.
+pub struct Pending<'a> {
+    connection: &'a Connection,
+    id: i64,
+    answer: Receiver<Answer>,
+}
+
+impl Pending<'_> {
+    /// Waits for the answer (`None`: as long as the agent runs).
+    ///
+    /// # Errors
+    /// [`CallError`].
+    pub fn wait<R: DeserializeOwned>(self, wait: Option<Duration>) -> Result<R, CallError> {
+        let answer = match wait {
+            Some(wait) => self.answer.recv_timeout(wait).map_err(|e| match e {
+                RecvTimeoutError::Timeout => CallError::TimedOut,
+                RecvTimeoutError::Disconnected => CallError::Closed,
+            }),
+            None => self.answer.recv().map_err(|_| CallError::Closed),
+        };
+        if answer.is_err() {
+            // a late answer finds no call: dropped
+            lock(&self.connection.waiting).calls.remove(&self.id);
+        }
+        match answer? {
+            Answer::Done(value) => serde_json::from_value(value).map_err(|_| CallError::Unreadable),
+            Answer::Failed { code, message } => Err(CallError::Refused { code, message }),
+        }
     }
 }
 
@@ -394,10 +429,13 @@ impl Tail {
     }
 
     fn add(&self, line: &str) {
+        let Some(line) = readable(line) else {
+            return;
+        };
         let mut guard = lock(&self.lines);
         let (lines, bytes) = &mut *guard;
         *bytes += line.len() + 1;
-        lines.push_back(line.to_owned());
+        lines.push_back(line);
         while *bytes > TAIL_CAP {
             let Some(old) = lines.pop_front() else {
                 break;
@@ -410,7 +448,7 @@ impl Tail {
         let _ = lock(&self.done).recv_timeout(wait);
     }
 
-    fn text(&self, max_chars: usize) -> String {
+    fn text(&self, max_bytes: usize) -> String {
         let all = lock(&self.lines)
             .0
             .iter()
@@ -421,8 +459,58 @@ impl Tail {
                 all.push_str(line);
                 all
             });
-        let count = all.chars().count();
-        all.chars().skip(count.saturating_sub(max_chars)).collect()
+        let mut from = all.len().saturating_sub(max_bytes);
+        while !all.is_char_boundary(from) {
+            from += 1;
+        }
+        all[from..].to_owned()
+    }
+}
+
+/// Words only account news carries: a line holding one is never kept (it may name the person's account).
+const ACCOUNT_WORDS: [&str; 2] = ["status_update", "email"];
+
+/// A stderr line as the person may read it: terminal escape sequences (colors, cursor moves, titles) and control
+/// characters removed, tabs kept (`None`: a line naming account news, never kept).
+fn readable(line: &str) -> Option<String> {
+    let lower = line.to_lowercase();
+    if ACCOUNT_WORDS.iter().any(|word| lower.contains(word)) {
+        return None;
+    }
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            // CSI (`ESC [` | its one-character form): parameters up to a final character `@`..`~`
+            '\u{1b}' if chars.clone().next() == Some('[') => {
+                chars.next();
+                skip_csi(&mut chars);
+            }
+            '\u{9b}' => skip_csi(&mut chars),
+            // OSC (a window title, a link): up to BEL | ESC + `\`
+            '\u{1b}' if chars.clone().next() == Some(']') => {
+                chars.next();
+                while let Some(c) = chars.next() {
+                    if c == '\u{7}' || (c == '\u{1b}' && chars.next().is_some()) {
+                        break;
+                    }
+                }
+            }
+            // any other escape: its intermediate characters (space..`/`), then its final one
+            '\u{1b}' => while chars.next().is_some_and(|c| (' '..='/').contains(&c)) {},
+            '\t' => out.push(c),
+            c if is_unsafe_char(c) => {}
+            c => out.push(c),
+        }
+    }
+    Some(out)
+}
+
+fn skip_csi(chars: &mut std::str::Chars<'_>) {
+    for c in chars.by_ref() {
+        if ('@'..='~').contains(&c) {
+            break;
+        }
     }
 }
 
@@ -478,5 +566,229 @@ mod tests {
         assert!(kept <= TAIL_CAP, "{kept}");
         assert!(tail.text(500).ends_with("line 1999"));
         assert_eq!(tail.text(9), "line 1999");
+        // never half a character
+        tail.add("é");
+        assert_eq!(tail.text(1), "");
+        assert_eq!(tail.text(2), "é");
+    }
+
+    #[test]
+    fn stderr_lines_lose_terminal_codes_and_account_news() {
+        assert_eq!(
+            readable("\u{1b}[1;31mfatal:\u{1b}[0m the model\u{7} is gone\r").as_deref(),
+            Some("fatal: the model is gone")
+        );
+        assert_eq!(
+            readable("\u{1b}]0;window title\u{7}after\u{1b}]8;;https://x\u{1b}\\link").as_deref(),
+            Some("afterlink")
+        );
+        assert_eq!(
+            readable("\u{9b}2Kcleared\u{1b}(B\tkept").as_deref(),
+            Some("cleared\tkept")
+        );
+        assert_eq!(
+            readable("\u{202e}reversed\u{2066}").as_deref(),
+            Some("reversed")
+        );
+        assert_eq!(
+            readable("{\"method\":\"_auth/status_update\",\"params\":{}}"),
+            None
+        );
+        assert_eq!(readable("  Email: person@example.com"), None);
+    }
+
+    /// Longest wait for the other side of the pipes.
+    const WAIT: Duration = Duration::from_secs(20);
+
+    /// What the reader thread handed on: `notification <method>` | `request <method> <id>` | `closed`.
+    #[derive(Default)]
+    struct Heard {
+        list: Mutex<Vec<String>>,
+        changed: std::sync::Condvar,
+    }
+
+    impl Heard {
+        fn push(&self, what: String) {
+            lock(&self.list).push(what);
+            self.changed.notify_all();
+        }
+
+        fn wait_for(&self, what: &str) {
+            let started = std::time::Instant::now();
+            let mut list = lock(&self.list);
+            while !list.iter().any(|seen| seen == what) {
+                let left = WAIT.saturating_sub(started.elapsed());
+                assert!(!left.is_zero(), "no {what}; heard {list:?}");
+                list = self
+                    .changed
+                    .wait_timeout(list, left)
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .0;
+            }
+        }
+    }
+
+    impl Inbox for Heard {
+        fn notification(&self, _: &Connection, method: &str, _: Option<Value>) {
+            self.push(format!("notification {method}"));
+        }
+
+        fn request(&self, connection: &Connection, id: RequestId, method: &str, _: Option<Value>) {
+            self.push(format!(
+                "request {method} {}",
+                serde_json::to_string(&id).unwrap()
+            ));
+            connection
+                .reply::<Value>(id, Err(RpcError::method_not_found()))
+                .unwrap();
+        }
+
+        fn closed(&self) {
+            self.push("closed".to_owned());
+        }
+    }
+
+    /// A connection over pipes with the agent's ends.
+    struct Wire {
+        connection: Arc<Connection>,
+        to_client: io::PipeWriter,
+        from_client: BufReader<io::PipeReader>,
+        heard: Arc<Heard>,
+        _stderr: io::PipeWriter,
+    }
+
+    impl Wire {
+        fn new() -> Self {
+            let (agent_in, client_out) = io::pipe().unwrap();
+            let (client_in, agent_out) = io::pipe().unwrap();
+            let (client_err, agent_err) = io::pipe().unwrap();
+            let heard = Arc::new(Heard::default());
+            let connection = Connection::start(
+                Box::new(client_out),
+                Box::new(client_in),
+                Box::new(client_err),
+                Arc::clone(&heard) as Arc<dyn Inbox>,
+            )
+            .unwrap();
+            Self {
+                connection,
+                to_client: agent_out,
+                from_client: BufReader::new(agent_in),
+                heard,
+                _stderr: agent_err,
+            }
+        }
+
+        fn write(&mut self, text: &str) {
+            self.to_client.write_all(text.as_bytes()).unwrap();
+            self.to_client.flush().unwrap();
+        }
+
+        /// The client's next line (`None`: its stdin closed).
+        fn next(&mut self) -> Option<Value> {
+            let mut line = String::new();
+            (self.from_client.read_line(&mut line).unwrap() > 0)
+                .then(|| serde_json::from_str(&line).unwrap())
+        }
+
+        /// Calls `method` on a thread of its own; answers the id the agent sees.
+        fn call(
+            &mut self,
+            method: &'static str,
+            wait: Duration,
+        ) -> (i64, std::thread::JoinHandle<Result<Value, CallError>>) {
+            let connection = Arc::clone(&self.connection);
+            let call = std::thread::spawn(move || connection.call(method, json!({}), Some(wait)));
+            let request = self.next().unwrap();
+            assert_eq!(request["method"], method);
+            (request["id"].as_i64().unwrap(), call)
+        }
+    }
+
+    use serde_json::json;
+
+    #[test]
+    fn an_answer_finds_its_call_in_every_shape_it_comes() {
+        let mut wire = Wire::new();
+        // split over two writes; an answer with no id | a string id | an unknown id answers nothing
+        let (id, call) = wire.call("one", WAIT);
+        wire.write(&format!(
+            "{{\"jsonrpc\":\"2.0\",\"result\":1}}\n{{\"jsonrpc\":\"2.0\",\"id\":\"{id}\",\"result\":2}}\n"
+        ));
+        wire.write("{\"jsonrpc\":\"2.0\",\"id\":999,\"result\":3}\n{\"jsonrpc\":\"2.0\",\"id\":");
+        wire.write(&format!("{id},\"result\":null}}\n"));
+        assert_eq!(call.join().unwrap(), Ok(Value::Null));
+
+        // an error without a code: the agent's internal error
+        let (id, call) = wire.call("two", WAIT);
+        wire.write(&format!(
+            "{{\"jsonrpc\":\"2.0\",\"id\":{id},\"error\":{{\"message\":\"boom\"}}}}\n"
+        ));
+        assert_eq!(
+            call.join().unwrap(),
+            Err(CallError::Refused {
+                code: i32::from(ErrorCode::InternalError),
+                message: "boom".to_owned()
+            })
+        );
+    }
+
+    /// Ids are never reused: an answer that comes after its call gave up never reaches a later call, nor does a
+    /// second answer to the same id.
+    #[test]
+    fn a_late_answer_never_reaches_a_later_call() {
+        let mut wire = Wire::new();
+        let (late, call) = wire.call("slow", Duration::from_millis(50));
+        assert_eq!(call.join().unwrap(), Err(CallError::TimedOut));
+        let (id, call) = wire.call("next", WAIT);
+        assert_ne!(id, late);
+        wire.write(&format!(
+            "{{\"jsonrpc\":\"2.0\",\"id\":{late},\"result\":\"late\"}}\n\
+             {{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\"fresh\"}}\n\
+             {{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":\"again\"}}\n"
+        ));
+        assert_eq!(call.join().unwrap(), Ok(json!("fresh")));
+    }
+
+    #[test]
+    fn unknown_lines_are_skipped_and_the_rest_reaches_the_inbox() {
+        let mut wire = Wire::new();
+        let cap = usize::try_from(LINE_CAP).unwrap();
+        let mut long = "x".repeat(cap + 1);
+        long.push('\n');
+        wire.write(&long);
+        wire.write("not json\n{}\n[1,2]\n");
+        wire.write("{\"jsonrpc\":\"2.0\",\"method\":\"future/news\",\"params\":{}}\n");
+        wire.write("{\"jsonrpc\":\"2.0\",\"id\":\"q-1\",\"method\":\"fs/read_text_file\"}\n");
+        wire.heard.wait_for("notification future/news");
+        wire.heard.wait_for("request fs/read_text_file \"q-1\"");
+        // the request got its one answer
+        let reply = wire.next().unwrap();
+        assert_eq!(reply["id"], "q-1");
+        assert_eq!(reply["error"]["code"], -32601);
+    }
+
+    /// Close: every waiting call ends at once even while the agent's output stays open; the agent's stdin closes
+    /// after the lines already queued.
+    #[test]
+    fn close_ends_every_waiting_call_and_the_agents_stdin() {
+        let mut wire = Wire::new();
+        let connection = Arc::clone(&wire.connection);
+        let waiting =
+            std::thread::spawn(move || connection.call::<_, Value>("hang", json!({}), None));
+        assert_eq!(wire.next().unwrap()["method"], "hang");
+        wire.connection.notify("last", json!({})).unwrap();
+        wire.connection.close();
+        assert_eq!(waiting.join().unwrap(), Err(CallError::Closed));
+        assert_eq!(
+            wire.connection.call::<_, Value>("after", json!({}), None),
+            Err(CallError::Closed)
+        );
+        assert!(wire.connection.notify("after", json!({})).is_err());
+        assert_eq!(wire.next().unwrap()["method"], "last");
+        assert_eq!(wire.next(), None);
+        // the output ending is told once
+        drop(wire.to_client);
+        wire.heard.wait_for("closed");
     }
 }

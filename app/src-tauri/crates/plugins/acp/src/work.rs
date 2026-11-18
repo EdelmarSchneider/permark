@@ -104,6 +104,74 @@ pub fn kept_out(path: &str) -> bool {
             .any(|pair| agent_setting(pair[0], pair[1]))
 }
 
+/// A folder some agent reads settings from (all of it | settings right under it): a link in its place could lead an
+/// agent to settings anywhere.
+fn settings_folder(name: &str) -> bool {
+    kept_out_folder(name)
+        || AGENT_SETTINGS
+            .iter()
+            .any(|(agent, _)| named(name, &[agent]))
+}
+
+/// Removes a file; a read-only one (Windows refuses to remove it) is made writable first.
+fn remove_file(abs: &Path) -> io::Result<()> {
+    match std::fs::remove_file(abs) {
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+            let mut permissions = std::fs::symlink_metadata(abs)?.permissions();
+            #[allow(clippy::permissions_set_readonly_false)]
+            // a file the agent made in the copy, removed next
+            permissions.set_readonly(false);
+            std::fs::set_permissions(abs, permissions)?;
+            std::fs::remove_file(abs)
+        }
+        other => other,
+    }
+}
+
+/// Removes what [`kept_out`] names anywhere under `dir`. A link is never followed: it is removed itself when kept out
+/// or named like an agent's settings folder.
+fn purge_kept_out(dir: &Path) -> io::Result<()> {
+    let gone = |result: io::Result<()>| match result {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        other => other,
+    };
+    let mut folders = vec![(dir.to_path_buf(), String::new())];
+    while let Some((folder, prefix)) = folders.pop() {
+        let entries = match std::fs::read_dir(&folder) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e),
+        };
+        for entry in entries {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let path = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{prefix}/{name}")
+            };
+            // the entry itself, never what a link leads to
+            let kind = entry.file_type()?;
+            let abs = entry.path();
+            if kind.is_symlink() {
+                if kept_out(&path) || settings_folder(&name) {
+                    // Windows: a folder link goes with `remove_dir`
+                    gone(std::fs::remove_file(&abs).or_else(|_| std::fs::remove_dir(&abs)))?;
+                }
+            } else if kind.is_dir() {
+                if kept_out(&path) || kept_out_folder(&name) {
+                    gone(std::fs::remove_dir_all(&abs))?;
+                } else {
+                    folders.push((abs, path));
+                }
+            } else if kept_out(&path) {
+                gone(remove_file(&abs))?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Where the copy of `root` lives under `base`: `<base>/<project folder name>` (the agent sees the project's name).
 #[must_use]
 pub fn copy_dir(base: &Path, root: &Root) -> PathBuf {
@@ -226,6 +294,16 @@ impl Project {
             return Err(IpcError::new(ErrorKind::TooLarge).detail("tooManyBytes"));
         }
         Ok(listing)
+    }
+
+    /// Whether agents may not see the project path `path` now (`.aiignore`, `[agent] deny_paths`, private projects
+    /// inside, `.git`, `.permark`): the copy leaves it out, and nothing of it may reach an agent another way.
+    ///
+    /// # Errors
+    /// `InvalidPath`: no project path; `Unavailable` (`projectsNotReady`).
+    pub fn hidden(&self, path: &str) -> Result<bool, IpcError> {
+        let path = VaultPath::parse(path)?;
+        Ok(self.guard()?.hidden(path.as_str(), false))
     }
 
     /// A window holds unsaved edits of `path`: its file is not written under it.
@@ -465,6 +543,16 @@ impl WorkCopy {
     #[must_use]
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// Removes agent settings and project machinery found in the copy (before each agent start and each prompt).
+    /// They are never copied from the project, so the agent made them: settings it wrote would load at its next start
+    /// and could allow anything without a question. Links are removed themselves, never followed.
+    ///
+    /// # Errors
+    /// IO (the agent must not start on a copy that still holds them).
+    pub fn purge(&self) -> Result<(), IpcError> {
+        purge_kept_out(&self.dir).map_err(|e| IpcError::io(self.dir.display().to_string(), &e))
     }
 
     /// Files left out for their size at the last build | sync.

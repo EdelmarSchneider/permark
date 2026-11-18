@@ -6,7 +6,10 @@
 // signs in, "Try again" alone stays signed out. Nothing is written: the real copy, agent, choice file and writes are
 // the plugin's (tested there); the mock only feeds the window's flow.
 
+import type { AcpError } from "./generated/AcpError";
 import type { AcpState } from "./generated/AcpState";
+import type { AcpToolKind } from "./generated/AcpToolKind";
+import type { AcpToolStatus } from "./generated/AcpToolStatus";
 import type { AcpUpdate } from "./generated/AcpUpdate";
 import type { AgentEntry } from "./generated/AgentEntry";
 import type { AnswerArgs } from "./generated/AnswerArgs";
@@ -146,8 +149,8 @@ export const MOCK_LOGIN_METHODS: readonly LoginMethod[] = [
   },
 ];
 
-/** What a "Try again" without a sign-in says (the plugin words its own). */
-export const MOCK_NOT_SIGNED_IN = "Not signed in yet. Sign in, then try again.";
+/** What a "Try again" without a sign-in answers (the window words the code). */
+export const MOCK_NOT_SIGNED_IN: AcpError = { code: "stillNeedsLogin" };
 
 export type AcpProbe = {
   /** Calls made, by method name. */
@@ -214,7 +217,7 @@ type Step =
   | { kind: "news"; update: AcpUpdate }
   | { kind: "ask"; update: Extract<AcpUpdate, { type: "permission" }> }
   /** The agent wants a sign-in before the reply goes on (`then`: its first steps after it; `why`: a failed one). */
-  | { kind: "login"; then: Step[]; why: string | null }
+  | { kind: "login"; then: Step[]; why: AcpError | null }
   | { kind: "end" };
 
 export function createMockAcp(
@@ -226,7 +229,7 @@ export function createMockAcp(
   probe: AcpProbe;
 } {
   let state: AcpState = "idle";
-  let error: string | null = null;
+  let error: AcpError | null = null;
   let started = false;
   /** The first steps of the reply that waits for a sign-in (`null`: none waits). */
   let afterLogin: Step[] | null = null;
@@ -252,7 +255,7 @@ export function createMockAcp(
     stopAll: stopTimer,
   };
   const news = (update: AcpUpdate): void => emit("acp:update", update);
-  const become = (to: AcpState, why: string | null = null): void => {
+  const become = (to: AcpState, why: AcpError | null = null): void => {
     state = to;
     error = why;
     if (to !== "needsLogin") afterLogin = null;
@@ -309,7 +312,7 @@ export function createMockAcp(
   function script(args: PromptArgs): Step[] {
     turn += 1;
     const id = (n: number): string => `t${String(turn)}-${String(n)}`;
-    const tool = (n: number, title: string, kind: string, status: string): Step => ({
+    const tool = (n: number, title: string, kind: AcpToolKind, status: AcpToolStatus): Step => ({
       kind: "news",
       update: { type: "tool", id: id(n), title, kind, status },
     });

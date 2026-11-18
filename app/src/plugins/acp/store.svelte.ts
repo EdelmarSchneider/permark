@@ -6,6 +6,7 @@
 // (kept by the backend for every project): none chosen, the picker stands in for the conversation.
 
 import type {
+  AcpError,
   AcpStatus,
   AcpUpdate,
   AgentEntry,
@@ -174,7 +175,7 @@ export class AcpStore {
         if (update.error !== null)
           this.#push({
             kind: update.state === "needsLogin" ? "signIn" : "notice",
-            text: update.error,
+            text: failureText(update.error),
           });
         // the agent stopped (a choice in any window of the app among the causes): its name is read again
         if (update.state === "idle") void this.#readStatus();
@@ -601,6 +602,11 @@ function endKey(stopReason: string): MessageKey | null {
     default:
       return null;
   }
+}
+
+/** What went wrong with the agent: its own words when it gave some, else the state's. */
+export function failureText(error: AcpError): string {
+  return error.message ?? t("acp.state.error");
 }
 
 /** The plugin's refusals in words; other errors as the app words them. */

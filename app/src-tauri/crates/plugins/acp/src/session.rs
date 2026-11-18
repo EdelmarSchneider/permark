@@ -1,62 +1,74 @@
 //! The agent of one project instance, spoken to over the Agent Client Protocol (v1).
 //!
 //! - started at the first prompt, on a thread of its own (the RPC thread never waits on the agent): the person's
-//!   choice read now ([`Agents`]: a new choice applies at the next start), work copy made when absent, the agent's
-//!   program started in an empty folder of the plugin's own ([`Host::run`]: never the copy, whose project files a
-//!   runner such as `npx` would read as its settings), `initialize` (no file system, no terminal offered: the agent
-//!   works on the copy with its own tools; terminal sign-in methods are welcome: the person runs them) ->
-//!   `session/new` (folder = the copy, no MCP servers) -> `session/set_mode` `default` when offered (a person's own
-//!   "auto" default would let the agent skip every question).
-//! - `auth_required` at `session/new` | a prompt -> `NeedsLogin` with the agent's sign-in methods; `acp.login` has the
-//!   agent sign in (`authenticate`, agent methods only) or just tries again, then the waiting prompt goes on.
-//! - each prompt: the copy takes the person's latest changes first ([`WorkCopy::sync`]), then `session/prompt`; the
-//!   turn ends with the agent's stop reason and the count of changed files.
+//!   choice read now ([`Agents`]: a new choice applies at the next start), work copy made when absent and cleared of
+//!   agent settings, the agent's program started in an empty folder of the plugin's own ([`Host::run`]: never the
+//!   copy, whose project files a runner such as `npx` would read as its settings), `initialize` (no file system, no
+//!   terminal offered: the agent works on the copy with its own tools; terminal sign-in methods are welcome: the
+//!   person runs them) -> `session/new` (folder = the copy, no MCP servers) -> `session/set_mode` `default` when
+//!   offered (a person's own "auto" default would let the agent skip every question).
+//! - `auth_required` at `session/new` | a prompt -> `NeedsLogin` with the agent's sign-in methods; `acp.login` with an
+//!   agent method has the agent sign in (`authenticate`) and the waiting prompt goes on; any other (the person signed
+//!   in outside the app) starts a fresh agent, which reads the new sign-in at its start.
+//! - each prompt: agent settings the agent wrote into the copy go ([`WorkCopy::purge`]: they would load at its next
+//!   start and could allow anything), the copy takes the person's latest changes ([`WorkCopy::sync`]), then
+//!   `session/prompt`; the turn ends with the agent's stop reason and the count of changed files. A passage of a file
+//!   agents may not see is refused; such an open document is not named.
+//! - Stop: before the prompt is on its way it is never sent (the turn ends `cancelled`); after, `session/cancel`; a
+//!   question asked after Stop is answered `cancelled` at once. Stop during a start stops the agent.
 //! - news (`session/update`) -> `acp:update` events: reply text, "thinking", tool lines. Anything else the agent
 //!   tells (modes, commands, usage, account status) is dropped unread.
-//! - permission questions: a tool that only reads | searches | thinks, or edits | deletes | moves files inside the
-//!   copy, is allowed once by rule; anything else is a card the person answers.
+//! - permission questions ([`permission`]): plainly work on the copy's files -> allowed once by rule; anything else
+//!   is a card the person answers. Every question gets exactly one answer: the person's, `cancelled` (Stop, the turn
+//!   ended, the agent left), or `-32800` when the agent withdrew it (`$/cancel_request`).
+//! - errors reach the window as codes ([`AcpErrorCode`]) with the agent's own words: its refusal, its last stderr.
 //! - states: Idle -> Starting -> Working <-> Ready; Starting | Working -> `NeedsLogin` -> Starting (login); failed start
 //!   | agent gone -> Error (the next prompt starts a fresh one); "new conversation" | a new choice -> Idle (the copy
 //!   and its pending changes stay). Each run carries the generation it was started for and does nothing once a newer
 //!   one replaced it.
 
+mod login;
+mod permission;
+
 use std::collections::HashMap;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use agent_client_protocol_schema::v1::{
-    AuthCapabilities, AuthMethodTerminal, AuthenticateRequest, CancelNotification,
+    AuthCapabilities, AuthenticateRequest, CancelNotification, CancelRequestNotification,
     ClientCapabilities, ContentBlock, EmbeddedResource, EmbeddedResourceResource,
     Error as RpcError, Implementation, InitializeRequest, InitializeResponse, NewSessionRequest,
-    NewSessionResponse, PermissionOptionId, PermissionOptionKind, PromptRequest, PromptResponse,
-    RequestId, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    ResourceLink, SelectedPermissionOutcome, SessionId, SessionNotification, SessionUpdate,
-    SetSessionModeRequest, TextContent, TextResourceContents, ToolCallStatus, ToolCallUpdateFields,
-    ToolKind, AGENT_METHOD_NAMES, CLIENT_METHOD_NAMES,
+    NewSessionResponse, PermissionOptionId, PermissionOptionKind, PromptRequest, RequestId,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse, ResourceLink,
+    SelectedPermissionOutcome, SessionId, SessionNotification, SessionUpdate,
+    SetSessionModeRequest, StopReason, TextContent, TextResourceContents, ToolCallStatus, ToolKind,
+    AGENT_METHOD_NAMES, CLIENT_METHOD_NAMES, PROTOCOL_LEVEL_METHOD_NAMES,
 };
 use agent_client_protocol_schema::ProtocolVersion;
 use permark_core::paths::{Root, Vault, VaultPath};
 use permark_core::plugins::PluginEvents;
 use permark_core::{ErrorKind, IpcError};
-use serde::Serialize;
 use serde_json::Value;
 
-use crate::agents::{self, Agents, Chosen, Launch};
+use crate::agents::Agents;
 use crate::client::{lock, AgentPipes, CallError, Connection, Inbox};
 use crate::dto::{
-    AcpState, AcpStatus, AcpUpdate, AgentEntry, AgentNeed, AnswerArgs, ChooseArgs, LoginArgs,
-    LoginKind, LoginMethod, PermissionChoice, PromptArgs, PromptSelection,
+    AcpError, AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason, AcpToolKind,
+    AcpToolStatus, AcpUpdate, AgentEntry, AnswerArgs, ChooseArgs, LoginArgs, LoginKind,
+    LoginMethod, PermissionChoice, PromptArgs, PromptSelection,
 };
-use crate::work::{copy_dir, Project, WorkCopy};
+use crate::work::{copy_dir, kept_out, Project, WorkCopy};
 use crate::SharedCopy;
+use login::login_methods;
+use permission::{allow_once, detail, plain_work, ToolLine};
 
 /// Longest wait for each step of the start (the first `npx` run downloads the adapter).
 const SETUP_WAIT: Duration = Duration::from_secs(180);
 /// Longest wait for an agent's own sign-in (it may wait for the person in the browser).
 const LOGIN_WAIT: Duration = Duration::from_secs(600);
-/// Characters of the agent's stderr shown when it stopped by itself.
-const TAIL_CHARS: usize = 500;
+/// Most bytes of the agent's own words kept with an error (its last stderr lines, a refusal's message).
+const WORDS_CAP: usize = 2 << 10;
 /// Wait for the agent's last stderr lines after its output ended.
 const TAIL_SETTLE: Duration = Duration::from_millis(500);
 /// The agent mode that asks before changes.
@@ -68,7 +80,7 @@ const PASSAGE_MIME: &str = "text/markdown";
 pub struct Host {
     /// The catalog + the person's choice (read at every start).
     pub agents: Agents,
-    pub launch: Launch,
+    pub launch: crate::agents::Launch,
     pub project: Project,
     /// Folder the copy is made in (`None`: no profile, no copy can be made).
     pub place: Option<PathBuf>,
@@ -98,10 +110,36 @@ struct Inner {
     generation: u64,
     /// Permission questions waiting for the person, by the id the window got.
     asks: HashMap<String, Ask>,
-    /// Tool lines of the turn, by tool call id.
+    /// What the agent told of each tool call of the turn, by its id.
     tools: HashMap<String, ToolLine>,
     /// "Thinking" was told since the last other news.
     thinking: bool,
+    /// Stop was pressed during the current prompt.
+    stopping: bool,
+    /// The current prompt is on its way to the agent (queued under this lock: a Stop either finds it unsent and it
+    /// never goes, or comes after it).
+    sent: bool,
+}
+
+impl Inner {
+    /// The questions still waiting, all of them taken (their answers are the caller's: [`Core::close_asks`]).
+    fn take_asks(&mut self) -> Vec<(String, Ask)> {
+        self.asks.drain().collect()
+    }
+
+    /// A new prompt begins: no Stop for it yet.
+    fn begin_prompt(&mut self) {
+        self.stopping = false;
+        self.sent = false;
+    }
+
+    /// Ends the current agent's time: state `Idle`, generation bumped; answers the agent to stop + its questions.
+    fn end_agent(&mut self) -> (Option<Arc<Agent>>, Vec<(String, Ask)>) {
+        self.generation += 1;
+        let agent = std::mem::take(&mut self.state).agent();
+        self.tools.clear();
+        (agent, self.take_asks())
+    }
 }
 
 #[derive(Default)]
@@ -112,7 +150,7 @@ enum State {
     Starting(Option<Arc<Agent>>),
     Ready(Live),
     Working(Live),
-    Error(String),
+    Error(AcpError),
     /// The agent waits for the person to sign in.
     NeedsLogin(Login),
 }
@@ -138,9 +176,9 @@ impl State {
         }
     }
 
-    fn error(&self) -> Option<String> {
+    fn error(&self) -> Option<AcpError> {
         match self {
-            Self::Error(message) => Some(message.clone()),
+            Self::Error(error) => Some(error.clone()),
             Self::NeedsLogin(login) => login.error.clone(),
             _ => None,
         }
@@ -169,6 +207,8 @@ struct Live {
     session: SessionId,
     /// The agent's sign-in methods (from `initialize`).
     methods: Arc<[LoginMethod]>,
+    /// The agent takes embedded resources in prompts (`promptCapabilities.embeddedContext`).
+    embedded: bool,
 }
 
 /// An agent waiting for the person to sign in, with the prompt that goes on afterwards.
@@ -178,8 +218,9 @@ struct Login {
     session: Option<SessionId>,
     args: PromptArgs,
     methods: Arc<[LoginMethod]>,
-    /// Why the last sign-in did not work (plain English).
-    error: Option<String>,
+    embedded: bool,
+    /// Why the last sign-in did not work.
+    error: Option<AcpError>,
 }
 
 /// One running agent program.
@@ -221,43 +262,42 @@ struct Ask {
     options: Vec<PermissionOptionId>,
 }
 
-/// What the window shows of one tool call.
-#[derive(Default, Clone, PartialEq, Eq)]
-struct ToolLine {
-    title: String,
-    kind: ToolKind,
-    status: ToolCallStatus,
-}
-
-impl ToolLine {
-    fn update(&self, id: &str) -> AcpUpdate {
-        AcpUpdate::Tool {
-            id: id.to_owned(),
-            title: self.title.clone(),
-            kind: name_of(&self.kind),
-            status: name_of(&self.status),
-        }
-    }
-
-    fn apply(&mut self, fields: &ToolCallUpdateFields) {
-        if let Some(title) = &fields.title {
-            self.title.clone_from(title);
-        }
-        if let Some(kind) = fields.kind {
-            self.kind = kind;
-        }
-        if let Some(status) = fields.status {
-            self.status = status;
-        }
+/// A tool kind as the window's closed set (one of a later protocol release -> `other`).
+fn tool_kind(kind: ToolKind) -> AcpToolKind {
+    match kind {
+        ToolKind::Read => AcpToolKind::Read,
+        ToolKind::Edit => AcpToolKind::Edit,
+        ToolKind::Delete => AcpToolKind::Delete,
+        ToolKind::Move => AcpToolKind::Move,
+        ToolKind::Search => AcpToolKind::Search,
+        ToolKind::Execute => AcpToolKind::Execute,
+        ToolKind::Think => AcpToolKind::Think,
+        ToolKind::Fetch => AcpToolKind::Fetch,
+        ToolKind::SwitchMode => AcpToolKind::SwitchMode,
+        _ => AcpToolKind::Other,
     }
 }
 
-/// The wire name of a protocol enum value (`allow_once`, `end_turn`, ...).
-fn name_of(value: &impl Serialize) -> String {
-    serde_json::to_value(value)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .unwrap_or_default()
+/// A tool call status as the window's closed set (one of a later protocol release -> `other`).
+fn tool_status(status: ToolCallStatus) -> AcpToolStatus {
+    match status {
+        ToolCallStatus::Pending => AcpToolStatus::Pending,
+        ToolCallStatus::InProgress => AcpToolStatus::InProgress,
+        ToolCallStatus::Completed => AcpToolStatus::Completed,
+        ToolCallStatus::Failed => AcpToolStatus::Failed,
+        _ => AcpToolStatus::Other,
+    }
+}
+
+/// A permission option kind as the window's closed set (one of a later protocol release -> `other`).
+fn option_kind(kind: PermissionOptionKind) -> AcpOptionKind {
+    match kind {
+        PermissionOptionKind::AllowOnce => AcpOptionKind::AllowOnce,
+        PermissionOptionKind::AllowAlways => AcpOptionKind::AllowAlways,
+        PermissionOptionKind::RejectOnce => AcpOptionKind::RejectOnce,
+        PermissionOptionKind::RejectAlways => AcpOptionKind::RejectAlways,
+        _ => AcpOptionKind::Other,
+    }
 }
 
 /// What a run started by a prompt does.
@@ -270,13 +310,13 @@ enum Run {
 enum Opened {
     Live(Live),
     /// The agent wants the person to sign in before a session.
-    Login(Arc<Agent>, Arc<[LoginMethod]>),
+    Login(Arc<Agent>, Arc<[LoginMethod]>, bool),
 }
 
 /// Why no session was opened.
 enum Opening {
     Login,
-    Failed(String),
+    Failed(AcpError),
 }
 
 /// What a permission question gets.
@@ -285,8 +325,26 @@ enum Route {
     Allow(PermissionOptionId),
     /// A card for the person.
     Ask(AcpUpdate),
-    /// Asked outside a turn of the current agent: answered `cancelled`.
+    /// Asked outside a turn of the current agent | after Stop: answered `cancelled`.
     Drop,
+}
+
+/// The step of a start | sign-in a failed call belongs to.
+#[derive(Clone, Copy)]
+enum Step {
+    Init,
+    Session,
+    Login,
+}
+
+impl Step {
+    fn code(self) -> AcpErrorCode {
+        match self {
+            Self::Init => AcpErrorCode::InitFailed,
+            Self::Session => AcpErrorCode::SessionFailed,
+            Self::Login => AcpErrorCode::LoginFailed,
+        }
+    }
 }
 
 impl Session {
@@ -348,13 +406,15 @@ impl Session {
     /// Sends a prompt: starts the agent first when none runs. Answers at once; the reply comes as events.
     ///
     /// # Errors
-    /// `Unavailable` (`noAgent`): no agent chosen; `Conflict` (`busy`): the agent starts | works; `InvalidData` |
-    /// `InvalidPath`: a prompt that cannot be sent.
+    /// `Unavailable` (`noAgent`): no agent chosen; `Conflict` (`busy`): the agent starts | works; `Denied`
+    /// (`hiddenFromAgents`): the passage is of a file agents may not see; `Unavailable` (`projectsNotReady`): what
+    /// agents may see is not known yet; `InvalidData` | `InvalidPath`: a prompt that cannot be sent.
     pub fn prompt(&self, args: PromptArgs) -> Result<(), IpcError> {
         check(&args)?;
         if self.core.host.agents.chosen().is_none() {
             return Err(IpcError::new(ErrorKind::Unavailable).detail("noAgent"));
         }
+        let args = self.core.screen(args)?;
         let mut inner = lock(&self.core.inner);
         let mut left = None;
         let run = match &inner.state {
@@ -374,6 +434,7 @@ impl Session {
                 Run::Turn(live)
             }
         };
+        inner.begin_prompt();
         let generation = inner.generation;
         let update = inner.state.update();
         drop(inner);
@@ -386,51 +447,57 @@ impl Session {
             std::thread::Builder::new()
                 .name("acp-prompt".into())
                 .spawn(move || match run {
-                    Run::Start => core.start(generation, &args),
+                    Run::Start => core.start(generation, &args, false),
                     Run::Turn(live) => core.turn(generation, &live, &args),
                 });
         if let Err(error) = spawned {
             self.core
-                .fail(generation, format!("The prompt could not be sent: {error}"));
+                .fail(generation, AcpError::new(AcpErrorCode::SendFailed));
             return Err(IpcError::io("acp", &error));
         }
         Ok(())
     }
 
-    /// Stop: the agent ends its turn (questions waiting are answered `cancelled`); a start under way is stopped.
+    /// Stop. During a prompt: a prompt not yet on its way is never sent, one on its way is cancelled
+    /// (`session/cancel`); questions waiting are answered `cancelled`, later ones too. During a start | a sign-in: the
+    /// agent stops (the waiting prompt never reaches it) and the turn ends `cancelled`.
     pub fn cancel(&self) {
         let mut inner = lock(&self.core.inner);
         match &inner.state {
             State::Working(live) => {
                 let live = live.clone();
-                let asks: Vec<(String, Ask)> = inner.asks.drain().collect();
+                inner.stopping = true;
+                let sent = inner.sent;
+                let asks = inner.take_asks();
                 drop(inner);
                 let connection = &live.agent.connection;
-                let _ = connection.notify(
-                    AGENT_METHOD_NAMES.session_cancel,
-                    CancelNotification::new(live.session.clone()),
-                );
-                for (key, ask) in asks {
-                    let _ = connection.reply(
-                        ask.id,
-                        Ok(RequestPermissionResponse::new(
-                            RequestPermissionOutcome::Cancelled,
-                        )),
+                if sent {
+                    let _ = connection.notify(
+                        AGENT_METHOD_NAMES.session_cancel,
+                        CancelNotification::new(live.session.clone()),
                     );
-                    self.core
-                        .emit(AcpUpdate::PermissionDone { request_id: key });
                 }
+                self.core.close_asks(connection, asks);
             }
             State::Starting(_) | State::NeedsLogin(_) => {
+                let (agent, asks) = inner.end_agent();
                 drop(inner);
-                self.reset();
+                self.core.leave(
+                    agent,
+                    asks,
+                    Some(AcpUpdate::TurnEnd {
+                        stop_reason: AcpStopReason::Cancelled,
+                        changed: 0,
+                    }),
+                );
             }
             State::Idle | State::Ready(_) | State::Error(_) => {}
         }
     }
 
-    /// The person signs in: an `agent` method -> the agent signs in itself; any other | none -> tried again (signed in
-    /// outside the app). Then the waiting prompt goes on. Answers at once; the outcome comes as events.
+    /// The person signs in: an `agent` method -> the agent signs in itself, then the waiting prompt goes on. Any other
+    /// | none (the person signed in outside the app: a terminal, variables) -> a fresh agent starts for the prompt and
+    /// reads the new sign-in at its start. Answers at once; the outcome comes as events.
     ///
     /// # Errors
     /// `NotFound` (`noLogin`): no sign-in waits; `InvalidData` (`unknownMethod`).
@@ -452,22 +519,36 @@ impl Session {
                         .subject(id.clone())
                         .detail("unknownMethod"));
                 };
-                // a terminal method | variables: the person signs in outside, nothing for the agent to do
                 (method.kind == LoginKind::Agent).then(|| method.id.clone())
             }
         };
-        inner.state = State::Starting(Some(Arc::clone(&login.agent)));
+        // the person's go-ahead for the waiting prompt: an earlier Stop no longer holds it back
+        inner.begin_prompt();
+        let left = if method.is_some() {
+            inner.state = State::Starting(Some(Arc::clone(&login.agent)));
+            None
+        } else {
+            inner.generation += 1;
+            inner.state = State::Starting(None);
+            Some(Arc::clone(&login.agent))
+        };
         let generation = inner.generation;
         let update = inner.state.update();
         drop(inner);
+        if let Some(agent) = left {
+            stop_aside(&agent);
+        }
         self.core.emit(update);
         let core = Arc::clone(&self.core);
         let spawned = std::thread::Builder::new()
             .name("acp-login".into())
-            .spawn(move || core.sign_in(generation, login, method));
+            .spawn(move || match method {
+                Some(method) => core.sign_in(generation, login, method),
+                None => core.start(generation, &login.args, true),
+            });
         if let Err(error) = spawned {
             self.core
-                .fail(generation, format!("The sign-in could not start: {error}"));
+                .fail(generation, AcpError::new(AcpErrorCode::LoginFailed));
             return Err(IpcError::io("acp", &error));
         }
         Ok(())
@@ -475,19 +556,15 @@ impl Session {
 
     /// New conversation: the agent stops; the next prompt starts a fresh one (the copy and its changes stay).
     pub fn reset(&self) {
-        let (agent, updates) = self.core.stop_all();
-        for update in updates {
-            self.core.emit(update);
-        }
-        self.core.emit(State::Idle.update());
-        if let Some(agent) = agent {
-            stop_aside(&agent);
-        }
+        let (agent, asks) = lock(&self.core.inner).end_agent();
+        self.core.leave(agent, asks, None);
     }
 
     /// Plugin off | project closed: the agent stops before the copy goes (waits for it).
     pub fn shutdown(&self) {
-        if let (Some(agent), _) = self.core.stop_all() {
+        let (agent, asks) = lock(&self.core.inner).end_agent();
+        if let Some(agent) = agent {
+            self.core.close_asks(&agent.connection, asks);
             agent.stop();
         }
     }
@@ -571,12 +648,30 @@ fn file_uri(abs: &Path, path: &str) -> Result<url::Url, IpcError> {
     url::Url::from_file_path(abs).map_err(|()| IpcError::new(ErrorKind::InvalidPath).subject(path))
 }
 
-/// The prompt as ACP content: the text; the attached passage as an embedded text resource named by its file in the
-/// copy and its line range (`#L<from>:<to>`); the open document as a link to its file in the copy.
+/// The passage as plain text: where it is from, then its lines in a fence longer than any run of backticks inside.
+fn passage_text(path: &str, from_line: u32, to_line: u32, text: &str) -> String {
+    let mut longest = 0;
+    let mut run = 0;
+    for c in text.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    let fence = "`".repeat(longest.max(2) + 1);
+    let body = text.strip_suffix('\n').unwrap_or(text);
+    format!("Passage from {path}, lines {from_line}-{to_line}:\n{fence}\n{body}\n{fence}")
+}
+
+/// The prompt as ACP content: the text; the attached passage named by its file in the copy and its line range
+/// (`#L<from>:<to>`): an embedded text resource for an agent that takes them (`embedded`), else the passage as text
+/// plus a link to its lines (content every agent takes); the open document as a link to its file in the copy.
 ///
 /// # Errors
 /// A path that is no file of the project.
-pub fn blocks(args: &PromptArgs, copy: &WorkCopy) -> Result<Vec<ContentBlock>, IpcError> {
+pub fn blocks(
+    args: &PromptArgs,
+    copy: &WorkCopy,
+    embedded: bool,
+) -> Result<Vec<ContentBlock>, IpcError> {
     let mut out = vec![ContentBlock::Text(TextContent::new(args.text.clone()))];
     if let Some(PromptSelection {
         path,
@@ -587,11 +682,22 @@ pub fn blocks(args: &PromptArgs, copy: &WorkCopy) -> Result<Vec<ContentBlock>, I
     {
         let mut uri = file_uri(&copy.copy_path(path)?, path)?;
         uri.set_fragment(Some(&format!("L{from_line}:{to_line}")));
-        out.push(ContentBlock::Resource(EmbeddedResource::new(
-            EmbeddedResourceResource::TextResourceContents(
-                TextResourceContents::new(text.clone(), uri.to_string()).mime_type(PASSAGE_MIME),
-            ),
-        )));
+        if embedded {
+            out.push(ContentBlock::Resource(EmbeddedResource::new(
+                EmbeddedResourceResource::TextResourceContents(
+                    TextResourceContents::new(text.clone(), uri.to_string())
+                        .mime_type(PASSAGE_MIME),
+                ),
+            )));
+        } else {
+            out.push(ContentBlock::Text(TextContent::new(passage_text(
+                path, *from_line, *to_line, text,
+            ))));
+            out.push(ContentBlock::ResourceLink(ResourceLink::new(
+                path.clone(),
+                uri.to_string(),
+            )));
+        }
     }
     if let Some(path) = &args.document {
         let uri = file_uri(&copy.copy_path(path)?, path)?;
@@ -603,86 +709,71 @@ pub fn blocks(args: &PromptArgs, copy: &WorkCopy) -> Result<Vec<ContentBlock>, I
     Ok(out)
 }
 
-/// Whether `path` (as the agent wrote it) is the copy's folder or inside it, also on its real location (a link the
-/// agent made in the copy does not count as inside).
-fn inside(copy: &Vault, path: &Path) -> bool {
-    path.is_absolute()
-        && !path.components().any(|c| matches!(c, Component::ParentDir))
-        && copy
-            .relativize(path)
-            .is_some_and(|relative| copy.resolve(&relative).is_ok())
-}
-
-/// The option allowing a question once when the tool only works on the copy's files: reads | searches | thinks
-/// (no paths needed), or edits | deletes | moves where every path is inside the copy.
-fn in_copy(asked: &RequestPermissionRequest, copy: &Vault) -> Option<PermissionOptionId> {
-    let fields = &asked.tool_call.fields;
-    let locations = fields.locations.as_deref().unwrap_or_default();
-    let works_on_copy = match fields.kind? {
-        ToolKind::Read | ToolKind::Search | ToolKind::Think => true,
-        ToolKind::Edit | ToolKind::Delete | ToolKind::Move => !locations.is_empty(),
-        _ => false,
-    };
-    if !works_on_copy || !locations.iter().all(|l| inside(copy, &l.path)) {
+/// At most [`WORDS_CAP`] bytes of the agent's own words, from their start (`None`: nothing said).
+fn said(message: &str) -> Option<String> {
+    let message = message.trim();
+    if message.is_empty() {
         return None;
     }
-    asked
-        .options
-        .iter()
-        .find(|o| o.kind == PermissionOptionKind::AllowOnce)
-        .map(|o| o.option_id.clone())
-}
-
-/// What a card shows of a tool call: its command, else the paths it touches (project paths inside the copy).
-fn detail(fields: &ToolCallUpdateFields, copy: &Vault) -> String {
-    match fields.raw_input.as_ref().and_then(|raw| raw.get("command")) {
-        Some(Value::String(command)) => return command.clone(),
-        Some(Value::Array(parts)) => {
-            return parts
-                .iter()
-                .filter_map(Value::as_str)
-                .collect::<Vec<_>>()
-                .join(" ")
-        }
-        _ => {}
+    let mut end = message.len().min(WORDS_CAP);
+    while !message.is_char_boundary(end) {
+        end -= 1;
     }
-    fields
-        .locations
-        .iter()
-        .flatten()
-        .map(|location| match copy.relativize(&location.path) {
-            Some(relative) if inside(copy, &location.path) && !relative.is_root() => {
-                relative.as_str().to_owned()
-            }
-            _ => location.path.display().to_string(),
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+    Some(message[..end].to_owned())
 }
 
-/// Plain-English text of a work copy refusal.
-fn copy_error(error: &IpcError) -> String {
-    match (error.kind, error.detail.as_deref()) {
-        (ErrorKind::TooLarge, _) => format!(
-            "The project is too large for a work copy (at most {} files and {} MiB).",
-            crate::work::MAX_FILES,
-            crate::work::MAX_TOTAL_BYTES >> 20
+/// `error` with the newest lines of the agent's stderr (`settle`: waits that long for the stream to end).
+fn with_stderr(mut error: AcpError, connection: &Connection, settle: Duration) -> AcpError {
+    let tail = connection.stderr_tail(WORDS_CAP, settle);
+    error.stderr = (!tail.trim().is_empty()).then_some(tail);
+    error
+}
+
+/// The agent ended by itself, with its last stderr lines.
+fn exited(connection: &Connection) -> AcpError {
+    with_stderr(AcpError::new(AcpErrorCode::Exited), connection, TAIL_SETTLE)
+}
+
+/// A call of a start | sign-in that got no answer.
+fn call_failed(connection: &Connection, step: Step, error: CallError) -> AcpError {
+    match error {
+        CallError::Closed => exited(connection),
+        CallError::TimedOut => with_stderr(
+            AcpError::new(AcpErrorCode::TimedOut),
+            connection,
+            Duration::ZERO,
         ),
-        (ErrorKind::Unavailable, _) => {
-            "The projects inside this folder are not known yet; try again in a moment.".to_owned()
+        CallError::Refused { message, .. } => AcpError {
+            message: said(&message),
+            ..AcpError::new(step.code())
+        },
+        CallError::Unreadable => {
+            with_stderr(AcpError::new(step.code()), connection, Duration::ZERO)
         }
-        _ => format!("The work copy could not be made ({error})."),
     }
 }
 
-/// Plain-English text of the agent ending by itself, with its last stderr lines.
-fn stopped_text(connection: &Connection) -> String {
-    let tail = connection.stderr_tail(TAIL_CHARS, TAIL_SETTLE);
-    if tail.trim().is_empty() {
-        "The agent stopped.".to_owned()
-    } else {
-        format!("The agent stopped. Its last words:\n{tail}")
-    }
+/// A work copy refusal.
+fn copy_error(error: &IpcError) -> AcpError {
+    AcpError::new(match error.kind {
+        ErrorKind::TooLarge => AcpErrorCode::TooLarge,
+        ErrorKind::Unavailable => AcpErrorCode::ProjectsNotReady,
+        _ => AcpErrorCode::CopyFailed,
+    })
+}
+
+/// The stop reason of a `session/prompt` answer (`None`: none given); one this client does not know ends the turn as
+/// `other`, never as an error (read on its own: a typed answer would refuse a stop reason of a later release).
+fn stop_reason(answer: &Value) -> Option<AcpStopReason> {
+    let named = answer.get("stopReason").filter(|v| v.is_string())?;
+    Some(match serde_json::from_value::<StopReason>(named.clone()) {
+        Ok(StopReason::EndTurn) => AcpStopReason::EndTurn,
+        Ok(StopReason::MaxTokens) => AcpStopReason::MaxTokens,
+        Ok(StopReason::MaxTurnRequests) => AcpStopReason::MaxTurnRequests,
+        Ok(StopReason::Refusal) => AcpStopReason::Refusal,
+        Ok(StopReason::Cancelled) => AcpStopReason::Cancelled,
+        Ok(_) | Err(_) => AcpStopReason::Other,
+    })
 }
 
 impl Core {
@@ -702,64 +793,94 @@ impl Core {
         lock(&self.inner).generation == generation
     }
 
-    /// Ends the current agent's time: state `Idle`, questions dropped; answers the agent to stop + the updates.
-    fn stop_all(&self) -> (Option<Arc<Agent>>, Vec<AcpUpdate>) {
-        let mut inner = lock(&self.inner);
-        inner.generation += 1;
-        let agent = std::mem::take(&mut inner.state).agent();
-        inner.tools.clear();
-        let updates = inner
-            .asks
-            .drain()
-            .map(|(request_id, _)| AcpUpdate::PermissionDone { request_id })
-            .collect();
-        (agent, updates)
+    /// Answers each dropped question `cancelled` (every request of the agent gets one answer) and closes its card.
+    fn close_asks(&self, connection: &Connection, asks: Vec<(String, Ask)>) {
+        for (request_id, ask) in asks {
+            let _ = connection.reply(
+                ask.id,
+                Ok(RequestPermissionResponse::new(
+                    RequestPermissionOutcome::Cancelled,
+                )),
+            );
+            self.emit(AcpUpdate::PermissionDone { request_id });
+        }
     }
 
-    /// The run of `generation` failed: state `Error` (with `message`), its agent stopped.
-    fn fail(&self, generation: u64, message: String) {
+    /// After [`Inner::end_agent`]: its questions closed, `ended` told (a turn that will not go on), `Idle` told, the
+    /// agent stopped aside.
+    fn leave(&self, agent: Option<Arc<Agent>>, asks: Vec<(String, Ask)>, ended: Option<AcpUpdate>) {
+        if let Some(agent) = &agent {
+            self.close_asks(&agent.connection, asks);
+        }
+        if let Some(update) = ended {
+            self.emit(update);
+        }
+        self.emit(State::Idle.update());
+        if let Some(agent) = agent {
+            stop_aside(&agent);
+        }
+    }
+
+    /// Keeps what agents may not see out of a prompt: a passage of a file agents may not see is refused (its text
+    /// would reach the agent), such an open document | one the copy leaves out is not named.
+    fn screen(&self, mut args: PromptArgs) -> Result<PromptArgs, IpcError> {
+        let project = &self.host.project;
+        if let Some(selection) = &args.selection {
+            if project.hidden(&selection.path)? {
+                return Err(IpcError::new(ErrorKind::Denied)
+                    .subject(selection.path.clone())
+                    .detail("hiddenFromAgents"));
+            }
+        }
+        if let Some(document) = &args.document {
+            if kept_out(document) || project.hidden(document)? {
+                args.document = None;
+            }
+        }
+        Ok(args)
+    }
+
+    /// The run of `generation` failed: state `Error` (with `error`), its agent stopped.
+    fn fail(&self, generation: u64, error: AcpError) {
         let taken = self.with_current(generation, |inner| {
             if matches!(inner.state, State::Idle | State::Error(_)) {
                 return None;
             }
             let agent = inner.state.agent();
-            inner.state = State::Error(message);
-            let mut updates: Vec<AcpUpdate> = inner
-                .asks
-                .drain()
-                .map(|(request_id, _)| AcpUpdate::PermissionDone { request_id })
-                .collect();
-            updates.push(inner.state.update());
-            Some((agent, updates))
+            inner.state = State::Error(error);
+            Some((agent, inner.take_asks(), inner.state.update()))
         });
-        let Some(Some((agent, updates))) = taken else {
+        let Some(Some((agent, asks, update))) = taken else {
             return;
         };
-        for update in updates {
-            self.emit(update);
+        if let Some(agent) = &agent {
+            self.close_asks(&agent.connection, asks);
         }
+        self.emit(update);
         if let Some(agent) = agent {
             agent.stop();
         }
     }
 
-    /// The start run: copy, program, session; then the first prompt.
-    fn start(self: &Arc<Self>, generation: u64, args: &PromptArgs) {
+    /// The start run: copy, program, session; then the first prompt. `again`: started after a sign-in outside the
+    /// app (an agent still asking for one says so).
+    fn start(self: &Arc<Self>, generation: u64, args: &PromptArgs, again: bool) {
         match self.open(generation) {
             Ok(Some(Opened::Live(live))) => self.work(generation, &live, args),
-            Ok(Some(Opened::Login(agent, methods))) => self.need_login(
+            Ok(Some(Opened::Login(agent, methods, embedded))) => self.need_login(
                 generation,
                 Login {
                     agent,
                     session: None,
                     args: args.clone(),
                     methods,
-                    error: None,
+                    embedded,
+                    error: again.then(|| AcpError::new(AcpErrorCode::StillNeedsLogin)),
                 },
             ),
             // replaced while starting: whoever replaced it stopped the agent
             Ok(None) => {}
-            Err(message) => self.fail(generation, message),
+            Err(error) => self.fail(generation, error),
         }
     }
 
@@ -781,58 +902,50 @@ impl Core {
     /// The agent of `generation` wants the person to sign in: `NeedsLogin` with its methods.
     fn need_login(&self, generation: u64, login: Login) {
         let agent = Arc::clone(&login.agent);
-        let updates = self.with_current(generation, |inner| {
-            let mut updates: Vec<AcpUpdate> = inner
-                .asks
-                .drain()
-                .map(|(request_id, _)| AcpUpdate::PermissionDone { request_id })
-                .collect();
+        let taken = self.with_current(generation, |inner| {
+            let asks = inner.take_asks();
             inner.state = State::NeedsLogin(login);
-            updates.push(inner.state.update());
-            updates
+            (asks, inner.state.update())
         });
-        match updates {
-            Some(updates) => {
-                for update in updates {
-                    self.emit(update);
-                }
+        match taken {
+            Some((asks, update)) => {
+                self.close_asks(&agent.connection, asks);
+                self.emit(update);
             }
             None => agent.stop(),
         }
     }
 
-    /// The sign-in run: the agent signs in (`method`: an agent method), then the waiting prompt goes on (in a new
-    /// session when `session/new` was the refused step).
-    fn sign_in(self: &Arc<Self>, generation: u64, login: Login, method: Option<String>) {
+    /// The sign-in run with an agent method: the agent signs in, then the waiting prompt goes on (in a new session
+    /// when `session/new` was the refused step).
+    fn sign_in(self: &Arc<Self>, generation: u64, login: Login, method: String) {
         let Login {
             agent,
             session,
             args,
             methods,
+            embedded,
             ..
         } = login;
-        let again = |error: String| Login {
+        let again = |error: AcpError| Login {
             agent: Arc::clone(&agent),
             session: session.clone(),
             args: args.clone(),
             methods: Arc::clone(&methods),
+            embedded,
             error: Some(error),
         };
-        if let Some(method) = method {
-            let signed: Result<Value, CallError> = agent.connection.call(
-                AGENT_METHOD_NAMES.authenticate,
-                AuthenticateRequest::new(method),
-                Some(LOGIN_WAIT),
-            );
-            match signed {
-                Ok(_) => {}
-                Err(CallError::Closed) => {
-                    return self.fail(generation, stopped_text(&agent.connection));
-                }
-                Err(error) => {
-                    let why = call_failed(&agent.connection, "authenticate", error);
-                    return self.need_login(generation, again(why));
-                }
+        let signed: Result<Value, CallError> = agent.connection.call(
+            AGENT_METHOD_NAMES.authenticate,
+            AuthenticateRequest::new(method),
+            Some(LOGIN_WAIT),
+        );
+        match signed {
+            Ok(_) => {}
+            Err(CallError::Closed) => return self.fail(generation, exited(&agent.connection)),
+            Err(error) => {
+                let why = call_failed(&agent.connection, Step::Login, error);
+                return self.need_login(generation, again(why));
             }
         }
         let session = match &session {
@@ -840,32 +953,37 @@ impl Core {
             None => match open_session(&agent.connection, &agent.dir) {
                 Ok(session) => session,
                 Err(Opening::Login) => {
-                    let why = "The agent still needs you to sign in.".to_owned();
+                    let why = AcpError::new(AcpErrorCode::StillNeedsLogin);
                     return self.need_login(generation, again(why));
                 }
-                Err(Opening::Failed(message)) => return self.fail(generation, message),
+                Err(Opening::Failed(error)) => return self.fail(generation, error),
             },
         };
         let live = Live {
             agent: Arc::clone(&agent),
             session,
             methods: Arc::clone(&methods),
+            embedded,
         };
         self.work(generation, &live, &args);
     }
 
-    /// The copy's folder, made when absent (`None`: replaced meanwhile).
-    fn ensure_copy(&self, generation: u64) -> Result<Option<PathBuf>, String> {
+    /// The copy's folder, made when absent, cleared of agent settings (`None`: replaced meanwhile).
+    fn ensure_copy(&self, generation: u64) -> Result<Option<PathBuf>, AcpError> {
         // held while the copy is made: a plugin stop waits for it, then finds it (or nothing) to remove
         let mut copy = lock(&self.host.copy);
         if let Some(existing) = copy.as_ref() {
+            // settings an agent wrote would load at this start
+            existing
+                .purge()
+                .map_err(|_| AcpError::new(AcpErrorCode::CopyFailed))?;
             return Ok(Some(existing.dir().to_path_buf()));
         }
         let place = self
             .host
             .place
             .as_ref()
-            .ok_or_else(|| "There is no profile folder for the work copy.".to_owned())?;
+            .ok_or_else(|| AcpError::new(AcpErrorCode::NoProfile))?;
         let dir = copy_dir(place, self.host.project.root());
         let built = WorkCopy::build(self.host.project.clone(), dir).map_err(|e| copy_error(&e))?;
         if !self.is_current(generation) {
@@ -878,35 +996,35 @@ impl Core {
     }
 
     /// The agent's start folder, empty: anything an earlier run left there would be read as a runner's settings.
-    fn start_folder(&self) -> Result<PathBuf, String> {
+    fn start_folder(&self) -> Result<PathBuf, AcpError> {
         let run = self
             .host
             .run
             .as_ref()
-            .ok_or_else(|| "There is no profile folder to start the agent in.".to_owned())?;
-        empty_folder(run)
-            .map_err(|e| format!("The agent's start folder cannot be prepared ({e})."))?;
+            .ok_or_else(|| AcpError::new(AcpErrorCode::NoProfile))?;
+        empty_folder(run).map_err(|_| AcpError::new(AcpErrorCode::StartFailed))?;
         Ok(run.clone())
     }
 
     /// Reads the person's choice, makes the copy, starts the program, opens the session (`None`: replaced meanwhile).
-    fn open(self: &Arc<Self>, generation: u64) -> Result<Option<Opened>, String> {
+    fn open(self: &Arc<Self>, generation: u64) -> Result<Option<Opened>, AcpError> {
         let chosen = self
             .host
             .agents
             .chosen()
-            .ok_or_else(|| "No assistant is chosen.".to_owned())?;
+            .ok_or_else(|| AcpError::new(AcpErrorCode::NoAgent))?;
+        // nothing to start it with: the status's `needs` says what
         let plan = chosen
             .resolved
             .plan
             .clone()
-            .ok_or_else(|| missing_text(&chosen))?;
+            .ok_or_else(|| AcpError::new(AcpErrorCode::NotFound))?;
         let Some(dir) = self.ensure_copy(generation)? else {
             return Ok(None);
         };
         let copy = Root::open(&dir)
             .map(Vault::new)
-            .map_err(|e| format!("The work copy cannot be opened ({e})."))?;
+            .map_err(|_| AcpError::new(AcpErrorCode::CopyFailed))?;
         let run = self.start_folder()?;
         let AgentPipes {
             to_agent,
@@ -914,17 +1032,14 @@ impl Core {
             stderr,
             stop,
         } = (self.host.launch)(&plan, &run)
-            .map_err(|e| format!("The agent could not be started ({}): {e}", plan.shown))?;
+            .map_err(|_| AcpError::new(AcpErrorCode::StartFailed))?;
         let inbox = Arc::new(Listener {
             core: Arc::clone(self),
             generation,
         });
-        let connection = match Connection::start(to_agent, from_agent, stderr, inbox) {
-            Ok(connection) => connection,
-            Err(error) => {
-                stop();
-                return Err(format!("The agent could not be started: {error}"));
-            }
+        let Ok(connection) = Connection::start(to_agent, from_agent, stderr, inbox) else {
+            stop();
+            return Err(AcpError::new(AcpErrorCode::StartFailed));
         };
         let agent = Arc::new(Agent {
             connection,
@@ -939,15 +1054,17 @@ impl Core {
             agent.stop();
             return Ok(None);
         }
-        let methods: Arc<[LoginMethod]> = initialize(&agent.connection, &plan.shown)?.into();
+        let (methods, embedded) = initialize(&agent.connection, &plan.shown)?;
+        let methods: Arc<[LoginMethod]> = methods.into();
         match open_session(&agent.connection, &agent.dir) {
             Ok(session) => Ok(Some(Opened::Live(Live {
                 agent,
                 session,
                 methods,
+                embedded,
             }))),
-            Err(Opening::Login) => Ok(Some(Opened::Login(agent, methods))),
-            Err(Opening::Failed(message)) => Err(message),
+            Err(Opening::Login) => Ok(Some(Opened::Login(agent, methods, embedded))),
+            Err(Opening::Failed(error)) => Err(error),
         }
     }
 
@@ -960,20 +1077,42 @@ impl Core {
         if fresh.is_none() {
             return;
         }
-        let blocks = match self.prepare(args) {
+        let blocks = match self.prepare(args, live.embedded) {
             Ok(blocks) => blocks,
-            Err(message) => return self.end_turn(generation, "error", Some(message)),
+            Err(error) => return self.end_turn(generation, AcpStopReason::Error, Some(error)),
         };
-        let asked: Result<PromptResponse, CallError> = live.agent.connection.call(
-            AGENT_METHOD_NAMES.session_prompt,
-            PromptRequest::new(live.session.clone(), blocks),
-            None,
-        );
+        let connection = &live.agent.connection;
+        let pending = {
+            let mut inner = lock(&self.inner);
+            if inner.generation != generation {
+                return;
+            }
+            if inner.stopping {
+                drop(inner);
+                return self.end_turn(generation, AcpStopReason::Cancelled, None);
+            }
+            // queued under the lock: a Stop from now on finds it sent
+            let pending = connection.request(
+                AGENT_METHOD_NAMES.session_prompt,
+                PromptRequest::new(live.session.clone(), blocks),
+            );
+            inner.sent = pending.is_ok();
+            pending
+        };
+        let asked: Result<Value, CallError> = pending.and_then(|pending| pending.wait(None));
+        let stopping = || lock(&self.inner).stopping;
         match asked {
-            Ok(answer) => self.end_turn(generation, &name_of(&answer.stop_reason), None),
+            Ok(answer) => match stop_reason(&answer) {
+                Some(reason) => self.end_turn(generation, reason, None),
+                None => self.end_turn(
+                    generation,
+                    AcpStopReason::Error,
+                    Some(AcpError::new(AcpErrorCode::Protocol)),
+                ),
+            },
             Err(CallError::Closed) => {
                 if self.is_current(generation) {
-                    self.fail(generation, stopped_text(&live.agent.connection));
+                    self.fail(generation, exited(connection));
                 }
             }
             Err(error) if error.needs_login() => self.need_login(
@@ -983,30 +1122,38 @@ impl Core {
                     session: Some(live.session.clone()),
                     args: args.clone(),
                     methods: Arc::clone(&live.methods),
+                    embedded: live.embedded,
                     error: None,
                 },
             ),
+            // an agent may answer a cancelled prompt with an error instead of its stop reason
+            Err(_) if stopping() => self.end_turn(generation, AcpStopReason::Cancelled, None),
             Err(CallError::Refused { message, .. }) => self.end_turn(
                 generation,
-                "error",
-                Some(format!("The agent refused the prompt: {message}")),
+                AcpStopReason::Error,
+                Some(AcpError {
+                    message: said(&message),
+                    ..AcpError::new(AcpErrorCode::Refused)
+                }),
             ),
             Err(CallError::Unreadable | CallError::TimedOut) => self.end_turn(
                 generation,
-                "error",
-                Some("The agent's answer could not be read.".to_owned()),
+                AcpStopReason::Error,
+                Some(AcpError::new(AcpErrorCode::Protocol)),
             ),
         }
     }
 
-    /// The copy brought up to date with the person's files, then the prompt's content.
-    fn prepare(&self, args: &PromptArgs) -> Result<Vec<ContentBlock>, String> {
+    /// The copy cleared of agent settings and brought up to date with the person's files, then the prompt's content.
+    fn prepare(&self, args: &PromptArgs, embedded: bool) -> Result<Vec<ContentBlock>, AcpError> {
         let mut guard = lock(&self.host.copy);
         let copy = guard
             .as_mut()
-            .ok_or_else(|| "The work copy is gone.".to_owned())?;
+            .ok_or_else(|| AcpError::new(AcpErrorCode::CopyFailed))?;
+        copy.purge()
+            .map_err(|_| AcpError::new(AcpErrorCode::CopyFailed))?;
         copy.sync().map_err(|e| copy_error(&e))?;
-        blocks(args, copy).map_err(|e| format!("The prompt could not be sent ({e})."))
+        blocks(args, copy, embedded).map_err(|_| AcpError::new(AcpErrorCode::SendFailed))
     }
 
     /// Files whose copy differs now.
@@ -1017,91 +1164,79 @@ impl Core {
             .map_or(0, |list| u32::try_from(list.len()).unwrap_or(u32::MAX))
     }
 
-    /// The turn of `generation` ended: `Ready` again, `turnEnd` told.
-    fn end_turn(&self, generation: u64, stop_reason: &str, error: Option<String>) {
+    /// The turn of `generation` ended: `Ready` again (questions still open answered `cancelled`), `turnEnd` told.
+    fn end_turn(&self, generation: u64, stop_reason: AcpStopReason, error: Option<AcpError>) {
         let changed = self.changed();
-        let updates = self.with_current(generation, |inner| {
+        let taken = self.with_current(generation, |inner| {
             let State::Working(live) = &inner.state else {
-                return Vec::new();
+                return None;
             };
+            let connection = Arc::clone(&live.agent.connection);
             inner.state = State::Ready(live.clone());
-            // the agent no longer waits for them
-            let mut updates: Vec<AcpUpdate> = inner
-                .asks
-                .drain()
-                .map(|(request_id, _)| AcpUpdate::PermissionDone { request_id })
-                .collect();
-            updates.push(AcpUpdate::TurnEnd {
-                stop_reason: stop_reason.to_owned(),
-                changed,
-            });
-            updates.push(AcpUpdate::Status {
-                state: AcpState::Ready,
-                error,
-                methods: None,
-            });
-            updates
+            Some((connection, inner.take_asks()))
         });
-        for update in updates.into_iter().flatten() {
-            self.emit(update);
-        }
+        let Some(Some((connection, asks))) = taken else {
+            return;
+        };
+        self.close_asks(&connection, asks);
+        self.emit(AcpUpdate::TurnEnd {
+            stop_reason,
+            changed,
+        });
+        self.emit(AcpUpdate::Status {
+            state: AcpState::Ready,
+            error,
+            methods: None,
+        });
     }
 
-    /// Routes a permission question of `generation` (see [`in_copy`]).
+    /// Routes a permission question of `generation`: plainly work on the copy's files ([`plain_work`], on what the
+    /// agent told of the tool call so far) -> allowed once; else a card.
     fn route(&self, generation: u64, id: RequestId, asked: &RequestPermissionRequest) -> Route {
         let mut inner = lock(&self.inner);
-        if inner.generation != generation {
+        if inner.generation != generation || inner.stopping {
             return Route::Drop;
         }
         let State::Working(live) = &inner.state else {
             return Route::Drop;
         };
         let copy = &live.agent.copy;
-        if let Some(option) = in_copy(asked, copy) {
-            return Route::Allow(option);
+        let mut tool = inner
+            .tools
+            .get(&*asked.tool_call.tool_call_id.0)
+            .cloned()
+            .unwrap_or_default();
+        tool.apply(&asked.tool_call.fields);
+        if plain_work(&tool, copy) {
+            if let Some(option) = allow_once(asked) {
+                return Route::Allow(option);
+            }
         }
-        let fields = &asked.tool_call.fields;
-        let tool = inner.tools.get(&*asked.tool_call.tool_call_id.0);
+        // the JSON text of the id: unique for numbers and strings alike
+        let request_id = serde_json::to_string(&id).unwrap_or_default();
         let update = AcpUpdate::Permission {
-            // the JSON text of the id: unique for numbers and strings alike
-            request_id: serde_json::to_string(&id).unwrap_or_default(),
-            title: fields
-                .title
-                .clone()
-                .or_else(|| tool.map(|t| t.title.clone()))
-                .unwrap_or_default(),
-            kind: name_of(&fields.kind.or(tool.map(|t| t.kind)).unwrap_or_default()),
-            detail: detail(fields, copy),
+            request_id: request_id.clone(),
+            kind: tool.kind(),
+            detail: detail(&tool, copy),
+            title: tool.title,
             options: asked
                 .options
                 .iter()
                 .map(|o| PermissionChoice {
                     id: o.option_id.0.to_string(),
                     name: o.name.clone(),
-                    kind: name_of(&o.kind),
+                    kind: option_kind(o.kind),
                 })
                 .collect(),
         };
-        if let AcpUpdate::Permission { request_id, .. } = &update {
-            inner.asks.insert(
-                request_id.clone(),
-                Ask {
-                    id,
-                    options: asked.options.iter().map(|o| o.option_id.clone()).collect(),
-                },
-            );
-        }
+        inner.asks.insert(
+            request_id,
+            Ask {
+                id,
+                options: asked.options.iter().map(|o| o.option_id.clone()).collect(),
+            },
+        );
         Route::Ask(update)
-    }
-}
-
-/// Plain-English text of a call of the start that got no answer.
-fn call_failed(connection: &Connection, step: &str, error: CallError) -> String {
-    match error {
-        CallError::Closed => stopped_text(connection),
-        CallError::TimedOut => format!("The agent did not answer ({step}) in time."),
-        CallError::Refused { message, .. } => format!("The agent refused ({step}): {message}"),
-        CallError::Unreadable => format!("The agent's answer ({step}) could not be read."),
     }
 }
 
@@ -1123,34 +1258,9 @@ fn empty_folder(dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)
 }
 
-/// Plain-English text of a chosen agent that cannot start on this computer.
-fn missing_text(chosen: &Chosen) -> String {
-    if chosen.resolved.needs == Some(AgentNeed::Snap) {
-        return "The Snap package of PerMark cannot start programs installed on this computer."
-            .to_owned();
-    }
-    let Some(name) = &chosen.name else {
-        let program = agents::command_program(&chosen.resolved.shown).unwrap_or_default();
-        return format!("The program of your command was not found: {program}");
-    };
-    match chosen.resolved.needs {
-        Some(AgentNeed::Node) => format!("{name} needs Node.js: npx was not found."),
-        Some(AgentNeed::Uv) => format!("{name} needs uv: uvx was not found."),
-        // `snap`: worded above
-        Some(AgentNeed::Install | AgentNeed::Snap) | None => {
-            let program = chosen
-                .resolved
-                .shown
-                .split_whitespace()
-                .next()
-                .unwrap_or(name);
-            format!("{name} is not installed: {program} was not found.")
-        }
-    }
-}
-
-/// `initialize`: answers the agent's sign-in methods (a terminal method's line = `shown` + its arguments).
-fn initialize(connection: &Connection, shown: &str) -> Result<Vec<LoginMethod>, String> {
+/// `initialize`: answers the agent's sign-in methods (a terminal method's line = `shown` + its arguments) and whether
+/// it takes embedded resources in prompts.
+fn initialize(connection: &Connection, shown: &str) -> Result<(Vec<LoginMethod>, bool), AcpError> {
     // terminal sign-in: the person runs the shown line in a terminal; the app itself never opens one
     let caps = ClientCapabilities::new().auth(AuthCapabilities::new().terminal(true));
     let hello = InitializeRequest::new(ProtocolVersion::V1)
@@ -1158,71 +1268,14 @@ fn initialize(connection: &Connection, shown: &str) -> Result<Vec<LoginMethod>, 
         .client_info(Implementation::new("PerMark", env!("CARGO_PKG_VERSION")));
     let raw: Value = connection
         .call(AGENT_METHOD_NAMES.initialize, hello, Some(SETUP_WAIT))
-        .map_err(|e| call_failed(connection, "initialize", e))?;
+        .map_err(|e| call_failed(connection, Step::Init, e))?;
     let init: InitializeResponse = serde_json::from_value(raw.clone())
-        .map_err(|_| call_failed(connection, "initialize", CallError::Unreadable))?;
+        .map_err(|_| call_failed(connection, Step::Init, CallError::Unreadable))?;
     if init.protocol_version != ProtocolVersion::V1 {
-        return Err(format!(
-            "The agent speaks protocol version {}; PerMark speaks version 1.",
-            init.protocol_version
-        ));
+        return Err(AcpError::new(AcpErrorCode::ProtocolVersion));
     }
-    Ok(login_methods(raw.get("authMethods"), shown))
-}
-
-/// The sign-in methods of an `initialize` answer, read one by one (a method of a kind this client does not know is
-/// left out; a typed decode would read it as an `agent` method and send it to `authenticate`).
-fn login_methods(raw: Option<&Value>, shown: &str) -> Vec<LoginMethod> {
-    raw.and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|method| {
-            let id = method.get("id")?.as_str()?.to_owned();
-            let text = |key: &str| method.get(key).and_then(Value::as_str).map(str::to_owned);
-            let (kind, hint) = match method.get("type").and_then(Value::as_str) {
-                None | Some("agent") => (LoginKind::Agent, None),
-                Some("terminal") => {
-                    let terminal =
-                        serde_json::from_value::<AuthMethodTerminal>(method.clone()).ok()?;
-                    (LoginKind::Terminal, Some(terminal_line(&terminal, shown)))
-                }
-                Some("env_var") => (LoginKind::Env, Some(variable_names(method))),
-                Some(_) => return None,
-            };
-            Some(LoginMethod {
-                name: text("name").unwrap_or_else(|| id.clone()),
-                description: text("description"),
-                id,
-                kind,
-                hint,
-            })
-        })
-        .collect()
-}
-
-/// The line a person runs for a terminal sign-in: its variables (`NAME=value`, by name), the agent's command, the
-/// method's arguments.
-fn terminal_line(method: &AuthMethodTerminal, shown: &str) -> String {
-    let mut env: Vec<(&String, &String)> = method.env.iter().collect();
-    env.sort();
-    env.iter()
-        .map(|(name, value)| format!("{name}={value}"))
-        .chain(std::iter::once(shown.to_owned()))
-        .chain(method.args.iter().cloned())
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-/// The variable names an environment sign-in asks for (`vars[].name` | `varName`), comma separated.
-fn variable_names(method: &Value) -> String {
-    let listed = method
-        .get("vars")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|var| var.get("name").and_then(Value::as_str));
-    let single = method.get("varName").and_then(Value::as_str);
-    listed.chain(single).collect::<Vec<_>>().join(", ")
+    let embedded = init.agent_capabilities.prompt_capabilities.embedded_context;
+    Ok((login_methods(raw.get("authMethods"), shown), embedded))
 }
 
 /// `session/new` -> `session/set_mode` (when the asking mode is offered and not on).
@@ -1237,7 +1290,7 @@ fn open_session(connection: &Connection, dir: &Path) -> Result<SessionId, Openin
         Err(error) => {
             return Err(Opening::Failed(call_failed(
                 connection,
-                "session/new",
+                Step::Session,
                 error,
             )))
         }
@@ -1251,7 +1304,7 @@ fn open_session(connection: &Connection, dir: &Path) -> Result<SessionId, Openin
                     SetSessionModeRequest::new(new.session_id.clone(), ASK_MODE),
                     Some(SETUP_WAIT),
                 )
-                .map_err(|e| Opening::Failed(call_failed(connection, "session/set_mode", e)))?;
+                .map_err(|e| Opening::Failed(call_failed(connection, Step::Session, e)))?;
         }
     }
     Ok(new.session_id)
@@ -1284,11 +1337,7 @@ impl Inner {
             SessionUpdate::ToolCall(call) => {
                 self.thinking = false;
                 let id = call.tool_call_id.0.to_string();
-                let line = ToolLine {
-                    title: call.title,
-                    kind: call.kind,
-                    status: call.status,
-                };
+                let line = ToolLine::of(call);
                 let update = line.update(&id);
                 self.tools.insert(id, line);
                 vec![update]
@@ -1297,13 +1346,14 @@ impl Inner {
                 self.thinking = false;
                 let id = call.tool_call_id.0.to_string();
                 let line = self.tools.entry(id.clone()).or_default();
-                let before = line.clone();
+                let before = line.update(&id);
                 line.apply(&call.fields);
+                let after = line.update(&id);
                 // updates that only stream the tool's input change nothing shown
-                if *line == before {
+                if after == before {
                     Vec::new()
                 } else {
-                    vec![line.update(&id)]
+                    vec![after]
                 }
             }
             // modes, commands, usage, plans, titles: not shown
@@ -1312,8 +1362,30 @@ impl Inner {
     }
 }
 
+impl Listener {
+    /// The agent withdrew one of its questions: answered `-32800` (request cancelled), its card closed.
+    fn withdrawn(&self, connection: &Connection, params: Option<Value>) {
+        let Some(Ok(note)) = params.map(serde_json::from_value::<CancelRequestNotification>) else {
+            return;
+        };
+        let key = serde_json::to_string(&note.request_id).unwrap_or_default();
+        let Some(Some(ask)) = self
+            .core
+            .with_current(self.generation, |inner| inner.asks.remove(&key))
+        else {
+            return;
+        };
+        let _ = connection.reply::<Value>(ask.id, Err(RpcError::request_cancelled()));
+        self.core
+            .emit(AcpUpdate::PermissionDone { request_id: key });
+    }
+}
+
 impl Inbox for Listener {
-    fn notification(&self, method: &str, params: Option<Value>) {
+    fn notification(&self, connection: &Connection, method: &str, params: Option<Value>) {
+        if method == PROTOCOL_LEVEL_METHOD_NAMES.cancel_request {
+            return self.withdrawn(connection, params);
+        }
         // anything but session news (account status among it) is dropped unread
         if method != CLIENT_METHOD_NAMES.session_update {
             return;
@@ -1371,8 +1443,7 @@ impl Inbox for Listener {
                 _ => None,
             });
         if let Some(Some(agent)) = waiting {
-            self.core
-                .fail(self.generation, stopped_text(&agent.connection));
+            self.core.fail(self.generation, exited(&agent.connection));
         }
     }
 }

@@ -22,7 +22,7 @@ pub mod work;
 
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use permark_core::conditions::Requirement;
 use permark_core::plugins::{
@@ -31,11 +31,14 @@ use permark_core::plugins::{
 };
 use permark_core::{ErrorKind, IpcError};
 
+use crate::client::lock;
+
 pub use agents::{person_launch, Agents, Choice, Plan, CHOICE_FILE};
 pub use dto::{
-    AcpState, AcpStatus, AcpUpdate, AgentEntry, AgentHow, AgentNeed, AnswerArgs, ChooseArgs,
-    DecideArgs, FileChange, FileChangeKind, HunkView, LoginArgs, LoginKind, LoginMethod,
-    PermissionChoice, PromptArgs, PromptSelection,
+    AcpError, AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason, AcpToolKind,
+    AcpToolStatus, AcpUpdate, AgentEntry, AgentHow, AgentNeed, AnswerArgs, ChooseArgs, DecideArgs,
+    FileChange, FileChangeKind, HunkView, LoginArgs, LoginKind, LoginMethod, PermissionChoice,
+    PromptArgs, PromptSelection,
 };
 pub use session::{Host, Session};
 pub use work::{copy_dir, Project, WorkCopy};
@@ -95,10 +98,6 @@ impl Drop for Started {
             let _ = std::fs::remove_dir_all(folder);
         }
     }
-}
-
-fn lock(copy: &SharedCopy) -> MutexGuard<'_, Option<WorkCopy>> {
-    copy.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Accept | reject of one file's hunks (`None`: the whole file), answering the fresh list.

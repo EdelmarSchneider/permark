@@ -235,8 +235,14 @@ import type { NoteList } from "./generated/NoteList";
 import type { NotesIntent } from "./generated/NotesIntent";
 import type { NotesSummary } from "./generated/NotesSummary";
 import type { Version } from "./generated/Version";
+import type { AcpError } from "./generated/AcpError";
+import type { AcpErrorCode } from "./generated/AcpErrorCode";
+import type { AcpOptionKind } from "./generated/AcpOptionKind";
 import type { AcpState } from "./generated/AcpState";
 import type { AcpStatus } from "./generated/AcpStatus";
+import type { AcpStopReason } from "./generated/AcpStopReason";
+import type { AcpToolKind } from "./generated/AcpToolKind";
+import type { AcpToolStatus } from "./generated/AcpToolStatus";
 import type { AcpUpdate } from "./generated/AcpUpdate";
 import type { AgentEntry } from "./generated/AgentEntry";
 import type { AgentHow } from "./generated/AgentHow";
@@ -1000,8 +1006,14 @@ export type {
 };
 export type { UnreadList };
 export type {
+  AcpError,
+  AcpErrorCode,
+  AcpOptionKind,
   AcpState,
   AcpStatus,
+  AcpStopReason,
+  AcpToolKind,
+  AcpToolStatus,
   AcpUpdate,
   AgentEntry,
   AgentHow,

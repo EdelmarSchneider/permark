@@ -76,6 +76,76 @@ pub enum AcpState {
     NeedsLogin,
 }
 
+/// What went wrong with the agent: a closed set the window words in the person's language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum AcpErrorCode {
+    /// No agent is chosen.
+    NoAgent,
+    /// The chosen agent's program was not found (`AcpStatus.needs` says what to install).
+    NotFound,
+    /// No profile folder: no work copy can be made, nothing can start.
+    NoProfile,
+    /// The work copy could not be made | opened | cleaned.
+    CopyFailed,
+    /// The project is too large for a work copy.
+    TooLarge,
+    /// The projects inside the folder (their rules on what agents may see) are not known yet: try again soon.
+    ProjectsNotReady,
+    /// The agent's program could not be started.
+    StartFailed,
+    /// The agent did not answer a step of its start | sign-in in time.
+    TimedOut,
+    /// The agent refused | garbled `initialize`.
+    InitFailed,
+    /// The agent speaks another version of the protocol.
+    ProtocolVersion,
+    /// The agent refused | garbled opening the conversation.
+    SessionFailed,
+    /// The agent's own sign-in did not work.
+    LoginFailed,
+    /// Tried again after a sign-in outside the app: the agent still wants one.
+    StillNeedsLogin,
+    /// The agent refused the message.
+    Refused,
+    /// The agent's answer to the message could not be read.
+    Protocol,
+    /// The agent's program ended by itself.
+    Exited,
+    /// The message could not be handed to the agent.
+    SendFailed,
+}
+
+/// Why the agent failed | a step did not work.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AcpError {
+    pub code: AcpErrorCode,
+    /// The agent's own words with a refusal (`initFailed` | `sessionFailed` | `loginFailed` | `refused`), shown as
+    /// they are (at most 2 KiB).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub message: Option<String>,
+    /// The newest lines the agent's program wrote to its error output (at most 2 KiB, terminal color codes removed,
+    /// account news left out), when its start | its run failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub stderr: Option<String>,
+}
+
+impl AcpError {
+    #[must_use]
+    pub fn new(code: AcpErrorCode) -> Self {
+        Self {
+            code,
+            message: None,
+            stderr: None,
+        }
+    }
+}
+
 /// Answer of `acp.status`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -88,8 +158,8 @@ pub struct AcpStatus {
     pub agent_name: Option<String>,
     /// An agent is chosen (`false`: a prompt is refused with `noAgent` until `acp.choose`).
     pub chosen: bool,
-    /// Why the agent is in `error` | why a sign-in failed (plain English).
-    pub error: Option<String>,
+    /// Why the agent is in `error` | why a sign-in failed.
+    pub error: Option<AcpError>,
     /// How the person can sign in (`needsLogin` only; else empty).
     pub methods: Vec<LoginMethod>,
     /// What the person must do before the chosen agent can start (absent: nothing); `snap` also when none is chosen
@@ -245,6 +315,62 @@ pub struct AnswerArgs {
     pub option_id: Option<String>,
 }
 
+/// What kind of tool the agent runs (the protocol's names; one this client does not know -> `other`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum AcpToolKind {
+    Read,
+    Edit,
+    Delete,
+    Move,
+    Search,
+    Execute,
+    Think,
+    Fetch,
+    SwitchMode,
+    Other,
+}
+
+/// Where a tool call stands (the protocol's names; one this client does not know -> `other`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum AcpToolStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Failed,
+    Other,
+}
+
+/// Why a turn ended: the protocol's stop reasons (one this client does not know -> `other`, a normal end), or
+/// `error` (the turn failed on this side: the status news tells why).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum AcpStopReason {
+    EndTurn,
+    MaxTokens,
+    MaxTurnRequests,
+    Refusal,
+    Cancelled,
+    Error,
+    Other,
+}
+
+/// What an answer to a permission question does (the protocol's names; one this client does not know -> `other`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum AcpOptionKind {
+    AllowOnce,
+    AllowAlways,
+    RejectOnce,
+    RejectAlways,
+    Other,
+}
+
 /// One answer the agent offers for a permission question.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -253,8 +379,7 @@ pub struct PermissionChoice {
     pub id: String,
     /// Label from the agent.
     pub name: String,
-    /// `allow_once` | `allow_always` | `reject_once` | `reject_always`.
-    pub kind: String,
+    pub kind: AcpOptionKind,
 }
 
 /// Event `acp:update`: what the agent of the project does, as it happens.
@@ -270,7 +395,7 @@ pub enum AcpUpdate {
     /// `ready`); `methods` only with `needsLogin`.
     Status {
         state: AcpState,
-        error: Option<String>,
+        error: Option<AcpError>,
         #[serde(skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         methods: Option<Vec<LoginMethod>>,
@@ -279,26 +404,30 @@ pub enum AcpUpdate {
     Text { text: String },
     /// The agent thinks (its thoughts are not shown); once per stretch of thinking.
     Thinking {},
-    /// A tool the agent runs (upsert by `id`); `kind`: `read` | `edit` | `delete` | `move` | `search` | `execute`
-    /// | `think` | `fetch` | `switch_mode` | `other`; `status`: `pending` | `in_progress` | `completed` | `failed`.
+    /// A tool the agent runs (upsert by `id`).
     Tool {
         id: String,
         title: String,
-        kind: String,
-        status: String,
+        kind: AcpToolKind,
+        status: AcpToolStatus,
     },
-    /// The agent asks before doing something outside the copy's files: the person answers with `acp.answer`.
+    /// The agent asks before doing something that is not plainly work on the copy's files: the person answers with
+    /// `acp.answer`. Title, kind and detail come from everything the agent told of the tool call so far.
     Permission {
         request_id: String,
         title: String,
-        kind: String,
-        /// The command to run, else the paths it touches (project paths inside the copy).
+        kind: AcpToolKind,
+        /// The command to run, else the paths it touches (project paths inside the copy), one per line.
         detail: String,
         options: Vec<PermissionChoice>,
     },
-    /// The question was answered | dropped (cancel, new conversation): its card goes.
+    /// The question was answered | dropped (Stop, the agent withdrew it, the turn ended, new conversation): its card
+    /// goes.
     PermissionDone { request_id: String },
-    /// The prompt ended; `stopReason`: `end_turn` | `max_tokens` | `max_turn_requests` | `refusal` | `cancelled` |
-    /// `error`; `changed`: files whose copy now differs from the real file.
-    TurnEnd { stop_reason: String, changed: u32 },
+    /// The prompt ended; `changed`: files whose copy now differs from the real file (`0` when Stop ended a start | a
+    /// sign-in: the prompt never reached the agent).
+    TurnEnd {
+        stop_reason: AcpStopReason,
+        changed: u32,
+    },
 }

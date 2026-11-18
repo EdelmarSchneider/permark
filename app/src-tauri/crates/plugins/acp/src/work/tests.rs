@@ -459,3 +459,83 @@ fn removing_the_copy_leaves_nothing() {
     assert!(!dir.exists());
     assert_eq!(f.real("a.md"), b"a\n");
 }
+
+/// Agent settings | machinery the agent made in the copy go, at any depth, read-only ones too; everything else
+/// stays (its instructions, its new files).
+#[test]
+fn purge_removes_what_is_kept_out_and_nothing_else() {
+    let f = fx(&[("a.md", b"a\n")]);
+    let work = f.build();
+    let dir = work.dir().to_path_buf();
+    for path in [
+        ".claude/settings.json",
+        ".claude/settings.local.json",
+        ".claude/commands/tidy.md",
+        ".mcp.json",
+        "docs/opencode.json",
+        "docs/.gemini/settings.json",
+        ".codex/config.toml",
+        ".kiro/hooks/run.json",
+        ".kiro/steering/style.md",
+        "sub/.git/hooks/pre-commit",
+        ".permark/config.toml",
+        "notes/.aiignore",
+        "new.md",
+    ] {
+        put(&dir, path, b"x");
+    }
+    let locked = dir.join(".mcp.json");
+    let mut permissions = std::fs::metadata(&locked).unwrap().permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&locked, permissions).unwrap();
+    work.purge().unwrap();
+    let mut left: Vec<String> = ignore::WalkBuilder::new(&dir)
+        .standard_filters(false)
+        .build()
+        .flatten()
+        .filter(|e| e.file_type().is_some_and(|t| t.is_file()))
+        .map(|e| {
+            let rel = e.path().strip_prefix(&dir).unwrap();
+            rel.to_string_lossy().replace('\\', "/")
+        })
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        [
+            ".claude/commands/tidy.md",
+            ".kiro/steering/style.md",
+            "a.md",
+            "new.md"
+        ]
+    );
+    for gone in [".codex", ".git", "sub/.git", "docs/.gemini", ".permark"] {
+        assert!(!dir.join(gone).exists(), "{gone}");
+    }
+}
+
+/// A link in the copy is never followed: one named like an agent's settings folder is removed itself, and what any
+/// link leads to stays untouched.
+#[test]
+fn purge_never_follows_a_link() {
+    let f = fx(&[("a.md", b"a\n")]);
+    let work = f.build();
+    let dir = work.dir().to_path_buf();
+    let target = tempfile::tempdir().unwrap();
+    put(target.path(), "settings.json", b"{}");
+    put(target.path(), ".mcp.json", b"{}");
+    #[cfg(windows)]
+    let linked = |link: &Path| std::os::windows::fs::symlink_dir(target.path(), link);
+    #[cfg(unix)]
+    let linked = |link: &Path| std::os::unix::fs::symlink(target.path(), link);
+    if linked(&dir.join(".claude")).is_err() {
+        // links need a privilege this machine does not give
+        return;
+    }
+    linked(&dir.join("docs")).unwrap();
+    work.purge().unwrap();
+    assert!(std::fs::symlink_metadata(dir.join(".claude")).is_err());
+    assert!(std::fs::symlink_metadata(dir.join("docs")).is_ok());
+    assert!(target.path().join("settings.json").exists());
+    assert!(target.path().join(".mcp.json").exists());
+}

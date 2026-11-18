@@ -26,6 +26,7 @@ import {
   canStart,
   entryName,
   errorText,
+  failureText,
   howKey,
   linesOf,
   PANEL_MARK,
@@ -223,11 +224,11 @@ describe("a message and its reply", () => {
     const store = new AcpStore();
     store.take({ type: "thinking" });
     store.take({ type: "thinking" });
-    store.take({ type: "status", state: "error", error: "The agent stopped." });
+    store.take({ type: "status", state: "error", error: { code: "exited" } });
     expect(kinds(store.transcript)).toEqual(["thinking", "notice"]);
     expect(store.status).toEqual({
       state: "error",
-      error: "The agent stopped.",
+      error: { code: "exited" },
       agent: "",
       agentName: null,
       chosen: false,
@@ -332,10 +333,12 @@ describe("a sign-in the agent asks for", () => {
 
     await store.login(null);
     await until(
-      () => store.status?.state === "needsLogin" && store.status.error === MOCK_NOT_SIGNED_IN,
+      () =>
+        store.status?.state === "needsLogin" &&
+        store.status.error?.code === MOCK_NOT_SIGNED_IN.code,
     );
     expect(store.transcript.at(-1)).toEqual(
-      expect.objectContaining({ kind: "signIn", text: MOCK_NOT_SIGNED_IN }),
+      expect.objectContaining({ kind: "signIn", text: failureText(MOCK_NOT_SIGNED_IN) }),
     );
 
     const agentWay = MOCK_LOGIN_METHODS.find((m) => m.kind === "agent");
@@ -356,7 +359,7 @@ describe("a sign-in the agent asks for", () => {
     expect(await store.choose({ agent: "codex-acp" })).toBe(true);
     expect(store.transcript.some((e) => e.kind === "signIn")).toBe(false);
     expect(store.transcript.map((e) => e.kind === "notice" && e.text)).not.toContain(
-      MOCK_NOT_SIGNED_IN,
+      failureText(MOCK_NOT_SIGNED_IN),
     );
     expect(store.status).toEqual(
       expect.objectContaining({ state: "idle", error: null, methods: [], agentName: "Codex" }),
