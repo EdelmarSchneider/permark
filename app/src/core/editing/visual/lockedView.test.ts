@@ -159,9 +159,21 @@ const BODY: Body = {
   ],
 };
 
+/** `buildDoc` with its clock standing still. A build yields to the page by a timer once a slice ran 8 ms, which a
+ *  loaded machine reaches; under the fake timers of a test that timer never runs and the build hangs. One slice: no
+ *  timer. */
+async function build(text: string, segments: Parameters<typeof buildDoc>[2]): Promise<Built> {
+  const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+  try {
+    return await buildDoc(core, text, segments);
+  } finally {
+    clock.mockRestore();
+  }
+}
+
 /** TEXT opened with View's looks known (null body: none known, as after a failed render). */
 async function open(body: Body | null = BODY): Promise<Built> {
-  const built = await buildDoc(core, TEXT, SEGMENTS);
+  const built = await build(TEXT, SEGMENTS);
   if (body !== null) book.take(book.ask(), body, built.doc, compose(core, built, built.doc));
   core.setDoc(built.doc);
   return built;
@@ -422,7 +434,7 @@ const mathLook = (formula: string): LockedRender => ({
 
 /** MATH_TEXT opened, each math block with View's look. */
 async function openMath(): Promise<Built> {
-  const built = await buildDoc(core, MATH_TEXT, MATH_SEGMENTS);
+  const built = await build(MATH_TEXT, MATH_SEGMENTS);
   const formulas = ["a + b", "c"];
   built.doc.forEach((node) => {
     if (node.type.name === LOCKED) looks.set(node, mathLook(formulas.shift() ?? ""));
@@ -681,7 +693,7 @@ const PROMPT_BODY: Body = {
 };
 
 async function openPrompt(): Promise<Built> {
-  const built = await buildDoc(core, PROMPT_TEXT, PROMPT_SEGMENTS);
+  const built = await build(PROMPT_TEXT, PROMPT_SEGMENTS);
   book.take(book.ask(), PROMPT_BODY, built.doc, compose(core, built, built.doc));
   core.setDoc(built.doc);
   return built;
@@ -878,7 +890,7 @@ const pictureAt = (src: string): LockedRender => ({
 
 describe("blocks at rest follow View's look of the text around them", () => {
   it("deleting the first footnote: the next one becomes the first, View's rule above it", async () => {
-    const built = await buildDoc(core, NOTES_TEXT, NOTES_SEGMENTS);
+    const built = await build(NOTES_TEXT, NOTES_SEGMENTS);
     looks.set(built.doc.child(1), note("a", true));
     looks.set(built.doc.child(2), note("b", false));
     core.setDoc(built.doc);
@@ -899,7 +911,7 @@ describe("blocks at rest follow View's look of the text around them", () => {
 
   it("editing a link definition: the paragraph using it follows; a block whose look did not change stays as drawn", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const built = await buildDoc(core, REF_TEXT, REF_SEGMENTS);
+    const built = await build(REF_TEXT, REF_SEGMENTS);
     const paragraph = built.doc.child(0);
     expect(paragraph.type.name).toBe(LOCKED);
     looks.set(paragraph, pictureAt("https://example.com/a"));
@@ -1135,7 +1147,7 @@ describe("typing while a block is selected", () => {
   });
 
   it("at the end of the document a new paragraph after the block takes it", async () => {
-    const built = await buildDoc(core, LAST_TEXT, LAST_SEGMENTS);
+    const built = await build(LAST_TEXT, LAST_SEGMENTS);
     core.setDoc(built.doc);
     selectLocked(0);
     typeChar("x");

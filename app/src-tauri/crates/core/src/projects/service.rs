@@ -1463,7 +1463,17 @@ impl Projects {
                 continue;
             }
             if let Some(path) = renamed_path(&entry.path, &hint.renames) {
-                if marker_at(&abs_of(self.root.path(), &path)).is_some() {
+                let abs = abs_of(self.root.path(), &path);
+                // the watch pairs some moves by folder name alone; a folder the disk proves to be another one is no
+                // move (a batch split by a stall | a creation the OS watch missed leaves one lookalike in a batch)
+                let other = match (
+                    inner.res.get(&entry.uid).and_then(|r| r.id),
+                    FolderIdentity::of(&abs),
+                ) {
+                    (Some(was), Some(now)) => !was.same(now),
+                    _ => false,
+                };
+                if !other && marker_at(&abs).is_some() {
                     moves.push((entry.uid.clone(), path));
                 }
             }

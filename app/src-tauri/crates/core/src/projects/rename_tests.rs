@@ -396,7 +396,9 @@ fn a_case_only_rename_keeps_the_project_and_follows_the_case() {
 }
 
 /// Two unrelated changes in one batch (a listed project removed, another repo with the same name appearing elsewhere,
-/// and a second one of that name): not one obvious pair -> no silent re-attach.
+/// and a second one of that name): not one obvious pair -> no silent re-attach. Also when the watch sees only one
+/// lookalike in the removal's batch (a stalled runner splits the batch, the Linux watch misses a folder made inside a
+/// new one) and pairs it by name: the folder's disk identity refuses it.
 #[test]
 fn a_removal_and_two_lookalikes_are_never_paired() {
     let live = Live::open(|_| {});
@@ -409,6 +411,58 @@ fn a_removal_and_two_lookalikes_are_never_paired() {
     });
     wait("offered", || live.core.projects_view().offered.count == 2);
     assert!(live.record().contains("path = \"inner/beta\""));
+}
+
+/// The watch pairs some moves by folder name alone (one folder gone + one come of that name in a batch). A folder the
+/// disk proves to be another one (other file id) is no move, however the batches fell: a stalled runner splits the
+/// lookalikes over two batches, and the Linux watch misses a folder made inside a folder made a moment before.
+#[test]
+fn a_name_pair_of_the_watch_onto_another_folder_never_reattaches() {
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    git(dir.path(), "inner/beta");
+    permark(dir.path(), "");
+    fs::write(
+        dir.path().join(".permark/projects.toml"),
+        format!("[[project]]\nid = \"{UID}\"\npath = \"inner/beta\"\n"),
+    )
+    .unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    let config = ProjectConfig::load(&root);
+    let sink: Arc<dyn EventSink> = Arc::new(crate::events::NoEvents);
+    let explorer = Arc::new(Explorer::new(
+        &crate::paths::Vault::new(root.clone()),
+        &config,
+        Arc::clone(&sink),
+        None,
+    ));
+    let projects = Projects::open(
+        &root,
+        &AppDirs::under(base.path()),
+        Arc::clone(&explorer),
+        Arc::new(OwnWrites::new()),
+        WatchHub::new(),
+        sink,
+        &config.ignore,
+    );
+    // no worker: each pass runs here, in order
+    projects.discover(&Hint::default(), true, &explorer.markers());
+    fs::rename(dir.path().join("inner/beta"), base.path().join("away")).unwrap();
+    git(dir.path(), "x/beta");
+    explorer.apply_batch(&FsBatch {
+        rescan: true,
+        ..FsBatch::default()
+    });
+    projects.on_hint(
+        &Hint {
+            folders: true,
+            renames: vec![("inner/beta".to_owned(), "x/beta".to_owned())],
+            ..Hint::default()
+        },
+        &explorer.markers(),
+    );
+    let record = fs::read_to_string(dir.path().join(".permark/projects.toml")).unwrap();
+    assert!(record.contains("path = \"inner/beta\""), "{record}");
 }
 
 /// Locate… opens at the old parent folder while it exists, else at the opened folder; never elsewhere.

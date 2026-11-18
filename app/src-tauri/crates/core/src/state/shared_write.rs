@@ -68,7 +68,7 @@ struct TurnState {
 
 /// This writer's turn; the next one's on drop.
 #[derive(Debug)]
-struct Turn(Arc<Turns>);
+pub(crate) struct Turn(Arc<Turns>);
 
 impl Turns {
     /// The turns of the lock file `name` (one per state file ever written; tiny, kept like the lock files).
@@ -175,6 +175,20 @@ pub fn lock_within(path: &Path, wait: Duration) -> std::io::Result<Option<FileLo
             Err(TryLockError::Error(_)) => return Ok(None),
         }
     }
+}
+
+/// This process's turn among the whole-file saves of the state file at `path` (no OS lock, no merge). Windows refuses
+/// a rename over a file another rename is replacing right then (access denied); many savers of one file at once ran
+/// out of the write's own retries on a loaded machine. One at a time, each rename finds the file free. Turns of their
+/// own, apart from the writers' lock: a save made while that lock is held never waits for itself.
+///
+/// # Errors
+/// `WouldBlock`: the saves before this one took longer than [`WAIT`].
+pub(crate) fn save_turn(path: &Path) -> std::io::Result<Turn> {
+    let until = Instant::now().checked_add(WAIT);
+    Turns::of(&format!("save {}", lock_name(path)))
+        .take(until)
+        .ok_or_else(held_too_long)
 }
 
 /// The name of the lock file of the state file at `path` (one name per file, however a case-insensitive disk spells it).

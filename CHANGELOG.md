@@ -5,6 +5,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- When several folders were renamed or moved at once, a project inside the open folder could be re-attached to a different folder that only had the same name. PerMark now checks that it is really the same folder first. <!-- f: projects -->
+- On Windows, PerMark's own state files could fail to save when several saves of the same file happened at the same moment; they now take turns. <!-- f: settings -->
+
 ## [0.16.0] - 2026-11-18
 
 ### Added
