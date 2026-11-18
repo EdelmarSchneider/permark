@@ -438,6 +438,9 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 **PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
 
+- **0.15.0:** a **Panels** menu in the status bar to show or hide every panel from one place, with **Show** entries in the
+  command palette and **Undo** when you close one; sidebar tabs added by plugins can now be closed; and a crowded row of tabs
+  keeps every tab in sight.
 - **0.14.0:** Settings split into **App** and **This folder**, with each folder setting saying whether it is for everyone or only you;
   table columns sized by what they hold; **Expand all** and **Collapse all** in JSON, XML and config trees; spelling in five
   more languages (16 in all); Polish and Ukrainian in the interface (20 languages); and the demo pages one click away.
