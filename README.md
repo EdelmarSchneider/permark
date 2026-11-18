@@ -200,8 +200,8 @@ The Windows installers may also download Microsoft's WebView2 component while th
 
 - **Not a code editor.** No completion, refactoring, build, run or debug. Real code work opens in your own editor.
 - **Not an agent.** It does not train or replace your AI agents. It shows what your AI writes, and you decide what stays. The
-  optional Assistant can start an agent you choose, but that agent works on a copy of your folder, and nothing reaches your files
-  until you accept it. A command you allow runs on your computer, with your permissions. The small local models it can use work
+  optional Assistant can start an agent you choose, but that agent works on a copy of your folder, and its edits reach your files
+  only when you accept them. A command you allow runs on your computer, with your permissions. The small local models it can use work
   only for PerMark's own features, such as correcting your text.
 - **Not tested by hand on macOS or Linux.** PerMark is tested by hand on Windows; the macOS and Linux builds are checked automatically.
 
@@ -367,7 +367,7 @@ available in the snap, which cannot start other programs.
   account with its provider, which may cost money, and most agents ask you to sign in the first time.
 - **A copy, not your files.** Ask for a change, with a passage you selected if you like. The agent works on a copy of your folder
   that PerMark keeps outside it, without the files listed in `.aiignore`, the `.git` and `.permark` folders and agent settings files.
-- **You accept each change.** The agent's changes are listed line by line. Nothing reaches your files until you accept it, one
+- **You accept each change.** The agent's edits are listed line by line and reach your files only when you accept them, one
   change or a whole file at a time, and you can undo a change you accepted. Changes you have not accepted are deleted when you
   close the folder or turn the plugin off.
 - **It asks first.** When the agent wants to run a command or do something outside its copy, PerMark asks you, unless the
