@@ -87,6 +87,7 @@
     {#each entries as entry (entry.id)}
       {@const ready = canStart(entry)}
       {@const name = entryName(entry)}
+      {@const how = howKey(entry)}
       <li class={["agent", entry.chosen && "chosen"]}>
         <div class="head">
           <span class="name">{name}</span>
@@ -97,7 +98,10 @@
             </span>
           {/if}
           <span class="spacer"></span>
-          <span class={["how", ready ? "ready" : "missing"]}>{t(howKey(entry))}</span>
+          <!-- an own command's name already says it is the person's command: only a problem earns a chip -->
+          {#if how !== "acp.how.custom"}
+            <span class={["how", ready ? "ready" : "missing"]}>{t(how)}</span>
+          {/if}
         </div>
         {#if entry.description !== ""}
           <p class="description" title={entry.description}>{entry.description}</p>
@@ -302,8 +306,9 @@
   }
   .head {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--sp-1);
+    gap: 2px var(--sp-1);
     min-width: 0;
   }
   .name {

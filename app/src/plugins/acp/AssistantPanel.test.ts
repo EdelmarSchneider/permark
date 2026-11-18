@@ -282,6 +282,8 @@ describe("the choice of the agent", () => {
     const first = root.querySelector(".agents .agent");
     expect(first?.querySelector(".name")?.textContent).toBe(t("acp.ownCommand"));
     expect(first?.querySelector(".command")?.textContent).toBe(typed);
+    // its name says it is the person's command: no chip repeats it (the name keeps its room)
+    expect(first?.querySelector(".how")).toBeNull();
   });
 
   it("Choose works for an agent that can start; How to install opens the website of one that cannot", () => {
