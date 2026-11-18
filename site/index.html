@@ -218,8 +218,9 @@
           <p class="line">Select a passage and leave a comment. When you turn on the agent connection for a project, your agent reads your comments and marks them done with a reply. It is off until you do.</p>
           <p class="line">Only the blocks you change are saved. Every other byte stays as its author, or agent, wrote it.</p>
         </div>
-        <ul class="qa qa--one">
+        <ul class="qa">
           <li class="card"><p><strong>"Git diff already shows me the changes."</strong> Git diff compares with the last commit. PerMark also shows what changed since you last read each document, even after the agent has committed, and you keep or revert each change.</p></li>
+          <li class="card"><p><strong>Can I ask an agent from inside PerMark?</strong> Yes, with the Assistant, an experimental plugin that is off until you turn it on. Choose an agent and PerMark starts it on your computer. It uses your own account with that agent's provider, which may cost money. The agent works on a copy of your folder, and nothing reaches your files until you accept each change. Not in the snap.</p></li>
         </ul>
         <div class="download">
           <div class="download__row">
@@ -280,13 +281,13 @@
         </div>
         <p class="statement">No account, no telemetry, no tracking.</p>
         <div class="lines lines--2">
-          <p class="line">PerMark goes online only to check for its own updates (installer versions; the Store and snap update it instead), and when you ask: a picture from the web, a spelling dictionary, the optional token-count vocabulary, or a local AI model and the engine that runs it. Your documents never leave your computer through PerMark. An AI agent you connect is a separate program: what it sends online is up to that agent.</p>
-          <p class="line">Sharing with an agent is off in every project until you turn it on, and the connection stays on your computer.</p>
+          <p class="line">PerMark goes online only to check for its own updates (installer versions; the Store and snap update it instead), and when you ask: a picture from the web, a spelling dictionary, the optional token-count vocabulary, or a local AI model and the engine that runs it. PerMark itself never sends your documents online. An AI agent you connect, or one the Assistant starts for you, is a separate program: what it sends online is up to that agent and its provider.</p>
+          <p class="line">Sharing with an agent is off in every project until you turn it on, and the connection stays on your computer. The experimental Assistant is off until you turn it on. The agent it starts gets a copy of your folder without the files listed in .aiignore, and it goes online by itself.</p>
         </div>
 
         <h3 class="subhead">What PerMark is not</h3>
         <ul class="not">
-          <li class="card"><p><strong>Not an agent.</strong> It does not run, host or replace your AI agents. It shows what your AI writes, and you decide what stays. The small local models it can use work only for PerMark's own features.</p></li>
+          <li class="card"><p><strong>Not an agent.</strong> It does not train or replace your AI agents. It shows what your AI writes, and you decide what stays. The optional Assistant can start an agent you choose, but that agent works on a copy of your folder, and nothing reaches your files until you accept it. The small local models it can use work only for PerMark's own features.</p></li>
           <li class="card"><p><strong>Not a code editor.</strong> No code completion, refactoring, build, run or debug. Real code work opens in your own editor.</p></li>
           <li class="card"><p><strong>Not a cloud service.</strong> No account, and no server of ours holds your documents.</p></li>
         </ul>
