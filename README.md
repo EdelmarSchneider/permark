@@ -471,7 +471,7 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 **PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
 
 - **0.16.0:** the experimental **Assistant**, off until you turn it on: an AI agent you choose works on a copy of your folder,
-  and you accept each change it makes.
+  and its edits reach your files only when you accept them, with Undo; in all 20 interface languages.
 - **0.15.0:** a **Panels** menu in the status bar to show or hide every panel from one place, with **Show** entries in the
   command palette and **Undo** when you close one; sidebar tabs added by plugins can now be closed; and a crowded row of tabs
   keeps every tab in sight.

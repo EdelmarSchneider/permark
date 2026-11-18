@@ -237,6 +237,19 @@ fn a_copy_inside_the_project_is_refused() {
     assert_eq!(error.kind, ErrorKind::InvalidPath);
 }
 
+/// A copy folder spelled through a link (macOS temp folders sit behind /var -> /private/var; Windows temp folders can
+/// carry 8.3 names) is still recognised as inside the project.
+#[test]
+fn a_copy_inside_the_project_through_a_link_is_refused() {
+    let f = fx(&[("a.md", b"a\n")]);
+    let alias = f.profile.path().join("alias");
+    if link(f.project.path(), &alias).is_err() {
+        return; // the system refused a folder link here: nothing to spell through
+    }
+    let error = WorkCopy::build(f.access(), alias.join("work")).err();
+    assert_eq!(error.map(|e| e.kind), Some(ErrorKind::InvalidPath));
+}
+
 #[test]
 fn copy_paths_stay_inside_the_copy() {
     let f = fx(&[("docs/a.md", b"a\n")]);
