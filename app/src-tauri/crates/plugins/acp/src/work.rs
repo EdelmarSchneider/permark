@@ -18,7 +18,7 @@ use std::time::Duration;
 use permark_core::document::Documents;
 use permark_core::edit::{lines, LineEdit};
 use permark_core::fsx::{self, ContentHash, Decoded, FsxError};
-use permark_core::paths::{Root, Vault, VaultPath};
+use permark_core::paths::{self, Root, Vault, VaultPath};
 use permark_core::plugins::ProjectServices;
 use permark_core::projects::Projects;
 use permark_core::settings::ProjectConfig;
@@ -710,7 +710,13 @@ impl WorkCopy {
     /// `InvalidPath`: `dir` inside the project | the project inside `dir`; the listing's refusals; IO.
     pub fn build(project: Project, dir: PathBuf) -> Result<Self, IpcError> {
         let root = project.root().path();
-        if dir.starts_with(root) || root.starts_with(&dir) {
+        // the root is canonical: compare it with the copy folder's real place too (a link or an 8.3 name in the
+        // spelling of `dir` would hide that it sits inside the project)
+        let real = paths::canonicalize_lenient(&dir).unwrap_or_else(|| dir.clone());
+        if [&dir, &real]
+            .iter()
+            .any(|place| place.starts_with(root) || root.starts_with(place))
+        {
             return Err(IpcError::new(ErrorKind::InvalidPath)
                 .subject(dir.display().to_string())
                 .detail("insideProject"));

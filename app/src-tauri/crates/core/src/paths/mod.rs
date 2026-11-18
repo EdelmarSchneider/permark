@@ -155,8 +155,10 @@ pub(crate) fn split_existing(path: &Path) -> Option<(PathBuf, Vec<&OsStr>)> {
     Some((canon, tail))
 }
 
-/// `path` canonical even when its last components do not exist yet.
-pub(crate) fn canonicalize_lenient(path: &Path) -> Option<PathBuf> {
+/// `path` canonical even when its last components do not exist yet (compare a folder about to be made with a
+/// canonical [`Root`]: temp folders behind links or 8.3 names otherwise look like another place).
+#[must_use]
+pub fn canonicalize_lenient(path: &Path) -> Option<PathBuf> {
     let (mut canon, tail) = split_existing(path)?;
     canon.extend(tail);
     Some(canon)
