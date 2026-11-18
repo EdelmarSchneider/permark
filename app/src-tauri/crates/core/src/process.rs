@@ -1,9 +1,11 @@
 //! Starting programs: one that outlives this one ([`spawn_detached`]: the app started by `permark mcp` to show a
-//! place) | an attached child spoken to over its standard streams ([`spawn_piped`]: the model engine worker; ONLY
-//! pinned, sha256-verified files from the profile).
+//! place) | an attached child spoken to over its standard streams: [`spawn_piped`] (the model engine worker; ONLY
+//! pinned, sha256-verified files from the profile) | [`spawn_person_command`] (a program the person named in the
+//! app's own settings, found by [`resolve_program`]; never one named by a project file, document content or a click).
 
+use std::ffi::{OsStr, OsString};
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
@@ -34,7 +36,7 @@ fn keep_std_handles_private() {
 ///
 /// # Errors
 /// The program cannot be started.
-pub fn spawn_detached(program: &Path, args: &[&std::ffi::OsStr]) -> io::Result<()> {
+pub fn spawn_detached(program: &Path, args: &[&OsStr]) -> io::Result<()> {
     let mut command = Command::new(program);
     command
         .args(args)
@@ -123,11 +125,29 @@ impl Drop for PipedChild {
 ///
 /// # Errors
 /// The program cannot be started (`NotFound`: missing; `PermissionDenied`: blocked, e.g. by security software).
-pub fn spawn_piped(program: &Path, args: &[&std::ffi::OsStr], cwd: &Path) -> io::Result<Piped> {
+pub fn spawn_piped(program: &Path, args: &[&OsStr], cwd: &Path) -> io::Result<Piped> {
     let mut command = Command::new(program);
+    command.args(args).current_dir(cwd);
+    piped(command)
+}
+
+/// Starts a program the person chose in the app's own settings (profile, never a project's shared file) as an
+/// attached child, like [`spawn_piped`]: no shell of ours, no console window, the three streams piped. Caller MUST
+/// NEVER pass a program named by a file in a project, document content or a click. Windows: a `.bat` | `.cmd` script
+/// runs through the system's command interpreter, with the arguments escaped by the standard library (an argument it
+/// cannot pass safely is refused).
+///
+/// # Errors
+/// The program cannot be started (`NotFound`: missing; `InvalidInput`: an argument a script cannot receive safely).
+pub fn spawn_person_command(program: &Path, args: &[&OsStr], cwd: &Path) -> io::Result<Piped> {
+    let mut command = Command::new(program);
+    command.args(args).current_dir(cwd);
+    piped(command)
+}
+
+/// Spawns `command` (program, arguments and folder set) with the three streams piped and no console window.
+fn piped(mut command: Command) -> io::Result<Piped> {
     command
-        .args(args)
-        .current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -152,6 +172,83 @@ pub fn spawn_piped(program: &Path, args: &[&std::ffi::OsStr], cwd: &Path) -> io:
         }),
         // piped above: always present; dropping `child` kills it
         _ => Err(io::Error::other("child started without its pipes")),
+    }
+}
+
+/// Extensions Windows tries for a bare program name when `PATHEXT` is not set.
+#[cfg(windows)]
+const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
+
+/// The program file a name stands for. A name with a folder in it (`./x`, `C:\tools\x.cmd`, `/usr/bin/x`) is that
+/// file when it exists; a bare name is searched in the folders of `PATH`, in order (never the current folder).
+/// Windows: a bare name without an extension takes each `PATHEXT` extension in turn, as the command line does (`npx`
+/// -> `npx.cmd`; the standard library would add only `.exe`). Unix: a regular file with an execute bit.
+#[must_use]
+pub fn resolve_program(name: &OsStr) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    let pathext = if cfg!(windows) {
+        std::env::var_os("PATHEXT")
+    } else {
+        None
+    };
+    find_in(name, &path, pathext.as_deref())
+}
+
+/// [`resolve_program`] over the folder list `path` (`PATH` syntax) and the extension list `pathext` (Windows only).
+fn find_in(name: &OsStr, path: &OsStr, pathext: Option<&OsStr>) -> Option<PathBuf> {
+    if name.is_empty() {
+        return None;
+    }
+    let given = Path::new(name);
+    let has_folder = given.has_root() || given.parent().is_some_and(|p| !p.as_os_str().is_empty());
+    if has_folder {
+        return runnable(given).then(|| given.to_path_buf());
+    }
+    let names = candidates(name, pathext);
+    std::env::split_paths(path)
+        // an empty entry would mean the current folder: never searched
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .flat_map(|dir| names.iter().map(move |n| dir.join(n)))
+        .find(|candidate| runnable(candidate))
+}
+
+/// The file names a bare `name` may have in a folder of `PATH`.
+#[cfg(windows)]
+fn candidates(name: &OsStr, pathext: Option<&OsStr>) -> Vec<OsString> {
+    if Path::new(name).extension().is_some() {
+        return vec![name.to_owned()];
+    }
+    let list = pathext
+        .and_then(OsStr::to_str)
+        .filter(|l| !l.trim().is_empty())
+        .unwrap_or(DEFAULT_PATHEXT);
+    list.split(';')
+        .map(str::trim)
+        .filter(|ext| !ext.is_empty())
+        .map(|ext| {
+            let mut full = name.to_owned();
+            full.push(ext);
+            full
+        })
+        .collect()
+}
+
+/// The file names a bare `name` may have in a folder of `PATH`.
+#[cfg(not(windows))]
+fn candidates(name: &OsStr, _pathext: Option<&OsStr>) -> Vec<OsString> {
+    vec![name.to_owned()]
+}
+
+/// A file that can be started: Windows: a file; unix: a regular file with an execute bit.
+fn runnable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
     }
 }
 
@@ -269,5 +366,112 @@ mod tests {
             panic!("started");
         };
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
+    }
+
+    /// The OS shell every test machine has, found on `PATH` by its bare name.
+    #[test]
+    fn a_bare_name_is_found_on_the_path() {
+        let name = if cfg!(windows) { "cmd" } else { "sh" };
+        let found = resolve_program(OsStr::new(name)).expect("on PATH");
+        assert!(found.is_absolute(), "{found:?}");
+        let stem = found.file_stem().unwrap().to_string_lossy().to_lowercase();
+        assert_eq!(stem, name);
+        assert!(resolve_program(OsStr::new("no-such-program-anywhere-x9")).is_none());
+        assert!(resolve_program(OsStr::new("")).is_none());
+    }
+
+    /// A name with a folder in it is that file (when it exists), never a `PATH` search.
+    #[test]
+    fn a_name_with_a_folder_is_that_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tool = tmp
+            .path()
+            .join(if cfg!(windows) { "tool.cmd" } else { "tool" });
+        std::fs::write(&tool, "x").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert_eq!(resolve_program(tool.as_os_str()), Some(tool.clone()));
+        let missing = tmp.path().join("nothing-here");
+        assert_eq!(resolve_program(missing.as_os_str()), None);
+    }
+
+    /// Windows: a bare name takes each `PATHEXT` extension in turn; a name with an extension is looked up as written.
+    #[cfg(windows)]
+    #[test]
+    fn windows_tries_each_pathext_extension() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        std::fs::write(second.path().join("tool.cmd"), "x").unwrap();
+        std::fs::write(second.path().join("tool"), "x").unwrap();
+        let path = std::env::join_paths([first.path(), second.path()]).unwrap();
+        let found = find_in(OsStr::new("tool"), &path, Some(OsStr::new(".EXE;.CMD")));
+        assert_eq!(found, Some(second.path().join("tool.CMD")));
+        let found = find_in(OsStr::new("tool.cmd"), &path, None);
+        assert_eq!(found, Some(second.path().join("tool.cmd")));
+        // no PATHEXT: the system's usual list
+        let found = find_in(OsStr::new("tool"), &path, None);
+        assert_eq!(found, Some(second.path().join("tool.CMD")));
+    }
+
+    /// Unix: a file without the execute bit is not a program.
+    #[cfg(unix)]
+    #[test]
+    fn unix_needs_the_execute_bit() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let tool = dir.path().join("tool");
+        std::fs::write(&tool, "x").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(
+            find_in(OsStr::new("tool"), dir.path().as_os_str(), None),
+            None
+        );
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(
+            find_in(OsStr::new("tool"), dir.path().as_os_str(), None),
+            Some(tool)
+        );
+    }
+
+    #[test]
+    fn a_persons_command_runs_with_piped_streams() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (name, args) = if cfg!(windows) {
+            ("cmd", ["/C", "echo hello"])
+        } else {
+            ("sh", ["-c", "echo hello"])
+        };
+        let program = resolve_program(OsStr::new(name)).unwrap();
+        let args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
+        let Piped {
+            stdin,
+            stdout,
+            stderr: _,
+            mut child,
+        } = spawn_person_command(&program, &args, tmp.path()).unwrap();
+        drop(stdin);
+        assert_eq!(read_all(stdout).trim(), "hello");
+        assert!(child.stop(Duration::from_secs(10)).unwrap().success());
+    }
+
+    /// Windows: a `.cmd` script (how `npx` ships) runs without a shell of ours; its arguments arrive as given.
+    #[cfg(windows)]
+    #[test]
+    fn a_cmd_script_runs_with_its_arguments() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("hello.cmd");
+        std::fs::write(&script, "@echo hello %~1\r\n").unwrap();
+        let Piped {
+            stdin,
+            stdout,
+            stderr: _,
+            mut child,
+        } = spawn_person_command(&script, &[OsStr::new("big world")], tmp.path()).unwrap();
+        drop(stdin);
+        assert_eq!(read_all(stdout).trim(), "hello big world");
+        child.stop(Duration::from_secs(10)).unwrap();
     }
 }
