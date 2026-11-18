@@ -2,14 +2,18 @@
 // far (kept while the window shows the project; "New conversation" clears it), the work copy's changes waiting for
 // the person, and the passage attached to the next message. Events of the project shown only: another project starts
 // afresh. The passage follows the selection in the open document; a selection | the keyboard inside the panel leaves
-// it as it is, so clicking into the message box keeps what was selected.
+// it as it is, so clicking into the message box keeps what was selected. Which agent runs is the person's choice
+// (kept by the backend for every project): none chosen, the picker stands in for the conversation.
 
 import type {
   AcpStatus,
   AcpUpdate,
+  AgentEntry,
   ApiError,
+  ChooseArgs,
   FileChange,
   IpcError,
+  LoginMethod,
   PermissionChoice,
   PromptArgs,
   PromptSelection,
@@ -20,7 +24,7 @@ import { editing, type TextRange } from "../../core/editing/session.svelte";
 import { apiErrorText } from "../../core/errors";
 import { t, type MessageKey } from "../../core/i18n";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
-import { togglePanel } from "../../core/shell/sides";
+import { showView, togglePanel } from "../../core/shell/sides";
 
 /** The id of the Assistant panel. */
 export const PANEL = "acp.panel";
@@ -55,6 +59,13 @@ export type Entry =
 /** An entry before it gets its id. */
 type NewEntry = Entry extends infer E ? (E extends Entry ? Omit<E, "id"> : never) : never;
 
+/** The agents the person can choose, as the backend lists them for this computer. */
+export type Catalog =
+  | { status: "unread" }
+  | { status: "loading" }
+  | { status: "ready"; agents: readonly AgentEntry[] }
+  | { status: "failed"; text: string };
+
 export class AcpStore {
   status = $state.raw<AcpStatus | null>(null);
   transcript = $state.raw<readonly Entry[]>([]);
@@ -69,6 +80,15 @@ export class AcpStore {
   deciding = $state<string | null>(null);
   /** Why the last accept | reject of a file was refused. */
   refusal = $state.raw<{ path: string; text: string } | null>(null);
+  catalog = $state.raw<Catalog>({ status: "unread" });
+  /** The person asked to change the agent (none chosen: the picker shows anyway). */
+  picking = $state(false);
+  /** A choice is on its way to the backend. */
+  choosing = $state(false);
+  /** Why the last choice was refused (`null`: none). */
+  choiceRefusal = $state<string | null>(null);
+  /** A sign-in is on its way to the backend. */
+  signingIn = $state(false);
   #ids = 0;
   readonly #client: PluginClient;
   readonly #root: () => string | null;
@@ -82,6 +102,17 @@ export class AcpStore {
   get busy(): boolean {
     const state = this.status?.state;
     return this.sending || state === "starting" || state === "working";
+  }
+
+  /** The agent can be changed now: not while it starts | works (the backend refuses then). */
+  get canChange(): boolean {
+    return !this.busy;
+  }
+
+  /** The picker shows: no agent chosen yet, or the person asked to change it. */
+  get showsPicker(): boolean {
+    const status = this.status;
+    return status !== null && (!status.chosen || this.picking);
   }
 
   /** Follows the project of the window and the selection in its document until the returned teardown runs. */
@@ -99,10 +130,7 @@ export class AcpStore {
         };
         void this.#client.on("acp:update", (update) => this.take(update)).then(keep);
         void this.#client.call("acp.status", {}).then((result) => {
-          if (gone || !result.ok) return;
-          // news that came meanwhile is newer than this answer: only the command is taken from it then
-          this.status =
-            this.status === null ? result.value : { ...this.status, agent: result.value.agent };
+          if (!gone && result.ok) this.#took(result.value);
         });
         void this.refreshChanges();
         return () => {
@@ -134,10 +162,15 @@ export class AcpStore {
       case "status":
         this.status = {
           agent: this.status?.agent ?? "",
+          agentName: this.status?.agentName ?? null,
+          chosen: this.status?.chosen ?? false,
           state: update.state,
           error: update.error,
+          methods: update.methods ?? [],
         };
         if (update.error !== null) this.#push({ kind: "notice", text: update.error });
+        // the agent stopped (a choice in any window of the app among the causes): its name is read again
+        if (update.state === "idle") void this.#readStatus();
         return;
       case "text": {
         const last = this.transcript.at(-1);
@@ -202,6 +235,9 @@ export class AcpStore {
       const result = await this.#client.call("acp.prompt", args);
       if (result.ok) return;
       this.#push({ kind: "notice", text: t("acp.notSent", { reason: errorText(result.error) }) });
+      // another window may have changed the choice: the picker | the name follows what the backend holds
+      if (result.error.kind === "backend" && result.error.error.detail === "noAgent")
+        void this.#readStatus();
       // nothing was sent: the message and its passage come back unless the person wrote | selected anew
       if (this.draft === "") this.draft = text;
       this.passage ??= passage;
@@ -272,6 +308,89 @@ export class AcpStore {
     this.passage = selectedPassage();
   }
 
+  /** The header's Change, the palette command: the panel shows the picker. */
+  openPicker(): void {
+    showView(PANEL);
+    this.picking = true;
+    this.choiceRefusal = null;
+  }
+
+  /** Back to the conversation without a new choice. */
+  closePicker(): void {
+    this.picking = false;
+    this.choiceRefusal = null;
+  }
+
+  /** Reads the agents the person can choose again (an install since the last read shows). The list read before stays
+   *  on screen meanwhile. */
+  async loadAgents(): Promise<void> {
+    const root = this.#root();
+    if (this.catalog.status !== "ready") this.catalog = { status: "loading" };
+    const result = await this.#client.call("acp.agents", {});
+    if (this.#root() !== root) return;
+    this.catalog = result.ok
+      ? { status: "ready", agents: result.value }
+      : { status: "failed", text: errorText(result.error) };
+  }
+
+  /** Keeps the person's choice: the agent stops, the chosen one starts with the next message. Resolves to false when
+   *  the choice was refused (said in `choiceRefusal`). */
+  async choose(choice: ChooseArgs): Promise<boolean> {
+    if (this.choosing) return false;
+    this.choosing = true;
+    this.choiceRefusal = null;
+    const root = this.#root();
+    try {
+      const result = await this.#client.call("acp.choose", choice);
+      if (this.#root() !== root) return false;
+      if (!result.ok) {
+        this.choiceRefusal = errorText(result.error);
+        return false;
+      }
+      this.catalog = { status: "ready", agents: result.value };
+      this.picking = false;
+      const name = result.value.find((a) => a.chosen)?.name;
+      // the conversation stays to read; the new agent knows nothing of it
+      if (this.transcript.length > 0 && name !== undefined)
+        this.#push({ kind: "notice", text: t("acp.switched", { name }) });
+      await this.#readStatus();
+      return true;
+    } finally {
+      this.choosing = false;
+    }
+  }
+
+  /** Signs in while the agent waits for it: an `agent` method through the agent; `null` | any other method: the
+   *  person signed in outside, the agent is asked again. The outcome comes as news. */
+  async login(method: LoginMethod | null): Promise<void> {
+    if (this.signingIn) return;
+    this.signingIn = true;
+    try {
+      const result = await this.#client.call(
+        "acp.login",
+        method?.kind === "agent" ? { methodId: method.id } : {},
+      );
+      if (!result.ok) this.#push({ kind: "notice", text: errorText(result.error) });
+    } finally {
+      this.signingIn = false;
+    }
+  }
+
+  /** An agent's website, in the person's browser (how to install it). */
+  openWebsite(url: string): void {
+    void documents.openWeb(url);
+  }
+
+  /** Puts `text` on the clipboard; false when the system refused. */
+  async copy(text: string): Promise<boolean> {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Removes the attached passage. */
   dropPassage(): void {
     this.passage = null;
@@ -290,6 +409,25 @@ export class AcpStore {
     this.passage = null;
     this.draft = "";
     this.refusal = null;
+    this.catalog = { status: "unread" };
+    this.picking = false;
+    this.choiceRefusal = null;
+  }
+
+  /** Reads the chosen agent again (its state comes as news). */
+  async #readStatus(): Promise<void> {
+    const root = this.#root();
+    const result = await this.#client.call("acp.status", {});
+    if (this.#root() === root && result.ok) this.#took(result.value);
+  }
+
+  /** Takes an answer of `acp.status`: news that came meanwhile is newer, so only the chosen agent is taken then. */
+  #took(answer: AcpStatus): void {
+    const now = this.status;
+    this.status =
+      now === null
+        ? answer
+        : { ...now, agent: answer.agent, agentName: answer.agentName, chosen: answer.chosen };
   }
 
   #push(entry: NewEntry): void {
@@ -352,6 +490,53 @@ export function passageLabel(passage: PromptSelection): string {
     : t("acp.passage", { path: passage.path, from: passage.fromLine, to: passage.toLine });
 }
 
+/** The agent can start as listed (installed, or its runner found). */
+export function canStart(entry: AgentEntry): boolean {
+  return entry.how !== "missing" && entry.needs === null;
+}
+
+/** The agents whose name, id or description holds every word of `query`; those that can start first, else in the
+ *  backend's order. */
+export function pickerList(agents: readonly AgentEntry[], query: string): AgentEntry[] {
+  const words = query
+    .toLocaleLowerCase()
+    .split(/\s+/)
+    .filter((w) => w !== "");
+  const found = agents.filter((agent) => {
+    const text = `${agent.name} ${agent.id} ${agent.description}`.toLocaleLowerCase();
+    return words.every((word) => text.includes(word));
+  });
+  return [...found.filter(canStart), ...found.filter((agent) => !canStart(agent))];
+}
+
+/** What the chip of a listed agent says: how it would start, else what it needs first. */
+export function howKey(entry: AgentEntry): MessageKey {
+  switch (entry.how) {
+    case "native":
+      return "acp.how.native";
+    case "npx":
+      return "acp.how.npx";
+    case "uvx":
+      return "acp.how.uvx";
+    case "custom":
+      return entry.needs === null ? "acp.how.custom" : "acp.how.notFound";
+    case "missing":
+      switch (entry.needs) {
+        case "node":
+          return "acp.needs.node";
+        case "uv":
+          return "acp.needs.uv";
+        case "install":
+        case null:
+          return "acp.needs.install";
+        default:
+          return entry.needs satisfies never;
+      }
+    default:
+      return entry.how satisfies never;
+  }
+}
+
 /** A short name for the agent command: its program or package, without a version or a folder. */
 export function agentLabel(command: string): string {
   const words = command.trim().split(/\s+/);
@@ -404,6 +589,18 @@ function refusalKey(error: IpcError): MessageKey | null {
     case "noChange":
     case "noWorkCopy":
       return "acp.error.outdated";
+    case "noAgent":
+      return "acp.error.noAgent";
+    case "unknownAgent":
+      return "acp.error.unknownAgent";
+    case "emptyCommand":
+      return "acp.error.emptyCommand";
+    case "noProfile":
+      return "acp.error.noProfile";
+    case "noLogin":
+      return "acp.error.noLogin";
+    case "unknownMethod":
+      return "acp.error.unknownMethod";
     default:
       return error.kind === "invalidPath" || error.kind === "pathEscape" ? "acp.error.path" : null;
   }

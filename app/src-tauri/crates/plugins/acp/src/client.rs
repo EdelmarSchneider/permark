@@ -4,20 +4,20 @@
 //!   agent's own request (the [`Inbox`] answers it, at once or later through [`Connection::reply`]).
 //! - each message is decoded on its own: a line that is no JSON-RPC message, or one longer than [`LINE_CAP`], is
 //!   skipped, never fatal (agents add kinds of news faster than any client learns them).
+//! - an error answer keeps its JSON-RPC code ([`CallError::Refused`]): `auth_required` asks the person to sign in.
 //! - writes go through one lock (a whole line at a time, flushed).
 //! - the agent's stderr is drained into a short tail ([`TAIL_CAP`]) for error reports; it is never written anywhere.
 //! - end of the agent's output (it exited) | [`Connection::close`] -> every waiting call answers `Closed`.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, BufRead, BufReader, Read, Write};
-use std::path::Path;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use agent_client_protocol_schema::v1::{
-    Error as RpcError, JsonRpcMessage, Notification, Request, RequestId, Response,
+    Error as RpcError, ErrorCode, JsonRpcMessage, Notification, Request, RequestId, Response,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -43,9 +43,6 @@ pub struct AgentPipes {
     pub stop: Box<dyn FnOnce() + Send>,
 }
 
-/// Starts one agent with its working folder.
-pub type Launch = Arc<dyn Fn(&Path) -> io::Result<AgentPipes> + Send + Sync>;
-
 /// What the reader thread hands on. Runs on the reader thread: quick, never waiting on the agent.
 pub trait Inbox: Send + Sync + 'static {
     fn notification(&self, method: &str, params: Option<Value>);
@@ -62,16 +59,24 @@ pub enum CallError {
     Closed,
     /// No answer within the wait.
     TimedOut,
-    /// The agent answered with an error (its message).
-    Refused(String),
+    /// The agent answered with an error: its JSON-RPC code + message.
+    Refused { code: i32, message: String },
     /// The answer is not the expected shape.
     Unreadable,
+}
+
+impl CallError {
+    /// The agent wants the person to sign in first (`auth_required`).
+    #[must_use]
+    pub fn needs_login(&self) -> bool {
+        matches!(self, Self::Refused { code, .. } if *code == i32::from(ErrorCode::AuthRequired))
+    }
 }
 
 /// Answer to one call.
 enum Answer {
     Done(Value),
-    Failed(String),
+    Failed { code: i32, message: String },
 }
 
 #[derive(Default)]
@@ -170,13 +175,19 @@ impl Connection {
             (Some(method), None) => inbox.notification(&method, message.params),
             (None, Some(RequestId::Number(id))) => {
                 let answer = match message.error {
-                    Some(error) => Answer::Failed(
-                        error
+                    Some(error) => Answer::Failed {
+                        // no | odd code: an internal error of the agent
+                        code: error
+                            .get("code")
+                            .and_then(Value::as_i64)
+                            .and_then(|code| i32::try_from(code).ok())
+                            .unwrap_or_else(|| i32::from(ErrorCode::InternalError)),
+                        message: error
                             .get("message")
                             .and_then(Value::as_str)
                             .unwrap_or("error")
                             .to_owned(),
-                    ),
+                    },
                     // `"result": null` reads as absent: still an answer
                     None => Answer::Done(message.result.unwrap_or(Value::Null)),
                 };
@@ -229,7 +240,7 @@ impl Connection {
         }
         match answer? {
             Answer::Done(value) => serde_json::from_value(value).map_err(|_| CallError::Unreadable),
-            Answer::Failed(message) => Err(CallError::Refused(message)),
+            Answer::Failed { code, message } => Err(CallError::Refused { code, message }),
         }
     }
 

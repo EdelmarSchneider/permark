@@ -3,7 +3,8 @@
   // plain text while it comes, "Thinking…", one line per tool, cards for what the agent asks to do outside its copy),
   // then the files its copy changed, hunk by hunk, each one accepted into the real file or rejected; and the message
   // box with the passage attached from the open document. The list follows the newest line only while the person is
-  // at its end: scrolled up to read, it stays where it is.
+  // at its end: scrolled up to read, it stays where it is. No agent chosen yet | the person changing it: the picker
+  // stands in for the conversation; an agent waiting for a sign-in: its card ends the conversation.
   import MessageSquarePlus from "@lucide/svelte/icons/message-square-plus";
   import Quote from "@lucide/svelte/icons/quote";
   import SendHorizontal from "@lucide/svelte/icons/send-horizontal";
@@ -14,7 +15,9 @@
   import type { AcpState, FileChange, FileChangeKind } from "../../api";
   import { t, tn, type MessageKey } from "../../core/i18n";
   import { closeView } from "../../core/shell/sides";
+  import AgentPicker from "./AgentPicker.svelte";
   import HunkCard from "./HunkCard.svelte";
+  import LoginCard from "./LoginCard.svelte";
   import { acp, agentLabel, PANEL, PANEL_MARK, passageLabel } from "./store.svelte";
 
   type Props = {
@@ -29,6 +32,10 @@
 
   const now = $derived<AcpState>(acp.status?.state ?? "idle");
   const command = $derived(acp.status?.agent ?? "");
+  /** The chosen agent's name (`null`: none chosen). */
+  const name = $derived(
+    acp.status?.chosen === true ? (acp.status.agentName ?? agentLabel(command)) : null,
+  );
   const working = $derived(now === "starting" || now === "working");
   const canSend = $derived(!acp.busy && acp.draft.trim() !== "");
 
@@ -72,6 +79,8 @@
         return "acp.state.working";
       case "error":
         return "acp.state.error";
+      case "needsLogin":
+        return "acp.state.needsLogin";
       default:
         return state satisfies never;
     }
@@ -171,163 +180,183 @@
     <p class="line">
       <span class={["dot", now]} aria-hidden="true"></span>
       <span class="state">{t(stateKey(now))}</span>
-      {#if command !== ""}
-        <span class="agent" title={t("acp.agentCommand", { command })}>· {agentLabel(command)}</span
-        >
+      {#if name !== null}
+        <span class="agent" title={t("acp.agentCommand", { command })}>· {name}</span>
+        {#if !acp.showsPicker}
+          <button
+            type="button"
+            class="change"
+            aria-label={t("acp.changeAgent")}
+            title={t("acp.changeAgent")}
+            disabled={!acp.canChange}
+            onclick={() => acp.openPicker()}>{t("acp.change")}</button
+          >
+        {/if}
       {/if}
     </p>
   </header>
 
   <div class="scroll" bind:this={scroller} onscroll={followed}>
-    {#if acp.transcript.length === 0}
-      <div class="empty">
-        <p>{t("acp.empty")}</p>
-        <p>{t("acp.emptyPassage")}</p>
-      </div>
-    {/if}
-    <ol class="transcript" aria-live="polite" aria-label={t("acp.conversation")}>
-      {#each acp.transcript as entry (entry.id)}
-        {#if entry.kind === "you"}
-          <li class="you">
-            <span class="who">{t("acp.you")}</span>
-            {#if entry.passage !== null}
-              <span class="passage" title={entry.passage.text}>{passageLabel(entry.passage)}</span>
-            {/if}
-            <p class="text">{entry.text}</p>
-          </li>
-        {:else if entry.kind === "agent"}
-          <li class="agent-text">
-            <p class="text">{entry.text}</p>
-          </li>
-        {:else if entry.kind === "thinking"}
-          <li class="quiet">{t("acp.thinking")}</li>
-        {:else if entry.kind === "tool"}
-          <li class="tool">
-            <Wrench size={12} aria-hidden="true" />
-            <span class="tool-title" title={entry.title}>{entry.title}</span>
-            <span class={["tool-status", entry.status]}>{toolStatus(entry.status)}</span>
-          </li>
-        {:else if entry.kind === "question"}
-          <li class="question" aria-labelledby="{uid}-q{entry.id}">
-            <p class="ask" id="{uid}-q{entry.id}">{t("acp.question")}</p>
-            <p class="ask-title">{entry.title}</p>
-            {#if entry.detail !== "" && entry.detail !== entry.title}
-              <pre class="detail">{entry.detail}</pre>
-            {/if}
-            {#if entry.answer.status === "open"}
-              <div class="options">
-                {#each entry.options as option (option.id)}
-                  <button
-                    type="button"
-                    class={["btn", "btn--sm", option.kind === "allow_once" && "btn--primary"]}
-                    onclick={() => void acp.answer(entry.requestId, option)}>{option.name}</button
-                  >
-                {/each}
-              </div>
-            {:else if entry.answer.status === "answered"}
-              <p class="quiet">{t("acp.answered", { option: entry.answer.option })}</p>
-            {:else}
-              <p class="quiet">{t("acp.questionClosed")}</p>
-            {/if}
-          </li>
-        {:else}
-          <li class="notice">{entry.text}</li>
-        {/if}
-      {/each}
-    </ol>
-
-    {#if acp.changes.length > 0}
-      <section class="changes" aria-labelledby="{uid}-changes">
-        <h3 id="{uid}-changes">
-          {t("acp.changes")}
-          <span class="count">{tn("acp.changedFiles", acp.changes.length)}</span>
-        </h3>
-        <p class="quiet">{t("acp.changesHint")}</p>
-        {#each acp.changes as file (file.path)}
-          {@const whole = wholeKey(file.kind)}
-          <div class="file">
-            <div class="file-head">
-              <span class="path" title={file.path}>{file.path}</span>
-              <span class={["kind", file.kind]}>{t(kindKey(file.kind))}</span>
-            </div>
-            {#if whole !== null}
-              <p class="quiet">{t(whole)}</p>
-            {/if}
-            {#each file.hunks as hunk (hunk.id)}
-              <HunkCard
-                {hunk}
-                whole={whole !== null}
-                disabled={acp.deciding !== null}
-                onaccept={() => void acp.decide("accept", file.path, [hunk.id])}
-                onreject={() => void acp.decide("reject", file.path, [hunk.id])}
-              />
-            {/each}
-            <div class="file-actions">
-              <button
-                type="button"
-                class="btn btn--sm"
-                aria-label={t("acp.rejectFile", { path: file.path })}
-                disabled={acp.deciding !== null}
-                onclick={() => decideFile(file, "reject")}
-                >{t(whole === null ? "acp.rejectAll" : "acp.reject")}</button
-              >
-              <button
-                type="button"
-                class="btn btn--sm btn--primary"
-                aria-label={t("acp.acceptFile", { path: file.path })}
-                disabled={acp.deciding !== null}
-                onclick={() => decideFile(file, "accept")}
-                >{t(whole === null ? "acp.acceptAll" : "acp.accept")}</button
-              >
-            </div>
-          </div>
+    {#if acp.showsPicker}
+      <AgentPicker focus={acp.picking} />
+    {:else}
+      {#if acp.transcript.length === 0}
+        <div class="empty">
+          <p>{t("acp.empty")}</p>
+          <p>{t("acp.emptyPassage")}</p>
+        </div>
+      {/if}
+      <ol class="transcript" aria-live="polite" aria-label={t("acp.conversation")}>
+        {#each acp.transcript as entry (entry.id)}
+          {#if entry.kind === "you"}
+            <li class="you">
+              <span class="who">{t("acp.you")}</span>
+              {#if entry.passage !== null}
+                <span class="passage" title={entry.passage.text}>{passageLabel(entry.passage)}</span
+                >
+              {/if}
+              <p class="text">{entry.text}</p>
+            </li>
+          {:else if entry.kind === "agent"}
+            <li class="agent-text">
+              <p class="text">{entry.text}</p>
+            </li>
+          {:else if entry.kind === "thinking"}
+            <li class="quiet">{t("acp.thinking")}</li>
+          {:else if entry.kind === "tool"}
+            <li class="tool">
+              <Wrench size={12} aria-hidden="true" />
+              <span class="tool-title" title={entry.title}>{entry.title}</span>
+              <span class={["tool-status", entry.status]}>{toolStatus(entry.status)}</span>
+            </li>
+          {:else if entry.kind === "question"}
+            <li class="question" aria-labelledby="{uid}-q{entry.id}">
+              <p class="ask" id="{uid}-q{entry.id}">{t("acp.question")}</p>
+              <p class="ask-title">{entry.title}</p>
+              {#if entry.detail !== "" && entry.detail !== entry.title}
+                <pre class="detail">{entry.detail}</pre>
+              {/if}
+              {#if entry.answer.status === "open"}
+                <div class="options">
+                  {#each entry.options as option (option.id)}
+                    <button
+                      type="button"
+                      class={["btn", "btn--sm", option.kind === "allow_once" && "btn--primary"]}
+                      onclick={() => void acp.answer(entry.requestId, option)}>{option.name}</button
+                    >
+                  {/each}
+                </div>
+              {:else if entry.answer.status === "answered"}
+                <p class="quiet">{t("acp.answered", { option: entry.answer.option })}</p>
+              {:else}
+                <p class="quiet">{t("acp.questionClosed")}</p>
+              {/if}
+            </li>
+          {:else}
+            <li class="notice">{entry.text}</li>
+          {/if}
         {/each}
-      </section>
-    {/if}
-    {#if acp.refusal !== null}
-      <p class="refusal" role="alert">
-        {t("acp.refusedFor", { path: acp.refusal.path, reason: acp.refusal.text })}
-      </p>
+      </ol>
+
+      {#if now === "needsLogin"}
+        <LoginCard methods={acp.status?.methods ?? []} name={name ?? t("acp.label")} />
+      {/if}
+
+      {#if acp.changes.length > 0}
+        <section class="changes" aria-labelledby="{uid}-changes">
+          <h3 id="{uid}-changes">
+            {t("acp.changes")}
+            <span class="count">{tn("acp.changedFiles", acp.changes.length)}</span>
+          </h3>
+          <p class="quiet">{t("acp.changesHint")}</p>
+          {#each acp.changes as file (file.path)}
+            {@const whole = wholeKey(file.kind)}
+            <div class="file">
+              <div class="file-head">
+                <span class="path" title={file.path}>{file.path}</span>
+                <span class={["kind", file.kind]}>{t(kindKey(file.kind))}</span>
+              </div>
+              {#if whole !== null}
+                <p class="quiet">{t(whole)}</p>
+              {/if}
+              {#each file.hunks as hunk (hunk.id)}
+                <HunkCard
+                  {hunk}
+                  whole={whole !== null}
+                  disabled={acp.deciding !== null}
+                  onaccept={() => void acp.decide("accept", file.path, [hunk.id])}
+                  onreject={() => void acp.decide("reject", file.path, [hunk.id])}
+                />
+              {/each}
+              <div class="file-actions">
+                <button
+                  type="button"
+                  class="btn btn--sm"
+                  aria-label={t("acp.rejectFile", { path: file.path })}
+                  disabled={acp.deciding !== null}
+                  onclick={() => decideFile(file, "reject")}
+                  >{t(whole === null ? "acp.rejectAll" : "acp.reject")}</button
+                >
+                <button
+                  type="button"
+                  class="btn btn--sm btn--primary"
+                  aria-label={t("acp.acceptFile", { path: file.path })}
+                  disabled={acp.deciding !== null}
+                  onclick={() => decideFile(file, "accept")}
+                  >{t(whole === null ? "acp.acceptAll" : "acp.accept")}</button
+                >
+              </div>
+            </div>
+          {/each}
+        </section>
+      {/if}
+      {#if acp.refusal !== null}
+        <p class="refusal" role="alert">
+          {t("acp.refusedFor", { path: acp.refusal.path, reason: acp.refusal.text })}
+        </p>
+      {/if}
     {/if}
   </div>
 
-  <div class="composer">
-    {#if acp.passage !== null}
-      <div class="chip" title={acp.passage.text}>
-        <Quote size={12} aria-hidden="true" />
-        <span class="chip-text">{passageLabel(acp.passage)}</span>
+  {#if !acp.showsPicker}
+    <div class="composer">
+      {#if acp.passage !== null}
+        <div class="chip" title={acp.passage.text}>
+          <Quote size={12} aria-hidden="true" />
+          <span class="chip-text">{passageLabel(acp.passage)}</span>
+          <button
+            type="button"
+            class="icon chip-drop"
+            aria-label={t("acp.dropPassage")}
+            title={t("acp.dropPassage")}
+            onclick={() => acp.dropPassage()}
+          >
+            <X size={12} aria-hidden="true" />
+          </button>
+        </div>
+      {/if}
+      <textarea
+        class="message"
+        rows="3"
+        bind:value={acp.draft}
+        placeholder={t("acp.placeholder")}
+        aria-label={t("acp.message")}
+        aria-describedby="{uid}-hint"
+        onkeydown={composerKey}></textarea>
+      <div class="send-row">
+        <span class="hint" id="{uid}-hint">{t("acp.sendHint")}</span>
         <button
           type="button"
-          class="icon chip-drop"
-          aria-label={t("acp.dropPassage")}
-          title={t("acp.dropPassage")}
-          onclick={() => acp.dropPassage()}
+          class="btn btn--sm btn--primary"
+          disabled={!canSend}
+          onclick={() => void acp.send()}
         >
-          <X size={12} aria-hidden="true" />
+          <SendHorizontal size={13} aria-hidden="true" />
+          {t("acp.send")}
         </button>
       </div>
-    {/if}
-    <textarea
-      class="message"
-      rows="3"
-      bind:value={acp.draft}
-      placeholder={t("acp.placeholder")}
-      aria-label={t("acp.message")}
-      aria-describedby="{uid}-hint"
-      onkeydown={composerKey}></textarea>
-    <div class="send-row">
-      <span class="hint" id="{uid}-hint">{t("acp.sendHint")}</span>
-      <button
-        type="button"
-        class="btn btn--sm btn--primary"
-        disabled={!canSend}
-        onclick={() => void acp.send()}
-      >
-        <SendHorizontal size={13} aria-hidden="true" />
-        {t("acp.send")}
-      </button>
     </div>
-  </div>
+  {/if}
 </section>
 
 <style>
@@ -393,6 +422,9 @@
   .dot.error {
     background: var(--git-deleted);
   }
+  .dot.needsLogin {
+    background: var(--git-modified);
+  }
   .state {
     flex: none;
   }
@@ -401,6 +433,24 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* a word-sized button: the status line keeps its height */
+  .change {
+    flex: none;
+    padding: 0 var(--sp-1);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--accent-text);
+    font: inherit;
+    cursor: pointer;
+  }
+  .change:hover:not(:disabled) {
+    background: var(--hover);
+  }
+  .change:disabled {
+    color: var(--faint);
+    cursor: default;
   }
   .icon {
     flex: none;

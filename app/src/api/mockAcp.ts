@@ -1,12 +1,18 @@
-// What the assistant plugin answers in the mock backend: the agent's status, a timed stand-in reply to a message
-// (status, thinking, text in pieces, tool lines, one question that waits for the person's answer, then the turn's end
-// with one changed file) and the work copy's changes, where accept | reject drop hunks. Nothing is written: the real
-// copy, agent and writes are the plugin's (tested there); the mock only feeds the window's flow.
+// What the assistant plugin answers in the mock backend: the agents to choose from (one in each state a computer can
+// give: installed, started by npx | uvx, missing Node.js | uv | an install) and the person's choice (none at first, as
+// on a first run), the agent's status, a timed stand-in reply to a message (status, thinking, text in pieces, tool
+// lines, one question that waits for the person's answer, then the turn's end with one changed file) and the work
+// copy's changes, where accept | reject drop hunks. Gemini CLI asks for a sign-in at its first start: its own method
+// signs in, "Try again" alone stays signed out. Nothing is written: the real copy, agent, choice file and writes are
+// the plugin's (tested there); the mock only feeds the window's flow.
 
 import type { AcpState } from "./generated/AcpState";
 import type { AcpUpdate } from "./generated/AcpUpdate";
+import type { AgentEntry } from "./generated/AgentEntry";
 import type { AnswerArgs } from "./generated/AnswerArgs";
 import type { FileChange } from "./generated/FileChange";
+import type { LoginArgs } from "./generated/LoginArgs";
+import type { LoginMethod } from "./generated/LoginMethod";
 import type { PermissionChoice } from "./generated/PermissionChoice";
 import type { PromptArgs } from "./generated/PromptArgs";
 import { MockPluginError } from "./mockOrganizing";
@@ -15,6 +21,9 @@ import type { PluginEventName, PluginEvents, PluginMethods } from "./types";
 type AcpMethods = Pick<
   PluginMethods,
   | "acp.status"
+  | "acp.agents"
+  | "acp.choose"
+  | "acp.login"
   | "acp.prompt"
   | "acp.cancel"
   | "acp.reset"
@@ -24,12 +33,131 @@ type AcpMethods = Pick<
   | "acp.reject"
 >;
 
-/** The agent command the mock reports (the plugin's default). */
-export const MOCK_ACP_COMMAND = "npx -y @agentclientprotocol/claude-agent-acp@0.108.0";
+/** The person's choice: an agent of the list | an own command. */
+export type MockAcpChoice = { agent: string } | { command: string };
+
+/** The agents the mock computer lists, as the plugin words them (`chosen` set from the choice). */
+export const MOCK_AGENTS: readonly Omit<AgentEntry, "chosen">[] = [
+  {
+    id: "claude-acp",
+    name: "Claude Agent",
+    description: "ACP wrapper for Anthropic's Claude",
+    version: "0.108.0",
+    how: "npx",
+    needs: null,
+    command: "npx -y @agentclientprotocol/claude-agent-acp@0.108.0",
+    website: "https://github.com/agentclientprotocol/claude-agent-acp",
+  },
+  {
+    id: "codex-acp",
+    name: "Codex",
+    description: "ACP adapter for OpenAI's coding assistant",
+    version: "2.7.0",
+    how: "npx",
+    needs: null,
+    command: "npx -y @agentclientprotocol/codex-acp@2.7.0",
+    website: "https://github.com/agentclientprotocol/codex-acp",
+  },
+  {
+    id: "gemini",
+    name: "Gemini CLI",
+    description: "Google's official CLI for Gemini",
+    version: "0.68.0",
+    how: "npx",
+    needs: null,
+    command: "npx -y @google/gemini-cli@0.68.0 --acp",
+    website: "https://geminicli.com",
+  },
+  {
+    id: "goose",
+    name: "goose",
+    description: "A local, extensible, open source AI agent that automates engineering tasks",
+    version: "1.59.2",
+    how: "native",
+    needs: null,
+    command: "goose acp",
+    website: "https://block.github.io/goose/",
+  },
+  {
+    id: "fast-agent",
+    name: "fast-agent",
+    description: "Code and build agents with comprehensive multi-provider support",
+    version: "0.10.1",
+    how: "uvx",
+    needs: null,
+    command: "uvx fast-agent-acp==0.10.1 -x",
+    website: "https://fast-agent.ai",
+  },
+  {
+    id: "amp-acp",
+    name: "Amp",
+    description: "ACP wrapper for Amp - the frontier coding agent",
+    version: "0.13.0",
+    how: "missing",
+    needs: "install",
+    command: "amp-acp.exe",
+    website: "https://github.com/tao12345666333/amp-acp",
+  },
+  {
+    id: "cline",
+    name: "Cline",
+    description:
+      "Autonomous coding agent CLI - capable of creating/editing files, running commands, using the browser, and more",
+    version: "3.0.74",
+    how: "missing",
+    needs: "node",
+    command: "npx -y cline@3.0.74 --acp",
+    website: "https://cline.bot/cli",
+  },
+  {
+    id: "deepagents",
+    name: "Deep Agents",
+    description: "Agent harness with planning, file system and sub-agents",
+    version: "0.4.2",
+    how: "missing",
+    needs: "uv",
+    command: "uvx deepagents-acp==0.4.2",
+    website: null,
+  },
+];
+
+/** How Gemini CLI offers to sign in: its own way, a terminal command, a key in a variable. */
+export const MOCK_LOGIN_METHODS: readonly LoginMethod[] = [
+  {
+    id: "oauth-personal",
+    name: "Log in with Google",
+    description: null,
+    kind: "agent",
+    hint: null,
+  },
+  {
+    id: "terminal-login",
+    name: "Sign in from a terminal",
+    description: "Opens the sign-in in your browser.",
+    kind: "terminal",
+    hint: "npx -y @google/gemini-cli@0.68.0 --acp --login",
+  },
+  {
+    id: "gemini-api-key",
+    name: "Use Gemini API key",
+    description: "Requires setting the GEMINI_API_KEY environment variable",
+    kind: "env",
+    hint: "GEMINI_API_KEY",
+  },
+];
+
+/** What a "Try again" without a sign-in says (the plugin words its own). */
+export const MOCK_NOT_SIGNED_IN = "Not signed in yet. Sign in, then try again.";
 
 export type AcpProbe = {
   /** Calls made, by method name. */
   calls: string[];
+  /** The person's choice (`null`: none, as on a first run). */
+  choice: MockAcpChoice | null;
+  /** Agents that ask for a sign-in at their next start, until one of their own methods signs in. */
+  signedOut: Set<string>;
+  /** The sign-ins asked for, in order. */
+  logins: LoginArgs[];
   /** What each message sent, in order. */
   prompts: PromptArgs[];
   /** The answers given to the agent's questions, in order. */
@@ -85,6 +213,8 @@ const OPTIONS: PermissionChoice[] = [
 type Step =
   | { kind: "news"; update: AcpUpdate }
   | { kind: "ask"; update: Extract<AcpUpdate, { type: "permission" }> }
+  /** The agent wants a sign-in before the reply goes on (`then`: its first steps after it; `why`: a failed one). */
+  | { kind: "login"; then: Step[]; why: string | null }
   | { kind: "end" };
 
 export function createMockAcp(
@@ -96,7 +226,10 @@ export function createMockAcp(
   probe: AcpProbe;
 } {
   let state: AcpState = "idle";
+  let error: string | null = null;
   let started = false;
+  /** The first steps of the reply that waits for a sign-in (`null`: none waits). */
+  let afterLogin: Step[] | null = null;
   let turn = 0;
   let next: Step[] = [];
   /** The question the reply waits at (`null`: none). */
@@ -108,6 +241,9 @@ export function createMockAcp(
   };
   const probe: AcpProbe = {
     calls: [],
+    choice: null,
+    signedOut: new Set(["gemini"]),
+    logins: [],
     prompts: [],
     answers: [],
     stepMs: 250,
@@ -116,9 +252,15 @@ export function createMockAcp(
     stopAll: stopTimer,
   };
   const news = (update: AcpUpdate): void => emit("acp:update", update);
-  const become = (to: AcpState): void => {
+  const become = (to: AcpState, why: string | null = null): void => {
     state = to;
-    news({ type: "status", state: to, error: null });
+    error = why;
+    if (to !== "needsLogin") afterLogin = null;
+    news(
+      to === "needsLogin"
+        ? { type: "status", state: to, error: why, methods: [...MOCK_LOGIN_METHODS] }
+        : { type: "status", state: to, error: why },
+    );
   };
   const run = (): void => {
     stopTimer();
@@ -140,6 +282,11 @@ export function createMockAcp(
         stopTimer();
         waiting = now.update;
         news(now.update);
+        return;
+      case "login":
+        stopTimer();
+        afterLogin = now.then;
+        become("needsLogin", now.why);
         return;
       case "end":
         stopTimer();
@@ -228,6 +375,35 @@ export function createMockAcp(
     dropQuestion();
   }
 
+  function agents(): AgentEntry[] {
+    const choice = probe.choice;
+    const listed = MOCK_AGENTS.map((a) => ({
+      ...a,
+      chosen: choice !== null && "agent" in choice && choice.agent === a.id,
+    }));
+    if (choice === null || !("command" in choice)) return listed;
+    const program = choice.command.split(/\s+/)[0] ?? "";
+    return [
+      ...listed,
+      {
+        id: "custom",
+        name: program.split(/[\\/]/).at(-1) ?? program,
+        description: "",
+        version: "",
+        how: "custom",
+        needs: null,
+        command: choice.command,
+        website: null,
+        chosen: true,
+      },
+    ];
+  }
+
+  /** The chosen entry of the list (`null`: none chosen). */
+  function chosen(): AgentEntry | null {
+    return agents().find((a) => a.chosen) ?? null;
+  }
+
   const refuse = (): void => {
     const fail = probe.fail;
     probe.fail = null;
@@ -270,30 +446,97 @@ export function createMockAcp(
     handlers: {
       "acp.status": () => {
         probe.calls.push("status");
-        return { state, agent: MOCK_ACP_COMMAND, error: null };
+        const agent = chosen();
+        return {
+          state,
+          agent: agent?.command ?? "",
+          agentName: agent?.name ?? null,
+          chosen: agent !== null,
+          error,
+          methods: state === "needsLogin" ? [...MOCK_LOGIN_METHODS] : [],
+        };
+      },
+      "acp.agents": () => {
+        probe.calls.push("agents");
+        return agents();
+      },
+      "acp.choose": (args) => {
+        probe.calls.push("choose");
+        if (state === "starting" || state === "working")
+          throw new MockPluginError("conflict", null, "busy");
+        const command = args.command?.trim();
+        if (args.agent !== undefined && command === undefined) {
+          if (!MOCK_AGENTS.some((a) => a.id === args.agent))
+            throw new MockPluginError("invalidData", args.agent, "unknownAgent");
+          probe.choice = { agent: args.agent };
+        } else if (args.agent === undefined && command !== undefined) {
+          if (command === "") throw new MockPluginError("invalidData", null, "emptyCommand");
+          probe.choice = { command };
+        } else throw new MockPluginError("invalidData", null, "oneChoice");
+        // as the plugin does: the agent stops, the next message starts the chosen one
+        stopTurn();
+        started = false;
+        become("idle");
+        return agents();
       },
       "acp.prompt": (args) => {
         probe.calls.push("prompt");
         if (args.text.trim() === "") throw new MockPluginError("invalidData", null, "emptyPrompt");
+        const agent = chosen();
+        if (agent === null) throw new MockPluginError("unavailable", null, "noAgent");
         if (state === "starting" || state === "working")
           throw new MockPluginError("conflict", null, "busy");
         probe.prompts.push(structuredClone(args));
         const steps = script(args);
-        if (started) become("working");
+        // a prompt while a sign-in waits starts a fresh agent, as the plugin does
+        if (started && state !== "needsLogin") become("working");
         else {
           started = true;
           become("starting");
-          steps.unshift({
+          const working: Step = {
             kind: "news",
             update: { type: "status", state: "working", error: null },
-          });
+          };
+          steps.unshift(
+            probe.signedOut.has(agent.id) ? { kind: "login", then: [working], why: null } : working,
+          );
         }
         next = steps;
         run();
         return null;
       },
+      "acp.login": (args) => {
+        probe.calls.push("login");
+        const then = afterLogin;
+        if (state !== "needsLogin" || then === null)
+          throw new MockPluginError("notFound", null, "noLogin");
+        const method =
+          args.methodId === undefined
+            ? null
+            : (MOCK_LOGIN_METHODS.find((m) => m.id === args.methodId) ?? null);
+        if (args.methodId !== undefined && method === null)
+          throw new MockPluginError("invalidData", args.methodId, "unknownMethod");
+        probe.logins.push({ ...args });
+        const agent = chosen();
+        if (agent !== null && method?.kind === "agent") probe.signedOut.delete(agent.id);
+        const signedIn = agent === null || !probe.signedOut.has(agent.id);
+        // still signed out outside the app: the sign-in waits again, saying why
+        next = signedIn
+          ? [...then, ...next]
+          : [{ kind: "login", then, why: MOCK_NOT_SIGNED_IN }, ...next];
+        become("starting");
+        run();
+        return null;
+      },
       "acp.cancel": () => {
         probe.calls.push("cancel");
+        if (state === "needsLogin") {
+          // as the plugin does: Stop while a sign-in waits stops the agent
+          stopTurn();
+          started = false;
+          become("idle");
+          return null;
+        }
         if (state !== "starting" && state !== "working") return null;
         stopTurn();
         news({ type: "turnEnd", stopReason: "cancelled", changed: probe.changes.length });

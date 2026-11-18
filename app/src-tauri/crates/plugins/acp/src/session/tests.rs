@@ -2,7 +2,7 @@
 
 use std::io::{BufRead, BufReader, PipeReader, PipeWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -10,6 +10,7 @@ use permark_core::events::{CoreEvent, EventSink};
 use serde_json::{json, Value};
 
 use super::*;
+use crate::agents::{platforms, Choice, Plan, CHOICE_FILE};
 use crate::testing;
 
 /// Longest wait for something a fake agent does.
@@ -83,6 +84,16 @@ struct Peer {
     seen: Arc<Mutex<Vec<Value>>>,
     /// The session's folder, from `session/new`.
     cwd: PathBuf,
+    auth: Arc<Auth>,
+}
+
+/// What the fake agent asks of sign-ins.
+#[derive(Default)]
+struct Auth {
+    /// `authMethods` of its `initialize` answer.
+    methods: Mutex<Vec<Value>>,
+    /// `session/new` is refused with `auth_required` until an `authenticate`.
+    required: AtomicBool,
 }
 
 const SESSION: &str = "44453ef7-44fa-476b-a0cb-7768c9987d6c";
@@ -158,6 +169,13 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
             continue;
         };
         let id = message["id"].clone();
+        if method == "session/new" && peer.auth.required.load(Ordering::SeqCst) {
+            peer.send(&json!({
+                "jsonrpc": "2.0", "id": id,
+                "error": { "code": -32000, "message": "Authentication required" },
+            }));
+            continue;
+        }
         let result = match method.as_str() {
             // answers as Claude's adapter 0.108.0 did
             "initialize" => json!({
@@ -168,8 +186,12 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
                     "loadSession": true,
                 },
                 "agentInfo": { "name": "@agentclientprotocol/claude-agent-acp", "title": "Claude Agent", "version": "0.108.0" },
-                "authMethods": [],
+                "authMethods": peer.auth.methods.lock().unwrap().clone(),
             }),
+            "authenticate" => {
+                peer.auth.required.store(false, Ordering::SeqCst);
+                json!({})
+            }
             "session/new" => {
                 peer.cwd = PathBuf::from(message["params"]["cwd"].as_str().unwrap());
                 json!({
@@ -201,11 +223,18 @@ struct Fake {
     seen: Arc<Mutex<Vec<Value>>>,
     launches: Arc<AtomicUsize>,
     stops: Arc<AtomicUsize>,
+    /// What each start was asked to run.
+    plans: Arc<Mutex<Vec<Plan>>>,
+    auth: Arc<Auth>,
 }
 
 impl Fake {
     fn seen(&self) -> Vec<Value> {
         self.seen.lock().unwrap().clone()
+    }
+
+    fn plans(&self) -> Vec<Plan> {
+        self.plans.lock().unwrap().clone()
     }
 
     fn methods(&self) -> Vec<String> {
@@ -224,8 +253,9 @@ impl Fake {
 
     fn launch(&self, turn: Turn) -> Launch {
         let fake = self.clone();
-        Arc::new(move |cwd: &Path| {
+        Arc::new(move |plan: &Plan, cwd: &Path| {
             fake.launches.fetch_add(1, Ordering::SeqCst);
+            fake.plans.lock().unwrap().push(plan.clone());
             let (agent_in, client_out) = std::io::pipe()?;
             let (client_in, agent_out) = std::io::pipe()?;
             let (client_err, agent_err) = std::io::pipe()?;
@@ -235,6 +265,7 @@ impl Fake {
                 stderr: agent_err,
                 seen: Arc::clone(&fake.seen),
                 cwd: cwd.to_path_buf(),
+                auth: Arc::clone(&fake.auth),
             };
             let turn = Arc::clone(&turn);
             let agent = std::thread::spawn(move || agent_loop(peer, &turn));
@@ -255,7 +286,9 @@ impl Fake {
 
 struct Fx {
     project: tempfile::TempDir,
-    _profile: tempfile::TempDir,
+    profile: tempfile::TempDir,
+    /// The only folder of the fake `PATH` (holds `npx`).
+    bin: tempfile::TempDir,
     events: Arc<Events>,
     copy: SharedCopy,
     session: Session,
@@ -263,25 +296,49 @@ struct Fx {
 }
 
 const NOTES: &str = "Line one of the notes.\nLine two of the notes.\nLine three of the notes.\n";
+/// How the chosen Claude agent starts with `npx` on the fake `PATH`.
+const CLAUDE: &str = "npx -y @agentclientprotocol/claude-agent-acp@0.108.0";
+
+type TurnFn = dyn Fn(&mut Peer, &Value) -> Option<&'static str> + Send + Sync;
 
 impl Fx {
+    /// Claude's agent chosen (through `npx`).
     fn new(
         turn: impl Fn(&mut Peer, &Value) -> Option<&'static str> + Send + Sync + 'static,
     ) -> Self {
-        let fake = Fake::default();
-        let launch = fake.launch(Arc::new(turn));
-        Self::with(launch, fake)
+        Self::choosing(
+            Some(&Choice::Agent("claude-acp".to_owned())),
+            Arc::new(turn),
+        )
     }
 
-    fn with(launch: Launch, fake: Fake) -> Self {
+    fn choosing(choice: Option<&Choice>, turn: Arc<TurnFn>) -> Self {
+        let fake = Fake::default();
+        let launch = fake.launch(turn);
+        Self::with(launch, fake, choice, false)
+    }
+
+    /// `real_path`: programs found on this process's own `PATH`.
+    fn with(launch: Launch, fake: Fake, choice: Option<&Choice>, real_path: bool) -> Self {
         let project = tempfile::tempdir().unwrap();
         std::fs::write(project.path().join("notes.md"), NOTES).unwrap();
         let profile = tempfile::tempdir().unwrap();
+        let bin = tempfile::tempdir().unwrap();
+        testing::program(bin.path(), "npx");
+        let file = testing::app_store(profile.path()).app_file(CHOICE_FILE);
+        if let Some(choice) = choice {
+            file.save(choice).unwrap();
+        }
+        let agents = if real_path {
+            Agents::new(Some(file))
+        } else {
+            Agents::with(Some(file), testing::find_in(bin.path()), platforms())
+        };
         let (vault, documents) = testing::open(project.path());
         let events = Arc::new(Events::default());
         let copy: SharedCopy = Arc::new(Mutex::new(None));
         let session = Session::new(Host {
-            command: AgentCommand::default(),
+            agents,
             launch,
             project: testing::project(&vault, &documents),
             place: Some(profile.path().join("work")),
@@ -290,7 +347,8 @@ impl Fx {
         });
         Self {
             project,
-            _profile: profile,
+            profile,
+            bin,
             events,
             copy,
             session,
@@ -395,7 +453,7 @@ fn the_first_prompt_starts_the_agent_in_the_copy_and_streams_the_reply() {
         ]
     );
     assert_eq!(fx.session.status().state, AcpState::Ready);
-    assert_eq!(fx.session.status().agent, DEFAULT_COMMAND);
+    assert_eq!(fx.session.status().agent, CLAUDE);
 
     assert_eq!(
         fx.fake.methods(),
@@ -834,41 +892,17 @@ fn prompts_that_cannot_be_sent_are_refused_before_anything_starts() {
     assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 0);
 }
 
+/// The real Claude agent over the real program: by hand only (first run downloads the adapter; needs Node.js and the
+/// person's own agent login).
 #[test]
-fn the_command_comes_from_the_persons_settings() {
-    let table = |text: &str| {
-        text.parse::<toml_edit::DocumentMut>()
-            .unwrap()
-            .as_table()
-            .clone()
-    };
-    let default = AgentCommand::from_settings(None);
-    assert_eq!(default.typed(), DEFAULT_COMMAND);
-    assert_eq!(default.program(), "npx");
-    assert_eq!(
-        default.args(),
-        ["-y", "@agentclientprotocol/claude-agent-acp@0.108.0"]
+#[ignore = "starts the real Claude agent; run by hand"]
+fn the_real_claude_agent_answers() {
+    let fx = Fx::with(
+        crate::agents::person_launch(),
+        Fake::default(),
+        Some(&Choice::Agent("claude-acp".to_owned())),
+        true,
     );
-    let own =
-        AgentCommand::from_settings(Some(&table("command = \"  my-agent  --acp --verbose \"")));
-    assert_eq!(own.typed(), "my-agent  --acp --verbose");
-    assert_eq!(own.program(), "my-agent");
-    assert_eq!(own.args(), ["--acp", "--verbose"]);
-    for blank in ["command = \"   \"", "command = 5", "other = \"x\""] {
-        assert_eq!(
-            AgentCommand::from_settings(Some(&table(blank))),
-            default,
-            "{blank}"
-        );
-    }
-}
-
-/// The real default agent over the real program: by hand only (first run downloads the adapter; needs the person's
-/// own agent login).
-#[test]
-#[ignore = "starts the real default agent; run by hand"]
-fn the_real_default_agent_answers() {
-    let fx = Fx::with(person_launch(&AgentCommand::default()), Fake::default());
     fx.ask("Reply with one word: ok");
     let list = fx
         .events
@@ -887,4 +921,251 @@ fn the_real_default_agent_answers() {
         fx.session.status()
     );
     assert!(text.to_lowercase().contains("ok"), "{text}");
+}
+
+fn choose_agent(id: &str) -> ChooseArgs {
+    ChooseArgs {
+        agent: Some(id.to_owned()),
+        command: None,
+    }
+}
+
+fn turns_ended(fx: &Fx, count: usize) {
+    fx.events.wait_for("turn ends", WAIT, |list| {
+        list.iter().filter(|e| e["type"] == "turnEnd").count() == count
+    });
+}
+
+#[test]
+fn without_a_choice_the_prompt_is_refused_until_the_person_chooses() {
+    let fx = Fx::choosing(
+        None,
+        Arc::new(|peer: &mut Peer, _: &Value| {
+            peer.text("ok");
+            Some("end_turn")
+        }),
+    );
+    let status = fx.session.status();
+    assert!(!status.chosen);
+    assert_eq!(status.agent_name, None);
+    assert_eq!(status.agent, "");
+    let refused = fx
+        .session
+        .prompt(PromptArgs {
+            text: "Hello.".to_owned(),
+            selection: None,
+            document: None,
+        })
+        .unwrap_err();
+    assert_eq!(refused.kind, ErrorKind::Unavailable);
+    assert_eq!(refused.detail.as_deref(), Some("noAgent"));
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 0);
+    assert!(fx.session.agents().iter().all(|entry| !entry.chosen));
+
+    let list = fx.session.choose(&choose_agent("codex-acp")).unwrap();
+    let chosen: Vec<&str> = list
+        .iter()
+        .filter(|entry| entry.chosen)
+        .map(|entry| entry.id.as_str())
+        .collect();
+    assert_eq!(chosen, ["codex-acp"]);
+    // the profile folder, never the project
+    assert!(fx.profile.path().join(CHOICE_FILE).is_file());
+    assert!(!fx.project.path().join(CHOICE_FILE).exists());
+    let status = fx.session.status();
+    assert!(status.chosen);
+    assert_eq!(status.agent_name.as_deref(), Some("Codex"));
+    assert_eq!(status.agent, "npx -y @agentclientprotocol/codex-acp@2.7.0");
+    fx.ask("Hello.");
+    fx.events.turn_end();
+    assert_eq!(
+        fx.fake.plans()[0].args,
+        ["-y", "@agentclientprotocol/codex-acp@2.7.0"]
+    );
+}
+
+/// A new choice stops the agent (the copy stays) and the next prompt starts the new one; an own command runs its
+/// program as named.
+#[test]
+fn a_new_choice_applies_at_the_next_start() {
+    let fx = Fx::new(|peer, _| {
+        peer.text("ok");
+        Some("end_turn")
+    });
+    fx.ask("One.");
+    fx.events.turn_end();
+    let status = fx.session.status();
+    assert_eq!(status.agent_name.as_deref(), Some("Claude Agent"));
+    assert!(status.chosen);
+    assert_eq!(status.methods, Vec::<LoginMethod>::new());
+    let npx = if cfg!(windows) { "npx.cmd" } else { "npx" };
+    let first = &fx.fake.plans()[0];
+    assert_eq!(
+        first.program.to_string_lossy().to_lowercase(),
+        fx.bin.path().join(npx).to_string_lossy().to_lowercase()
+    );
+    assert_eq!(first.shown, CLAUDE);
+    let dir = fx.copy_dir();
+    fx.session.choose(&choose_agent("gemini")).unwrap();
+    assert_eq!(fx.session.status().state, AcpState::Idle);
+    wait_until("agent stopped", || {
+        fx.fake.stops.load(Ordering::SeqCst) == 1
+    });
+    fx.ask("Two.");
+    turns_ended(&fx, 2);
+    let plans = fx.fake.plans();
+    assert_eq!(
+        plans[0].args,
+        ["-y", "@agentclientprotocol/claude-agent-acp@0.108.0"]
+    );
+    assert_eq!(plans[1].args, ["-y", "@google/gemini-cli@0.68.0", "--acp"]);
+    assert_eq!(fx.copy_dir(), dir);
+
+    let own = testing::program(fx.bin.path(), "my-agent");
+    fx.session
+        .choose(&ChooseArgs {
+            agent: None,
+            command: Some(format!("{} --acp", own.display())),
+        })
+        .unwrap();
+    let status = fx.session.status();
+    assert_eq!(
+        status.agent_name.as_deref(),
+        own.file_name().and_then(|n| n.to_str())
+    );
+    fx.ask("Three.");
+    turns_ended(&fx, 3);
+    let plan = &fx.fake.plans()[2];
+    assert_eq!(plan.program, own);
+    assert_eq!(plan.args, ["--acp"]);
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 3);
+}
+
+#[test]
+fn choosing_is_refused_while_the_agent_works() {
+    let fx = Fx::new(|peer, _| {
+        peer.ask(
+            &json!(5),
+            &json!({
+                "toolCallId": "toolu_bash", "status": "pending",
+                "title": "Run the tests", "kind": "execute",
+                "rawInput": { "command": "npm test" },
+            }),
+        );
+        peer.next()?;
+        Some("end_turn")
+    });
+    fx.ask("Run the tests.");
+    fx.permission();
+    let busy = fx.session.choose(&choose_agent("gemini")).unwrap_err();
+    assert_eq!(busy.kind, ErrorKind::Conflict);
+    assert_eq!(busy.detail.as_deref(), Some("busy"));
+    let saved = std::fs::read_to_string(fx.profile.path().join(CHOICE_FILE)).unwrap();
+    assert!(saved.contains("claude-acp"), "{saved}");
+    fx.session
+        .answer(&AnswerArgs {
+            request_id: "5".to_owned(),
+            option_id: Some("reject".to_owned()),
+        })
+        .unwrap();
+    fx.events.turn_end();
+    assert_eq!(fx.fake.stops.load(Ordering::SeqCst), 0);
+}
+
+/// `auth_required` at `session/new`: the person sees the agent's ways to sign in; a terminal way only tries again,
+/// an agent way has the agent sign in, then the waiting prompt goes on.
+#[test]
+fn an_agent_that_needs_a_sign_in_asks_for_it_and_the_prompt_goes_on_after() {
+    let fx = Fx::new(|peer, _| {
+        peer.text("Signed in.");
+        Some("end_turn")
+    });
+    *fx.fake.auth.methods.lock().unwrap() = vec![
+        json!({ "id": "oauth", "name": "Sign in with the browser", "description": "Opens your browser" }),
+        json!({ "type": "terminal", "id": "claude-ai-login", "name": "Claude account", "args": ["--cli", "auth", "login", "--claudeai"] }),
+        json!({ "type": "env_var", "id": "key", "name": "API key", "vars": [{ "name": "ANTHROPIC_API_KEY" }] }),
+        json!({ "type": "future_kind", "id": "later", "name": "Later" }),
+    ];
+    fx.fake.auth.required.store(true, Ordering::SeqCst);
+    fx.ask("Hello.");
+    let list = fx.events.wait_for("sign-in", WAIT, |list| {
+        list.iter().any(|e| e["state"] == "needsLogin")
+    });
+    let asked = list.iter().find(|e| e["state"] == "needsLogin").unwrap();
+    assert_eq!(asked["error"], Value::Null);
+    assert_eq!(
+        asked["methods"],
+        json!([
+            { "id": "oauth", "name": "Sign in with the browser", "description": "Opens your browser", "kind": "agent", "hint": null },
+            { "id": "claude-ai-login", "name": "Claude account", "description": null, "kind": "terminal", "hint": format!("{CLAUDE} --cli auth login --claudeai") },
+            { "id": "key", "name": "API key", "description": null, "kind": "env", "hint": "ANTHROPIC_API_KEY" },
+        ])
+    );
+    let status = fx.session.status();
+    assert_eq!(status.state, AcpState::NeedsLogin);
+    assert_eq!(status.methods.len(), 3);
+    // terminal sign-in methods are welcome (the person's own terminal); still no terminal of the app's
+    let caps = &fx.fake.seen()[0]["params"]["clientCapabilities"];
+    assert_eq!(caps["auth"]["terminal"], true);
+    assert_ne!(caps["terminal"], true);
+    // other states carry no methods
+    assert!(list
+        .iter()
+        .filter(|e| e["state"] != "needsLogin")
+        .all(|e| e.get("methods").is_none()));
+
+    let unknown = fx
+        .session
+        .login(&LoginArgs {
+            method_id: Some("nope".to_owned()),
+        })
+        .unwrap_err();
+    assert_eq!(unknown.detail.as_deref(), Some("unknownMethod"));
+    assert_eq!(fx.session.status().state, AcpState::NeedsLogin);
+
+    // a terminal way: the person signs in outside; only tried again (still refused here)
+    fx.session
+        .login(&LoginArgs {
+            method_id: Some("claude-ai-login".to_owned()),
+        })
+        .unwrap();
+    let list = fx.events.wait_for("sign-in again", WAIT, |list| {
+        list.iter().filter(|e| e["state"] == "needsLogin").count() == 2
+    });
+    let again = list.iter().rfind(|e| e["state"] == "needsLogin").unwrap();
+    assert_eq!(again["error"], "The agent still needs you to sign in.");
+    assert!(!fx.fake.methods().contains(&"authenticate".to_owned()));
+
+    // an agent way: the agent signs in, then the prompt goes on in a new session
+    fx.session
+        .login(&LoginArgs {
+            method_id: Some("oauth".to_owned()),
+        })
+        .unwrap();
+    assert_eq!(fx.events.turn_end()["stopReason"], "end_turn");
+    assert_eq!(
+        fx.fake.methods(),
+        [
+            "initialize",
+            "session/new",
+            "session/new",
+            "authenticate",
+            "session/new",
+            "session/set_mode",
+            "session/prompt"
+        ]
+    );
+    let seen = fx.fake.seen();
+    let auth = seen.iter().find(|m| m["method"] == "authenticate").unwrap();
+    assert_eq!(auth["params"], json!({ "methodId": "oauth" }));
+    let prompt = seen
+        .iter()
+        .find(|m| m["method"] == "session/prompt")
+        .unwrap();
+    assert_eq!(prompt["params"]["prompt"][0]["text"], "Hello.");
+    assert_eq!(fx.events.of_type("text")[0]["text"], "Signed in.");
+    assert_eq!(fx.session.status().state, AcpState::Ready);
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 1);
+    let none = fx.session.login(&LoginArgs::default()).unwrap_err();
+    assert_eq!(none.detail.as_deref(), Some("noLogin"));
 }

@@ -72,6 +72,8 @@ pub enum AcpState {
     Working,
     /// The agent could not start | stopped by itself; the next prompt starts a fresh one.
     Error,
+    /// The agent runs but wants the person to sign in first (`methods`): `acp.login`, then the prompt goes on.
+    NeedsLogin,
 }
 
 /// Answer of `acp.status`.
@@ -80,10 +82,118 @@ pub enum AcpState {
 #[ts(export)]
 pub struct AcpStatus {
     pub state: AcpState,
-    /// The agent command as the person typed it (or the default).
+    /// The chosen agent's command as it would run (`""`: none chosen).
     pub agent: String,
-    /// Why the agent is in `error` (plain English).
+    /// The chosen agent's name (an own command: its program); `null`: none chosen.
+    pub agent_name: Option<String>,
+    /// An agent is chosen (`false`: a prompt is refused with `noAgent` until `acp.choose`).
+    pub chosen: bool,
+    /// Why the agent is in `error` | why a sign-in failed (plain English).
     pub error: Option<String>,
+    /// How the person can sign in (`needsLogin` only; else empty).
+    pub methods: Vec<LoginMethod>,
+}
+
+/// How a sign-in works.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum LoginKind {
+    /// The agent signs in by itself (it may open the browser): `acp.login { methodId }`.
+    Agent,
+    /// The person runs `hint` in a terminal, then `acp.login {}` tries again.
+    Terminal,
+    /// The person sets the variables named in `hint`, restarts the app, then tries again.
+    Env,
+}
+
+/// One way to sign in that the agent offers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LoginMethod {
+    pub id: String,
+    /// Label from the agent.
+    pub name: String,
+    pub description: Option<String>,
+    pub kind: LoginKind,
+    /// `terminal`: the whole command line to run (the agent's command + the method's arguments; variables first as
+    /// `NAME=value`); `env`: the variable names, comma separated; `agent`: `null`.
+    pub hint: Option<String>,
+}
+
+/// How a listed agent would start on this computer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum AgentHow {
+    /// Its own program is installed (found on `PATH`).
+    Native,
+    /// Through Node's `npx` (downloads the agent's package on first use).
+    Npx,
+    /// Through uv's `uvx` (downloads the agent's package on first use).
+    Uvx,
+    /// Nothing to start it with: see `needs`.
+    Missing,
+    /// The person's own command.
+    Custom,
+}
+
+/// What the person must install before an agent can start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum AgentNeed {
+    /// Node.js (`npx` was not found).
+    Node,
+    /// uv (`uvx` was not found).
+    Uv,
+    /// The agent's own program (see `website`) | the own command's program was not found.
+    Install,
+}
+
+/// One agent the person can choose (`acp.agents`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AgentEntry {
+    /// Registry id (`custom`: the person's own command).
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub version: String,
+    pub how: AgentHow,
+    /// Set when `how` is `missing` (or a custom program is not found).
+    pub needs: Option<AgentNeed>,
+    /// The command as it would run (program by name).
+    pub command: String,
+    /// The agent's website, else its repository.
+    pub website: Option<String>,
+    pub chosen: bool,
+}
+
+/// Arguments of `acp.choose`: exactly one of `agent` (a registry id of `acp.agents`) | `command` (the person's own).
+#[derive(Debug, Clone, Default, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export)]
+pub struct ChooseArgs {
+    #[serde(default)]
+    #[ts(optional)]
+    pub agent: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub command: Option<String>,
+}
+
+/// Arguments of `acp.login`: `methodId` of an `agent` method -> the agent signs in, then the prompt goes on; any
+/// other method | none -> tries again (the person signed in outside the app).
+#[derive(Debug, Clone, Default, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export)]
+pub struct LoginArgs {
+    #[serde(default)]
+    #[ts(optional)]
+    pub method_id: Option<String>,
 }
 
 /// The passage the person attached to a prompt.
@@ -147,10 +257,14 @@ pub struct PermissionChoice {
 )]
 #[ts(export)]
 pub enum AcpUpdate {
-    /// The state changed; `error` only with `error` (or a prompt that could not be sent: state stays `ready`).
+    /// The state changed; `error` with `error` | a failed sign-in (or a prompt that could not be sent: state stays
+    /// `ready`); `methods` only with `needsLogin`.
     Status {
         state: AcpState,
         error: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        methods: Option<Vec<LoginMethod>>,
     },
     /// A piece of the agent's reply (append).
     Text { text: String },

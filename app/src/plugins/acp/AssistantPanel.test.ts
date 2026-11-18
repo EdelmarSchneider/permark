@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 // The Assistant panel: the agent's text as plain text (markup never becomes elements), question cards that answer
 // with the agent's options, Enter | Shift+Enter | an IME's Enter in the message box, Send while the agent works, the
-// passage chip, and hunks accepted | rejected one by one (files taken only as a whole show no hunk buttons).
+// passage chip, and hunks accepted | rejected one by one (files taken only as a whole show no hunk buttons); the
+// picker (no agent chosen | Change): search, a chip per state, How to install, Choose only for an agent that can
+// start, an own command; the sign-in card (the agent's own way, a command to copy, variables, Try again).
 import "../../core/testing/media";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MOCK_AGENTS, MOCK_LOGIN_METHODS } from "../../api/mockAcp";
 import { t } from "../../core/i18n";
 import AssistantPanel from "./AssistantPanel.svelte";
 import { acp, PANEL_MARK } from "./store.svelte";
@@ -29,13 +32,36 @@ function box(): HTMLTextAreaElement {
   return found;
 }
 
+function labelled(label: string): HTMLButtonElement {
+  const found = root.querySelector(`button[aria-label="${label}"]`);
+  if (!(found instanceof HTMLButtonElement)) throw new Error(`no button labelled ${label}`);
+  return found;
+}
+
+/** No agent chosen yet; the list as the mock computer has it. */
+function firstRun(): void {
+  acp.status = {
+    state: "idle",
+    agent: "",
+    agentName: null,
+    chosen: false,
+    error: null,
+    methods: [],
+  };
+  acp.catalog = { status: "ready", agents: MOCK_AGENTS.map((a) => ({ ...a, chosen: false })) };
+}
+
 beforeEach(() => {
   vi.spyOn(acp, "refreshChanges").mockResolvedValue();
+  vi.spyOn(acp, "loadAgents").mockResolvedValue();
   acp.clear();
   acp.status = {
     state: "ready",
     agent: "npx -y @agentclientprotocol/claude-agent-acp@0.108.0",
+    agentName: "Claude Agent",
+    chosen: true,
     error: null,
+    methods: [],
   };
   root = document.createElement("div");
   document.body.append(root);
@@ -53,7 +79,7 @@ describe("the Assistant panel", () => {
   it("explains itself while the conversation is empty and names the agent", () => {
     open();
     expect(root.textContent).toContain(t("acp.empty"));
-    expect(root.textContent).toContain("claude-agent-acp");
+    expect(root.querySelector(".agent")?.textContent).toContain("Claude Agent");
     expect(root.querySelector(`[${PANEL_MARK}]`)).not.toBeNull();
     expect(root.querySelector("[data-view-header]")).not.toBeNull();
   });
@@ -166,3 +192,145 @@ describe("the Assistant panel", () => {
     expect(root.querySelectorAll(".row.del")).toHaveLength(1);
   });
 });
+
+describe("the choice of the agent", () => {
+  it("none chosen: the picker stands in for the conversation, every agent with how it starts", () => {
+    firstRun();
+    open();
+    expect(root.textContent).toContain(t("acp.pick.title"));
+    expect(root.querySelector("textarea")).toBeNull();
+    expect(root.textContent).not.toContain(t("acp.empty"));
+    const names = [...root.querySelectorAll(".agents .name")].map((n) => n.textContent);
+    // those that can start first
+    expect(names).toEqual([
+      "Claude Agent",
+      "Codex",
+      "Gemini CLI",
+      "goose",
+      "fast-agent",
+      "Amp",
+      "Cline",
+      "Deep Agents",
+    ]);
+    const chips = [...root.querySelectorAll(".agents .how")].map((c) => c.textContent);
+    expect(chips).toEqual([
+      t("acp.how.npx"),
+      t("acp.how.npx"),
+      t("acp.how.npx"),
+      t("acp.how.native"),
+      t("acp.how.uvx"),
+      t("acp.needs.install"),
+      t("acp.needs.node"),
+      t("acp.needs.uv"),
+    ]);
+    expect(acp.loadAgents).toHaveBeenCalled();
+  });
+
+  it("Choose works for an agent that can start; How to install opens the website of one that cannot", () => {
+    const choose = vi.spyOn(acp, "choose").mockResolvedValue(true);
+    const website = vi.spyOn(acp, "openWebsite").mockReturnValue();
+    firstRun();
+    open();
+    labelled(t("acp.pick.chooseNamed", { name: "Codex" })).click();
+    expect(choose).toHaveBeenCalledWith({ agent: "codex-acp" });
+    expect(labelled(t("acp.pick.chooseNamed", { name: "Cline" })).disabled).toBe(true);
+    labelled(t("acp.pick.howToInstallNamed", { name: "Cline" })).click();
+    expect(website).toHaveBeenCalledWith("https://cline.bot/cli");
+    // ready agents need no install; one without a website has no button for it
+    expect(
+      root.querySelector(`[aria-label="${t("acp.pick.howToInstallNamed", { name: "Codex" })}"]`),
+    ).toBeNull();
+    expect(
+      root.querySelector(
+        `[aria-label="${t("acp.pick.howToInstallNamed", { name: "Deep Agents" })}"]`,
+      ),
+    ).toBeNull();
+  });
+
+  it("the search keeps the agents with every word typed", () => {
+    firstRun();
+    open();
+    const search = root.querySelector<HTMLInputElement>('input[type="search"]');
+    if (search === null) throw new Error("no search field");
+    search.value = "coding agent";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    flushSync();
+    const names = [...root.querySelectorAll(".agents .name")].map((n) => n.textContent);
+    expect(names).toEqual(["Amp", "Cline"]);
+    search.value = "zzz";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    flushSync();
+    expect(root.textContent).toContain(t("acp.pick.none"));
+  });
+
+  it("Other command takes the person's own command, with the line that PerMark starts it", async () => {
+    const choose = vi.spyOn(acp, "choose").mockResolvedValue(true);
+    firstRun();
+    open();
+    buttonNamed(t("acp.pick.other")).click();
+    await Promise.resolve();
+    flushSync();
+    expect(root.textContent).toContain(t("acp.pick.commandWarning"));
+    const field = root.querySelector<HTMLInputElement>("form input");
+    if (field === null) throw new Error("no command field");
+    expect(buttonNamed(t("acp.pick.useCommand")).disabled).toBe(true);
+    field.value = "my-agent --acp";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    flushSync();
+    buttonNamed(t("acp.pick.useCommand")).click();
+    expect(choose).toHaveBeenCalledWith({ command: "my-agent --acp" });
+  });
+
+  it("the header's Change opens the picker, waits while the agent works, and Cancel goes back", () => {
+    open();
+    const change = labelled(t("acp.changeAgent"));
+    acp.take({ type: "status", state: "working", error: null });
+    flushSync();
+    expect(change.disabled).toBe(true);
+    acp.take({ type: "status", state: "ready", error: null });
+    flushSync();
+    expect(change.disabled).toBe(false);
+    change.click();
+    flushSync();
+    expect(root.textContent).toContain(t("acp.pick.title"));
+    expect(root.querySelector("textarea")).toBeNull();
+    buttonNamed(t("common.cancel")).click();
+    flushSync();
+    expect(root.textContent).not.toContain(t("acp.pick.title"));
+    expect(root.querySelector("textarea")).not.toBeNull();
+  });
+});
+
+describe("the sign-in card", () => {
+  it("offers each way as it works, then Try again", () => {
+    const login = vi.spyOn(acp, "login").mockResolvedValue();
+    const copy = vi.spyOn(acp, "copy").mockResolvedValue(true);
+    acp.take({
+      type: "status",
+      state: "needsLogin",
+      error: null,
+      methods: [...MOCK_LOGIN_METHODS],
+    });
+    open();
+    expect(root.textContent).toContain(t("acp.state.needsLogin"));
+    expect(root.textContent).toContain(t("acp.login.title", { name: "Claude Agent" }));
+    const [agentWay, terminal, env] = MOCK_LOGIN_METHODS;
+    if (agentWay === undefined || terminal?.hint == null || env?.hint == null)
+      throw new Error("mock methods changed");
+    buttonNamed(agentWay.name).click();
+    expect(login).toHaveBeenLastCalledWith(agentWay);
+    // a terminal way: its command to copy, never run by the app
+    expect(root.querySelector(".login .command")?.textContent).toBe(terminal.hint);
+    labelledTitle(t("acp.login.copyCommand")).click();
+    expect(copy).toHaveBeenCalledWith(terminal.hint);
+    expect(root.textContent).toContain(t("acp.login.env", { names: env.hint }));
+    buttonNamed(t("acp.retry")).click();
+    expect(login).toHaveBeenLastCalledWith(null);
+  });
+});
+
+function labelledTitle(title: string): HTMLButtonElement {
+  const found = root.querySelector(`button[title="${title}"]`);
+  if (!(found instanceof HTMLButtonElement)) throw new Error(`no button titled ${title}`);
+  return found;
+}

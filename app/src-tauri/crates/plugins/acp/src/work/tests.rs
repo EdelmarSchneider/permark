@@ -97,6 +97,22 @@ fn agent_settings_and_machinery_are_kept_out() {
         "nested/.permark/config.toml",
         ".aiignore",
         "notes/.AIIGNORE",
+        // settings | servers | hooks of other registry agents
+        ".qwen/settings.json",
+        "a/.goose/config.yaml",
+        ".kilo/kilo.json",
+        ".cline/x.json",
+        ".amp/settings.json",
+        ".kilocode/mcp.json",
+        ".junie/mcp/mcp.json",
+        ".kiro/settings/mcp.json",
+        "docs/.kiro/hooks/on-save.kiro.hook",
+        ".clinerules/hooks/pre.sh",
+        ".factory/settings.json",
+        ".factory/mcp.json",
+        ".factory/hooks/x.sh",
+        ".augment/settings.json",
+        ".vibe/config.toml",
     ] {
         assert!(kept_out(path), "{path}");
     }
@@ -107,6 +123,16 @@ fn agent_settings_and_machinery_are_kept_out() {
         "vscode/notes.md",
         "settings.local.json",
         "mcp.json",
+        // their instructions are documents
+        ".kiro/steering/style.md",
+        ".junie/guidelines.md",
+        ".kilocode/rules/style.md",
+        ".clinerules/style.md",
+        ".factory/droids/reviewer.md",
+        ".augment/rules/a.md",
+        "QWEN.md",
+        ".goosehints",
+        "kiro/settings/x.md",
     ] {
         assert!(!kept_out(path), "{path}");
     }
@@ -132,12 +158,24 @@ fn the_copy_holds_only_what_an_agent_may_see() {
         (".claude/commands/x.md", b"x\n"),
         (".mcp.json", b"{}"),
         (".vscode/settings.json", b"{}"),
+        (".kiro/settings/mcp.json", b"{}"),
+        (
+            ".kiro/steering/style.md",
+            b"s
+",
+        ),
+        (".qwen/settings.json", b"{}"),
         ("big.txt", &big),
     ]);
     let work = f.build();
     assert!(work.dir().starts_with(f.profile.path()));
     assert!(!work.dir().starts_with(f.project.path()));
-    for kept in ["README.md", "docs/a.md", ".claude/commands/x.md"] {
+    for kept in [
+        "README.md",
+        "docs/a.md",
+        ".claude/commands/x.md",
+        ".kiro/steering/style.md",
+    ] {
         assert_eq!(copied(&work, kept), Some(f.real(kept)), "{kept}");
     }
     for out in [
@@ -149,6 +187,8 @@ fn the_copy_holds_only_what_an_agent_may_see() {
         ".claude/settings.json",
         ".mcp.json",
         ".vscode/settings.json",
+        ".kiro/settings/mcp.json",
+        ".qwen/settings.json",
         "big.txt",
     ] {
         assert_eq!(copied(&work, out), None, "{out}");

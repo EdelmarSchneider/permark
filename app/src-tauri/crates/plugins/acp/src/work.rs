@@ -43,12 +43,33 @@ const RULES_WAIT: Duration = Duration::from_secs(5);
 const PRIVATE_FOLDERS: [&str; 2] = [".git", ".permark"];
 /// Files naming what agents may not see (any depth): their lines would tell the agent the hidden names.
 const PRIVATE_FILES: [&str; 1] = [".aiignore"];
-/// Folders agents read as their own settings (permissions, tools, servers), any depth.
-const AGENT_FOLDERS: [&str; 5] = [".codex", ".gemini", ".cursor", ".vscode", ".opencode"];
+/// Folders agents read as their own settings (permissions, tools, servers, hooks), any depth.
+const AGENT_FOLDERS: [&str; 10] = [
+    ".codex",
+    ".gemini",
+    ".cursor",
+    ".vscode",
+    ".opencode",
+    ".qwen",
+    ".goose",
+    ".kilo",
+    ".cline",
+    ".amp",
+];
 /// Files agents read as their own settings, any depth.
 const AGENT_FILES: [&str; 3] = [".mcp.json", "opencode.json", "opencode.jsonc"];
-/// Settings files inside a `.claude` folder (its commands and skills are documents and stay).
-const CLAUDE_SETTINGS: [&str; 2] = ["settings.json", "settings.local.json"];
+/// Agent folders that also hold instructions (documents, kept): the settings | servers | hooks inside them (files or
+/// folders, right under the agent folder) stay out.
+const AGENT_SETTINGS: [(&str, &[&str]); 8] = [
+    (".claude", &["settings.json", "settings.local.json"]),
+    (".kilocode", &["mcp.json"]),
+    (".junie", &["mcp"]),
+    (".kiro", &["settings", "hooks"]),
+    (".clinerules", &["hooks"]),
+    (".factory", &["settings.json", "mcp.json", "hooks"]),
+    (".augment", &["settings.json"]),
+    (".vibe", &["config.toml"]),
+];
 
 fn named(segment: &str, names: &[&str]) -> bool {
     let folded = fold(segment);
@@ -58,6 +79,13 @@ fn named(segment: &str, names: &[&str]) -> bool {
 /// A folder whose whole content stays out of the copy.
 fn kept_out_folder(name: &str) -> bool {
     named(name, &PRIVATE_FOLDERS) || named(name, &AGENT_FOLDERS)
+}
+
+/// `inside` is agent settings right under the agent folder `folder`.
+fn agent_setting(folder: &str, inside: &str) -> bool {
+    AGENT_SETTINGS
+        .iter()
+        .any(|(agent, settings)| named(folder, &[agent]) && named(inside, settings))
 }
 
 /// Whether a project path is agent settings or the project's machinery: never in the copy, never offered back.
@@ -71,7 +99,9 @@ pub fn kept_out(path: &str) -> bool {
         || named(name, &PRIVATE_FOLDERS)
         || named(name, &PRIVATE_FILES)
         || named(name, &AGENT_FILES)
-        || (named(name, &CLAUDE_SETTINGS) && folders.last().is_some_and(|f| named(f, &[".claude"])))
+        || segments
+            .windows(2)
+            .any(|pair| agent_setting(pair[0], pair[1]))
 }
 
 /// Where the copy of `root` lives under `base`: `<base>/<project folder name>` (the agent sees the project's name).

@@ -1,28 +1,32 @@
 //! The agent of one project instance, spoken to over the Agent Client Protocol (v1).
 //!
-//! - started at the first prompt, on a thread of its own (the RPC thread never waits on the agent): work copy made
-//!   when absent, the person's command started in it, `initialize` (no file system, no terminal offered: the agent
-//!   works on the copy with its own tools) -> `session/new` (folder = the copy, no MCP servers) -> `session/set_mode`
-//!   `default` when offered (a person's own "auto" default would let the agent skip every question).
+//! - started at the first prompt, on a thread of its own (the RPC thread never waits on the agent): the person's
+//!   choice read now ([`Agents`]: a new choice applies at the next start), work copy made when absent, the agent
+//!   started in it, `initialize` (no file system, no terminal offered: the agent works on the copy with its own
+//!   tools; terminal sign-in methods are welcome: the person runs them) -> `session/new` (folder = the copy, no MCP
+//!   servers) -> `session/set_mode` `default` when offered (a person's own "auto" default would let the agent skip
+//!   every question).
+//! - `auth_required` at `session/new` | a prompt -> `NeedsLogin` with the agent's sign-in methods; `acp.login` has the
+//!   agent sign in (`authenticate`, agent methods only) or just tries again, then the waiting prompt goes on.
 //! - each prompt: the copy takes the person's latest changes first ([`WorkCopy::sync`]), then `session/prompt`; the
 //!   turn ends with the agent's stop reason and the count of changed files.
 //! - news (`session/update`) -> `acp:update` events: reply text, "thinking", tool lines. Anything else the agent
 //!   tells (modes, commands, usage, account status) is dropped unread.
 //! - permission questions: a tool that only reads | searches | thinks, or edits | deletes | moves files inside the
 //!   copy, is allowed once by rule; anything else is a card the person answers.
-//! - states: Idle -> Starting -> Working <-> Ready; failed start | agent gone -> Error (the next prompt starts a fresh
-//!   one); "new conversation" -> Idle (the copy and its pending changes stay). Each run carries the generation it
-//!   was started for and does nothing once a newer one replaced it.
+//! - states: Idle -> Starting -> Working <-> Ready; Starting | Working -> `NeedsLogin` -> Starting (login); failed start
+//!   | agent gone -> Error (the next prompt starts a fresh one); "new conversation" | a new choice -> Idle (the copy
+//!   and its pending changes stay). Each run carries the generation it was started for and does nothing once a newer
+//!   one replaced it.
 
 use std::collections::HashMap;
-use std::ffi::OsStr;
-use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use agent_client_protocol_schema::v1::{
-    CancelNotification, ContentBlock, EmbeddedResource, EmbeddedResourceResource,
+    AuthCapabilities, AuthMethodTerminal, AuthenticateRequest, CancelNotification,
+    ClientCapabilities, ContentBlock, EmbeddedResource, EmbeddedResourceResource,
     Error as RpcError, Implementation, InitializeRequest, InitializeResponse, NewSessionRequest,
     NewSessionResponse, PermissionOptionId, PermissionOptionKind, PromptRequest, PromptResponse,
     RequestId, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
@@ -33,24 +37,23 @@ use agent_client_protocol_schema::v1::{
 use agent_client_protocol_schema::ProtocolVersion;
 use permark_core::paths::{Root, Vault, VaultPath};
 use permark_core::plugins::PluginEvents;
-use permark_core::process;
 use permark_core::{ErrorKind, IpcError};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::client::{lock, AgentPipes, CallError, Connection, Inbox, Launch};
+use crate::agents::{Agents, Chosen, Launch};
+use crate::client::{lock, AgentPipes, CallError, Connection, Inbox};
 use crate::dto::{
-    AcpState, AcpStatus, AcpUpdate, AnswerArgs, PermissionChoice, PromptArgs, PromptSelection,
+    AcpState, AcpStatus, AcpUpdate, AgentEntry, AgentNeed, AnswerArgs, ChooseArgs, LoginArgs,
+    LoginKind, LoginMethod, PermissionChoice, PromptArgs, PromptSelection,
 };
 use crate::work::{copy_dir, Project, WorkCopy};
 use crate::SharedCopy;
 
-/// The agent command when the person set none: Claude through its ACP adapter (pinned version).
-pub const DEFAULT_COMMAND: &str = "npx -y @agentclientprotocol/claude-agent-acp@0.108.0";
 /// Longest wait for each step of the start (the first `npx` run downloads the adapter).
 const SETUP_WAIT: Duration = Duration::from_secs(180);
-/// Wait for the agent's own exit after its stdin closed, before it is killed.
-pub const STOP_GRACE: Duration = Duration::from_secs(3);
+/// Longest wait for an agent's own sign-in (it may wait for the person in the browser).
+const LOGIN_WAIT: Duration = Duration::from_secs(600);
 /// Characters of the agent's stderr shown when it stopped by itself.
 const TAIL_CHARS: usize = 500;
 /// Wait for the agent's last stderr lines after its output ended.
@@ -60,92 +63,10 @@ const ASK_MODE: &str = "default";
 /// Mime type of an attached passage.
 const PASSAGE_MIME: &str = "text/markdown";
 
-/// The agent command: `[plugins.acp] command` of the person's own app settings, split on whitespace.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentCommand {
-    typed: String,
-    program: String,
-    args: Vec<String>,
-}
-
-impl AgentCommand {
-    /// From the plugin's table of the person's app settings (a project's shared file never reaches it); absent |
-    /// blank -> [`DEFAULT_COMMAND`].
-    #[must_use]
-    pub fn from_settings(settings: Option<&toml_edit::Table>) -> Self {
-        let typed = settings
-            .and_then(|table| table.get("command"))
-            .and_then(|item| item.as_str())
-            .map(str::trim)
-            .filter(|typed| !typed.is_empty())
-            .unwrap_or(DEFAULT_COMMAND);
-        Self::split(typed)
-    }
-
-    fn split(typed: &str) -> Self {
-        let mut words = typed.split_whitespace();
-        Self {
-            typed: typed.to_owned(),
-            program: words.next().unwrap_or_default().to_owned(),
-            args: words.map(str::to_owned).collect(),
-        }
-    }
-
-    /// As the person typed it.
-    #[must_use]
-    pub fn typed(&self) -> &str {
-        &self.typed
-    }
-
-    #[must_use]
-    pub fn program(&self) -> &str {
-        &self.program
-    }
-
-    #[must_use]
-    pub fn args(&self) -> &[String] {
-        &self.args
-    }
-}
-
-impl Default for AgentCommand {
-    fn default() -> Self {
-        Self::split(DEFAULT_COMMAND)
-    }
-}
-
-/// Starts the person's command: program found on `PATH` (Windows: with `PATHEXT`), no shell, the copy as folder.
-#[must_use]
-pub fn person_launch(command: &AgentCommand) -> Launch {
-    let command = command.clone();
-    Arc::new(move |cwd: &Path| {
-        let program = process::resolve_program(OsStr::new(&command.program)).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("{} was not found", command.program),
-            )
-        })?;
-        let args: Vec<&OsStr> = command.args.iter().map(OsStr::new).collect();
-        let process::Piped {
-            stdin,
-            stdout,
-            stderr,
-            mut child,
-        } = process::spawn_person_command(&program, &args, cwd)?;
-        Ok(AgentPipes {
-            to_agent: Box::new(stdin),
-            from_agent: Box::new(stdout),
-            stderr: Box::new(stderr),
-            stop: Box::new(move || {
-                let _ = child.stop(STOP_GRACE);
-            }),
-        })
-    })
-}
-
 /// What a session works with.
 pub struct Host {
-    pub command: AgentCommand,
+    /// The catalog + the person's choice (read at every start).
+    pub agents: Agents,
     pub launch: Launch,
     pub project: Project,
     /// Folder the copy is made in (`None`: no profile, no copy can be made).
@@ -187,6 +108,8 @@ enum State {
     Ready(Live),
     Working(Live),
     Error(String),
+    /// The agent waits for the person to sign in.
+    NeedsLogin(Login),
 }
 
 impl State {
@@ -197,6 +120,7 @@ impl State {
             Self::Ready(_) => AcpState::Ready,
             Self::Working(_) => AcpState::Working,
             Self::Error(_) => AcpState::Error,
+            Self::NeedsLogin(_) => AcpState::NeedsLogin,
         }
     }
 
@@ -204,6 +128,7 @@ impl State {
         match self {
             Self::Starting(agent) => agent.clone(),
             Self::Ready(live) | Self::Working(live) => Some(Arc::clone(&live.agent)),
+            Self::NeedsLogin(login) => Some(Arc::clone(&login.agent)),
             Self::Idle | Self::Error(_) => None,
         }
     }
@@ -211,6 +136,14 @@ impl State {
     fn error(&self) -> Option<String> {
         match self {
             Self::Error(message) => Some(message.clone()),
+            Self::NeedsLogin(login) => login.error.clone(),
+            _ => None,
+        }
+    }
+
+    fn methods(&self) -> Option<Vec<LoginMethod>> {
+        match self {
+            Self::NeedsLogin(login) => Some(login.methods.to_vec()),
             _ => None,
         }
     }
@@ -219,6 +152,7 @@ impl State {
         AcpUpdate::Status {
             state: self.name(),
             error: self.error(),
+            methods: self.methods(),
         }
     }
 }
@@ -228,12 +162,27 @@ impl State {
 struct Live {
     agent: Arc<Agent>,
     session: SessionId,
+    /// The agent's sign-in methods (from `initialize`).
+    methods: Arc<[LoginMethod]>,
+}
+
+/// An agent waiting for the person to sign in, with the prompt that goes on afterwards.
+struct Login {
+    agent: Arc<Agent>,
+    /// The session the prompt was refused in (`None`: `session/new` was refused).
+    session: Option<SessionId>,
+    args: PromptArgs,
+    methods: Arc<[LoginMethod]>,
+    /// Why the last sign-in did not work (plain English).
+    error: Option<String>,
 }
 
 /// One running agent program.
 struct Agent {
     connection: Arc<Connection>,
     stop: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    /// The copy's folder, as sessions are opened in it.
+    dir: PathBuf,
     /// The copy as a folder of its own: the boundary of "work on the copy's files".
     copy: Vault,
 }
@@ -311,6 +260,19 @@ enum Run {
     Turn(Live),
 }
 
+/// What a start opened.
+enum Opened {
+    Live(Live),
+    /// The agent wants the person to sign in before a session.
+    Login(Arc<Agent>, Arc<[LoginMethod]>),
+}
+
+/// Why no session was opened.
+enum Opening {
+    Login,
+    Failed(String),
+}
+
 /// What a permission question gets.
 enum Route {
     /// Allowed once by rule (this option).
@@ -334,26 +296,65 @@ impl Session {
 
     #[must_use]
     pub fn status(&self) -> AcpStatus {
+        // read before the lock: a file and `PATH` lookups
+        let chosen = self.core.host.agents.chosen();
         let inner = lock(&self.core.inner);
         AcpStatus {
             state: inner.state.name(),
-            agent: self.core.host.command.typed.clone(),
+            agent: chosen
+                .as_ref()
+                .map(|c| c.resolved.shown.clone())
+                .unwrap_or_default(),
+            agent_name: chosen.as_ref().map(|c| c.name.clone()),
+            chosen: chosen.is_some(),
             error: inner.state.error(),
+            methods: inner.state.methods().unwrap_or_default(),
         }
+    }
+
+    /// The agents the person can choose, as each would start on this computer.
+    #[must_use]
+    pub fn agents(&self) -> Vec<AgentEntry> {
+        self.core.host.agents.list()
+    }
+
+    /// Keeps the person's choice and stops the agent (the copy and its pending changes stay): the next prompt starts
+    /// the chosen one. Answers the list with the new choice.
+    ///
+    /// # Errors
+    /// `Conflict` (`busy`): the agent starts | works; the refusals of [`Agents::choose`].
+    pub fn choose(&self, args: &ChooseArgs) -> Result<Vec<AgentEntry>, IpcError> {
+        {
+            let inner = lock(&self.core.inner);
+            if matches!(inner.state, State::Starting(_) | State::Working(_)) {
+                return Err(IpcError::new(ErrorKind::Conflict).detail("busy"));
+            }
+            // written under the lock: a start begun meanwhile reads the new choice
+            self.core.host.agents.choose(args)?;
+        }
+        self.reset();
+        Ok(self.core.host.agents.list())
     }
 
     /// Sends a prompt: starts the agent first when none runs. Answers at once; the reply comes as events.
     ///
     /// # Errors
-    /// `Conflict` (`busy`): the agent starts | works; `InvalidData` | `InvalidPath`: a prompt that cannot be sent.
+    /// `Unavailable` (`noAgent`): no agent chosen; `Conflict` (`busy`): the agent starts | works; `InvalidData` |
+    /// `InvalidPath`: a prompt that cannot be sent.
     pub fn prompt(&self, args: PromptArgs) -> Result<(), IpcError> {
         check(&args)?;
+        if self.core.host.agents.chosen().is_none() {
+            return Err(IpcError::new(ErrorKind::Unavailable).detail("noAgent"));
+        }
         let mut inner = lock(&self.core.inner);
+        let mut left = None;
         let run = match &inner.state {
             State::Starting(_) | State::Working(_) => {
                 return Err(IpcError::new(ErrorKind::Conflict).detail("busy"));
             }
-            State::Idle | State::Error(_) => {
+            // a prompt instead of signing in: a fresh agent for it
+            State::Idle | State::Error(_) | State::NeedsLogin(_) => {
+                left = inner.state.agent();
                 inner.generation += 1;
                 inner.state = State::Starting(None);
                 Run::Start
@@ -367,6 +368,9 @@ impl Session {
         let generation = inner.generation;
         let update = inner.state.update();
         drop(inner);
+        if let Some(agent) = left {
+            stop_aside(&agent);
+        }
         self.core.emit(update);
         let core = Arc::clone(&self.core);
         let spawned =
@@ -408,12 +412,56 @@ impl Session {
                         .emit(AcpUpdate::PermissionDone { request_id: key });
                 }
             }
-            State::Starting(_) => {
+            State::Starting(_) | State::NeedsLogin(_) => {
                 drop(inner);
                 self.reset();
             }
             State::Idle | State::Ready(_) | State::Error(_) => {}
         }
+    }
+
+    /// The person signs in: an `agent` method -> the agent signs in itself; any other | none -> tried again (signed in
+    /// outside the app). Then the waiting prompt goes on. Answers at once; the outcome comes as events.
+    ///
+    /// # Errors
+    /// `NotFound` (`noLogin`): no sign-in waits; `InvalidData` (`unknownMethod`).
+    pub fn login(&self, args: &LoginArgs) -> Result<(), IpcError> {
+        let mut inner = lock(&self.core.inner);
+        let login = match std::mem::take(&mut inner.state) {
+            State::NeedsLogin(login) => login,
+            other => {
+                inner.state = other;
+                return Err(IpcError::new(ErrorKind::NotFound).detail("noLogin"));
+            }
+        };
+        let method = match &args.method_id {
+            None => None,
+            Some(id) => {
+                let Some(method) = login.methods.iter().find(|m| &m.id == id) else {
+                    inner.state = State::NeedsLogin(login);
+                    return Err(IpcError::new(ErrorKind::InvalidData)
+                        .subject(id.clone())
+                        .detail("unknownMethod"));
+                };
+                // a terminal method | variables: the person signs in outside, nothing for the agent to do
+                (method.kind == LoginKind::Agent).then(|| method.id.clone())
+            }
+        };
+        inner.state = State::Starting(Some(Arc::clone(&login.agent)));
+        let generation = inner.generation;
+        let update = inner.state.update();
+        drop(inner);
+        self.core.emit(update);
+        let core = Arc::clone(&self.core);
+        let spawned = std::thread::Builder::new()
+            .name("acp-login".into())
+            .spawn(move || core.sign_in(generation, login, method));
+        if let Err(error) = spawned {
+            self.core
+                .fail(generation, format!("The sign-in could not start: {error}"));
+            return Err(IpcError::io("acp", &error));
+        }
+        Ok(())
     }
 
     /// New conversation: the agent stops; the next prompt starts a fresh one (the copy and its changes stay).
@@ -689,23 +737,112 @@ impl Core {
     /// The start run: copy, program, session; then the first prompt.
     fn start(self: &Arc<Self>, generation: u64, args: &PromptArgs) {
         match self.open(generation) {
-            Ok(Some(live)) => {
-                let moved = self.with_current(generation, |inner| {
-                    inner.state = State::Working(live.clone());
-                    inner.state.update()
-                });
-                match moved {
-                    Some(update) => {
-                        self.emit(update);
-                        self.turn(generation, &live, args);
-                    }
-                    None => live.agent.stop(),
-                }
-            }
+            Ok(Some(Opened::Live(live))) => self.work(generation, &live, args),
+            Ok(Some(Opened::Login(agent, methods))) => self.need_login(
+                generation,
+                Login {
+                    agent,
+                    session: None,
+                    args: args.clone(),
+                    methods,
+                    error: None,
+                },
+            ),
             // replaced while starting: whoever replaced it stopped the agent
             Ok(None) => {}
             Err(message) => self.fail(generation, message),
         }
+    }
+
+    /// The started agent of `generation` takes the prompt: `Working`, then the turn.
+    fn work(&self, generation: u64, live: &Live, args: &PromptArgs) {
+        let moved = self.with_current(generation, |inner| {
+            inner.state = State::Working(live.clone());
+            inner.state.update()
+        });
+        match moved {
+            Some(update) => {
+                self.emit(update);
+                self.turn(generation, live, args);
+            }
+            None => live.agent.stop(),
+        }
+    }
+
+    /// The agent of `generation` wants the person to sign in: `NeedsLogin` with its methods.
+    fn need_login(&self, generation: u64, login: Login) {
+        let agent = Arc::clone(&login.agent);
+        let updates = self.with_current(generation, |inner| {
+            let mut updates: Vec<AcpUpdate> = inner
+                .asks
+                .drain()
+                .map(|(request_id, _)| AcpUpdate::PermissionDone { request_id })
+                .collect();
+            inner.state = State::NeedsLogin(login);
+            updates.push(inner.state.update());
+            updates
+        });
+        match updates {
+            Some(updates) => {
+                for update in updates {
+                    self.emit(update);
+                }
+            }
+            None => agent.stop(),
+        }
+    }
+
+    /// The sign-in run: the agent signs in (`method`: an agent method), then the waiting prompt goes on (in a new
+    /// session when `session/new` was the refused step).
+    fn sign_in(self: &Arc<Self>, generation: u64, login: Login, method: Option<String>) {
+        let Login {
+            agent,
+            session,
+            args,
+            methods,
+            ..
+        } = login;
+        let again = |error: String| Login {
+            agent: Arc::clone(&agent),
+            session: session.clone(),
+            args: args.clone(),
+            methods: Arc::clone(&methods),
+            error: Some(error),
+        };
+        if let Some(method) = method {
+            let signed: Result<Value, CallError> = agent.connection.call(
+                AGENT_METHOD_NAMES.authenticate,
+                AuthenticateRequest::new(method),
+                Some(LOGIN_WAIT),
+            );
+            match signed {
+                Ok(_) => {}
+                Err(CallError::Closed) => {
+                    return self.fail(generation, stopped_text(&agent.connection));
+                }
+                Err(error) => {
+                    let why = call_failed(&agent.connection, "authenticate", error);
+                    return self.need_login(generation, again(why));
+                }
+            }
+        }
+        let session = match &session {
+            Some(session) => session.clone(),
+            None => match open_session(&agent.connection, &agent.dir) {
+                Ok(session) => session,
+                Err(Opening::Login) => {
+                    let why = "The agent still needs you to sign in.".to_owned();
+                    return self.need_login(generation, again(why));
+                }
+                Err(Opening::Failed(message)) => return self.fail(generation, message),
+            },
+        };
+        let live = Live {
+            agent: Arc::clone(&agent),
+            session,
+            methods: Arc::clone(&methods),
+        };
+        self.work(generation, &live, &args);
     }
 
     /// The copy's folder, made when absent (`None`: replaced meanwhile).
@@ -731,8 +868,18 @@ impl Core {
         Ok(Some(dir))
     }
 
-    /// Makes the copy, starts the program, opens the session (`None`: replaced meanwhile).
-    fn open(self: &Arc<Self>, generation: u64) -> Result<Option<Live>, String> {
+    /// Reads the person's choice, makes the copy, starts the program, opens the session (`None`: replaced meanwhile).
+    fn open(self: &Arc<Self>, generation: u64) -> Result<Option<Opened>, String> {
+        let chosen = self
+            .host
+            .agents
+            .chosen()
+            .ok_or_else(|| "No assistant is chosen.".to_owned())?;
+        let plan = chosen
+            .resolved
+            .plan
+            .clone()
+            .ok_or_else(|| missing_text(&chosen))?;
         let Some(dir) = self.ensure_copy(generation)? else {
             return Ok(None);
         };
@@ -744,12 +891,8 @@ impl Core {
             from_agent,
             stderr,
             stop,
-        } = (self.host.launch)(&dir).map_err(|e| {
-            format!(
-                "The agent could not be started ({}): {e}",
-                self.host.command.typed
-            )
-        })?;
+        } = (self.host.launch)(&plan, &dir)
+            .map_err(|e| format!("The agent could not be started ({}): {e}", plan.shown))?;
         let inbox = Arc::new(Listener {
             core: Arc::clone(self),
             generation,
@@ -764,6 +907,7 @@ impl Core {
         let agent = Arc::new(Agent {
             connection,
             stop: Mutex::new(Some(stop)),
+            dir,
             copy,
         });
         let kept = self.with_current(generation, |inner| {
@@ -773,8 +917,16 @@ impl Core {
             agent.stop();
             return Ok(None);
         }
-        let session = handshake(&agent.connection, &dir)?;
-        Ok(Some(Live { agent, session }))
+        let methods: Arc<[LoginMethod]> = initialize(&agent.connection, &plan.shown)?.into();
+        match open_session(&agent.connection, &agent.dir) {
+            Ok(session) => Ok(Some(Opened::Live(Live {
+                agent,
+                session,
+                methods,
+            }))),
+            Err(Opening::Login) => Ok(Some(Opened::Login(agent, methods))),
+            Err(Opening::Failed(message)) => Err(message),
+        }
     }
 
     /// One prompt of `live`, through to its end.
@@ -802,7 +954,17 @@ impl Core {
                     self.fail(generation, stopped_text(&live.agent.connection));
                 }
             }
-            Err(CallError::Refused(message)) => self.end_turn(
+            Err(error) if error.needs_login() => self.need_login(
+                generation,
+                Login {
+                    agent: Arc::clone(&live.agent),
+                    session: Some(live.session.clone()),
+                    args: args.clone(),
+                    methods: Arc::clone(&live.methods),
+                    error: None,
+                },
+            ),
+            Err(CallError::Refused { message, .. }) => self.end_turn(
                 generation,
                 "error",
                 Some(format!("The agent refused the prompt: {message}")),
@@ -854,6 +1016,7 @@ impl Core {
             updates.push(AcpUpdate::Status {
                 state: AcpState::Ready,
                 error,
+                methods: None,
             });
             updates
         });
@@ -910,35 +1073,127 @@ impl Core {
     }
 }
 
-/// `initialize` -> `session/new` -> `session/set_mode` (when the asking mode is offered and not on).
-fn handshake(connection: &Connection, dir: &Path) -> Result<SessionId, String> {
-    let failed = |step: &str, error: CallError| match error {
+/// Plain-English text of a call of the start that got no answer.
+fn call_failed(connection: &Connection, step: &str, error: CallError) -> String {
+    match error {
         CallError::Closed => stopped_text(connection),
-        CallError::TimedOut => format!(
-            "The agent did not answer ({step}) within {} seconds.",
-            SETUP_WAIT.as_secs()
-        ),
-        CallError::Refused(message) => format!("The agent refused ({step}): {message}"),
+        CallError::TimedOut => format!("The agent did not answer ({step}) in time."),
+        CallError::Refused { message, .. } => format!("The agent refused ({step}): {message}"),
         CallError::Unreadable => format!("The agent's answer ({step}) could not be read."),
-    };
+    }
+}
+
+/// Plain-English text of a chosen agent that cannot start on this computer.
+fn missing_text(chosen: &Chosen) -> String {
+    let name = &chosen.name;
+    match chosen.resolved.needs {
+        Some(AgentNeed::Node) => format!("{name} needs Node.js: npx was not found."),
+        Some(AgentNeed::Uv) => format!("{name} needs uv: uvx was not found."),
+        Some(AgentNeed::Install) | None => {
+            let program = chosen
+                .resolved
+                .shown
+                .split_whitespace()
+                .next()
+                .unwrap_or(name);
+            format!("{name} is not installed: {program} was not found.")
+        }
+    }
+}
+
+/// `initialize`: answers the agent's sign-in methods (a terminal method's line = `shown` + its arguments).
+fn initialize(connection: &Connection, shown: &str) -> Result<Vec<LoginMethod>, String> {
+    // terminal sign-in: the person runs the shown line in a terminal; the app itself never opens one
+    let caps = ClientCapabilities::new().auth(AuthCapabilities::new().terminal(true));
     let hello = InitializeRequest::new(ProtocolVersion::V1)
+        .client_capabilities(caps)
         .client_info(Implementation::new("PerMark", env!("CARGO_PKG_VERSION")));
-    let init: InitializeResponse = connection
+    let raw: Value = connection
         .call(AGENT_METHOD_NAMES.initialize, hello, Some(SETUP_WAIT))
-        .map_err(|e| failed("initialize", e))?;
+        .map_err(|e| call_failed(connection, "initialize", e))?;
+    let init: InitializeResponse = serde_json::from_value(raw.clone())
+        .map_err(|_| call_failed(connection, "initialize", CallError::Unreadable))?;
     if init.protocol_version != ProtocolVersion::V1 {
         return Err(format!(
             "The agent speaks protocol version {}; PerMark speaks version 1.",
             init.protocol_version
         ));
     }
-    let new: NewSessionResponse = connection
-        .call(
-            AGENT_METHOD_NAMES.session_new,
-            NewSessionRequest::new(dir),
-            Some(SETUP_WAIT),
-        )
-        .map_err(|e| failed("session/new", e))?;
+    Ok(login_methods(raw.get("authMethods"), shown))
+}
+
+/// The sign-in methods of an `initialize` answer, read one by one (a method of a kind this client does not know is
+/// left out; a typed decode would read it as an `agent` method and send it to `authenticate`).
+fn login_methods(raw: Option<&Value>, shown: &str) -> Vec<LoginMethod> {
+    raw.and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|method| {
+            let id = method.get("id")?.as_str()?.to_owned();
+            let text = |key: &str| method.get(key).and_then(Value::as_str).map(str::to_owned);
+            let (kind, hint) = match method.get("type").and_then(Value::as_str) {
+                None | Some("agent") => (LoginKind::Agent, None),
+                Some("terminal") => {
+                    let terminal =
+                        serde_json::from_value::<AuthMethodTerminal>(method.clone()).ok()?;
+                    (LoginKind::Terminal, Some(terminal_line(&terminal, shown)))
+                }
+                Some("env_var") => (LoginKind::Env, Some(variable_names(method))),
+                Some(_) => return None,
+            };
+            Some(LoginMethod {
+                name: text("name").unwrap_or_else(|| id.clone()),
+                description: text("description"),
+                id,
+                kind,
+                hint,
+            })
+        })
+        .collect()
+}
+
+/// The line a person runs for a terminal sign-in: its variables (`NAME=value`, by name), the agent's command, the
+/// method's arguments.
+fn terminal_line(method: &AuthMethodTerminal, shown: &str) -> String {
+    let mut env: Vec<(&String, &String)> = method.env.iter().collect();
+    env.sort();
+    env.iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .chain(std::iter::once(shown.to_owned()))
+        .chain(method.args.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The variable names an environment sign-in asks for (`vars[].name` | `varName`), comma separated.
+fn variable_names(method: &Value) -> String {
+    let listed = method
+        .get("vars")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|var| var.get("name").and_then(Value::as_str));
+    let single = method.get("varName").and_then(Value::as_str);
+    listed.chain(single).collect::<Vec<_>>().join(", ")
+}
+
+/// `session/new` -> `session/set_mode` (when the asking mode is offered and not on).
+fn open_session(connection: &Connection, dir: &Path) -> Result<SessionId, Opening> {
+    let new: NewSessionResponse = match connection.call(
+        AGENT_METHOD_NAMES.session_new,
+        NewSessionRequest::new(dir),
+        Some(SETUP_WAIT),
+    ) {
+        Ok(new) => new,
+        Err(error) if error.needs_login() => return Err(Opening::Login),
+        Err(error) => {
+            return Err(Opening::Failed(call_failed(
+                connection,
+                "session/new",
+                error,
+            )))
+        }
+    };
     if let Some(modes) = &new.modes {
         let offered = modes.available_modes.iter().any(|m| &*m.id.0 == ASK_MODE);
         if offered && &*modes.current_mode_id.0 != ASK_MODE {
@@ -948,7 +1203,7 @@ fn handshake(connection: &Connection, dir: &Path) -> Result<SessionId, String> {
                     SetSessionModeRequest::new(new.session_id.clone(), ASK_MODE),
                     Some(SETUP_WAIT),
                 )
-                .map_err(|e| failed("session/set_mode", e))?;
+                .map_err(|e| Opening::Failed(call_failed(connection, "session/set_mode", e)))?;
         }
     }
     Ok(new.session_id)
@@ -1064,6 +1319,7 @@ impl Inbox for Listener {
             .core
             .with_current(self.generation, |inner| match &inner.state {
                 State::Ready(live) => Some(Arc::clone(&live.agent)),
+                State::NeedsLogin(login) => Some(Arc::clone(&login.agent)),
                 _ => None,
             });
         if let Some(Some(agent)) = waiting {

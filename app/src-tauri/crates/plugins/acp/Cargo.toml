@@ -19,7 +19,6 @@ serde_json.workspace = true
 ts-rs.workspace = true
 # walks the work copy with the ignore files it holds (the project's own walker only reads the project)
 ignore.workspace = true
-toml_edit.workspace = true
 # Agent Client Protocol v1 message types + JSON-RPC envelope (the transport is our own, on threads)
 agent-client-protocol-schema = { version = "1.18.0", default-features = false }
 # file URIs of the copy's files in prompts

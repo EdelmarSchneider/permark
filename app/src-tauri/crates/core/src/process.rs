@@ -132,16 +132,25 @@ pub fn spawn_piped(program: &Path, args: &[&OsStr], cwd: &Path) -> io::Result<Pi
 }
 
 /// Starts a program the person chose in the app's own settings (profile, never a project's shared file) as an
-/// attached child, like [`spawn_piped`]: no shell of ours, no console window, the three streams piped. Caller MUST
-/// NEVER pass a program named by a file in a project, document content or a click. Windows: a `.bat` | `.cmd` script
-/// runs through the system's command interpreter, with the arguments escaped by the standard library (an argument it
-/// cannot pass safely is refused).
+/// attached child, like [`spawn_piped`]: no shell of ours, no console window, the three streams piped. `env` is set
+/// on top of this process's environment (a listed name overrides the inherited value). Caller MUST NEVER pass a
+/// program, argument or variable named by a file in a project, document content or a click. Windows: a `.bat` |
+/// `.cmd` script runs through the system's command interpreter, with the arguments escaped by the standard library
+/// (an argument it cannot pass safely is refused).
 ///
 /// # Errors
 /// The program cannot be started (`NotFound`: missing; `InvalidInput`: an argument a script cannot receive safely).
-pub fn spawn_person_command(program: &Path, args: &[&OsStr], cwd: &Path) -> io::Result<Piped> {
+pub fn spawn_person_command(
+    program: &Path,
+    args: &[&OsStr],
+    cwd: &Path,
+    env: &[(&OsStr, &OsStr)],
+) -> io::Result<Piped> {
     let mut command = Command::new(program);
-    command.args(args).current_dir(cwd);
+    command
+        .args(args)
+        .current_dir(cwd)
+        .envs(env.iter().copied());
     piped(command)
 }
 
@@ -191,11 +200,14 @@ pub fn resolve_program(name: &OsStr) -> Option<PathBuf> {
     } else {
         None
     };
-    find_in(name, &path, pathext.as_deref())
+    resolve_program_in(name, &path, pathext.as_deref())
 }
 
-/// [`resolve_program`] over the folder list `path` (`PATH` syntax) and the extension list `pathext` (Windows only).
-fn find_in(name: &OsStr, path: &OsStr, pathext: Option<&OsStr>) -> Option<PathBuf> {
+/// [`resolve_program`] over the folder list `path` (`PATH` syntax) and the extension list `pathext` (Windows only;
+/// `None`: the system's usual list), never this process's own `PATH`: a caller that tells which programs a person
+/// has checks the same rule against a list it holds.
+#[must_use]
+pub fn resolve_program_in(name: &OsStr, path: &OsStr, pathext: Option<&OsStr>) -> Option<PathBuf> {
     if name.is_empty() {
         return None;
     }
@@ -407,12 +419,12 @@ mod tests {
         std::fs::write(second.path().join("tool.cmd"), "x").unwrap();
         std::fs::write(second.path().join("tool"), "x").unwrap();
         let path = std::env::join_paths([first.path(), second.path()]).unwrap();
-        let found = find_in(OsStr::new("tool"), &path, Some(OsStr::new(".EXE;.CMD")));
+        let found = resolve_program_in(OsStr::new("tool"), &path, Some(OsStr::new(".EXE;.CMD")));
         assert_eq!(found, Some(second.path().join("tool.CMD")));
-        let found = find_in(OsStr::new("tool.cmd"), &path, None);
+        let found = resolve_program_in(OsStr::new("tool.cmd"), &path, None);
         assert_eq!(found, Some(second.path().join("tool.cmd")));
         // no PATHEXT: the system's usual list
-        let found = find_in(OsStr::new("tool"), &path, None);
+        let found = resolve_program_in(OsStr::new("tool"), &path, None);
         assert_eq!(found, Some(second.path().join("tool.CMD")));
     }
 
@@ -426,34 +438,36 @@ mod tests {
         std::fs::write(&tool, "x").unwrap();
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o644)).unwrap();
         assert_eq!(
-            find_in(OsStr::new("tool"), dir.path().as_os_str(), None),
+            resolve_program_in(OsStr::new("tool"), dir.path().as_os_str(), None),
             None
         );
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(
-            find_in(OsStr::new("tool"), dir.path().as_os_str(), None),
+            resolve_program_in(OsStr::new("tool"), dir.path().as_os_str(), None),
             Some(tool)
         );
     }
 
+    /// The given variables reach the program on top of the inherited ones.
     #[test]
-    fn a_persons_command_runs_with_piped_streams() {
+    fn a_persons_command_runs_with_piped_streams_and_its_variables() {
         let tmp = tempfile::tempdir().unwrap();
         let (name, args) = if cfg!(windows) {
-            ("cmd", ["/C", "echo hello"])
+            ("cmd", ["/C", "echo hello %PERMARK_TEST_GREETING%"])
         } else {
-            ("sh", ["-c", "echo hello"])
+            ("sh", ["-c", "echo hello $PERMARK_TEST_GREETING"])
         };
         let program = resolve_program(OsStr::new(name)).unwrap();
         let args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
+        let env = [(OsStr::new("PERMARK_TEST_GREETING"), OsStr::new("world"))];
         let Piped {
             stdin,
             stdout,
             stderr: _,
             mut child,
-        } = spawn_person_command(&program, &args, tmp.path()).unwrap();
+        } = spawn_person_command(&program, &args, tmp.path(), &env).unwrap();
         drop(stdin);
-        assert_eq!(read_all(stdout).trim(), "hello");
+        assert_eq!(read_all(stdout).trim(), "hello world");
         assert!(child.stop(Duration::from_secs(10)).unwrap().success());
     }
 
@@ -469,7 +483,7 @@ mod tests {
             stdout,
             stderr: _,
             mut child,
-        } = spawn_person_command(&script, &[OsStr::new("big world")], tmp.path()).unwrap();
+        } = spawn_person_command(&script, &[OsStr::new("big world")], tmp.path(), &[]).unwrap();
         drop(stdin);
         assert_eq!(read_all(stdout).trim(), "hello big world");
         child.stop(Duration::from_secs(10)).unwrap();

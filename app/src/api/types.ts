@@ -238,10 +238,17 @@ import type { Version } from "./generated/Version";
 import type { AcpState } from "./generated/AcpState";
 import type { AcpStatus } from "./generated/AcpStatus";
 import type { AcpUpdate } from "./generated/AcpUpdate";
+import type { AgentEntry } from "./generated/AgentEntry";
+import type { AgentHow } from "./generated/AgentHow";
+import type { AgentNeed } from "./generated/AgentNeed";
 import type { AnswerArgs } from "./generated/AnswerArgs";
+import type { ChooseArgs } from "./generated/ChooseArgs";
 import type { FileChange } from "./generated/FileChange";
 import type { FileChangeKind } from "./generated/FileChangeKind";
 import type { HunkView } from "./generated/HunkView";
+import type { LoginArgs } from "./generated/LoginArgs";
+import type { LoginKind } from "./generated/LoginKind";
+import type { LoginMethod } from "./generated/LoginMethod";
 import type { PermissionChoice } from "./generated/PermissionChoice";
 import type { PromptArgs } from "./generated/PromptArgs";
 import type { PromptSelection } from "./generated/PromptSelection";
@@ -849,8 +856,17 @@ export interface PluginMethods {
   /** Opens | shows in the file manager the file last written for this window. */
   "export.open": { args: Record<string, never>; result: null };
   "export.reveal": { args: Record<string, never>; result: null };
-  /** Where the project's agent stands, and its command as the person typed it. */
+  /** Where the project's agent stands, the chosen agent (name, command as it would run), its sign-in methods. */
   "acp.status": { args: Record<string, never>; result: AcpStatus };
+  /** The agents the person can choose, as each would start on this computer (the own command last when chosen). */
+  "acp.agents": { args: Record<string, never>; result: AgentEntry[] };
+  /** Keeps the person's choice and stops the agent (copy + changes stay); answers the list with the new choice.
+   *  Refused while the agent starts | works (`conflict` `busy`), `invalidData` `unknownAgent` | `emptyCommand` |
+   *  `oneChoice`, `unavailable` `noProfile`. */
+  "acp.choose": { args: ChooseArgs; result: AgentEntry[] };
+  /** Signs in while the agent waits for it (`needsLogin`): an `agent` method signs in through the agent, none | any
+   *  other tries again. Refused `notFound` `noLogin` | `invalidData` `unknownMethod`. */
+  "acp.login": { args: LoginArgs; result: null };
   /** Sends a message (the agent starts first when none runs); answers at once, the reply comes as `acp:update`.
    *  Refused while the agent starts | works (`conflict` `busy`). */
   "acp.prompt": { args: PromptArgs; result: null };
@@ -987,10 +1003,17 @@ export type {
   AcpState,
   AcpStatus,
   AcpUpdate,
+  AgentEntry,
+  AgentHow,
+  AgentNeed,
   AnswerArgs,
+  ChooseArgs,
   FileChange,
   FileChangeKind,
   HunkView,
+  LoginArgs,
+  LoginKind,
+  LoginMethod,
   PermissionChoice,
   PromptArgs,
   PromptSelection,

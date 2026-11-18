@@ -3,4 +3,4 @@
 /**
  * Where the agent of the project stands.
  */
-export type AcpState = "idle" | "starting" | "ready" | "working" | "error";
+export type AcpState = "idle" | "starting" | "ready" | "working" | "error" | "needsLogin";

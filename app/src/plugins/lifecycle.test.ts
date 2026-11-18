@@ -314,6 +314,7 @@ describe("the assistant plugin", () => {
     await host.enable("acp");
     const found = [...new Set(registry.ownedBy("acp").map((c) => c.kind))].sort();
     expect(found).toEqual(["command", "panel"]);
+    expect(registry.of("command").map((c) => c.id)).toEqual(["acp.toggle", "acp.chooseAgent"]);
     const panel = registry.of("panel").find((p) => p.id === "acp.panel");
     expect(panel?.side).toBe("right");
     expect(panel?.requires.needs).toEqual([{ need: "workspace", kinds: ["project"] }]);

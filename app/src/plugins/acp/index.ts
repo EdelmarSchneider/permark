@@ -32,6 +32,15 @@ export default definePlugin({
         requires: PROJECT,
         run: () => acp.toggle(),
       }),
+      cx.contribute({
+        kind: "command",
+        id: "acp.chooseAgent",
+        label: "acp.chooseAgent",
+        requires: PROJECT,
+        // the backend refuses a choice while the agent starts | works
+        when: () => acp.canChange,
+        run: () => acp.openPicker(),
+      }),
     ];
     return () => {
       for (const remove of removals) remove();

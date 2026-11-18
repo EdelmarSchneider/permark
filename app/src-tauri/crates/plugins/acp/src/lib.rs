@@ -1,15 +1,18 @@
 //! Plugin `acp` (experimental, off by default; UI name "Assistant"): the person's own agent works in a copy of the
 //! project's files the agent may see ([`work`]), kept in the profile, never in the project. A real file changes only
 //! when the person accepts a change of the copy, hunk by hunk. The agent is spoken to over the Agent Client Protocol
-//! ([`session`], [`client`]); its command comes only from the person's app settings (`[plugins.acp] command`).
+//! ([`session`], [`client`]); which agent comes only from the person's choice in the profile ([`agents`]): a folder
+//! never chooses the program the app starts.
 //!
-//! RPC (project scope): `status {}` -> [`AcpStatus`]; `prompt` [`PromptArgs`] -> `null` (the reply comes as events);
+//! RPC (project scope): `status {}` -> [`AcpStatus`]; `agents {}` -> [`AgentEntry`]`[]`; `choose` [`ChooseArgs`] ->
+//! [`AgentEntry`]`[]`; `prompt` [`PromptArgs`] -> `null` (the reply comes as events); `login` [`LoginArgs`] -> `null`;
 //! `cancel {}` | `reset {}` -> `null`; `answer` [`AnswerArgs`] -> `null`; `changes {}` -> [`FileChange`]`[]` (empty
 //! while no copy exists); `accept | reject { path, hunks: number[] | null }` -> the fresh [`FileChange`]`[]`
 //! (`null`: the whole file). Event `acp:update` -> [`AcpUpdate`].
 //!
 //! Off | project closed: the agent stops, then the copy is deleted (pending changes with it).
 
+pub mod agents;
 pub mod client;
 pub mod dto;
 pub mod session;
@@ -28,11 +31,13 @@ use permark_core::plugins::{
 };
 use permark_core::{ErrorKind, IpcError};
 
+pub use agents::{person_launch, Agents, Choice, Plan, CHOICE_FILE};
 pub use dto::{
-    AcpState, AcpStatus, AcpUpdate, AnswerArgs, DecideArgs, FileChange, FileChangeKind, HunkView,
+    AcpState, AcpStatus, AcpUpdate, AgentEntry, AgentHow, AgentNeed, AnswerArgs, ChooseArgs,
+    DecideArgs, FileChange, FileChangeKind, HunkView, LoginArgs, LoginKind, LoginMethod,
     PermissionChoice, PromptArgs, PromptSelection,
 };
-pub use session::{person_launch, AgentCommand, Host, Session, DEFAULT_COMMAND};
+pub use session::{Host, Session};
 pub use work::{copy_dir, Project, WorkCopy};
 
 const ID: PluginId = PluginId::of("acp");
@@ -93,13 +98,13 @@ fn lock(copy: &SharedCopy) -> MutexGuard<'_, Option<WorkCopy>> {
 }
 
 /// Accept | reject of one file's hunks (`None`: the whole file), answering the fresh list.
-type Choice = fn(&mut WorkCopy, &str, Option<&[u32]>) -> Result<Vec<FileChange>, IpcError>;
+type Decision = fn(&mut WorkCopy, &str, Option<&[u32]>) -> Result<Vec<FileChange>, IpcError>;
 
 /// Runs `choose` on the copy; refused while there is none.
 fn decide(
     copy: &SharedCopy,
     args: &DecideArgs,
-    choose: Choice,
+    choose: Decision,
 ) -> Result<Vec<FileChange>, IpcError> {
     let mut guard = lock(copy);
     let copy = guard.as_mut().ok_or_else(|| {
@@ -115,7 +120,13 @@ fn register(cx: &PluginCx, copy: &SharedCopy, session: &Session) -> Vec<RpcRegis
     let s = session.clone();
     rpc.extend(cx.rpc("status", typed(move |_: NoArgs, _| Ok(s.status()))));
     let s = session.clone();
+    rpc.extend(cx.rpc("agents", typed(move |_: NoArgs, _| Ok(s.agents()))));
+    let s = session.clone();
+    rpc.extend(cx.rpc("choose", typed(move |args: ChooseArgs, _| s.choose(&args))));
+    let s = session.clone();
     rpc.extend(cx.rpc("prompt", typed(move |args: PromptArgs, _| s.prompt(args))));
+    let s = session.clone();
+    rpc.extend(cx.rpc("login", typed(move |args: LoginArgs, _| s.login(&args))));
     let s = session.clone();
     rpc.extend(cx.rpc(
         "cancel",
@@ -171,11 +182,13 @@ impl Plugin for Acp {
         let place = cx
             .store()
             .map(|store| store.profile_plugin_dir(&cx.id).join(WORK));
-        // read once: a changed command takes effect when the plugin starts again
-        let command = AgentCommand::from_settings(cx.settings.as_ref());
+        // the profile folder itself, whatever the project holds: read at every agent start
+        let choice = cx
+            .store()
+            .map(|store| store.app_file::<Choice>(CHOICE_FILE));
         let session = Session::new(Host {
-            launch: person_launch(&command),
-            command,
+            agents: Agents::new(choice),
+            launch: person_launch(),
             project: Project::of(vault, services),
             place: place.clone(),
             copy: Arc::clone(&copy),
@@ -235,8 +248,10 @@ mod tests {
         let (vault, documents) = testing::open(project.path());
         let copy: SharedCopy = Arc::new(Mutex::new(None));
         let session = Session::new(Host {
-            command: AgentCommand::default(),
-            launch: Arc::new(|_: &std::path::Path| Err(std::io::Error::other("never started"))),
+            agents: Agents::new(None),
+            launch: Arc::new(|_: &Plan, _: &std::path::Path| {
+                Err(std::io::Error::other("never started"))
+            }),
             project: testing::project(&vault, &documents),
             place: Some(work.clone()),
             copy: Arc::clone(&copy),
