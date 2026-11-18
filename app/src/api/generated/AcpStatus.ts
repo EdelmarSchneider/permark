@@ -11,7 +11,7 @@ export type AcpStatus = { state: AcpState,
  */
 agent: string, 
 /**
- * The chosen agent's name (an own command: its program); `null`: none chosen.
+ * The chosen agent's registry name; `null`: none chosen | the person's own command (the window words it).
  */
 agentName: string | null, 
 /**

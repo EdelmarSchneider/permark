@@ -84,7 +84,7 @@ pub struct AcpStatus {
     pub state: AcpState,
     /// The chosen agent's command as it would run (`""`: none chosen).
     pub agent: String,
-    /// The chosen agent's name (an own command: its program); `null`: none chosen.
+    /// The chosen agent's registry name; `null`: none chosen | the person's own command (the window words it).
     pub agent_name: Option<String>,
     /// An agent is chosen (`false`: a prompt is refused with `noAgent` until `acp.choose`).
     pub chosen: bool,
@@ -159,6 +159,7 @@ pub enum AgentNeed {
 pub struct AgentEntry {
     /// Registry id (`custom`: the person's own command).
     pub id: String,
+    /// Registry name (`""` for the person's own command: the window words it).
     pub name: String,
     pub description: String,
     pub version: String,

@@ -3018,7 +3018,6 @@ export default {
   "acp.pick.intro":
     "O PerMark inicia neste computador o assistente que você escolher. Ele trabalha numa cópia desta pasta, e você decide quais mudanças dele chegam aos seus arquivos.",
   "acp.pick.search": "Buscar assistentes",
-  "acp.pick.list": "Assistentes",
   "acp.pick.loading": "Lendo a lista…",
   "acp.pick.none": "Nenhum assistente corresponde à sua busca.",
   "acp.pick.choose": "Escolher",
@@ -3033,14 +3032,15 @@ export default {
     "O PerMark vai iniciar este programa. Use apenas um programa em que você confia.",
   "acp.pick.useCommand": "Usar este comando",
   "acp.how.native": "Instalado",
-  "acp.how.npx": "Pronto via npx",
-  "acp.how.uvx": "Pronto via uvx",
+  "acp.how.npx": "Inicia pelo npx",
+  "acp.how.uvx": "Inicia pelo uvx",
   "acp.how.custom": "Seu comando",
   "acp.how.notFound": "Programa não encontrado",
   "acp.needs.node": "Precisa do Node.js",
   "acp.needs.uv": "Precisa do uv",
   "acp.needs.install": "Precisa instalar",
   "acp.login.title": "Fazer login no {name}",
+  "acp.login.titleAgent": "Fazer login no agente",
   "acp.login.intro": "O assistente precisa que você faça login antes de responder.",
   "acp.login.terminal": "Execute isto num terminal e depois tente de novo:",
   "acp.login.env":
@@ -3055,4 +3055,10 @@ export default {
     "O PerMark não consegue guardar sua escolha porque a pasta de configurações dele não está disponível.",
   "acp.error.noLogin": "Nenhum login está aguardando.",
   "acp.error.unknownMethod": "O assistente não oferece mais esta forma de fazer login.",
+  "acp.ownCommand": "Comando próprio",
+  "acp.pick.popular": "Populares",
+  "acp.pick.all": "Todos os agentes",
+  "acp.pick.signInHint":
+    "A maioria dos agentes pede login com a sua própria conta na primeira vez.",
+  "acp.error.openQuote": "Uma aspa do comando não foi fechada.",
 } satisfies Messages;

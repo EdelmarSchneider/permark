@@ -9,7 +9,11 @@ export type AgentEntry = {
 /**
  * Registry id (`custom`: the person's own command).
  */
-id: string, name: string, description: string, version: string, how: AgentHow, 
+id: string, 
+/**
+ * Registry name (`""` for the person's own command: the window words it).
+ */
+name: string, description: string, version: string, how: AgentHow, 
 /**
  * Set when `how` is `missing` (or a custom program is not found).
  */

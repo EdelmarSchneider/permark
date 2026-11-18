@@ -263,12 +263,45 @@ fn resolve_listed(listed: &Listed, platforms: &[&str], find: &Find) -> Resolved 
     }
 }
 
-/// The person's own command: split on whitespace (no quoting), its program found like any other.
+/// Words of the person's own command: double quotes group (a path with spaces), whitespace splits outside them, `""`
+/// is an empty word, quotes join the letters next to them (`--a="b c"` -> `--a=b c`). No backslash escapes: on
+/// Windows a backslash separates folders (`C:\x\` ends with one). `None`: a quote is left open.
+pub(crate) fn command_words(typed: &str) -> Option<Vec<String>> {
+    let mut words = Vec::new();
+    // `Some`: a word has begun (a quote alone begins one: `""` is a word)
+    let mut word: Option<String> = None;
+    let mut quoted = false;
+    for c in typed.chars() {
+        match c {
+            '"' => {
+                quoted = !quoted;
+                word.get_or_insert_with(String::new);
+            }
+            c if c.is_whitespace() && !quoted => words.extend(word.take()),
+            c => word.get_or_insert_with(String::new).push(c),
+        }
+    }
+    if quoted {
+        return None;
+    }
+    words.extend(word);
+    Some(words)
+}
+
+/// The program of an own command as typed (`None`: no program, or a quote left open).
+pub(crate) fn command_program(typed: &str) -> Option<String> {
+    command_words(typed)?
+        .into_iter()
+        .next()
+        .filter(|program| !program.is_empty())
+}
+
+/// The person's own command: its words (double quotes group), its program found like any other.
 fn resolve_command(typed: &str, find: &Find) -> Resolved {
-    let mut words = typed.split_whitespace();
+    let mut words = command_words(typed).unwrap_or_default().into_iter();
     let program = words.next().unwrap_or_default();
-    let args: Vec<String> = words.map(str::to_owned).collect();
-    let found = Some(program)
+    let args: Vec<String> = words.collect();
+    let found = Some(program.as_str())
         .filter(|p| !p.is_empty())
         .and_then(|p| find(OsStr::new(p)));
     Resolved {
@@ -299,8 +332,8 @@ impl StateData for Choice {
 /// The chosen agent as it would start now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Chosen {
-    /// Registry name | the own command's program.
-    pub name: String,
+    /// Registry name; `None`: the person's own command (the window names it in its language).
+    pub name: Option<String>,
     pub resolved: Resolved,
 }
 
@@ -343,7 +376,8 @@ impl Agents {
         };
         match &choice {
             Choice::Agent(id) => self.listed(id).map(|_| choice),
-            Choice::Command(typed) => (!typed.trim().is_empty()).then_some(choice),
+            // a command without a program | with an open quote (the file edited by hand) cannot start
+            Choice::Command(typed) => command_program(typed).map(|_| choice),
         }
     }
 
@@ -352,11 +386,11 @@ impl Agents {
     pub fn chosen(&self) -> Option<Chosen> {
         match self.choice()? {
             Choice::Agent(id) => self.listed(&id).map(|listed| Chosen {
-                name: listed.name.clone(),
+                name: Some(listed.name.clone()),
                 resolved: resolve_listed(listed, self.platforms, &self.find),
             }),
             Choice::Command(typed) => Some(Chosen {
-                name: command_name(&typed),
+                name: None,
                 resolved: resolve_command(&typed, &self.find),
             }),
         }
@@ -386,7 +420,7 @@ impl Agents {
             let resolved = resolve_command(&typed, &self.find);
             list.push(AgentEntry {
                 id: CUSTOM_ID.to_owned(),
-                name: command_name(&typed),
+                name: String::new(),
                 description: String::new(),
                 version: String::new(),
                 how: resolved.how,
@@ -402,8 +436,8 @@ impl Agents {
     /// Keeps the person's choice for the next agent start.
     ///
     /// # Errors
-    /// `InvalidData`: `unknownAgent` (not in this computer's list) | `emptyCommand` | `oneChoice` (none or both
-    /// given); `Unavailable` (`noProfile`); IO.
+    /// `InvalidData`: `unknownAgent` (not in this computer's list) | `emptyCommand` (no program) | `openQuote` (a
+    /// quote of the command left open) | `oneChoice` (none or both given); `Unavailable` (`noProfile`); IO.
     pub fn choose(&self, args: &ChooseArgs) -> Result<(), IpcError> {
         let refused = |detail: &str| IpcError::new(ErrorKind::InvalidData).detail(detail);
         let choice = match (
@@ -416,8 +450,13 @@ impl Agents {
                 }
                 Choice::Agent(id.to_owned())
             }
-            (None, Some("")) => return Err(refused("emptyCommand")),
-            (None, Some(typed)) => Choice::Command(typed.to_owned()),
+            (None, Some(typed)) => match command_words(typed) {
+                None => return Err(refused("openQuote")),
+                Some(words) if words.first().is_none_or(String::is_empty) => {
+                    return Err(refused("emptyCommand"));
+                }
+                Some(_) => Choice::Command(typed.to_owned()),
+            },
             _ => return Err(refused("oneChoice")),
         };
         let file = self
@@ -427,11 +466,6 @@ impl Agents {
         file.update(|_| Some(choice.clone()))?;
         Ok(())
     }
-}
-
-/// The program of an own command, by its file name (`C:\tools\my-agent.cmd --acp` -> `my-agent.cmd`).
-fn command_name(typed: &str) -> String {
-    file_name(typed.split_whitespace().next().unwrap_or_default()).to_owned()
 }
 
 /// Starts a plan: its program with its arguments, its variables on top of the app's, no shell, the copy as folder.

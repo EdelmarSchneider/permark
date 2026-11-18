@@ -11,14 +11,14 @@
   import Square from "@lucide/svelte/icons/square";
   import Wrench from "@lucide/svelte/icons/wrench";
   import X from "@lucide/svelte/icons/x";
-  import { onMount, type Snippet } from "svelte";
+  import { onMount, tick, type Snippet } from "svelte";
   import type { AcpState, FileChange, FileChangeKind } from "../../api";
   import { t, tn, type MessageKey } from "../../core/i18n";
   import { closeView } from "../../core/shell/sides";
   import AgentPicker from "./AgentPicker.svelte";
   import HunkCard from "./HunkCard.svelte";
   import LoginCard from "./LoginCard.svelte";
-  import { acp, agentLabel, PANEL, PANEL_MARK, passageLabel } from "./store.svelte";
+  import { acp, PANEL, PANEL_MARK, passageLabel } from "./store.svelte";
 
   type Props = {
     /** The view options button for this header (given while the panel is alone in its group). */
@@ -32,14 +32,16 @@
 
   const now = $derived<AcpState>(acp.status?.state ?? "idle");
   const command = $derived(acp.status?.agent ?? "");
-  /** The chosen agent's name (`null`: none chosen). */
+  /** The chosen agent's name (`null`: none chosen); the backend names no own command: worded here. */
   const name = $derived(
-    acp.status?.chosen === true ? (acp.status.agentName ?? agentLabel(command)) : null,
+    acp.status?.chosen === true ? (acp.status.agentName ?? t("acp.ownCommand")) : null,
   );
   const working = $derived(now === "starting" || now === "working");
   const canSend = $derived(!acp.busy && acp.draft.trim() !== "");
 
   let scroller = $state<HTMLElement>();
+  let message = $state<HTMLTextAreaElement>();
+  let change = $state<HTMLButtonElement>();
   /** The person is at the end of the list (then it follows new lines). */
   let atEnd = true;
 
@@ -58,6 +60,13 @@
   function followed(): void {
     const el = scroller;
     if (el) atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+  }
+
+  /** The button just used goes away (a choice, a sign-in): the keyboard moves on to the message box, never stays on
+   *  the page itself. */
+  async function moveOn(): Promise<void> {
+    await tick();
+    (message ?? change)?.focus();
   }
 
   function composerKey(event: KeyboardEvent): void {
@@ -184,6 +193,7 @@
         <span class="agent" title={t("acp.agentCommand", { command })}>· {name}</span>
         {#if !acp.showsPicker}
           <button
+            bind:this={change}
             type="button"
             class="change"
             aria-label={t("acp.changeAgent")}
@@ -198,7 +208,7 @@
 
   <div class="scroll" bind:this={scroller} onscroll={followed}>
     {#if acp.showsPicker}
-      <AgentPicker focus={acp.picking} />
+      <AgentPicker focus={acp.picking} onclose={() => void moveOn()} />
     {:else}
       {#if acp.transcript.length === 0}
         <div class="empty">
@@ -259,7 +269,11 @@
       </ol>
 
       {#if now === "needsLogin"}
-        <LoginCard methods={acp.status?.methods ?? []} name={name ?? t("acp.label")} />
+        <LoginCard
+          methods={acp.status?.methods ?? []}
+          name={acp.status?.agentName ?? null}
+          onsignin={() => void moveOn()}
+        />
       {/if}
 
       {#if acp.changes.length > 0}
@@ -336,6 +350,7 @@
         </div>
       {/if}
       <textarea
+        bind:this={message}
         class="message"
         rows="3"
         bind:value={acp.draft}

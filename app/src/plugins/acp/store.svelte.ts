@@ -54,7 +54,9 @@ export type Entry =
       answer: Answer;
     }
   /** Something the person should know (a stop, a refusal, the agent's own error text). */
-  | { kind: "notice"; id: number; text: string };
+  | { kind: "notice"; id: number; text: string }
+  /** Why the agent still waits for a sign-in: gone with that agent when the person chooses another. */
+  | { kind: "signIn"; id: number; text: string };
 
 /** An entry before it gets its id. */
 type NewEntry = Entry extends infer E ? (E extends Entry ? Omit<E, "id"> : never) : never;
@@ -168,7 +170,11 @@ export class AcpStore {
           error: update.error,
           methods: update.methods ?? [],
         };
-        if (update.error !== null) this.#push({ kind: "notice", text: update.error });
+        if (update.error !== null)
+          this.#push({
+            kind: update.state === "needsLogin" ? "signIn" : "notice",
+            text: update.error,
+          });
         // the agent stopped (a choice in any window of the app among the causes): its name is read again
         if (update.state === "idle") void this.#readStatus();
         return;
@@ -349,10 +355,14 @@ export class AcpStore {
       }
       this.catalog = { status: "ready", agents: result.value };
       this.picking = false;
-      const name = result.value.find((a) => a.chosen)?.name;
+      // the backend stopped the last agent: the sign-in it waited for is gone with it
+      this.transcript = this.transcript.filter((e) => e.kind !== "signIn");
+      if (this.status?.state === "needsLogin")
+        this.status = { ...this.status, state: "idle", error: null, methods: [] };
+      const chosen = result.value.find((a) => a.chosen);
       // the conversation stays to read; the new agent knows nothing of it
-      if (this.transcript.length > 0 && name !== undefined)
-        this.#push({ kind: "notice", text: t("acp.switched", { name }) });
+      if (this.transcript.length > 0 && chosen !== undefined)
+        this.#push({ kind: "notice", text: t("acp.switched", { name: entryName(chosen) }) });
       await this.#readStatus();
       return true;
     } finally {
@@ -495,18 +505,50 @@ export function canStart(entry: AgentEntry): boolean {
   return entry.how !== "missing" && entry.needs === null;
 }
 
-/** The agents whose name, id or description holds every word of `query`; those that can start first, else in the
- *  backend's order. */
-export function pickerList(agents: readonly AgentEntry[], query: string): AgentEntry[] {
+/** Registry ids the picker lists first, in this order (those this computer's list has). */
+const POPULAR: readonly string[] = [
+  "claude-acp",
+  "codex-acp",
+  "github-copilot-cli",
+  "gemini",
+  "opencode",
+  "goose",
+  "cursor",
+];
+
+/** The picker's groups: the person's own command (when chosen), the popular agents, all the others A-Z. */
+export type PickerGroups = {
+  own: AgentEntry[];
+  popular: AgentEntry[];
+  all: AgentEntry[];
+};
+
+/** The agents whose name, id, description (an own command: its words too) hold every word of `query`, in groups. */
+export function pickerList(agents: readonly AgentEntry[], query: string): PickerGroups {
   const words = query
     .toLocaleLowerCase()
     .split(/\s+/)
     .filter((w) => w !== "");
   const found = agents.filter((agent) => {
-    const text = `${agent.name} ${agent.id} ${agent.description}`.toLocaleLowerCase();
+    const command = agent.how === "custom" ? agent.command : "";
+    const text =
+      `${entryName(agent)} ${agent.id} ${agent.description} ${command}`.toLocaleLowerCase();
     return words.every((word) => text.includes(word));
   });
-  return [...found.filter(canStart), ...found.filter((agent) => !canStart(agent))];
+  const listed = found.filter((agent) => agent.how !== "custom");
+  const rank = (agent: AgentEntry): number => POPULAR.indexOf(agent.id);
+  return {
+    own: found.filter((agent) => agent.how === "custom"),
+    popular: listed.filter((agent) => rank(agent) >= 0).sort((a, b) => rank(a) - rank(b)),
+    all: listed
+      .filter((agent) => rank(agent) < 0)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
+  };
+}
+
+/** How the picker | a notice names an agent: the registry's name; the person's own command in words. */
+export function entryName(entry: AgentEntry): string {
+  return entry.how === "custom" ? t("acp.ownCommand") : entry.name;
 }
 
 /** What the chip of a listed agent says: how it would start, else what it needs first. */
@@ -535,15 +577,6 @@ export function howKey(entry: AgentEntry): MessageKey {
     default:
       return entry.how satisfies never;
   }
-}
-
-/** A short name for the agent command: its program or package, without a version or a folder. */
-export function agentLabel(command: string): string {
-  const words = command.trim().split(/\s+/);
-  const named = words.filter((w) => w !== "" && !w.startsWith("-")).at(-1) ?? command.trim();
-  const unversioned = named.replace(/(.)@[^@/]*$/, "$1");
-  const name = unversioned.split(/[\\/]/).at(-1) ?? unversioned;
-  return name.replace(/\.(exe|cmd|bat|js|mjs)$/i, "");
 }
 
 /** What the turn's end says (`null`: nothing; a failure says itself in the status news). */
@@ -595,6 +628,8 @@ function refusalKey(error: IpcError): MessageKey | null {
       return "acp.error.unknownAgent";
     case "emptyCommand":
       return "acp.error.emptyCommand";
+    case "openQuote":
+      return "acp.error.openQuote";
     case "noProfile":
       return "acp.error.noProfile";
     case "noLogin":

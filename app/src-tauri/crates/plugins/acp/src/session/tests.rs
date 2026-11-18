@@ -1029,10 +1029,9 @@ fn a_new_choice_applies_at_the_next_start() {
         })
         .unwrap();
     let status = fx.session.status();
-    assert_eq!(
-        status.agent_name.as_deref(),
-        own.file_name().and_then(|n| n.to_str())
-    );
+    // an own command has no name of the backend's: the window words it
+    assert!(status.chosen);
+    assert_eq!(status.agent_name, None);
     fx.ask("Three.");
     turns_ended(&fx, 3);
     let plan = &fx.fake.plans()[2];

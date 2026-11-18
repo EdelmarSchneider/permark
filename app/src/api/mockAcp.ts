@@ -382,12 +382,12 @@ export function createMockAcp(
       chosen: choice !== null && "agent" in choice && choice.agent === a.id,
     }));
     if (choice === null || !("command" in choice)) return listed;
-    const program = choice.command.split(/\s+/)[0] ?? "";
     return [
       ...listed,
       {
         id: "custom",
-        name: program.split(/[\\/]/).at(-1) ?? program,
+        // as the plugin answers: the window words an own command
+        name: "",
         description: "",
         version: "",
         how: "custom",
@@ -450,7 +450,7 @@ export function createMockAcp(
         return {
           state,
           agent: agent?.command ?? "",
-          agentName: agent?.name ?? null,
+          agentName: agent === null || agent.how === "custom" ? null : agent.name,
           chosen: agent !== null,
           error,
           methods: state === "needsLogin" ? [...MOCK_LOGIN_METHODS] : [],
@@ -471,6 +471,9 @@ export function createMockAcp(
           probe.choice = { agent: args.agent };
         } else if (args.agent === undefined && command !== undefined) {
           if (command === "") throw new MockPluginError("invalidData", null, "emptyCommand");
+          // double quotes group a word: one left open is refused, as the plugin does
+          if (command.split('"').length % 2 === 0)
+            throw new MockPluginError("invalidData", null, "openQuote");
           probe.choice = { command };
         } else throw new MockPluginError("invalidData", null, "oneChoice");
         // as the plugin does: the agent stops, the next message starts the chosen one

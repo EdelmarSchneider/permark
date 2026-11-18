@@ -41,7 +41,7 @@ use permark_core::{ErrorKind, IpcError};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::agents::{Agents, Chosen, Launch};
+use crate::agents::{self, Agents, Chosen, Launch};
 use crate::client::{lock, AgentPipes, CallError, Connection, Inbox};
 use crate::dto::{
     AcpState, AcpStatus, AcpUpdate, AgentEntry, AgentNeed, AnswerArgs, ChooseArgs, LoginArgs,
@@ -305,7 +305,7 @@ impl Session {
                 .as_ref()
                 .map(|c| c.resolved.shown.clone())
                 .unwrap_or_default(),
-            agent_name: chosen.as_ref().map(|c| c.name.clone()),
+            agent_name: chosen.as_ref().and_then(|c| c.name.clone()),
             chosen: chosen.is_some(),
             error: inner.state.error(),
             methods: inner.state.methods().unwrap_or_default(),
@@ -1085,7 +1085,10 @@ fn call_failed(connection: &Connection, step: &str, error: CallError) -> String 
 
 /// Plain-English text of a chosen agent that cannot start on this computer.
 fn missing_text(chosen: &Chosen) -> String {
-    let name = &chosen.name;
+    let Some(name) = &chosen.name else {
+        let program = agents::command_program(&chosen.resolved.shown).unwrap_or_default();
+        return format!("The program of your command was not found: {program}");
+    };
     match chosen.resolved.needs {
         Some(AgentNeed::Node) => format!("{name} needs Node.js: npx was not found."),
         Some(AgentNeed::Uv) => format!("{name} needs uv: uvx was not found."),

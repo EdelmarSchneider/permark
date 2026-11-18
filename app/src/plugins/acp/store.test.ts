@@ -23,8 +23,8 @@ import { t } from "../../core/i18n";
 import { PluginClient } from "../../core/plugins/client";
 import {
   AcpStore,
-  agentLabel,
   canStart,
+  entryName,
   errorText,
   howKey,
   linesOf,
@@ -285,15 +285,17 @@ describe("the choice of the agent", () => {
 
     store.openPicker();
     const before = store.transcript.length;
-    expect(await store.choose({ command: "  C:\\tools\\my-agent.cmd --acp " })).toBe(true);
+    expect(await store.choose({ command: '  "C:\\my tools\\my-agent.cmd" --acp ' })).toBe(true);
     await settle();
     expect(store.showsPicker).toBe(false);
-    expect(store.status?.agentName).toBe("my-agent.cmd");
+    // an own command is named by the window, never by its program file
+    expect(store.status?.chosen).toBe(true);
+    expect(store.status?.agentName).toBeNull();
     expect(store.transcript.length).toBeGreaterThan(before);
     expect(store.transcript.at(-1)).toEqual(
       expect.objectContaining({
         kind: "notice",
-        text: t("acp.switched", { name: "my-agent.cmd" }),
+        text: t("acp.switched", { name: t("acp.ownCommand") }),
       }),
     );
     if (store.catalog.status !== "ready") throw new Error("no list");
@@ -333,7 +335,7 @@ describe("a sign-in the agent asks for", () => {
       () => store.status?.state === "needsLogin" && store.status.error === MOCK_NOT_SIGNED_IN,
     );
     expect(store.transcript.at(-1)).toEqual(
-      expect.objectContaining({ kind: "notice", text: MOCK_NOT_SIGNED_IN }),
+      expect.objectContaining({ kind: "signIn", text: MOCK_NOT_SIGNED_IN }),
     );
 
     const agentWay = MOCK_LOGIN_METHODS.find((m) => m.kind === "agent");
@@ -342,6 +344,25 @@ describe("a sign-in the agent asks for", () => {
     await until(() => store.transcript.some((e) => e.kind === "question"));
     expect(acp.logins).toEqual([{}, { methodId: agentWay.id }]);
     expect(store.status?.state).toBe("working");
+  });
+
+  it("another agent chosen meanwhile: the old agent's sign-in news and card go", async () => {
+    const { store } = await setup({ agent: "gemini" });
+    store.draft = "Hello";
+    await store.send();
+    await until(() => store.status?.state === "needsLogin");
+    await store.login(null);
+    await until(() => store.transcript.some((e) => e.kind === "signIn"));
+    expect(await store.choose({ agent: "codex-acp" })).toBe(true);
+    expect(store.transcript.some((e) => e.kind === "signIn")).toBe(false);
+    expect(store.transcript.map((e) => e.kind === "notice" && e.text)).not.toContain(
+      MOCK_NOT_SIGNED_IN,
+    );
+    expect(store.status).toEqual(
+      expect.objectContaining({ state: "idle", error: null, methods: [], agentName: "Codex" }),
+    );
+    // the conversation itself stays to read
+    expect(store.transcript[0]).toEqual(expect.objectContaining({ kind: "you", text: "Hello" }));
   });
 
   it("a terminal | variable way only asks the agent again; a sign-in no longer waiting is said", async () => {
@@ -379,21 +400,61 @@ describe("the picker's list", () => {
     chosen: false,
   });
 
-  it("finds every word in the name, id or description; those that can start come first", () => {
+  const ids = (list: ReturnType<typeof pickerList>) => ({
+    own: list.own.map((a) => a.id),
+    popular: list.popular.map((a) => a.id),
+    all: list.all.map((a) => a.id),
+  });
+  const own: AgentEntry = {
+    ...entry("custom", "custom", null),
+    name: "",
+    command: '"C:\\a b\\node.exe" agent.mjs',
+    chosen: true,
+  };
+
+  it("popular agents first in their own order, then all the others A-Z; the own command apart", () => {
+    const agents = [
+      entry("zed", "npx", null),
+      entry("goose", "native", null, "Local coding agent"),
+      entry("amp", "missing", "install", "Frontier coding agent"),
+      entry("codex-acp", "missing", "node", "OpenAI coding assistant"),
+      entry("cline", "missing", "node", "Coding agent CLI"),
+      entry("claude-acp", "npx", null, "Anthropic's Claude"),
+      own,
+    ];
+    expect(ids(pickerList(agents, ""))).toEqual({
+      own: ["custom"],
+      popular: ["claude-acp", "codex-acp", "goose"],
+      all: ["amp", "cline", "zed"],
+    });
+  });
+
+  it("finds every word in the name, id or description in every group; the own command by its words too", () => {
     const agents = [
       entry("amp", "missing", "install", "Frontier coding agent"),
-      entry("claude", "npx", null, "Anthropic's Claude"),
+      entry("claude-acp", "npx", null, "Anthropic's Claude"),
       entry("cline", "missing", "node", "Coding agent CLI"),
       entry("goose", "native", null, "Local coding agent"),
+      own,
     ];
-    expect(pickerList(agents, "").map((a) => a.id)).toEqual(["claude", "goose", "amp", "cline"]);
-    expect(pickerList(agents, " CODING  agent ").map((a) => a.id)).toEqual([
-      "goose",
-      "amp",
-      "cline",
-    ]);
-    expect(pickerList(agents, "cla").map((a) => a.id)).toEqual(["claude"]);
-    expect(pickerList(agents, "nothing")).toEqual([]);
+    expect(ids(pickerList(agents, " CODING  agent "))).toEqual({
+      own: [],
+      popular: ["goose"],
+      all: ["amp", "cline"],
+    });
+    expect(ids(pickerList(agents, "cla"))).toEqual({ own: [], popular: ["claude-acp"], all: [] });
+    expect(ids(pickerList(agents, t("acp.ownCommand")))).toEqual({
+      own: ["custom"],
+      popular: [],
+      all: [],
+    });
+    expect(ids(pickerList(agents, "agent.mjs")).own).toEqual(["custom"]);
+    expect(ids(pickerList(agents, "nothing"))).toEqual({ own: [], popular: [], all: [] });
+  });
+
+  it("names the own command in words, a listed agent by its name", () => {
+    expect(entryName(own)).toBe(t("acp.ownCommand"));
+    expect(entryName(entry("goose", "native", null))).toBe("GOOSE");
   });
 
   it("says how each agent starts, else what it needs", () => {
@@ -421,6 +482,7 @@ describe("refusals in words", () => {
     expect(errorText(backend("unavailable", "noAgent"))).toBe(t("acp.error.noAgent"));
     expect(errorText(backend("unavailable", "noProfile"))).toBe(t("acp.error.noProfile"));
     expect(errorText(backend("invalidData", "unknownMethod"))).toBe(t("acp.error.unknownMethod"));
+    expect(errorText(backend("invalidData", "openQuote"))).toBe(t("acp.error.openQuote"));
     expect(errorText(backend("denied", null))).toBe(apiErrorText(backend("denied", null)));
   });
 });
@@ -511,14 +573,5 @@ describe("words of the panel", () => {
     expect(linesOf(text, { from: 5, to: 9 })).toEqual([2, 2]);
     expect(linesOf(text, { from: 5, to: 14 })).toEqual([2, 3]);
     expect(linesOf(text, { from: 15, to: 15 })).toEqual([4, 4]);
-  });
-
-  it("names the agent by its program or package", () => {
-    expect(agentLabel("npx -y @agentclientprotocol/claude-agent-acp@0.108.0")).toBe(
-      "claude-agent-acp",
-    );
-    expect(agentLabel("gemini --experimental-acp")).toBe("gemini");
-    expect(agentLabel("C:\\tools\\codex-acp.exe")).toBe("codex-acp");
-    expect(agentLabel("node C:/agents/my-agent/dist/index.js")).toBe("index");
   });
 });

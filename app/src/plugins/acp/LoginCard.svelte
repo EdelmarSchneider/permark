@@ -9,15 +9,23 @@
 
   type Props = {
     methods: readonly LoginMethod[];
-    /** The agent's name. */
-    name: string;
+    /** The agent's name (`null`: an own command, which has none). */
+    name: string | null;
+    /** A sign-in was asked for: its button waits meanwhile and the card goes once signed in, so the keyboard moves
+     *  on at once. */
+    onsignin: () => void;
   };
-  let { methods, name }: Props = $props();
+  let { methods, name, onsignin }: Props = $props();
 
   const COPIED_MS = 2000;
   const uid = $props.id();
   /** The method whose command was copied last (`null`: none, or long enough ago). */
   let copied = $state<string | null>(null);
+
+  function signIn(method: LoginMethod | null): void {
+    onsignin();
+    void acp.login(method);
+  }
 
   async function copy(method: LoginMethod, text: string): Promise<void> {
     if (await acp.copy(text)) copied = method.id;
@@ -32,7 +40,9 @@
 </script>
 
 <section class="login" aria-labelledby="{uid}-title">
-  <h3 id="{uid}-title">{t("acp.login.title", { name })}</h3>
+  <h3 id="{uid}-title">
+    {name === null ? t("acp.login.titleAgent") : t("acp.login.title", { name })}
+  </h3>
   <p class="intro">{t("acp.login.intro")}</p>
   {#if methods.length > 0}
     <ul class="methods">
@@ -43,7 +53,7 @@
               type="button"
               class="btn btn--sm btn--primary"
               disabled={acp.signingIn}
-              onclick={() => void acp.login(method)}>{method.name}</button
+              onclick={() => signIn(method)}>{method.name}</button
             >
           {:else}
             <p class="method-name">{method.name}</p>
@@ -74,11 +84,8 @@
     </ul>
   {/if}
   <div class="actions">
-    <button
-      type="button"
-      class="btn btn--sm"
-      disabled={acp.signingIn}
-      onclick={() => void acp.login(null)}>{t("acp.retry")}</button
+    <button type="button" class="btn btn--sm" disabled={acp.signingIn} onclick={() => signIn(null)}
+      >{t("acp.retry")}</button
     >
   </div>
 </section>

@@ -196,7 +196,7 @@ fn the_choice_lives_in_the_profile_folder_never_in_the_project() {
     assert_eq!(saved["data"], json!({ "agent": "gemini" }));
     assert!(!names_under(project.path()).contains(&CHOICE_FILE.to_owned()));
     let chosen = agents.chosen().unwrap();
-    assert_eq!(chosen.name, "Gemini CLI");
+    assert_eq!(chosen.name.as_deref(), Some("Gemini CLI"));
     assert_eq!(chosen.resolved.needs, Some(AgentNeed::Node));
 }
 
@@ -242,8 +242,8 @@ fn a_choice_is_one_listed_agent_or_an_own_command() {
     let typed = format!("{} --acp  --verbose", own.display());
     agents.choose(&command(&format!("  {typed} "))).unwrap();
     let chosen = agents.chosen().unwrap();
-    let own_name = own.file_name().unwrap().to_string_lossy().into_owned();
-    assert_eq!(chosen.name, own_name);
+    // no registry name: the window names an own command in its language, never by its program file
+    assert_eq!(chosen.name, None);
     assert_eq!(chosen.resolved.how, AgentHow::Custom);
     assert_eq!(chosen.resolved.shown, typed);
     let plan = chosen.resolved.plan.unwrap();
@@ -255,12 +255,94 @@ fn a_choice_is_one_listed_agent_or_an_own_command() {
         (custom.id.as_str(), custom.how, custom.needs, custom.chosen),
         (CUSTOM_ID, AgentHow::Custom, None, true)
     );
+    assert_eq!(custom.name, "");
     assert_eq!(list.iter().filter(|entry| entry.chosen).count(), 1);
 
     agents.choose(&command("no-such-agent-x9 --acp")).unwrap();
     let chosen = agents.chosen().unwrap();
     assert_eq!(chosen.resolved.needs, Some(AgentNeed::Install));
     assert_eq!(chosen.resolved.plan, None);
+}
+
+/// Double quotes group a word (paths with spaces); a backslash is a folder separator, never an escape.
+#[test]
+fn own_command_words_group_in_double_quotes() {
+    let words = |typed: &str| command_words(typed);
+    assert_eq!(
+        words(r#""C:\Program Files\nodejs\node.exe" "C:\a b\agent.mjs" --acp"#).unwrap(),
+        [
+            r"C:\Program Files\nodejs\node.exe",
+            r"C:\a b\agent.mjs",
+            "--acp"
+        ]
+    );
+    assert_eq!(
+        words("  my-agent\t--acp   --verbose ").unwrap(),
+        ["my-agent", "--acp", "--verbose"]
+    );
+    assert_eq!(
+        words(r"C:\tools\my-agent.cmd --dir C:\x\").unwrap(),
+        [r"C:\tools\my-agent.cmd", "--dir", r"C:\x\"]
+    );
+    // empty quotes are an empty argument; quotes join with the letters next to them
+    assert_eq!(words(r#"agent "" --x"#).unwrap(), ["agent", "", "--x"]);
+    assert_eq!(
+        words(r#"agent --name="a b"c"#).unwrap(),
+        ["agent", "--name=a bc"]
+    );
+    assert_eq!(words("   ").unwrap(), Vec::<String>::new());
+    assert_eq!(words(r#""C:\Program Files\node.exe --acp"#), None);
+    assert_eq!(words(r#"agent "a" "b"#), None);
+}
+
+#[test]
+fn an_own_command_with_an_open_quote_or_no_program_is_refused() {
+    let profile = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let agents = testing::agents(profile.path(), bin.path());
+    let refused = |typed: &str| {
+        let error = agents.choose(&command(typed)).unwrap_err();
+        (error.kind, error.detail)
+    };
+    assert_eq!(
+        refused(r#""C:\Program Files\node.exe --acp"#),
+        (ErrorKind::InvalidData, Some("openQuote".to_owned()))
+    );
+    assert_eq!(
+        refused(r#""" --acp"#),
+        (ErrorKind::InvalidData, Some("emptyCommand".to_owned()))
+    );
+    assert!(!profile.path().join(CHOICE_FILE).exists());
+
+    // a stored command with an open quote (the file edited by hand) counts as no choice
+    std::fs::write(
+        profile.path().join(CHOICE_FILE),
+        r#"{ "version": 1, "data": { "command": "\"my agent --acp" } }"#,
+    )
+    .unwrap();
+    assert_eq!(agents.chosen(), None);
+    assert!(agents.list().iter().all(|entry| entry.id != CUSTOM_ID));
+}
+
+/// A program in a folder with spaces, quoted: that very file starts, with its quoted arguments as single words.
+#[test]
+fn a_quoted_program_path_with_spaces_starts_that_file() {
+    let profile = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let folder = bin.path().join("Program Files").join("nodejs");
+    std::fs::create_dir_all(&folder).unwrap();
+    let node = testing::program(&folder, "node.exe");
+    let agents = testing::agents(profile.path(), bin.path());
+    let typed = format!(r#""{}" "C:\a b\agent.mjs" --acp"#, node.display());
+    agents.choose(&command(&typed)).unwrap();
+    let chosen = agents.chosen().unwrap();
+    assert_eq!(chosen.name, None);
+    assert_eq!(chosen.resolved.needs, None);
+    assert_eq!(chosen.resolved.shown, typed);
+    let plan = chosen.resolved.plan.unwrap();
+    assert_eq!(plan.program, node);
+    assert_eq!(plan.args, [r"C:\a b\agent.mjs", "--acp"]);
+    assert_eq!(command_program(&typed), Some(node.display().to_string()));
 }
 
 /// A stored agent this computer's list does not have (gone from a newer snapshot) counts as no choice.

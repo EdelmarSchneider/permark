@@ -1,19 +1,21 @@
 <script lang="ts">
-  // The choice of the agent: every agent this computer lists (those that can start first), found by a word of its
-  // name | description, each with how it would start or what it needs first ("How to install" opens its website in
-  // the browser), and the person's own command for an agent the list does not have. The list is read again each time
-  // the picker shows, so an install made meanwhile counts.
+  // The choice of the agent: the person's own command first ("Other command…" at the top, never below a long list),
+  // then the popular agents, then all the others A-Z, found by a word of the name | description, each with how it
+  // would start or what it needs first ("How to install" opens its website in the browser). The list is read again
+  // each time the picker shows, so an install made meanwhile counts.
   import Check from "@lucide/svelte/icons/check";
   import { onMount, tick } from "svelte";
   import type { AgentEntry } from "../../api";
   import { t } from "../../core/i18n";
-  import { acp, canStart, howKey, pickerList } from "./store.svelte";
+  import { acp, canStart, entryName, howKey, pickerList } from "./store.svelte";
 
   type Props = {
     /** The person opened the picker: the search field takes the keyboard. */
     focus: boolean;
+    /** The picker goes away (a choice, Cancel): the panel moves the keyboard on. */
+    onclose: () => void;
   };
-  let { focus }: Props = $props();
+  let { focus, onclose }: Props = $props();
 
   const uid = $props.id();
   let query = $state("");
@@ -22,6 +24,7 @@
   let typed = $state("");
   let search = $state<HTMLInputElement>();
   let field = $state<HTMLInputElement>();
+  let otherButton = $state<HTMLButtonElement>();
 
   const agents = $derived(acp.catalog.status === "ready" ? acp.catalog.agents : []);
   const shown = $derived(pickerList(agents, query));
@@ -32,9 +35,16 @@
     void acp.loadAgents();
   });
 
-  function choose(entry: AgentEntry): void {
+  /** The focused button was disabled while the call ran (the page itself took the keyboard). */
+  function lost(): boolean {
+    return document.activeElement === null || document.activeElement === document.body;
+  }
+
+  async function choose(entry: AgentEntry): Promise<void> {
     // an own command is kept by its text: the list's `custom` id is no registry id
-    void acp.choose(entry.how === "custom" ? { command: entry.command } : { agent: entry.id });
+    if (await acp.choose(entry.how === "custom" ? { command: entry.command } : { agent: entry.id }))
+      onclose();
+    else if (lost()) search?.focus();
   }
 
   async function openOther(): Promise<void> {
@@ -44,15 +54,123 @@
     field?.focus();
   }
 
+  async function closeOther(): Promise<void> {
+    other = false;
+    await tick();
+    otherButton?.focus();
+  }
+
   async function useCommand(event: SubmitEvent): Promise<void> {
     event.preventDefault();
-    if (await acp.choose({ command: typed })) other = false;
+    if (await acp.choose({ command: typed })) {
+      other = false;
+      onclose();
+    } else if (lost()) field?.focus();
+  }
+
+  function cancel(): void {
+    acp.closePicker();
+    onclose();
   }
 </script>
 
+<!-- `heading` false: a group without a heading (the own command), named for assistive technology only -->
+{#snippet group(entries: AgentEntry[], key: string, label: string, heading: boolean)}
+  {#if heading}
+    <h4 class="group" id="{uid}-{key}">{label}</h4>
+  {/if}
+  <ul
+    class="agents"
+    aria-labelledby={heading ? `${uid}-${key}` : undefined}
+    aria-label={heading ? undefined : label}
+  >
+    {#each entries as entry (entry.id)}
+      {@const ready = canStart(entry)}
+      {@const name = entryName(entry)}
+      <li class={["agent", entry.chosen && "chosen"]}>
+        <div class="head">
+          <span class="name">{name}</span>
+          {#if entry.chosen}
+            <span class="current">
+              <Check size={12} aria-hidden="true" />
+              {t("acp.pick.current")}
+            </span>
+          {/if}
+          <span class="spacer"></span>
+          <span class={["how", ready ? "ready" : "missing"]}>{t(howKey(entry))}</span>
+        </div>
+        {#if entry.description !== ""}
+          <p class="description" title={entry.description}>{entry.description}</p>
+        {/if}
+        {#if entry.command !== ""}
+          <code class="command" title={entry.command}>{entry.command}</code>
+        {/if}
+        <div class="actions">
+          {#if !ready && entry.website !== null}
+            {@const website = entry.website}
+            <button
+              type="button"
+              class="btn btn--sm btn--ghost"
+              aria-label={t("acp.pick.howToInstallNamed", { name })}
+              onclick={() => acp.openWebsite(website)}>{t("acp.pick.howToInstall")}</button
+            >
+          {/if}
+          <button
+            type="button"
+            class={["btn", "btn--sm", ready && !entry.chosen && "btn--primary"]}
+            aria-label={t("acp.pick.chooseNamed", { name })}
+            disabled={!ready || locked}
+            onclick={() => void choose(entry)}>{t("acp.pick.choose")}</button
+          >
+        </div>
+      </li>
+    {/each}
+  </ul>
+{/snippet}
+
 <section class="picker" aria-labelledby="{uid}-title">
-  <h3 id="{uid}-title">{t("acp.pick.title")}</h3>
+  <div class="title-row">
+    <h3 id="{uid}-title">{t("acp.pick.title")}</h3>
+    <span class="spacer"></span>
+    {#if !other}
+      <button
+        bind:this={otherButton}
+        type="button"
+        class="btn btn--sm btn--ghost"
+        onclick={() => void openOther()}>{t("acp.pick.other")}</button
+      >
+    {/if}
+  </div>
   <p class="intro">{t("acp.pick.intro")}</p>
+  <p class="hint">{t("acp.pick.signInHint")}</p>
+
+  {#if other}
+    <form class="other" onsubmit={(event) => void useCommand(event)}>
+      <label for="{uid}-command">{t("acp.pick.command")}</label>
+      <input
+        bind:this={field}
+        bind:value={typed}
+        id="{uid}-command"
+        class="field mono"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder={t("acp.pick.commandPlaceholder")}
+        aria-describedby="{uid}-warning"
+      />
+      <p class="warning" id="{uid}-warning">{t("acp.pick.commandWarning")}</p>
+      <div class="actions">
+        <button type="button" class="btn btn--sm" onclick={() => void closeOther()}
+          >{t("common.cancel")}</button
+        >
+        <button
+          type="submit"
+          class="btn btn--sm btn--primary"
+          disabled={typed.trim() === "" || locked}>{t("acp.pick.useCommand")}</button
+        >
+      </div>
+    </form>
+  {/if}
+
   <input
     bind:this={search}
     bind:value={query}
@@ -77,89 +195,23 @@
     >
   {:else if acp.catalog.status !== "ready"}
     <p class="quiet">{t("acp.pick.loading")}</p>
-  {:else if shown.length === 0}
+  {:else if shown.own.length + shown.popular.length + shown.all.length === 0}
     <p class="quiet">{t("acp.pick.none")}</p>
   {:else}
-    <ul class="agents" aria-label={t("acp.pick.list")}>
-      {#each shown as entry (entry.id)}
-        {@const ready = canStart(entry)}
-        <li class={["agent", entry.chosen && "chosen"]}>
-          <div class="head">
-            <span class="name">{entry.name}</span>
-            {#if entry.chosen}
-              <span class="current">
-                <Check size={12} aria-hidden="true" />
-                {t("acp.pick.current")}
-              </span>
-            {/if}
-            <span class="spacer"></span>
-            <span class={["how", ready ? "ready" : "missing"]}>{t(howKey(entry))}</span>
-          </div>
-          {#if entry.description !== ""}
-            <p class="description" title={entry.description}>{entry.description}</p>
-          {/if}
-          {#if entry.command !== ""}
-            <code class="command" title={entry.command}>{entry.command}</code>
-          {/if}
-          <div class="actions">
-            {#if !ready && entry.website !== null}
-              {@const website = entry.website}
-              <button
-                type="button"
-                class="btn btn--sm btn--ghost"
-                aria-label={t("acp.pick.howToInstallNamed", { name: entry.name })}
-                onclick={() => acp.openWebsite(website)}>{t("acp.pick.howToInstall")}</button
-              >
-            {/if}
-            <button
-              type="button"
-              class={["btn", "btn--sm", ready && !entry.chosen && "btn--primary"]}
-              aria-label={t("acp.pick.chooseNamed", { name: entry.name })}
-              disabled={!ready || locked}
-              onclick={() => choose(entry)}>{t("acp.pick.choose")}</button
-            >
-          </div>
-        </li>
-      {/each}
-    </ul>
+    {#if shown.own.length > 0}
+      {@render group(shown.own, "own", t("acp.ownCommand"), false)}
+    {/if}
+    {#if shown.popular.length > 0}
+      {@render group(shown.popular, "popular", t("acp.pick.popular"), true)}
+    {/if}
+    {#if shown.all.length > 0}
+      {@render group(shown.all, "all", t("acp.pick.all"), true)}
+    {/if}
   {/if}
 
-  {#if other}
-    <form class="other" onsubmit={(event) => void useCommand(event)}>
-      <label for="{uid}-command">{t("acp.pick.command")}</label>
-      <input
-        bind:this={field}
-        bind:value={typed}
-        id="{uid}-command"
-        class="field mono"
-        spellcheck="false"
-        autocomplete="off"
-        placeholder={t("acp.pick.commandPlaceholder")}
-        aria-describedby="{uid}-warning"
-      />
-      <p class="warning" id="{uid}-warning">{t("acp.pick.commandWarning")}</p>
-      <div class="actions">
-        <button type="button" class="btn btn--sm" onclick={() => (other = false)}
-          >{t("common.cancel")}</button
-        >
-        <button
-          type="submit"
-          class="btn btn--sm btn--primary"
-          disabled={typed.trim() === "" || locked}>{t("acp.pick.useCommand")}</button
-        >
-      </div>
-    </form>
-  {:else}
+  {#if acp.status?.chosen === true && !other}
     <div class="foot">
-      <button type="button" class="btn btn--sm btn--ghost" onclick={() => void openOther()}
-        >{t("acp.pick.other")}</button
-      >
-      {#if acp.status?.chosen === true}
-        <span class="spacer"></span>
-        <button type="button" class="btn btn--sm" onclick={() => acp.closePicker()}
-          >{t("common.cancel")}</button
-        >
-      {/if}
+      <button type="button" class="btn btn--sm" onclick={cancel}>{t("common.cancel")}</button>
     </div>
   {/if}
 </section>
@@ -170,16 +222,32 @@
     flex-direction: column;
     gap: var(--sp-2);
   }
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+    min-width: 0;
+  }
   h3 {
     margin: 0;
     font-size: var(--fs-ui-sm);
     font-weight: 600;
   }
-  .intro {
+  .intro,
+  .hint {
     margin: 0;
     color: var(--muted);
     font-size: var(--fs-ui-xs);
     line-height: 1.5;
+  }
+  /* same group title style as the panel's other section titles */
+  .group {
+    margin: var(--sp-1) 0 0;
+    color: var(--muted);
+    font-size: var(--fs-ui-xs);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
   }
   .field {
     width: 100%;
@@ -301,8 +369,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-1);
-    padding-top: var(--sp-2);
-    border-top: 1px solid var(--border);
+    padding: var(--sp-2) 0;
+    border-block: 1px solid var(--border);
   }
   label {
     color: var(--muted);
@@ -316,7 +384,6 @@
   }
   .foot {
     display: flex;
-    align-items: center;
-    gap: var(--sp-1);
+    justify-content: flex-end;
   }
 </style>
