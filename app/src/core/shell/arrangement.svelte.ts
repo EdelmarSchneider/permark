@@ -72,8 +72,11 @@ export type KnownView = {
   readonly id: string;
   /** Where it goes while no region lists it. */
   readonly region: Region;
-  /** The person can close it (the outline, a panel of the right side); the others are always open in a project. */
+  /** The person can close it (the outline, a plugin's panel); Files and Search are always open in a project. */
   readonly closable: boolean;
+  /** It belongs to a project (Files, Search, a plugin's sidebar tab): present only while one is shown, made anew for
+   *  each project. */
+  readonly projectOnly: boolean;
   /** It draws a header of its own (its title, its options button): alone in its group it needs no tab strip. */
   readonly ownHeader: boolean;
   /** Its name, as a tab says it. */
@@ -177,20 +180,21 @@ export class ArrangementStore {
    * tabs (left), the outline and the plugins' panels (right). A panel's side is only its default region.
    */
   readonly views = $derived.by((): KnownView[] => {
-    // a sidebar tab is a body alone, always open in a project; a right panel has its header and can be closed
+    // every panel can be closed: a sidebar tab is a body alone, of a project; a right panel has its header
     const panelsOf = (side: Panel["side"]): KnownView[] =>
       this.#panels
         .filter((panel) => panel.side === side)
         .map((panel) => ({
           id: panel.id,
           region: side,
-          closable: side === "right",
+          closable: true,
           ownHeader: side === "right",
+          projectOnly: side === "left",
           label: panel.label,
           icon: panel.icon,
           panel,
         }));
-    const core = { closable: false, ownHeader: false, panel: null } as const;
+    const core = { closable: false, ownHeader: false, projectOnly: true, panel: null } as const;
     return [
       { ...core, id: FILES, region: "left", label: "sidebar.files", icon: FolderTree },
       { ...core, id: SEARCH, region: "left", label: "sidebar.search", icon: SearchIcon },
@@ -200,6 +204,7 @@ export class ArrangementStore {
         region: "right",
         closable: true,
         ownHeader: true,
+        projectOnly: false,
         label: "outline.tab",
         icon: ListTree,
         panel: null,
@@ -298,20 +303,23 @@ export class ArrangementStore {
     return now;
   }
 
-  /** The panel is open for this project (its choice, else its default). */
+  /** The panel is open for this project (its choice, else its default; a sidebar tab: open until closed). */
   isOpen(panel: Panel): boolean {
     const chosen = layout.views.open[panel.id];
-    return typeof chosen === "boolean" ? chosen : this.defaultOf(panel);
+    if (typeof chosen === "boolean") return chosen;
+    return panel.side === "left" || this.defaultOf(panel);
   }
 
   /**
-   * The view is present. One that cannot be closed (Files, Search, a plugin's sidebar tab): in a project window,
-   * always. The outline: when the document has one and it is on. A panel that can be closed: when open.
+   * The view is present. A view of a project (Files, Search, a plugin's sidebar tab): only in a project window.
+   * One that cannot be closed (Files, Search): there, always. The outline: when the document has one and it is on.
+   * A panel: when open.
    */
   isPresent(id: string): boolean {
     const view = this.viewOf(id);
     if (view === undefined) return false;
-    if (!view.closable) return conditions.current.workspace === "project";
+    if (view.projectOnly && conditions.current.workspace !== "project") return false;
+    if (!view.closable) return true;
     return view.panel === null ? this.hasOutline && reading.outline : this.isOpen(view.panel);
   }
 

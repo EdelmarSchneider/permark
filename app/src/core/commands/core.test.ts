@@ -31,7 +31,10 @@ describe("the core's commands", () => {
     expect(new Set(commands.map((c) => c.id)).size).toBe(commands.length);
     for (const command of commands) {
       expect(command.owner).toBe(CORE_OWNER);
-      expect(command.id).toMatch(/^[a-z]+\.[A-Za-z]+[1-8]?$/);
+      // a view's Show entry carries the view's own id
+      if (!command.id.startsWith("view.show.")) {
+        expect(command.id).toMatch(/^[a-z]+\.[A-Za-z]+[1-8]?$/);
+      }
       expect(Object.hasOwn(en, command.label), command.id).toBe(true);
     }
   });
@@ -76,6 +79,34 @@ describe("the core's commands", () => {
     expect(keyOf("search.all")).toBe("Mod+Shift+f");
     expect(keyOf("search.everywhere")).toBe("Mod+t");
     expect(keyOf("palette.open")).toBe("Mod+Shift+p");
+  });
+
+  it("open the Panels menu from the palette, with no default key; a Show entry per view that can be closed", async () => {
+    const { flushSync } = await import("svelte");
+    const { ui } = await import("../shell/ui.svelte");
+    const command = commands.find((c) => c.id === "panel.views");
+    expect(en[command?.label ?? "cmd.save"]).toBe("Panels…");
+    expect(command?.requires).toEqual({
+      needs: [{ need: "workspace", kinds: ["project", "singleFile", "notes"] }],
+      prefers: [],
+    });
+    expect(shortcuts.some((s) => s.command === "panel.views")).toBe(false);
+    expect(command?.when?.()).toBe(true);
+    await command?.run();
+    expect(ui.panels).toBe(true);
+    ui.closePanels();
+    // in focus mode the status bar is folded away: nothing to open
+    ui.setFocus("on");
+    expect(command?.when?.()).toBe(false);
+    ui.resetFocus();
+    // the views' Show entries come with the core's commands (the outline: known to every window)
+    flushSync();
+    const show = registry.of("command").find((c) => c.id === "view.show.outline");
+    expect([show?.owner, show?.label, show?.labelParams?.()]).toEqual([
+      CORE_OWNER,
+      "panel.show",
+      { name: "Outline" },
+    ]);
   });
 
   it("move to the next and previous change with F7 and Shift+F7, and say when there is none", async () => {

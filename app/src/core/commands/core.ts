@@ -37,6 +37,7 @@ import {
 } from "../shell/sides";
 import { tabs } from "../shell/tabs.svelte";
 import { ui } from "../shell/ui.svelte";
+import { registerViewCommands } from "../shell/viewsMenu.svelte";
 import { conditions } from "../conditions/context.svelte";
 import { stepChange } from "./changes";
 import { isTextTarget, isTypingTarget } from "./dispatch";
@@ -252,6 +253,14 @@ const SPECS: readonly Spec[] = [
     requires: READING,
     // the one dialog of the saved arrangements; the views' menu opens it too
     run: () => ui.openLayouts(),
+  },
+  {
+    id: "panel.views",
+    label: "panel.panelsCommand",
+    requires: READING,
+    // the status bar's Panels menu, the keyboard in it; focus mode folds the status bar away
+    when: () => ui.focus !== "on",
+    run: () => ui.openPanels(),
   },
   {
     id: "file.new",
@@ -493,5 +502,7 @@ export function registerCoreCommands(registry: ContributionRegistry): () => void
     });
     add({ kind: "shortcut", keys, command: id, requires: NO_REQUIREMENT });
   }
+  // "Show <name>" for each view the person can close, while the window offers it
+  offs.push(registerViewCommands(registry));
   return () => offs.forEach((off) => off());
 }

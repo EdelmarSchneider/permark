@@ -16,7 +16,8 @@
   // Selecting shows a view, never hides it. One Tab stop: arrows move between the tabs, Enter | Space select; right
   // click | Shift+F10 | the Menu key open the view's options. After the tabs, where the window has views to arrange,
   // one options button for the tab shown: a Tab stop of its own, seen while the strip is pointed at | has the focus.
-  // A crowded strip too narrow for the whole label of the tab shown moves its last other tabs into a menu of its views.
+  // A crowded strip keeps every tab while all of them fit as icons: the label of the tab shown shortens, then goes;
+  // only then do its last other tabs move into a menu of its views.
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import { tick } from "svelte";
@@ -70,16 +71,17 @@
   const VIEWS_PX = 24;
   const OPTIONS_PX = 32;
   let bar: HTMLElement | undefined = $state();
-  /** Px the tabs have, and the width of the selected tab with its whole label (0: not measured: every tab drawn). */
+  /** Px the tabs have, and the width of the selected tab at its smallest: its icon alone, or the few letters a tab
+   *  without an icon keeps (0: not measured: every tab drawn). */
   let room = $state(0);
-  let whole = $state(0);
-  /** Crowded: the other tabs that stay beside the selected one's whole label; the last ones go into the views menu. */
+  let least = $state(0);
+  /** Crowded: the other tabs that stay beside the selected one at its smallest; the last ones go into the views menu. */
   const others = $derived(views.filter((v) => v.id !== selected));
   const kept = $derived(
     crowded && selected !== null
       ? rowFit({
           room,
-          fixed: whole,
+          fixed: least,
           count: others.length,
           step: ICON_TAB + TAB_GAP,
           more: VIEWS_PX,
@@ -90,7 +92,7 @@
   const drawn = $derived(views.filter((v) => !folded.has(v.id)));
   let list = $state.raw<{ x: number; y: number; anchor: HTMLElement } | null>(null);
 
-  // the strip's width and the selected tab's whole width (its label, the language, a count change it) decide which
+  // the strip's width and the selected tab's smallest width (its count, its icon, the language change it) decide which
   // tabs it draws (observer torn down with the strip; none = every tab, as in tests). A resize is measured in the next
   // frame: tabs drawn again inside the observer's call would resize what it watches there ("ResizeObserver loop").
   $effect(() => {
@@ -104,15 +106,14 @@
       room = box.clientWidth - STRIP_PAD - options;
       const tab = tabOf(id);
       const label = tab?.querySelector<HTMLElement>(".label");
-      // the label is the only part of a tab that shortens: the rest of the tab plus the label's whole text (+1: the
-      // measured text width is rounded, the drawn one is not)
-      whole =
+      // the label is the only part of a tab that shortens: the rest of the tab plus the least the label keeps (none
+      // beside an icon, a few letters without one: its min-width, in px once computed)
+      least =
         tab && label
           ? Math.ceil(
               tab.getBoundingClientRect().width -
                 label.getBoundingClientRect().width +
-                label.scrollWidth +
-                1,
+                (parseFloat(getComputedStyle(label).minWidth) || 0),
             )
           : 0;
     };
@@ -360,8 +361,8 @@
   }
   /* A strip too narrow for its labels takes the room from the tabs by their weights: the tab shown loses nothing
      while another can still give way (its weight is nothing beside theirs), so its label stays whole; with every
-     other tab at its smallest (a crowded strip first moves its last other tabs into its views menu), it shortens
-     too and every tab stays reachable. A tab is also the handle its view is dragged by: a pen | a finger on it never
+     other tab at its smallest, it shortens too, down to its icon (a crowded strip moves its last other tabs into its
+     views menu only when even the icons do not fit), and every tab stays reachable. A tab is also the handle its view is dragged by: a pen | a finger on it never
      scrolls the page away from under a drag. */
   .tab {
     --tab-pad: var(--sp-3);
@@ -403,21 +404,22 @@
     white-space: nowrap;
   }
   /* A tab that gives way, with an icon: its label shortens (ellipsis) down to a few letters, then goes and the icon
-     stays alone, in the middle of the room the tab still has (the tab's name is its tooltip). The room the label
-     has in the tab, less that floor, times a large number: no limit above the floor, no width under it. */
-  .tab.has-icon:not([aria-selected="true"]) {
+     stays alone, in the middle of the room the tab still has (the tab's name is its tooltip; its text stays in the
+     page, so the tab keeps its name). The room the label has in the tab, less that floor, times a large number: no
+     limit above the floor, no width under it. */
+  .tab.has-icon {
     --label-floor: calc(14px + 6px + 3em);
     min-width: calc(14px + 2 * var(--tab-pad));
     justify-content: center;
   }
-  .tab.has-icon.has-badge:not([aria-selected="true"]) {
+  .tab.has-icon.has-badge {
     --label-floor: calc(14px + 6px + 3em + 6px + 2em);
   }
-  .tab.has-icon:not([aria-selected="true"]) .label {
+  .tab.has-icon .label {
     max-width: max(0px, calc((100% - var(--label-floor)) * 999));
   }
   /* without an icon its letters are all it has: a few of them stay */
-  .tab:not(.has-icon):not([aria-selected="true"]) .label {
+  .tab:not(.has-icon) .label {
     min-width: 3em;
   }
   .tab:hover {

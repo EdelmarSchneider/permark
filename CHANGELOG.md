@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Panels menu.** A new button in the status bar lists every panel the window offers, grouped by where it sits: the sidebar, the right panel and the bottom panel. Tick a panel to show it and untick it to close it. The menu also holds **Layouts…** and **Reset layout**. The command **Panels…** opens the same menu from the keyboard, and the command palette has **Show** followed by the panel's name for each panel you can close. Closing a panel shows a notice with **Undo**. The tabs that plugins add to the sidebar, such as Comments or Tags, can now be closed too; Files and Search always stay. <!-- f: side-panels -->
+
 ## [0.14.0] - 2026-11-17
 
 ### Added

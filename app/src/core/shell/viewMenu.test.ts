@@ -85,6 +85,7 @@ const menuOf = (id: string): string[] =>
   viewMenu.entries(id).map((entry) => {
     if (entry.kind === "separator") return "—";
     if (entry.kind === "heading") return `# ${entry.label}`;
+    if (entry.kind === "note") return `(${entry.label})`;
     return entry.disabled === true ? `${entry.label} (off)` : entry.label;
   });
 
@@ -217,21 +218,14 @@ describe("the entries of a view's menu", () => {
     ]);
   });
 
-  it("at the left: the same words; Files, Search and a plugin's sidebar tab have no Close", () => {
+  it("at the left: the same words; Files and Search have no Close, a plugin's sidebar tab has", () => {
     panel(LEFT, "left", () => import("../testing/StripSecond.svelte"));
     arrange([[FILES, SEARCH, LEFT]], [[PROBE], [OTHER]]);
-    for (const id of [FILES, SEARCH, LEFT]) {
-      expect(menuOf(id), id).toEqual([
-        "Show above",
-        "Show below",
-        "—",
-        "Move to right panel",
-        "Move to bottom panel",
-        "—",
-        "Layouts…",
-        "Reset layout",
-      ]);
+    const moves = ["Show above", "Show below", "—", "Move to right panel", "Move to bottom panel"];
+    for (const id of [FILES, SEARCH]) {
+      expect(menuOf(id), id).toEqual([...moves, "—", "Layouts…", "Reset layout"]);
     }
+    expect(menuOf(LEFT)).toEqual([...moves, "—", "Close", "—", "Layouts…", "Reset layout"]);
     arrange([[FILES], [SEARCH, LEFT]], [[PROBE], [OTHER]]);
     expect(menuOf(FILES).slice(0, 4)).toEqual(["Move up (off)", "Move down", "Show as tab", "—"]);
   });

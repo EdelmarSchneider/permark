@@ -15,6 +15,7 @@
   import FocusExit from "./core/shell/FocusExit.svelte";
   import Frame from "./core/shell/Frame.svelte";
   import PanelToggle from "./core/shell/PanelToggle.svelte";
+  import PanelsButton from "./core/shell/PanelsButton.svelte";
   import ViewHosts from "./core/shell/ViewHosts.svelte";
   import ViewRegion from "./core/shell/ViewRegion.svelte";
   import { arrangement } from "./core/shell/arrangement.svelte";
@@ -295,6 +296,7 @@
   <div class="slot center"><StatusItems slot="center" /></div>
   <div class="slot right">
     <StatusItems slot="right" /><span>{versionText}</span>
+    {#if shown !== null}<PanelsButton />{/if}
     {#if shown !== null && hasToggle("right")}<PanelToggle side="right" />{/if}
   </div>
 {/snippet}

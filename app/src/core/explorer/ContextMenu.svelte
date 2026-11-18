@@ -1,6 +1,7 @@
 <script lang="ts">
   // A small context menu at the pointer: arrows | Home | End move the focus over the items (a disabled item is reached
-  // and announced, it does nothing), Enter runs, Escape | click outside closes. Entries are data.
+  // and announced, it does nothing), Enter runs, Escape | click outside closes. Entries are data. Taller than the
+  // window: it scrolls inside it, so every entry stays in reach.
   import Check from "@lucide/svelte/icons/check";
   import { untrack } from "svelte";
   import { t } from "../i18n";
@@ -19,8 +20,10 @@
     back?: () => void;
     /** The entry the keyboard starts on (default: the first item), e.g. the submenu entry when coming back. */
     start?: number;
+    /** Opens upward: `y` is where its bottom goes (a control at the bottom of the window). */
+    above?: boolean;
   };
-  let { x, y, entries, close, label, anchor, back, start }: Props = $props();
+  let { x, y, entries, close, label, anchor, back, start, above = false }: Props = $props();
 
   let menu: HTMLElement | undefined = $state();
   let picked = $state(-1);
@@ -28,13 +31,22 @@
   const items = $derived(entries.flatMap((e, at) => (e.kind === "item" ? [at] : [])));
   /** Some item has an icon: every item gets the icon column, so the labels line up. */
   const iconic = $derived(entries.some((e) => e.kind === "item" && e.icon !== undefined));
-  /** The entry the keyboard is on: the one picked, else `start`, else the first. */
+  /** The first item that can act: a disabled one before it would only start the keyboard on a dimmed row. */
+  const firstLive = $derived(
+    items.find((at) => {
+      const entry = entries[at];
+      return entry?.kind === "item" && entry.disabled !== true;
+    }) ??
+      items[0] ??
+      -1,
+  );
+  /** The entry the keyboard is on: the one picked, else `start`, else the first that can act. */
   const active = $derived(
     picked >= 0 && items.includes(picked)
       ? picked
       : start !== undefined && items.includes(start)
         ? start
-        : (items[0] ?? -1),
+        : firstLive,
   );
 
   function run(at: number, shift = false): void {
@@ -86,7 +98,8 @@
     if (menu) {
       const box = menu.getBoundingClientRect();
       menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - box.width - 4))}px`;
-      menu.style.top = `${Math.max(4, Math.min(y, window.innerHeight - box.height - 4))}px`;
+      const top = above ? y - box.height : y;
+      menu.style.top = `${Math.max(4, Math.min(top, window.innerHeight - box.height - 4))}px`;
       // the first item (or `start`) takes the focus; the menu itself only when it has no item
       const first = untrack(() => active);
       const item = menu.querySelector<HTMLElement>(`[data-at="${first}"]`);
@@ -121,12 +134,19 @@
       <div class="sep" role="separator"></div>
     {:else if entry.kind === "heading"}
       <div class="menu-label heading" role="presentation">{entry.label}</div>
+    {:else if entry.kind === "note"}
+      <div class="note" role="presentation">{entry.label}</div>
     {:else}
       <button
         type="button"
-        role={entry.checked === undefined ? "menuitem" : "menuitemradio"}
+        role={entry.checked === undefined
+          ? "menuitem"
+          : entry.checkbox === true
+            ? "menuitemcheckbox"
+            : "menuitemradio"}
         data-at={at}
         tabindex={active === at ? 0 : -1}
+        title={entry.why}
         aria-checked={entry.checked}
         aria-haspopup={entry.opens === true ? "menu" : undefined}
         aria-disabled={entry.disabled === true ? "true" : undefined}
@@ -175,6 +195,9 @@
     z-index: 55;
     min-width: 200px;
     max-width: min(380px, calc(100vw - 8px));
+    /* kept inside the window (4 px each side, as placed): a long menu scrolls, its ends stay in reach */
+    max-height: calc(100vh - 8px);
+    overflow-y: auto;
     padding: 6px;
     border: 1px solid var(--border);
     border-radius: var(--radius-menu);
@@ -247,6 +270,12 @@
   }
   .heading {
     padding-top: var(--sp-2);
+  }
+  /* nothing to act on: quiet, in the items' indent */
+  .note {
+    padding: 2px 10px 6px;
+    color: var(--muted);
+    font-size: var(--fs-ui);
   }
   /* a choice: the mark's room is kept when unchecked, so the labels of the set line up */
   .choice {
