@@ -27,6 +27,7 @@ import { Box } from "../../core/testing/box.svelte";
 import {
   AcpStore,
   canStart,
+  entryAbout,
   entryName,
   errorText,
   failureText,
@@ -147,7 +148,7 @@ describe("a message and its reply", () => {
     // the news that the agent no longer waits leaves the given answer as it was
     expect(answered?.kind === "question" && answered.answer).toEqual({
       status: "answered",
-      option: "Allow",
+      option: t("acp.option.allowOnce"),
     });
     expect(store.changes[0]?.hunks).toHaveLength(2);
     expect(store.busy).toBe(false);
@@ -275,6 +276,35 @@ describe("a message and its reply", () => {
         text: t("acp.notSent", { reason: t("acp.error.busy") }),
       }),
     );
+  });
+
+  it("a passage from a file agents may not see goes at the refusal and is never attached again; the message comes back", async () => {
+    const { store, acp: probe } = await setup();
+    probe.hidden.add("docs/secret.md");
+    store.draft = "Summarize";
+    store.passage = { path: "docs/secret.md", fromLine: 1, toLine: 1, text: "TOP SECRET" };
+    await store.send();
+    expect(store.passage).toBeNull();
+    expect(store.draft).toBe("Summarize");
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({
+        kind: "notice",
+        text: t("acp.notSent", { reason: t("acp.error.hiddenFromAgents") }),
+      }),
+    );
+    // a new selection in that file stays unattached; another file's attaches as always
+    vi.spyOn(editing, "path", "get").mockReturnValue("docs/secret.md");
+    const shown = vi.spyOn(documents, "path", "get").mockReturnValue("docs/secret.md");
+    editing.mode = "source";
+    vi.spyOn(editing, "current").mockReturnValue("TOP SECRET\nmore");
+    vi.spyOn(editing, "scope").mockReturnValue({ from: 0, to: 10 });
+    editing.selection = "TOP SECRET";
+    store.capture();
+    expect(store.passage).toBeNull();
+    shown.mockReturnValue("docs/a.md");
+    vi.spyOn(editing, "path", "get").mockReturnValue("docs/a.md");
+    store.capture();
+    expect(store.passage?.path).toBe("docs/a.md");
   });
 
   it("a failure shows as a line in words; thinking is one indicator, replaced by the text", () => {
@@ -520,6 +550,17 @@ describe("the picker's list", () => {
     expect(ids(pickerList(agents, "nothing"))).toEqual({ own: [], popular: [], all: [] });
   });
 
+  it("describes a popular agent in PerMark's words, any other in the list's; finds both", () => {
+    const claude = entry("claude-acp", "npx", null, "ACP wrapper for Anthropic's Claude");
+    const amp = entry("amp", "missing", "install", "Frontier coding agent");
+    expect(entryAbout(claude)).toBe(t("acp.about.claude-acp"));
+    expect(entryAbout(amp)).toBe("Frontier coding agent");
+    expect(entryAbout(own)).toBe("");
+    expect(ids(pickerList([claude, amp], t("acp.about.claude-acp"))).popular).toEqual([
+      "claude-acp",
+    ]);
+  });
+
   it("names the own command in words, a listed agent by its name", () => {
     expect(entryName(own)).toBe(t("acp.ownCommand"));
     expect(entryName(entry("goose", "native", null))).toBe("GOOSE");
@@ -687,6 +728,7 @@ describe("words of the panel", () => {
       "busy",
       "emptyPrompt",
       "lineRange",
+      "passageTooLarge",
       "noQuestion",
       "unsaved",
       "changed",
@@ -777,6 +819,7 @@ describe("the conversation as the person follows it", () => {
         requestId,
         title: "Run",
         kind: "execute",
+        reach: "outside",
         detail: "x",
         options: [allow],
       });
@@ -789,7 +832,11 @@ describe("the conversation as the person follows it", () => {
     // a restarted agent numbers its questions from the start again
     ask("0");
     const answering = store.answer("0", allow);
-    expect(answers()).toEqual([{ status: "closed" }, { status: "answered", option: "Allow" }]);
+    // the answer is said as its button said it
+    expect(answers()).toEqual([
+      { status: "closed" },
+      { status: "answered", option: t("acp.option.allowOnce") },
+    ]);
     await answering;
     ask("1");
     store.take({ type: "status", state: "ready", error: null });
@@ -1026,6 +1073,15 @@ describe("the mock follows the plugin's checks", () => {
     expect(await refused({ text: "x", selection: { ...selection, fromLine: 0 } })).toEqual(
       expect.objectContaining({ detail: "lineRange" }),
     );
+    // the plugin's cap counts bytes: 256 KiB of two-byte characters is past it
+    expect(
+      await refused({ text: "x", selection: { ...selection, text: "é".repeat(128 * 1024 + 1) } }),
+    ).toEqual(expect.objectContaining({ kind: "tooLarge", detail: "passageTooLarge" }));
+    expect(
+      (await call({ text: "x", selection: { ...selection, text: "x".repeat(256 * 1024) } })).ok,
+    ).toBe(true);
+    api.probe.plugins.acp.stopAll();
+    await api.pluginCall("acp.cancel", {});
     expect(await refused({ text: "x", selection: { ...selection, path: "../a.md" } })).toEqual(
       expect.objectContaining({ kind: "invalidPath" }),
     );

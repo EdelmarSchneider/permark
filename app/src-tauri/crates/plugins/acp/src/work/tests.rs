@@ -685,6 +685,31 @@ fn a_long_hunk_is_cut_for_the_window_and_applied_whole() {
     assert_eq!(f.real("added.md"), new.as_bytes());
 }
 
+/// A very long line reaches the window cut to its first bytes (whole characters); a choice still applies all of it.
+#[test]
+fn a_long_line_is_cut_for_the_window_and_applied_whole() {
+    let long = format!("{}\n", "é".repeat(MAX_LINE_BYTES));
+    let f = fx(&[("a.md", b"short\n")]);
+    let mut work = f.build();
+    edit_copy(&work, "a.md", long.as_bytes());
+    edit_copy(&work, "added.md", long.as_bytes());
+    let changes = work.refresh().unwrap().files;
+    assert_eq!(changes.len(), 2);
+    for file in &changes {
+        let hunk = &file.hunks[0];
+        assert!(hunk.truncated, "{}", file.path);
+        let shown = &hunk.new_lines[0];
+        assert!(shown.len() <= MAX_LINE_BYTES, "{}", shown.len());
+        assert!(shown.len() > MAX_LINE_BYTES - 4, "{}", shown.len());
+        assert!(long.starts_with(shown.as_str()));
+    }
+    let short = changes.iter().find(|c| c.path == "a.md").unwrap();
+    assert_eq!(short.hunks[0].old_lines, ["short"]);
+    work.accept("a.md", Some(&keys(&changes, "a.md", &[0])))
+        .unwrap();
+    assert_eq!(f.real("a.md"), long.as_bytes());
+}
+
 /// At most [`MAX_LISTED`] files are listed; the rest are counted.
 #[test]
 fn a_long_list_is_cut_and_counted() {

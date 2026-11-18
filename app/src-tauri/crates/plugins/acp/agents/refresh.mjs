@@ -22,9 +22,25 @@ const BINARY_FIELDS = ["cmd", "args", "env"];
 
 /** `x.y.z`, digits only: one exact version (no range, tag or `latest`). */
 const EXACT = /^\d+\.\d+\.\d+$/;
-/** Variables that change how a runner loads code or finds programs. */
-const LOADER_NAMES = new Set(["NODE_OPTIONS", "NODE_PATH", "PATH"]);
-const LOADER_PREFIXES = ["LD_", "DYLD_", "PYTHON", "UV_", "NPM_CONFIG_"];
+/**
+ * Variables that change how a runner loads code, finds programs, or where it downloads a pinned package from and how
+ * it checks that download (a proxy, a registry | index, certificate checks).
+ */
+const LOADER_NAMES = new Set([
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "PATH",
+  "PATHEXT",
+  "COMSPEC",
+  "NODE_TLS_REJECT_UNAUTHORIZED",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "REQUESTS_CA_BUNDLE",
+  "CURL_CA_BUNDLE",
+]);
+const LOADER_SUFFIXES = ["_PROXY"];
+const LOADER_PREFIXES = ["LD_", "DYLD_", "PYTHON", "UV_", "PIP_", "NPM_CONFIG_", "BUN_"];
 
 /** The version of a package spec (`npx`: `name@x.y.z`, a scoped name starts with `@`; `uvx`: also `name==x.y.z`). */
 function versionOf(spec, uv) {
@@ -35,7 +51,11 @@ function versionOf(spec, uv) {
 
 function loaderVariable(name) {
   const upper = name.toUpperCase();
-  return LOADER_NAMES.has(upper) || LOADER_PREFIXES.some((prefix) => upper.startsWith(prefix));
+  return (
+    LOADER_NAMES.has(upper) ||
+    LOADER_SUFFIXES.some((suffix) => upper.endsWith(suffix)) ||
+    LOADER_PREFIXES.some((prefix) => upper.startsWith(prefix))
+  );
 }
 
 /**

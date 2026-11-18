@@ -3057,6 +3057,8 @@ export default {
   "acp.error.busy": "Der Agent arbeitet noch. Warte auf ihn oder stoppe ihn.",
   "acp.error.emptyPrompt": "Zuerst eine Nachricht schreiben.",
   "acp.error.lineRange": "Die angehängten Zeilen stehen nicht mehr im Dokument.",
+  "acp.error.passageTooLarge":
+    "Der angehängte Abschnitt ist zu lang. Einen kürzeren Teil des Dokuments auswählen.",
   "acp.error.noQuestion": "Der Agent wartet nicht mehr auf diese Antwort.",
   "acp.error.unsaved":
     "Dieses Dokument hat ungespeicherte Änderungen. Speichere es zuerst und versuche es dann erneut.",
@@ -3075,7 +3077,7 @@ export default {
   "acp.retry": "Erneut versuchen",
   "acp.pick.title": "Agent wählen",
   "acp.pick.intro":
-    "Ein Agent ist ein KI-Programm wie Claude oder Codex, das PerMark für dich startet. Er bearbeitet eine Kopie dieses Ordners, die außerhalb davon liegt, und seine Änderungen gelangen erst in deine Dateien, wenn du sie übernimmst. Was du sendest und was er in der Kopie liest, geht an den Agenten und seinen Anbieter. Er nutzt dort dein eigenes Konto, was Geld kosten kann.",
+    "Er bearbeitet eine Kopie dieses Ordners, die außerhalb davon liegt, und seine Änderungen gelangen erst in deine Dateien, wenn du sie übernimmst. Was du sendest und was er in der Kopie liest, geht an den Agenten und seinen Anbieter. Er nutzt dort dein eigenes Konto, was Geld kosten kann.",
   "acp.pick.search": "Agenten suchen",
   "acp.pick.loading": "Liste wird gelesen …",
   "acp.pick.none": "Kein Agent passt zu deiner Suche.",
@@ -3089,7 +3091,7 @@ export default {
   "acp.pick.commandWarning":
     "PerMark startet dieses Programm auf deinem Computer mit deinen Berechtigungen. Nur ein Programm verwenden, dem du vertraust.",
   "acp.pick.useCommand": "Diesen Befehl verwenden",
-  "acp.how.native": "Installiert",
+  "acp.how.native": "Auf deinem Computer gefunden",
   "acp.how.npx": "Wird bei der ersten Nutzung heruntergeladen",
   "acp.how.uvx": "Wird bei der ersten Nutzung heruntergeladen",
   "acp.how.custom": "Dein Befehl",
@@ -3201,4 +3203,35 @@ export default {
     "Die Passage stammt aus einer Datei, die Agenten nicht sehen dürfen.",
   "acp.error.insideProject": "Die Kopie für den Agenten kann nicht in diesem Ordner liegen.",
   "acp.error.notApplied": "PerMark konnte diese Änderung nicht anwenden.",
+  "acp.option.allowOnce": "Einmal erlauben",
+  "acp.option.rejectOnce": "Nicht erlauben",
+  "acp.alwaysHidden":
+    "PerMark kann „immer“-Antworten nicht behalten: Es löscht die eigenen Einstellungen des Agenten in der Kopie, daher fragt der Agent erneut.",
+  "acp.questionSettings":
+    "Das würde die eigenen Einstellungen des Agenten ändern, die PerMark aus der Kopie heraushält.",
+  "acp.noDetails": "Der Agent hat keine Details genannt.",
+  "acp.diffCut": "Nur der Anfang dieser Änderung wird angezeigt.",
+  "acp.stopHint": "Esc stoppt den Agenten.",
+  "acp.toolKind.read": "Lesen",
+  "acp.toolKind.edit": "Bearbeiten",
+  "acp.toolKind.delete": "Löschen",
+  "acp.toolKind.move": "Verschieben",
+  "acp.toolKind.search": "Suchen",
+  "acp.toolKind.execute": "Befehl",
+  "acp.toolKind.think": "Planung",
+  "acp.toolKind.fetch": "Webzugriff",
+  "acp.toolKind.switchMode": "Moduswechsel",
+  "acp.toolKind.other": "Sonstiges",
+  "acp.pick.introShort":
+    "Ein Agent ist ein KI-Programm wie Claude oder Codex, das PerMark für dich startet.",
+  "acp.pick.more": "Was passiert, wenn ich einen Agenten nutze?",
+  "acp.about.claude-acp": "Claude, die KI von Anthropic.",
+  "acp.about.codex-acp": "Codex, der Coding-Agent von OpenAI.",
+  "acp.about.github-copilot-cli": "GitHub Copilot, der KI-Assistent von GitHub.",
+  "acp.about.gemini": "Gemini, die KI von Google.",
+  "acp.about.opencode":
+    "OpenCode, ein Open-Source-Agent, der mit vielen KI-Anbietern funktioniert.",
+  "acp.about.goose":
+    "goose, ein Open-Source-Agent von Block, der mit vielen KI-Anbietern funktioniert.",
+  "acp.about.cursor": "Der Agent des Code-Editors Cursor.",
 } satisfies Messages;

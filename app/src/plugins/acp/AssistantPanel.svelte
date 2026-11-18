@@ -6,8 +6,8 @@
   // passage attached from the open document, whose Send turns into Stop while the agent works. The list follows the
   // conversation's end only while the person is there; changes arriving never move it. A question | a sign-in the
   // agent waits for is brought into view and takes the keyboard (never from someone typing; a question's card, never
-  // one of its answers). No agent chosen yet | the
-  // person changing it: the picker stands in for the conversation.
+  // one of its answers). Escape in the message box stops the agent at work. No agent chosen yet | the person
+  // changing it: the picker stands in for the conversation.
   import MessageSquarePlus from "@lucide/svelte/icons/message-square-plus";
   import Quote from "@lucide/svelte/icons/quote";
   import SendHorizontal from "@lucide/svelte/icons/send-horizontal";
@@ -16,20 +16,26 @@
   import X from "@lucide/svelte/icons/x";
   import { onMount, tick, type Snippet } from "svelte";
   import type { AcpState, FileChange, FileChangeKind, PermissionChoice } from "../../api";
+  import { runRows } from "../../core/editing/diffRows";
   import { t, tn, type MessageKey } from "../../core/i18n";
   import { arrangement } from "../../core/shell/arrangement.svelte";
   import { adrift, closeView, placeView } from "../../core/shell/sides";
   import AgentPicker from "./AgentPicker.svelte";
+  import DiffBox from "./DiffBox.svelte";
   import HunkCard from "./HunkCard.svelte";
   import LoginCard from "./LoginCard.svelte";
   import Note from "./Note.svelte";
   import {
     acp,
     firstPlace,
+    optionLabel,
     PANEL,
     PANEL_MARK,
     passageLabel,
     passageStart,
+    reachKey,
+    shownOptions,
+    toolKindKey,
     type ToolState,
   } from "./store.svelte";
 
@@ -175,8 +181,18 @@
   }
 
   function composerKey(event: KeyboardEvent): void {
-    // Shift+Enter is a new line; an IME's Enter ends its composition
-    if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+    // an IME's Enter | Escape ends its composition
+    if (event.isComposing) return;
+    if (event.key === "Escape") {
+      // the agent at work stops, as the hint under the box says; else the key is not the box's
+      if (!working) return;
+      event.preventDefault();
+      event.stopPropagation();
+      stop();
+      return;
+    }
+    // Shift+Enter is a new line
+    if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
     void acp.send();
   }
@@ -432,6 +448,9 @@
                 <span class={["tool-status", entry.status]}>{toolStatus(entry.status)}</span>
               </li>
             {:else if entry.kind === "question"}
+              {@const offered = shownOptions(entry.options)}
+              {@const warning = reachKey(entry.reach)}
+              <!-- the kind of action is PerMark's word; the title, summary and change are the agent's own -->
               <li
                 class="question"
                 tabindex="-1"
@@ -439,22 +458,50 @@
                 data-question={entry.id}
               >
                 <p class="ask" id="{uid}-q{entry.id}">{t("acp.question")}</p>
-                <p class="ask-title">{entry.title}</p>
+                <p class="ask-head">
+                  <span class="ask-kind">{t(toolKindKey(entry.toolKind))}</span>
+                  <span class="ask-title">{entry.title}</span>
+                </p>
+                {#if entry.summary !== null && entry.summary !== entry.title}
+                  <p class="ask-summary">{entry.summary}</p>
+                {/if}
                 {#if entry.detail !== "" && entry.detail !== entry.title}
                   <pre class="detail">{entry.detail}</pre>
                 {/if}
+                {#if entry.diff !== null}
+                  {#if !entry.detail.split("\n").includes(entry.diff.path)}
+                    <p class="diff-path">{entry.diff.path}</p>
+                  {/if}
+                  <div class="ask-diff">
+                    <DiffBox rows={runRows(entry.diff.oldLines, entry.diff.newLines, 1)} />
+                  </div>
+                  {#if entry.diff.truncated}
+                    <Note>{t("acp.diffCut")}</Note>
+                  {/if}
+                {/if}
+                {#if entry.detail === "" && entry.diff === null}
+                  <!-- never a choice on the agent's title alone -->
+                  <Note tone="muted">{t("acp.noDetails")}</Note>
+                {/if}
                 {#if entry.answer.status === "open"}
-                  <!-- what is allowed here acts outside the copy: said before the buttons, gone once answered -->
-                  <Note tone="muted">{t("acp.questionHint")}</Note>
+                  <!-- what allowing reaches past the copy: said before the buttons, gone once answered -->
+                  {#if warning !== null}
+                    <Note tone="muted">{t(warning)}</Note>
+                  {/if}
                   <div class="options">
-                    {#each entry.options as option (option.id)}
+                    {#each offered.shown as option (option.id)}
+                      {@const label = optionLabel(option)}
                       <button
                         type="button"
                         class={["btn", "btn--sm", option.kind === "allow_once" && "btn--primary"]}
-                        onclick={() => answer(entry.requestId, option)}>{option.name}</button
+                        title={option.name === label ? undefined : option.name}
+                        onclick={() => answer(entry.requestId, option)}>{label}</button
                       >
                     {/each}
                   </div>
+                  {#if offered.hidden}
+                    <Note>{t("acp.alwaysHidden")}</Note>
+                  {/if}
                 {:else if entry.answer.status === "answered"}
                   <Note>{t("acp.answered", { option: entry.answer.option })}</Note>
                 {:else}
@@ -596,7 +643,7 @@
         aria-describedby="{uid}-hint"
         onkeydown={composerKey}></textarea>
       <div class="send-row">
-        <span class="hint" id="{uid}-hint">{t("acp.sendHint")}</span>
+        <span class="hint" id="{uid}-hint">{t(working ? "acp.stopHint" : "acp.sendHint")}</span>
         <!-- one button in one place: Send, and Stop while the agent works -->
         <button
           type="button"
@@ -874,10 +921,44 @@
     font-size: var(--fs-ui-sm);
     font-weight: 600;
   }
-  .ask-title {
+  .ask-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px var(--sp-1);
+    min-width: 0;
     margin: 0;
     font-size: var(--fs-ui-sm);
+  }
+  .ask-kind {
+    flex: none;
+    max-width: 100%;
+    padding: 0 var(--sp-1);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--muted);
+    font-weight: 600;
     overflow-wrap: anywhere;
+  }
+  .ask-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .ask-summary,
+  .diff-path {
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--fs-ui-sm);
+    overflow-wrap: anywhere;
+  }
+  .diff-path {
+    font-family: var(--font-code);
+  }
+  .ask-diff {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    overflow: hidden;
   }
   .detail,
   .output {

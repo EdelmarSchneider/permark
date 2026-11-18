@@ -3169,6 +3169,8 @@ export default {
   "acp.error.busy": "Agentul încă lucrează. Așteaptă-l sau oprește-l.",
   "acp.error.emptyPrompt": "Scrie mai întâi un mesaj.",
   "acp.error.lineRange": "Liniile atașate nu mai sunt în document.",
+  "acp.error.passageTooLarge":
+    "Pasajul atașat este prea lung. Selectează o parte mai scurtă a documentului.",
   "acp.error.noQuestion": "Agentul nu mai așteaptă acest răspuns.",
   "acp.error.unsaved":
     "Acest document are modificări nesalvate. Salvează-l mai întâi, apoi încearcă din nou.",
@@ -3186,7 +3188,7 @@ export default {
   "acp.retry": "Încearcă din nou",
   "acp.pick.title": "Alege un agent",
   "acp.pick.intro":
-    "Un agent este un program AI, cum ar fi Claude sau Codex, pe care PerMark îl pornește pentru tine. Agentul editează o copie a acestui dosar, păstrată în afara lui, iar modificările lui ajung în fișierele tale doar când le accepți. Ce trimiți și ce citește agentul în copie ajung la agent și la furnizorul lui. Acolo agentul folosește contul tău propriu, ceea ce poate costa bani.",
+    "Agentul editează o copie a acestui dosar, păstrată în afara lui, iar modificările lui ajung în fișierele tale doar când le accepți. Ce trimiți și ce citește agentul în copie ajung la agent și la furnizorul lui. Acolo agentul folosește contul tău propriu, ceea ce poate costa bani.",
   "acp.pick.search": "Caută agenți",
   "acp.pick.loading": "Se citește lista…",
   "acp.pick.none": "Niciun agent nu corespunde căutării.",
@@ -3200,7 +3202,7 @@ export default {
   "acp.pick.commandWarning":
     "PerMark va porni acest program pe computerul tău, cu permisiunile tale. Folosește doar un program în care ai încredere.",
   "acp.pick.useCommand": "Folosește această comandă",
-  "acp.how.native": "Instalat",
+  "acp.how.native": "Găsit pe computerul tău",
   "acp.how.npx": "Se descarcă la prima utilizare",
   "acp.how.uvx": "Se descarcă la prima utilizare",
   "acp.how.custom": "Comanda ta",
@@ -3313,4 +3315,35 @@ export default {
     "Pasajul provine dintr-un fișier pe care agenții nu au voie să-l vadă.",
   "acp.error.insideProject": "Copia pentru agent nu poate fi păstrată în acest dosar.",
   "acp.error.notApplied": "PerMark nu a putut aplica această modificare.",
+  "acp.option.allowOnce": "Permite o dată",
+  "acp.option.rejectOnce": "Nu permite",
+  "acp.alwaysHidden":
+    "PerMark nu poate păstra alegerile „mereu”: șterge setările proprii ale agentului din copie, așa că agentul va întreba din nou.",
+  "acp.questionSettings":
+    "Asta ar schimba setările proprii ale agentului, pe care PerMark le ține în afara copiei.",
+  "acp.noDetails": "Agentul nu a dat detalii.",
+  "acp.diffCut": "Se afișează doar începutul acestei modificări.",
+  "acp.stopHint": "Esc oprește agentul.",
+  "acp.toolKind.read": "Citire",
+  "acp.toolKind.edit": "Editare",
+  "acp.toolKind.delete": "Ștergere",
+  "acp.toolKind.move": "Mutare",
+  "acp.toolKind.search": "Căutare",
+  "acp.toolKind.execute": "Comandă",
+  "acp.toolKind.think": "Planificare",
+  "acp.toolKind.fetch": "Acces la web",
+  "acp.toolKind.switchMode": "Schimbare de mod",
+  "acp.toolKind.other": "Altceva",
+  "acp.pick.introShort":
+    "Un agent este un program AI, cum ar fi Claude sau Codex, pe care PerMark îl pornește pentru tine.",
+  "acp.pick.more": "Ce se întâmplă când folosesc un agent?",
+  "acp.about.claude-acp": "Claude, AI-ul de la Anthropic.",
+  "acp.about.codex-acp": "Codex, agentul de programare de la OpenAI.",
+  "acp.about.github-copilot-cli": "GitHub Copilot, asistentul AI de la GitHub.",
+  "acp.about.gemini": "Gemini, AI-ul de la Google.",
+  "acp.about.opencode":
+    "OpenCode, un agent open source care funcționează cu mulți furnizori de AI.",
+  "acp.about.goose":
+    "goose, un agent open source de la Block care funcționează cu mulți furnizori de AI.",
+  "acp.about.cursor": "Agentul editorului de cod Cursor.",
 } satisfies Messages & FewForms;

@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use super::permission::inside;
 use super::*;
 use crate::agents::{platforms, Choice, Launch, Plan, CHOICE_FILE};
-use crate::dto::AgentNeed;
+use crate::dto::{AcpReach, AgentNeed, PermissionDiff};
 use crate::testing;
 use permark_core::state::StateFile;
 
@@ -58,13 +58,31 @@ impl<T: Clone + std::fmt::Debug> Watched<T> {
     }
 }
 
-/// The events the window got.
-type Events = Watched<Vec<Value>>;
+/// Runs on the emitting thread before an event is kept.
+type Spy = Box<dyn Fn(&Value) + Send + Sync>;
+
+/// The events the window got (+ a spy a test may set).
+#[derive(Default)]
+struct Events {
+    list: Watched<Vec<Value>>,
+    spy: Mutex<Option<Spy>>,
+}
+
+impl std::ops::Deref for Events {
+    type Target = Watched<Vec<Value>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.list
+    }
+}
 
 impl EventSink for Events {
     fn emit(&self, event: CoreEvent) {
         if let CoreEvent::Plugin { name, payload } = event {
             assert_eq!(name, "acp:update");
+            if let Some(spy) = lock(&self.spy).as_ref() {
+                spy(&payload);
+            }
             self.update(|list| list.push(payload));
         }
     }
@@ -107,6 +125,8 @@ struct Peer {
     auth: Arc<Auth>,
     /// `Some`: stops reading its stdin once the session is set up, until it is stopped (this ends).
     deaf: Option<mpsc::Receiver<()>>,
+    /// Its `session/new` answer offers the modes only as a config option (no `modes`).
+    config_modes: bool,
 }
 
 /// What the fake agent asks of sign-ins.
@@ -199,6 +219,26 @@ impl Peer {
     }
 }
 
+/// A config option of Claude's adapter that is no mode.
+static MODEL_OPTION: std::sync::LazyLock<Value> = std::sync::LazyLock::new(|| {
+    json!({
+        "id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": "default",
+        "options": [{ "value": "default", "name": "Default" }, { "value": "opus", "name": "Opus" }],
+    })
+});
+
+/// The mode choice as Claude's adapter also offers it: a config option (`currentValue` = `current`).
+fn mode_option(current: &str) -> Value {
+    json!({
+        "id": "mode", "name": "Mode", "category": "mode", "type": "select", "currentValue": current,
+        "options": [
+            { "value": "default", "name": "Manual", "description": "Always ask before making changes" },
+            { "value": "acceptEdits", "name": "Accept edits" },
+            { "value": "auto", "name": "Auto" },
+        ],
+    })
+}
+
 /// What a turn returns when it answered the prompt itself.
 const ANSWERED: &str = "(answered)";
 
@@ -244,17 +284,25 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
             }
             "session/new" => {
                 peer.cwd = PathBuf::from(message["params"]["cwd"].as_str().unwrap());
-                json!({
-                    "sessionId": SESSION,
-                    "modes": {
-                        "currentModeId": "auto",
-                        "availableModes": [
-                            { "id": "default", "name": "Manual", "description": "Always ask before making changes" },
-                            { "id": "acceptEdits", "name": "Accept edits" },
-                            { "id": "auto", "name": "Auto" },
-                        ],
-                    },
-                })
+                if peer.config_modes {
+                    json!({ "sessionId": SESSION, "configOptions": [MODEL_OPTION.clone(), mode_option("auto")] })
+                } else {
+                    json!({
+                        "sessionId": SESSION,
+                        "modes": {
+                            "currentModeId": "auto",
+                            "availableModes": [
+                                { "id": "default", "name": "Manual", "description": "Always ask before making changes" },
+                                { "id": "acceptEdits", "name": "Accept edits" },
+                                { "id": "auto", "name": "Auto" },
+                            ],
+                        },
+                    })
+                }
+            }
+            "session/set_config_option" => {
+                let value = message["params"]["value"].as_str().unwrap_or_default();
+                json!({ "configOptions": [MODEL_OPTION.clone(), mode_option(value)] })
             }
             "session/set_mode" => {
                 peer.send(&json!({ "jsonrpc": "2.0", "id": id, "result": {} }));
@@ -296,6 +344,10 @@ struct Fake {
     folders: Arc<Mutex<Vec<StartFolder>>>,
     /// The agents started from now on stop reading once their session is set up.
     deaf: Arc<AtomicBool>,
+    /// Writes toward a deaf agent that began with more than a pipe holds: each one cannot end until the agent stops.
+    stuck: Arc<Watched<usize>>,
+    /// The agents started from now on offer their modes only as a config option.
+    config_modes: Arc<AtomicBool>,
     auth: Arc<Auth>,
 }
 
@@ -358,6 +410,7 @@ impl Fake {
                 .collect();
             fake.present.lock().unwrap().push(present);
             let (stop_tx, stop_rx) = mpsc::channel::<()>();
+            let deaf = fake.deaf.load(Ordering::SeqCst);
             let (agent_in, client_out) = std::io::pipe()?;
             let (client_in, agent_out) = std::io::pipe()?;
             let (client_err, agent_err) = std::io::pipe()?;
@@ -369,13 +422,22 @@ impl Fake {
                 embedded: !fake.plain.load(Ordering::SeqCst),
                 cwd: cwd.to_path_buf(),
                 auth: Arc::clone(&fake.auth),
-                deaf: fake.deaf.load(Ordering::SeqCst).then_some(stop_rx),
+                deaf: deaf.then_some(stop_rx),
+                config_modes: fake.config_modes.load(Ordering::SeqCst),
             };
             let turn = Arc::clone(&turn);
             let agent = std::thread::spawn(move || agent_loop(peer, &turn));
             let stops = Arc::clone(&fake.stops);
+            let to_agent: Box<dyn Write + Send> = if deaf {
+                Box::new(Watching {
+                    pipe: client_out,
+                    stuck: Arc::clone(&fake.stuck),
+                })
+            } else {
+                Box::new(client_out)
+            };
             Ok(AgentPipes {
-                to_agent: Box::new(client_out),
+                to_agent,
                 from_agent: Box::new(client_in),
                 stderr: Box::new(client_err),
                 stop: Box::new(move || {
@@ -386,6 +448,29 @@ impl Fake {
                 }),
             })
         })
+    }
+}
+
+/// Most bytes a pipe holds unread here (Windows | Linux pipes hold far less).
+const PIPE_HOLDS: usize = 1 << 20;
+
+/// The client's end of a deaf agent's stdin: counts each write larger than the pipe holds as it begins (the agent no
+/// longer reads, so that write cannot end until the agent is stopped).
+struct Watching {
+    pipe: PipeWriter,
+    stuck: Arc<Watched<usize>>,
+}
+
+impl Write for Watching {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if buf.len() > PIPE_HOLDS {
+            self.stuck.update(|stuck| *stuck += 1);
+        }
+        self.pipe.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.pipe.flush()
     }
 }
 
@@ -772,9 +857,10 @@ fn a_command_gets_a_card_and_the_persons_answer_reaches_the_agent() {
         card,
         json!({
             "type": "permission",
-            "requestId": "7",
+            "requestId": "1:7",
             "title": "Run the tests",
             "kind": "execute",
+            "reach": "outside",
             "detail": "npm test",
             "options": [
                 { "id": "allow-once", "name": "Yes", "kind": "allow_once" },
@@ -791,13 +877,13 @@ fn a_command_gets_a_card_and_the_persons_answer_reaches_the_agent() {
     });
     assert_eq!(busy.unwrap_err().kind, ErrorKind::Conflict);
     let wrong = fx.session.answer(&AnswerArgs {
-        request_id: "7".to_owned(),
+        request_id: "1:7".to_owned(),
         option_id: Some("maybe".to_owned()),
     });
     assert_eq!(wrong.unwrap_err().kind, ErrorKind::InvalidData);
     fx.session
         .answer(&AnswerArgs {
-            request_id: "7".to_owned(),
+            request_id: "1:7".to_owned(),
             option_id: Some("allow-once".to_owned()),
         })
         .unwrap();
@@ -808,10 +894,10 @@ fn a_command_gets_a_card_and_the_persons_answer_reaches_the_agent() {
     );
     assert_eq!(
         fx.events.of_type("permissionDone"),
-        vec![json!({ "type": "permissionDone", "requestId": "7" })]
+        vec![json!({ "type": "permissionDone", "requestId": "1:7" })]
     );
     let again = fx.session.answer(&AnswerArgs {
-        request_id: "7".to_owned(),
+        request_id: "1:7".to_owned(),
         option_id: None,
     });
     assert_eq!(again.unwrap_err().kind, ErrorKind::NotFound);
@@ -832,16 +918,26 @@ fn an_edit_outside_the_copy_gets_a_card() {
     });
     fx.ask("Edit the real notes.");
     let card = fx.permission();
-    assert_eq!(card["requestId"], "\"ask-1\"");
+    assert_eq!(card["requestId"], "1:\"ask-1\"");
     assert_eq!(card["kind"], "edit");
+    assert_eq!(card["reach"], "outside");
     assert_eq!(
         card["detail"],
         format!("notes.md\n{}", project.path().join("notes.md").display())
     );
+    assert_eq!(
+        card["diff"],
+        json!({
+            "path": project.path().join("notes.md").display().to_string(),
+            "oldLines": ["Line two of the notes."],
+            "newLines": ["Line two, edited."],
+            "truncated": false,
+        })
+    );
     // dismissed: the agent hears "cancelled"
     fx.session
         .answer(&AnswerArgs {
-            request_id: "\"ask-1\"".to_owned(),
+            request_id: "1:\"ask-1\"".to_owned(),
             option_id: None,
         })
         .unwrap();
@@ -905,7 +1001,7 @@ fn stop_tells_the_agent_and_drops_the_waiting_question() {
     assert_eq!(fx.events.turn_end()["stopReason"], "cancelled");
     assert_eq!(
         fx.events.of_type("permissionDone"),
-        vec![json!({ "type": "permissionDone", "requestId": "3" })]
+        vec![json!({ "type": "permissionDone", "requestId": "1:3" })]
     );
     let cancel = fx
         .fake
@@ -1075,6 +1171,20 @@ fn prompts_that_cannot_be_sent_are_refused_before_anything_starts() {
     ));
     assert_eq!(refused(passage("notes.md", 0, 1)), ErrorKind::InvalidData);
     assert_eq!(refused(passage("notes.md", 3, 2)), ErrorKind::InvalidData);
+    // a passage past the cap: refused with its reason; one at the cap goes
+    let sized = |bytes: usize| {
+        let mut args = passage("notes.md", 1, 1);
+        if let Some(selection) = &mut args.selection {
+            selection.text = "x".repeat(bytes);
+        }
+        args
+    };
+    let large = fx.session.prompt(sized(MAX_PASSAGE_BYTES + 1)).unwrap_err();
+    assert_eq!(
+        (large.kind, large.detail.as_deref()),
+        (ErrorKind::TooLarge, Some("passageTooLarge"))
+    );
+    assert!(check(&sized(MAX_PASSAGE_BYTES)).is_ok());
     assert_eq!(fx.session.status().state, AcpState::Idle);
     assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 0);
 }
@@ -1242,7 +1352,7 @@ fn choosing_is_refused_while_the_agent_works() {
     assert!(saved.contains("claude-acp"), "{saved}");
     fx.session
         .answer(&AnswerArgs {
-            request_id: "5".to_owned(),
+            request_id: "1:5".to_owned(),
             option_id: Some("reject".to_owned()),
         })
         .unwrap();
@@ -1433,12 +1543,10 @@ fn an_agent_that_stops_reading_never_holds_up_the_shutdown() {
     let fx = Fx::new(|_, _| Some("end_turn"));
     fx.fake.deaf.store(true, Ordering::SeqCst);
     fx.ask(&"x".repeat(4 << 20));
-    fx.events.wait_for("working", WAIT, |list| {
-        list.iter()
-            .any(|e| e["type"] == "status" && e["state"] == "working")
-    });
-    // the prompt's write is under way by now, on a full pipe
-    std::thread::sleep(Duration::from_millis(500));
+    // the prompt's write began toward the agent that no longer reads: it cannot end
+    fx.fake
+        .stuck
+        .wait_for("a stuck write", WAIT, |stuck| *stuck >= 1);
     let session = fx.session.clone();
     let (done_tx, done_rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -1505,13 +1613,16 @@ fn an_edit_of_agent_settings_in_the_copy_gets_a_card() {
         Some("end_turn")
     });
     fx.ask("Allow every command.");
-    let card = fx.card("1");
+    let card = fx.card("1:1");
     assert_eq!(card["kind"], "edit");
+    assert_eq!(card["reach"], "agentSettings");
     assert_eq!(card["detail"], ".claude/settings.local.json");
-    fx.reject("1");
-    let card = fx.card("2");
+    assert_eq!(card["diff"]["path"], ".claude/settings.local.json");
+    fx.reject("1:1");
+    let card = fx.card("1:2");
     assert_eq!(card["kind"], "move");
-    fx.reject("2");
+    assert_eq!(card["reach"], "agentSettings");
+    fx.reject("1:2");
     fx.events.turn_end();
     reject_reply(&fx, &json!(1));
     reject_reply(&fx, &json!(2));
@@ -1604,13 +1715,13 @@ fn questions_are_routed_on_everything_told_of_the_tool_call() {
         Some("end_turn")
     });
     fx.ask("Edit the notes.");
-    let search = fx.card("2");
+    let search = fx.card("1:2");
     assert_eq!(
         (&search["title"], &search["kind"], &search["detail"]),
         (&json!("Grep token"), &json!("search"), &json!(""))
     );
-    fx.reject("2");
-    let moved = fx.card("3");
+    fx.reject("1:2");
+    let moved = fx.card("1:3");
     assert_eq!(
         (&moved["title"], &moved["kind"]),
         (&json!("Edit notes.md"), &json!("edit"))
@@ -1619,7 +1730,7 @@ fn questions_are_routed_on_everything_told_of_the_tool_call() {
         moved["detail"],
         project.path().join("notes.md").display().to_string()
     );
-    fx.reject("3");
+    fx.reject("1:3");
     fx.events.turn_end();
     assert_eq!(
         fx.fake.reply_to(&json!(1))["result"],
@@ -1762,6 +1873,129 @@ fn every_spelling_of_agent_settings_in_the_copy_gets_a_card() {
     ));
 }
 
+/// A card warns of where allowing acts: the computer for anything not known to be work on files or naming a file
+/// outside the copy, the agent's own settings for a write to them in the copy, nothing more for the copy's files.
+#[test]
+fn a_card_says_where_the_call_acts() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.md"), "a").unwrap();
+    let copy = Vault::new(Root::open(dir.path()).unwrap());
+    let root = copy.main().path().to_path_buf();
+    let other = tempfile::tempdir().unwrap();
+    let out = other.path().join("x.md");
+    let tool = |kind: Option<ToolKind>, locations: &[&Path], content: Value| ToolLine {
+        kind,
+        locations: locations.iter().map(|p| p.to_path_buf()).collect(),
+        raw_input: Some(json!({})),
+        content: serde_json::from_value(content).unwrap(),
+        ..ToolLine::default()
+    };
+    let a = root.join("a.md");
+    let settings = root.join(".claude").join("settings.json");
+    let none = json!([]);
+    let at = |line: &ToolLine| reach(line, &copy);
+
+    assert_eq!(
+        at(&tool(Some(ToolKind::Edit), &[&a], none.clone())),
+        AcpReach::Copy
+    );
+    assert_eq!(
+        at(&tool(Some(ToolKind::Think), &[], none.clone())),
+        AcpReach::Copy
+    );
+    assert_eq!(
+        at(&tool(Some(ToolKind::Edit), &[&settings], none.clone())),
+        AcpReach::AgentSettings
+    );
+    for kind in [
+        Some(ToolKind::Execute),
+        Some(ToolKind::Fetch),
+        Some(ToolKind::Other),
+        None,
+    ] {
+        assert_eq!(
+            at(&tool(kind, &[&a], none.clone())),
+            AcpReach::Outside,
+            "{kind:?}"
+        );
+    }
+    assert_eq!(
+        at(&tool(Some(ToolKind::Read), &[&a, &out], none.clone())),
+        AcpReach::Outside
+    );
+    // a file it would write counts like a place it names
+    let writes = |path: &Path| json!([{ "type": "diff", "path": path, "newText": "x" }]);
+    assert_eq!(
+        at(&tool(Some(ToolKind::Edit), &[&a], writes(&out))),
+        AcpReach::Outside
+    );
+    assert_eq!(
+        at(&tool(Some(ToolKind::Edit), &[&a], writes(&settings))),
+        AcpReach::AgentSettings
+    );
+}
+
+/// A card shows the first file the call would write (its project path, cut to a few lines of bounded length) and the
+/// agent's own words about the call (cut).
+#[test]
+fn a_card_shows_what_the_call_would_write_and_the_agents_words() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.md"), "a").unwrap();
+    let copy = Vault::new(Root::open(dir.path()).unwrap());
+    let root = copy.main().path().to_path_buf();
+    let other = tempfile::tempdir().unwrap();
+    let out = other.path().join("x.md");
+    let tool = |content: Value| ToolLine {
+        kind: Some(ToolKind::Edit),
+        content: serde_json::from_value(content).unwrap(),
+        ..ToolLine::default()
+    };
+    let a = root.join("a.md");
+
+    let edit = tool(json!([
+        { "type": "content", "content": { "type": "text", "text": " Fix the title " } },
+        { "type": "diff", "path": a, "oldText": "# Old\r\nbody\n", "newText": "# New\r\nbody\n" },
+    ]));
+    assert_eq!(
+        diff(&edit, &copy),
+        Some(PermissionDiff {
+            path: "a.md".to_owned(),
+            old_lines: vec!["# Old".to_owned(), "body".to_owned()],
+            new_lines: vec!["# New".to_owned(), "body".to_owned()],
+            truncated: false,
+        })
+    );
+    assert_eq!(summary(&edit).as_deref(), Some("Fix the title"));
+
+    // a new file outside the copy, long and wide, and a second file: cut, said so
+    let long = (0..100)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let wide = "w".repeat(2000);
+    let big = tool(json!([
+        { "type": "diff", "path": out, "newText": format!("{wide}\n{long}") },
+        { "type": "diff", "path": a, "oldText": "a", "newText": "b" },
+    ]));
+    let shown = diff(&big, &copy).unwrap();
+    assert_eq!(shown.path, out.display().to_string());
+    assert_eq!(shown.old_lines, Vec::<String>::new());
+    assert_eq!(shown.new_lines.len(), 40);
+    assert_eq!(shown.new_lines[0].chars().count(), 500);
+    assert!(shown.truncated);
+    let wide_only = tool(json!([{ "type": "diff", "path": a, "oldText": "a", "newText": wide }]));
+    assert!(diff(&wide_only, &copy).unwrap().truncated);
+
+    let said = tool(json!([
+        { "type": "content", "content": { "type": "text", "text": "é".repeat(1500) } },
+    ]));
+    let words = summary(&said).unwrap();
+    assert_eq!(words.chars().count(), 1001);
+    assert!(words.ends_with('…'));
+    assert_eq!(diff(&said, &copy), None);
+    assert_eq!(summary(&tool(json!([]))), None);
+}
+
 #[test]
 fn a_card_shows_the_command_else_the_places_else_the_address() {
     let dir = tempfile::tempdir().unwrap();
@@ -1871,15 +2105,15 @@ fn a_withdrawn_question_is_answered_and_its_card_goes() {
         Some("end_turn")
     });
     fx.ask("Run the tests.");
-    fx.card("9");
+    fx.card("1:9");
     fx.events.turn_end();
     assert_eq!(
         fx.events.of_type("permissionDone"),
-        [json!({ "type": "permissionDone", "requestId": "9" })]
+        [json!({ "type": "permissionDone", "requestId": "1:9" })]
     );
     assert_eq!(fx.fake.reply_to(&json!(9))["error"]["code"], -32800);
     let late = fx.session.answer(&AnswerArgs {
-        request_id: "9".to_owned(),
+        request_id: "1:9".to_owned(),
         option_id: Some("allow-once".to_owned()),
     });
     assert_eq!(late.unwrap_err().detail.as_deref(), Some("noQuestion"));
@@ -1908,7 +2142,7 @@ fn a_question_still_open_at_the_turn_end_is_answered_cancelled() {
     fx.events.turn_end();
     assert_eq!(
         fx.events.of_type("permissionDone"),
-        [json!({ "type": "permissionDone", "requestId": "4" })]
+        [json!({ "type": "permissionDone", "requestId": "1:4" })]
     );
     assert_eq!(
         fx.fake.reply_to(&json!(4))["result"],
@@ -2114,4 +2348,180 @@ fn a_passage_of_a_hidden_file_is_refused_and_a_hidden_document_is_not_named() {
             json!([{ "type": "text", "text": "Hello." }])
         ]
     );
+}
+
+/// An option kind of a later protocol release does not refuse the question: it shows as `other`, the person may pick
+/// it, and the rule never does.
+#[test]
+fn an_option_kind_of_a_later_release_reads_as_other_and_is_never_chosen_by_rule() {
+    let fx = Fx::new(|peer, _| {
+        let notes = peer.in_copy("notes.md");
+        for (id, offered) in [
+            (
+                1,
+                [("always-here", "allow_project"), ("reject", "reject_once")],
+            ),
+            (
+                2,
+                [
+                    ("always-here", "allow_project"),
+                    ("allow-once", "allow_once"),
+                ],
+            ),
+        ] {
+            let options: Vec<Value> = offered
+                .iter()
+                .map(|(option, kind)| json!({ "optionId": option, "name": option, "kind": kind }))
+                .collect();
+            peer.send(&json!({
+                "jsonrpc": "2.0", "id": id, "method": "session/request_permission",
+                "params": { "sessionId": SESSION, "toolCall": edit_of(&notes), "options": options },
+            }));
+            peer.until(|m| m["id"] == id && m.get("method").is_none())?;
+        }
+        Some("end_turn")
+    });
+    fx.ask("Edit the notes.");
+    // plain work, but no option of a known allowing kind: a card
+    let card = fx.card("1:1");
+    assert_eq!(
+        card["options"],
+        json!([
+            { "id": "always-here", "name": "always-here", "kind": "other" },
+            { "id": "reject", "name": "reject", "kind": "reject_once" },
+        ])
+    );
+    fx.session
+        .answer(&AnswerArgs {
+            request_id: "1:1".to_owned(),
+            option_id: Some("always-here".to_owned()),
+        })
+        .unwrap();
+    fx.events.turn_end();
+    assert_eq!(
+        fx.fake.reply_to(&json!(1))["result"],
+        json!({ "outcome": { "outcome": "selected", "optionId": "always-here" } })
+    );
+    // beside an allow-once option it is never the one chosen by rule
+    assert_eq!(
+        fx.fake.reply_to(&json!(2))["result"],
+        json!({ "outcome": { "outcome": "selected", "optionId": "allow-once" } })
+    );
+    assert_eq!(fx.events.of_type("permission").len(), 1);
+}
+
+/// A card is told while its question is held under the session's lock: a Stop | a turn's end that answers the
+/// question takes that lock first, so its `permissionDone` always comes after the card.
+#[test]
+fn a_card_is_told_before_anything_can_answer_its_question() {
+    let fx = Fx::new(|peer, _| {
+        peer.ask(
+            &json!(6),
+            &json!({ "toolCallId": "toolu_bash", "title": "Run the tests", "kind": "execute",
+                     "rawInput": { "command": "npm test" } }),
+        );
+        peer.until(|m| m["id"] == 6 && m.get("method").is_none())?;
+        Some("end_turn")
+    });
+    let core = Arc::downgrade(&fx.session.core);
+    let held = Arc::new(Watched::<Vec<bool>>::default());
+    let seen = Arc::clone(&held);
+    *lock(&fx.events.spy) = Some(Box::new(move |event| {
+        if event["type"] == "permission" {
+            let locked = core
+                .upgrade()
+                .is_some_and(|core| core.inner.try_lock().is_err());
+            seen.update(|list| list.push(locked));
+        }
+    }));
+    fx.ask("Run the tests.");
+    fx.card("1:6");
+    fx.session.cancel();
+    fx.events.turn_end();
+    assert_eq!(held.get(), [true]);
+    let cards: Vec<Value> = fx
+        .events
+        .all()
+        .iter()
+        .filter(|e| e["type"] == "permission" || e["type"] == "permissionDone")
+        .map(|e| e["type"].clone())
+        .collect();
+    assert_eq!(cards, [json!("permission"), json!("permissionDone")]);
+}
+
+/// The card ids of two agents never meet: a fresh agent numbers its questions from the start again.
+#[test]
+fn question_ids_differ_across_agent_restarts() {
+    let fx = Fx::new(|peer, _| {
+        peer.ask(
+            &json!(0),
+            &json!({ "toolCallId": "toolu_bash", "title": "Run the tests", "kind": "execute",
+                     "rawInput": { "command": "npm test" } }),
+        );
+        peer.until(|m| m["id"] == 0 && m.get("method").is_none())?;
+        Some("end_turn")
+    });
+    fx.ask("One.");
+    assert_eq!(fx.permission()["requestId"], "1:0");
+    fx.session.reset();
+    fx.fake.stopped(1);
+    fx.ask("Two.");
+    let list = fx.events.wait_for("second card", WAIT, |list| {
+        list.iter().filter(|e| e["type"] == "permission").count() == 2
+    });
+    let second = list
+        .iter()
+        .filter(|e| e["type"] == "permission")
+        .nth(1)
+        .unwrap()["requestId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(second, "1:0");
+    assert!(second.ends_with(":0"), "{second}");
+    // the first agent's question is long answered: only the second one's card takes the answer
+    let stale = fx.session.answer(&AnswerArgs {
+        request_id: "1:0".to_owned(),
+        option_id: Some("reject".to_owned()),
+    });
+    assert_eq!(stale.unwrap_err().detail.as_deref(), Some("noQuestion"));
+    fx.reject(&second);
+    fx.events.turn_end();
+}
+
+/// An agent offering its modes only as a config option (no `modes`) is set to the asking mode through it.
+#[test]
+fn an_agent_with_its_modes_as_a_config_option_is_set_to_ask() {
+    let fx = Fx::new(|_, _| Some("end_turn"));
+    fx.fake.config_modes.store(true, Ordering::SeqCst);
+    fx.ask("Hello.");
+    fx.events.turn_end();
+    assert_eq!(
+        fx.fake.methods(),
+        [
+            "initialize",
+            "session/new",
+            "session/set_config_option",
+            "session/prompt"
+        ]
+    );
+    let set = fx
+        .fake
+        .seen()
+        .into_iter()
+        .find(|m| m["method"] == "session/set_config_option")
+        .unwrap();
+    assert_eq!(
+        set["params"],
+        json!({ "sessionId": SESSION, "configId": "mode", "value": "default" })
+    );
+}
+
+#[test]
+fn the_passage_mime_type_follows_the_file() {
+    assert_eq!(passage_mime("notes.md"), "text/markdown");
+    assert_eq!(passage_mime("docs/Notes.MARKDOWN"), "text/markdown");
+    assert_eq!(passage_mime("data.json"), "text/plain");
+    assert_eq!(passage_mime("notes.md.txt"), "text/plain");
+    assert_eq!(passage_mime("README"), "text/plain");
 }

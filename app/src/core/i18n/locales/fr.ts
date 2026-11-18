@@ -3087,6 +3087,8 @@ export default {
   "acp.error.busy": "L'agent travaille encore. Attendez qu'il termine ou arrêtez-le.",
   "acp.error.emptyPrompt": "Écrivez d'abord un message.",
   "acp.error.lineRange": "Les lignes jointes ne sont plus dans le document.",
+  "acp.error.passageTooLarge":
+    "Le passage joint est trop long. Sélectionnez une partie plus courte du document.",
   "acp.error.noQuestion": "L'agent n'attend plus cette réponse.",
   "acp.error.unsaved":
     "Ce document contient des modifications non enregistrées. Enregistrez-le d'abord, puis réessayez.",
@@ -3105,7 +3107,7 @@ export default {
   "acp.retry": "Réessayer",
   "acp.pick.title": "Choisir un agent",
   "acp.pick.intro":
-    "Un agent est un programme d'IA, comme Claude ou Codex, que PerMark démarre pour vous. Il modifie une copie de ce dossier conservée en dehors de celui-ci, et ses modifications n'atteignent vos fichiers que lorsque vous les acceptez. Ce que vous envoyez, et ce qu'il lit dans la copie, est transmis à l'agent et à son fournisseur. Il y utilise votre propre compte, ce qui peut coûter de l'argent.",
+    "Il modifie une copie de ce dossier conservée en dehors de celui-ci, et ses modifications n'atteignent vos fichiers que lorsque vous les acceptez. Ce que vous envoyez, et ce qu'il lit dans la copie, est transmis à l'agent et à son fournisseur. Il y utilise votre propre compte, ce qui peut coûter de l'argent.",
   "acp.pick.search": "Rechercher des agents",
   "acp.pick.loading": "Lecture de la liste…",
   "acp.pick.none": "Aucun agent ne correspond à votre recherche.",
@@ -3119,7 +3121,7 @@ export default {
   "acp.pick.commandWarning":
     "PerMark démarrera ce programme sur votre ordinateur, avec vos droits. N'utilisez qu'un programme de confiance.",
   "acp.pick.useCommand": "Utiliser cette commande",
-  "acp.how.native": "Installé",
+  "acp.how.native": "Trouvé sur votre ordinateur",
   "acp.how.npx": "Téléchargé à la première utilisation",
   "acp.how.uvx": "Téléchargé à la première utilisation",
   "acp.how.custom": "Votre commande",
@@ -3230,4 +3232,35 @@ export default {
     "Le passage provient d'un fichier que les agents n'ont pas le droit de voir.",
   "acp.error.insideProject": "La copie pour l'agent ne peut pas être conservée dans ce dossier.",
   "acp.error.notApplied": "PerMark n'a pas pu appliquer cette modification.",
+  "acp.option.allowOnce": "Autoriser une fois",
+  "acp.option.rejectOnce": "Ne pas autoriser",
+  "acp.alwaysHidden":
+    "PerMark ne peut pas conserver les choix « toujours » : il efface les réglages propres de l'agent dans la copie, donc l'agent redemandera.",
+  "acp.questionSettings":
+    "Cela modifierait les réglages propres de l'agent, que PerMark garde hors de la copie.",
+  "acp.noDetails": "L'agent n'a donné aucun détail.",
+  "acp.diffCut": "Seul le début de cette modification est affiché.",
+  "acp.stopHint": "Échap arrête l'agent.",
+  "acp.toolKind.read": "Lecture",
+  "acp.toolKind.edit": "Modification",
+  "acp.toolKind.delete": "Suppression",
+  "acp.toolKind.move": "Déplacement",
+  "acp.toolKind.search": "Recherche",
+  "acp.toolKind.execute": "Commande",
+  "acp.toolKind.think": "Planification",
+  "acp.toolKind.fetch": "Accès au web",
+  "acp.toolKind.switchMode": "Changement de mode",
+  "acp.toolKind.other": "Autre",
+  "acp.pick.introShort":
+    "Un agent est un programme d'IA, comme Claude ou Codex, que PerMark démarre pour vous.",
+  "acp.pick.more": "Que se passe-t-il quand j'utilise un agent ?",
+  "acp.about.claude-acp": "Claude, l'IA d'Anthropic.",
+  "acp.about.codex-acp": "Codex, l'agent de programmation d'OpenAI.",
+  "acp.about.github-copilot-cli": "GitHub Copilot, l'assistant IA de GitHub.",
+  "acp.about.gemini": "Gemini, l'IA de Google.",
+  "acp.about.opencode":
+    "OpenCode, un agent open source qui fonctionne avec de nombreux fournisseurs d'IA.",
+  "acp.about.goose":
+    "goose, un agent open source de Block qui fonctionne avec de nombreux fournisseurs d'IA.",
+  "acp.about.cursor": "L'agent de l'éditeur de code Cursor.",
 } satisfies Messages;

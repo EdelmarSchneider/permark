@@ -3,19 +3,20 @@
 //!
 //! The kind, locations and input of a tool call are the agent's own description, not a grant: they are read from
 //! everything the agent told of the call (its `tool_call`, every `tool_call_update` since, the question's own fields
-//! last), and the rule only allows what that description keeps inside the copy.
+//! last), and the rule only allows what that description keeps inside the copy. A card shows that description: the
+//! kind, where it would act, the command | paths, the first file it would write, the agent's words (all cut).
 
 use std::path::{Component, Path, PathBuf};
 
 use agent_client_protocol_schema::v1::{
-    PermissionOptionId, PermissionOptionKind, RequestPermissionRequest, ToolCall, ToolCallStatus,
-    ToolCallUpdateFields, ToolKind,
+    Content, ContentBlock, Diff, PermissionOptionId, RequestPermissionRequest, ToolCall,
+    ToolCallContent, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind,
 };
 use permark_core::paths::{Vault, VaultPath};
 use serde_json::Value;
 
-use super::{tool_kind, tool_status};
-use crate::dto::{AcpToolKind, AcpToolStatus, AcpUpdate};
+use super::{option_kind, tool_kind, tool_status};
+use crate::dto::{AcpOptionKind, AcpReach, AcpToolKind, AcpToolStatus, AcpUpdate, PermissionDiff};
 use crate::work::kept_out;
 
 /// Keys of a tool's input that name files (as Claude, Codex, Gemini and opencode spell them); a relative one is taken
@@ -38,6 +39,60 @@ const PATH_KEYS: [&str; 15] = [
     "to",
 ];
 
+/// Lines per side of the file a card shows the tool would write; past them the diff is cut.
+const CARD_LINES: usize = 40;
+/// Characters of one such line a card shows.
+const CARD_LINE_CHARS: usize = 500;
+/// Characters of the agent's own words about the tool a card shows.
+const CARD_TEXT_CHARS: usize = 1000;
+
+/// A permission question as the agent asked it: the tool call + the answers offered.
+pub(super) struct Question {
+    pub tool_call: ToolCallUpdate,
+    pub options: Vec<Offered>,
+}
+
+/// One answer the agent offers.
+pub(super) struct Offered {
+    pub id: PermissionOptionId,
+    pub name: String,
+    /// One of a later protocol release -> `other` (never chosen by rule).
+    pub kind: AcpOptionKind,
+}
+
+impl Question {
+    /// The params of `session/request_permission` (`None`: no such question). Each option is read on its own: a typed
+    /// read refuses the whole question for one option kind of a later release, and the agent would get no card.
+    pub fn read(params: Value) -> Option<Self> {
+        let Value::Object(mut params) = params else {
+            return None;
+        };
+        let options = params.insert("options".to_owned(), Value::Array(Vec::new()))?;
+        let asked: RequestPermissionRequest = serde_json::from_value(Value::Object(params)).ok()?;
+        let options = options
+            .as_array()?
+            .iter()
+            .map(Offered::read)
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self {
+            tool_call: asked.tool_call,
+            options,
+        })
+    }
+}
+
+impl Offered {
+    fn read(option: &Value) -> Option<Self> {
+        let text = |key: &str| option.get(key).and_then(Value::as_str);
+        let kind = option.get("kind").filter(|kind| kind.is_string())?;
+        Some(Self {
+            id: PermissionOptionId::new(text("optionId")?),
+            name: text("name")?.to_owned(),
+            kind: serde_json::from_value(kind.clone()).map_or(AcpOptionKind::Other, option_kind),
+        })
+    }
+}
+
 /// What the agent told of one tool call so far.
 #[derive(Debug, Default, Clone)]
 pub(super) struct ToolLine {
@@ -48,6 +103,8 @@ pub(super) struct ToolLine {
     pub locations: Vec<PathBuf>,
     /// The tool's own arguments.
     pub raw_input: Option<Value>,
+    /// What the tool shows of itself (the files it writes as diffs, words).
+    pub content: Vec<ToolCallContent>,
 }
 
 impl ToolLine {
@@ -59,6 +116,7 @@ impl ToolLine {
             status: call.status,
             locations: call.locations.into_iter().map(|l| l.path).collect(),
             raw_input: call.raw_input,
+            content: call.content,
         }
     }
 
@@ -78,6 +136,9 @@ impl ToolLine {
         }
         if let Some(raw) = &fields.raw_input {
             self.raw_input = Some(raw.clone());
+        }
+        if let Some(content) = &fields.content {
+            self.content.clone_from(content);
         }
     }
 
@@ -118,6 +179,14 @@ impl ToolLine {
                 }
             })
             .collect()
+    }
+
+    /// The files it would write, as diffs.
+    fn diffs(&self) -> impl Iterator<Item = &Diff> {
+        self.content.iter().filter_map(|c| match c {
+            ToolCallContent::Diff(diff) => Some(diff),
+            _ => None,
+        })
     }
 }
 
@@ -175,13 +244,103 @@ pub(super) fn plain_work(tool: &ToolLine, copy: &Vault) -> bool {
     }
 }
 
-/// The option allowing the question once, if the agent offers one.
-pub(super) fn allow_once(asked: &RequestPermissionRequest) -> Option<PermissionOptionId> {
-    asked
-        .options
+/// Where the tool call would act, for its card: a kind not known to be work on files (a command, a fetch, an unknown
+/// | missing kind) or any file it names | writes outside the copy -> `Outside`; else any of them agent settings |
+/// project machinery in the copy -> `AgentSettings`; else `Copy`.
+pub(super) fn reach(tool: &ToolLine, copy: &Vault) -> AcpReach {
+    let named = tool.input_paths(copy);
+    let paths = || {
+        tool.locations
+            .iter()
+            .chain(named.iter())
+            .map(PathBuf::as_path)
+            .chain(tool.diffs().map(|diff| diff.path.as_path()))
+    };
+    let on_files = matches!(
+        tool.kind,
+        Some(
+            ToolKind::Read
+                | ToolKind::Search
+                | ToolKind::Edit
+                | ToolKind::Delete
+                | ToolKind::Move
+                | ToolKind::Think
+                | ToolKind::SwitchMode
+        )
+    );
+    if !on_files || paths().any(|path| !inside(copy, path)) {
+        AcpReach::Outside
+    } else if paths().any(|path| kept_out_in(copy, path)) {
+        AcpReach::AgentSettings
+    } else {
+        AcpReach::Copy
+    }
+}
+
+/// The first file the tool call would write, cut for a card (`truncated` too when it writes more than one).
+pub(super) fn diff(tool: &ToolLine, copy: &Vault) -> Option<PermissionDiff> {
+    let mut diffs = tool.diffs();
+    let first = diffs.next()?;
+    let (old_lines, old_cut) = card_lines(first.old_text.as_deref().unwrap_or(""));
+    let (new_lines, new_cut) = card_lines(&first.new_text);
+    Some(PermissionDiff {
+        path: card_path(copy, &first.path),
+        old_lines,
+        new_lines,
+        truncated: old_cut || new_cut || diffs.next().is_some(),
+    })
+}
+
+/// The first `CARD_LINES` lines of `text`, each at most `CARD_LINE_CHARS` characters; `true`: something was cut.
+fn card_lines(text: &str) -> (Vec<String>, bool) {
+    let mut lines = Vec::new();
+    let mut cut = false;
+    for (i, line) in text.lines().enumerate() {
+        if i == CARD_LINES {
+            return (lines, true);
+        }
+        match line.char_indices().nth(CARD_LINE_CHARS) {
+            Some((at, _)) => {
+                cut = true;
+                lines.push(line[..at].to_owned());
+            }
+            None => lines.push(line.to_owned()),
+        }
+    }
+    (lines, cut)
+}
+
+/// The words the agent attached to the tool call (its text content, one block per line), cut for a card (`None`:
+/// none). Its own words, shown as such: never a reason to allow.
+pub(super) fn summary(tool: &ToolLine) -> Option<String> {
+    let text = tool
+        .content
         .iter()
-        .find(|o| o.kind == PermissionOptionKind::AllowOnce)
-        .map(|o| o.option_id.clone())
+        .filter_map(|c| match c {
+            ToolCallContent::Content(Content {
+                content: ContentBlock::Text(text),
+                ..
+            }) => Some(text.text.trim()),
+            _ => None,
+        })
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.is_empty() {
+        return None;
+    }
+    Some(match text.char_indices().nth(CARD_TEXT_CHARS) {
+        Some((at, _)) => format!("{}…", &text[..at]),
+        None => text,
+    })
+}
+
+/// The option allowing the question once, if the agent offers one.
+pub(super) fn allow_once(options: &[Offered]) -> Option<PermissionOptionId> {
+    options
+        .iter()
+        .find(|o| o.kind == AcpOptionKind::AllowOnce)
+        .map(|o| o.id.clone())
 }
 
 /// What a card shows of a tool call: its command, else the paths it touches (project paths inside the copy), else
@@ -199,16 +358,12 @@ pub(super) fn detail(tool: &ToolLine, copy: &Vault) -> String {
         }
         _ => {}
     }
-    let shown = |path: &Path| match copy.relativize(path) {
-        Some(relative) if inside(copy, path) && !relative.is_root() => relative.as_str().to_owned(),
-        _ => path.display().to_string(),
-    };
     let paths = if tool.locations.is_empty() {
         tool.input_paths(copy)
     } else {
         tool.locations.clone()
     };
-    let mut lines: Vec<String> = paths.iter().map(|path| shown(path)).collect();
+    let mut lines: Vec<String> = paths.iter().map(|path| card_path(copy, path)).collect();
     if lines.is_empty() {
         lines.extend(
             input
@@ -218,4 +373,12 @@ pub(super) fn detail(tool: &ToolLine, copy: &Vault) -> String {
         );
     }
     lines.join("\n")
+}
+
+/// How a card names a file: its project path inside the copy, else the path as the agent wrote it.
+fn card_path(copy: &Vault, path: &Path) -> String {
+    match copy.relativize(path) {
+        Some(relative) if inside(copy, path) && !relative.is_root() => relative.as_str().to_owned(),
+        _ => path.display().to_string(),
+    }
 }

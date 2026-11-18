@@ -2958,6 +2958,8 @@ const en = {
   "acp.error.busy": "The agent is still working. Wait for it, or stop it.",
   "acp.error.emptyPrompt": "Write a message first.",
   "acp.error.lineRange": "The attached lines are no longer in the document.",
+  "acp.error.passageTooLarge":
+    "The attached passage is too long. Select a shorter part of the document.",
   "acp.error.noQuestion": "The agent no longer waits for this answer.",
   "acp.error.unsaved": "This document has unsaved edits. Save it first, then try again.",
   "acp.error.changed": "Your file changed since the agent's copy was made. The list was updated.",
@@ -2973,7 +2975,7 @@ const en = {
   "acp.retry": "Try again",
   "acp.pick.title": "Choose an agent",
   "acp.pick.intro":
-    "An agent is an AI program, such as Claude or Codex, that PerMark starts for you. It edits a copy of this folder kept outside it, and its edits reach your files only when you accept them. What you send, and what it reads in the copy, goes to the agent and its provider. It uses your own account there, which may cost money.",
+    "It edits a copy of this folder kept outside it, and its edits reach your files only when you accept them. What you send, and what it reads in the copy, goes to the agent and its provider. It uses your own account there, which may cost money.",
   "acp.pick.search": "Search agents",
   "acp.pick.loading": "Reading the list…",
   "acp.pick.none": "No agent matches your search.",
@@ -2987,7 +2989,7 @@ const en = {
   "acp.pick.commandWarning":
     "PerMark will start this program on your computer, with your permissions. Use only a program you trust.",
   "acp.pick.useCommand": "Use this command",
-  "acp.how.native": "Installed",
+  "acp.how.native": "Found on your computer",
   "acp.how.npx": "Downloads when first used",
   "acp.how.uvx": "Downloads when first used",
   "acp.how.custom": "Your command",
@@ -3094,6 +3096,35 @@ const en = {
   "acp.error.hiddenFromAgents": "The passage comes from a file agents may not see.",
   "acp.error.insideProject": "The copy for the agent cannot be kept inside this folder.",
   "acp.error.notApplied": "PerMark could not apply this change.",
+  "acp.option.allowOnce": "Allow once",
+  "acp.option.rejectOnce": "Don't allow",
+  "acp.alwaysHidden":
+    "PerMark can't keep “always” choices: it clears the agent's own settings in the copy, so the agent will ask again.",
+  "acp.questionSettings":
+    "This would change the agent's own settings, which PerMark keeps out of the copy.",
+  "acp.noDetails": "The agent gave no details.",
+  "acp.diffCut": "Only the start of this change is shown.",
+  "acp.stopHint": "Esc stops the agent.",
+  "acp.toolKind.read": "Read",
+  "acp.toolKind.edit": "Edit",
+  "acp.toolKind.delete": "Delete",
+  "acp.toolKind.move": "Move",
+  "acp.toolKind.search": "Search",
+  "acp.toolKind.execute": "Command",
+  "acp.toolKind.think": "Planning",
+  "acp.toolKind.fetch": "Web access",
+  "acp.toolKind.switchMode": "Mode change",
+  "acp.toolKind.other": "Other",
+  "acp.pick.introShort":
+    "An agent is an AI program, such as Claude or Codex, that PerMark starts for you.",
+  "acp.pick.more": "What happens when I use an agent?",
+  "acp.about.claude-acp": "Claude, the AI from Anthropic.",
+  "acp.about.codex-acp": "Codex, the coding agent from OpenAI.",
+  "acp.about.github-copilot-cli": "GitHub Copilot, the AI assistant from GitHub.",
+  "acp.about.gemini": "Gemini, the AI from Google.",
+  "acp.about.opencode": "OpenCode, an open-source agent that works with many AI providers.",
+  "acp.about.goose": "goose, an open-source agent from Block that works with many AI providers.",
+  "acp.about.cursor": "The agent of the Cursor code editor.",
 } as const;
 
 export default en;

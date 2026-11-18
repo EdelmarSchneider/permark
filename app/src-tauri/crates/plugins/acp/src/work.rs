@@ -41,6 +41,9 @@ pub const MAX_TOTAL_BYTES: u64 = 500 * 1024 * 1024;
 pub const MAX_LISTED: usize = 500;
 /// Most lines one side of a hunk carries to the window; a choice still applies the whole hunk.
 pub const MAX_HUNK_LINES: usize = 400;
+/// Most bytes of one line a hunk carries to the window (whole characters): a file of one huge line, listed in full,
+/// would freeze it.
+pub const MAX_LINE_BYTES: usize = 4 << 10;
 /// Most bytes the one-step undos keep in memory (oldest dropped first).
 const MAX_UNDO_BYTES: usize = 64 * 1024 * 1024;
 /// Longest wait for the projects inside the folder: their rules hide paths, so no copy is made without them.
@@ -499,6 +502,15 @@ fn lines_of(text: Option<&str>) -> Vec<&str> {
     text.map_or_else(Vec::new, |t| t.split('\n').collect())
 }
 
+/// At most `max` bytes of `text`, from its start, never half a character.
+pub(crate) fn start_of(text: &str, max: usize) -> &str {
+    let mut end = text.len().min(max);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
 /// The key of a hunk: its file, place and the lines of both sides, each part length-prefixed (two hunks of one list
 /// never share one; a hunk that moved | changed gets another).
 fn hunk_key(path: &str, hunk: &Hunk, old: &[&str], new: &[&str]) -> String {
@@ -551,11 +563,20 @@ impl Look {
     fn view(&self, path: &str) -> FileChange {
         let old = lines_of(self.old.as_deref());
         let new = lines_of(self.new.as_deref());
-        // the first lines only: the window shows a long run cut, a choice applies all of it
+        // the first lines, each to its first bytes: the window shows a long run cut, a choice applies all of it
         let shown = |lines: &[&str], range: &std::ops::Range<usize>| -> (Vec<String>, bool) {
             let run = lines.get(range.clone()).unwrap_or_default();
-            let first = run.iter().take(MAX_HUNK_LINES).map(|l| (*l).to_owned());
-            (first.collect(), run.len() > MAX_HUNK_LINES)
+            let mut cut = run.len() > MAX_HUNK_LINES;
+            let first = run
+                .iter()
+                .take(MAX_HUNK_LINES)
+                .map(|line| {
+                    let start = start_of(line, MAX_LINE_BYTES);
+                    cut |= start.len() < line.len();
+                    start.to_owned()
+                })
+                .collect();
+            (first, cut)
         };
         // a text ending in a line break splits into a last empty piece that is no line of the file
         let real_lines = old.len() - usize::from(old.last() == Some(&""));

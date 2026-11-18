@@ -15,4 +15,8 @@ fromLine: number,
 /**
  * Last line, 1-based (inclusive).
  */
-toLine: number, text: string, };
+toLine: number, 
+/**
+ * At most 256 KiB (longer: refused, `passageTooLarge`).
+ */
+text: string, };

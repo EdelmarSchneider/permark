@@ -14,11 +14,12 @@ key: string,
  */
 oldStart: number, 
 /**
- * At most 400 lines per side (`truncated`).
+ * At most 400 lines per side, each at most 4 KiB (`truncated`).
  */
 oldLines: Array<string>, newLines: Array<string>, 
 /**
- * A side had more than 400 lines: only the first are shown; a choice still applies the whole run.
+ * A side had more than 400 lines | a line longer than 4 KiB: only the first lines | bytes are shown; a choice still
+ * applies the whole run.
  */
 truncated: boolean, 
 /**

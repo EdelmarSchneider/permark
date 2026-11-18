@@ -3014,6 +3014,8 @@ export default {
   "acp.error.busy": "O axente aínda está traballando. Agarde por el ou déteo.",
   "acp.error.emptyPrompt": "Escriba primeiro unha mensaxe.",
   "acp.error.lineRange": "As liñas anexadas xa non están no documento.",
+  "acp.error.passageTooLarge":
+    "A pasaxe anexada é demasiado longa. Seleccione unha parte máis curta do documento.",
   "acp.error.noQuestion": "O axente xa non agarda esta resposta.",
   "acp.error.unsaved":
     "Este documento ten edicións sen gardar. Gárdeo primeiro e despois ténteo de novo.",
@@ -3031,7 +3033,7 @@ export default {
   "acp.retry": "Tentar de novo",
   "acp.pick.title": "Escoller un axente",
   "acp.pick.intro":
-    "Un axente é un programa de IA, como Claude ou Codex, que PerMark inicia por vostede. Edita unha copia deste cartafol gardada fóra del, e as súas edicións só chegan aos seus ficheiros cando as acepta. O que envíe, e o que o axente le na copia, vai para o axente e para o seu provedor. Alí usa a súa propia conta, o que pode custar diñeiro.",
+    "Edita unha copia deste cartafol gardada fóra del, e as súas edicións só chegan aos seus ficheiros cando as acepta. O que envíe, e o que o axente le na copia, vai para o axente e para o seu provedor. Alí usa a súa propia conta, o que pode custar diñeiro.",
   "acp.pick.search": "Buscar axentes",
   "acp.pick.loading": "Lendo a lista…",
   "acp.pick.none": "Ningún axente coincide coa súa busca.",
@@ -3045,7 +3047,7 @@ export default {
   "acp.pick.commandWarning":
     "PerMark iniciará este programa no seu computador, cos seus permisos. Use só un programa no que confíe.",
   "acp.pick.useCommand": "Usar esta orde",
-  "acp.how.native": "Instalado",
+  "acp.how.native": "Atopado no seu computador",
   "acp.how.npx": "Descárgase no primeiro uso",
   "acp.how.uvx": "Descárgase no primeiro uso",
   "acp.how.custom": "A súa orde",
@@ -3154,4 +3156,35 @@ export default {
   "acp.error.hiddenFromAgents": "A pasaxe vén dun ficheiro que os axentes non poden ver.",
   "acp.error.insideProject": "A copia para o axente non pode gardarse dentro deste cartafol.",
   "acp.error.notApplied": "PerMark non puido aplicar este cambio.",
+  "acp.option.allowOnce": "Permitir unha vez",
+  "acp.option.rejectOnce": "Non permitir",
+  "acp.alwaysHidden":
+    "PerMark non pode conservar as respostas «sempre»: borra a configuración propia do axente na copia, así que o axente volverá preguntar.",
+  "acp.questionSettings":
+    "Isto cambiaría a configuración propia do axente, que PerMark mantén fóra da copia.",
+  "acp.noDetails": "O axente non deu detalles.",
+  "acp.diffCut": "Só se mostra o comezo deste cambio.",
+  "acp.stopHint": "Esc detén o axente.",
+  "acp.toolKind.read": "Lectura",
+  "acp.toolKind.edit": "Edición",
+  "acp.toolKind.delete": "Eliminación",
+  "acp.toolKind.move": "Traslado",
+  "acp.toolKind.search": "Busca",
+  "acp.toolKind.execute": "Orde",
+  "acp.toolKind.think": "Planificación",
+  "acp.toolKind.fetch": "Acceso á web",
+  "acp.toolKind.switchMode": "Cambio de modo",
+  "acp.toolKind.other": "Outro",
+  "acp.pick.introShort":
+    "Un axente é un programa de IA, como Claude ou Codex, que PerMark inicia por vostede.",
+  "acp.pick.more": "Que pasa cando uso un axente?",
+  "acp.about.claude-acp": "Claude, a IA de Anthropic.",
+  "acp.about.codex-acp": "Codex, o axente de programación de OpenAI.",
+  "acp.about.github-copilot-cli": "GitHub Copilot, o asistente de IA de GitHub.",
+  "acp.about.gemini": "Gemini, a IA de Google.",
+  "acp.about.opencode":
+    "OpenCode, un axente de código aberto que funciona con moitos provedores de IA.",
+  "acp.about.goose":
+    "goose, un axente de código aberto de Block que funciona con moitos provedores de IA.",
+  "acp.about.cursor": "O axente do editor de código Cursor.",
 } satisfies Messages;

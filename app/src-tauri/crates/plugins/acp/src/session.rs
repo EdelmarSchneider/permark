@@ -5,8 +5,9 @@
 //!   agent settings, the agent's program started in an empty folder of the plugin's own ([`Host::run`]: never the
 //!   copy, whose project files a runner such as `npx` would read as its settings), `initialize` (no file system, no
 //!   terminal offered: the agent works on the copy with its own tools; terminal sign-in methods are welcome: the
-//!   person runs them) -> `session/new` (folder = the copy, no MCP servers) -> `session/set_mode` `default` when
-//!   offered (a person's own "auto" default would let the agent skip every question).
+//!   person runs them) -> `session/new` (folder = the copy, no MCP servers) -> the asking mode `default` when offered:
+//!   `session/set_mode`, else through a mode config option (`session/set_config_option`): a person's own "auto"
+//!   default would let the agent skip every question.
 //! - `auth_required` at `session/new` | a prompt -> `NeedsLogin` with the agent's sign-in methods; `acp.login` with an
 //!   agent method has the agent sign in (`authenticate`) and the waiting prompt goes on; any other (the person signed
 //!   in outside the app) starts a fresh agent, which reads the new sign-in at its start.
@@ -20,8 +21,10 @@
 //! - news (`session/update`) -> `acp:update` events: reply text, "thinking", tool lines. Anything else the agent
 //!   tells (modes, commands, usage, account status) is dropped unread.
 //! - permission questions ([`permission`]): plainly work on the copy's files -> allowed once by rule; anything else
-//!   is a card the person answers. Every question gets exactly one answer: the person's, `cancelled` (Stop, the turn
-//!   ended, the agent left), or `-32800` when the agent withdrew it (`$/cancel_request`).
+//!   is a card the person answers, told while the question is held under the session's lock (whatever answers it
+//!   takes that lock: its card always comes before its end). Every question gets exactly one answer: the person's,
+//!   `cancelled` (Stop, the turn ended, the agent left), or `-32800` when the agent withdrew it (`$/cancel_request`).
+//!   A card's id names the agent's run too: a fresh agent numbers its questions from the start again.
 //! - errors reach the window as codes ([`AcpErrorCode`]) with the agent's own words: its refusal, its last stderr.
 //! - states: Idle -> Starting -> Working <-> Ready; Starting | Working -> `NeedsLogin` -> Starting (login); failed start
 //!   | agent gone -> Error (the next prompt starts a fresh one); "new conversation" | a new choice -> Idle (the copy
@@ -42,8 +45,9 @@ use agent_client_protocol_schema::v1::{
     ClientCapabilities, ContentBlock, EmbeddedResource, EmbeddedResourceResource,
     Error as RpcError, Implementation, InitializeRequest, InitializeResponse, NewSessionRequest,
     NewSessionResponse, PermissionOptionId, PermissionOptionKind, PromptRequest, RequestId,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse, ResourceLink,
-    SelectedPermissionOutcome, SessionId, SessionNotification, SessionUpdate,
+    RequestPermissionOutcome, RequestPermissionResponse, ResourceLink, SelectedPermissionOutcome,
+    SessionConfigId, SessionConfigKind, SessionConfigOptionCategory, SessionConfigSelectOptions,
+    SessionId, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
     SetSessionModeRequest, StopReason, TextContent, TextResourceContents, ToolCallStatus, ToolKind,
     AGENT_METHOD_NAMES, CLIENT_METHOD_NAMES, PROTOCOL_LEVEL_METHOD_NAMES,
 };
@@ -53,17 +57,17 @@ use permark_core::plugins::PluginEvents;
 use permark_core::{ErrorKind, IpcError};
 use serde_json::Value;
 
-use crate::agents::Agents;
+use crate::agents::{Agents, Plan};
 use crate::client::{lock, AgentPipes, CallError, Connection, Inbox};
 use crate::dto::{
     AcpError, AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason, AcpToolKind,
     AcpToolStatus, AcpUpdate, AgentEntry, AnswerArgs, ChooseArgs, LoginArgs, LoginKind,
     LoginMethod, PermissionChoice, PromptArgs, PromptSelection,
 };
-use crate::work::{copy_dir, kept_out, Project, WorkCopy};
+use crate::work::{copy_dir, kept_out, start_of, Project, WorkCopy};
 use crate::SharedCopy;
 use login::login_methods;
-use permission::{allow_once, detail, plain_work, ToolLine};
+use permission::{allow_once, detail, diff, plain_work, reach, summary, Question, ToolLine};
 
 /// Longest wait for each step of the start (the first `npx` run downloads the adapter).
 const SETUP_WAIT: Duration = Duration::from_secs(180);
@@ -75,8 +79,8 @@ const WORDS_CAP: usize = 2 << 10;
 const TAIL_SETTLE: Duration = Duration::from_millis(500);
 /// The agent mode that asks before changes.
 const ASK_MODE: &str = "default";
-/// Mime type of an attached passage.
-const PASSAGE_MIME: &str = "text/markdown";
+/// Longest passage a prompt attaches: it rides along in one line to the agent and stays queued while the agent reads.
+pub const MAX_PASSAGE_BYTES: usize = 256 << 10;
 
 /// What a session works with.
 pub struct Host {
@@ -328,10 +332,19 @@ enum Opening {
 enum Route {
     /// Allowed once by rule (this option).
     Allow(PermissionOptionId),
-    /// A card for the person.
-    Ask(AcpUpdate),
+    /// A card for the person (told already).
+    Asked,
     /// Asked outside a turn of the current agent | after Stop: answered `cancelled`.
     Drop,
+}
+
+/// The window's id of question `id` of the agent run `generation`: the run, then the JSON text of the agent's id
+/// (unique for numbers and strings alike); a fresh agent numbers its questions from the start again.
+fn question_key(generation: u64, id: &RequestId) -> String {
+    format!(
+        "{generation}:{}",
+        serde_json::to_string(id).unwrap_or_default()
+    )
 }
 
 /// The step of a start | sign-in a failed call belongs to.
@@ -643,11 +656,30 @@ fn check(args: &PromptArgs) -> Result<(), IpcError> {
                 .subject(selection.path.clone())
                 .detail("lineRange"));
         }
+        if selection.text.len() > MAX_PASSAGE_BYTES {
+            return Err(IpcError::new(ErrorKind::TooLarge)
+                .subject(selection.path.clone())
+                .detail("passageTooLarge"));
+        }
     }
     if let Some(document) = &args.document {
         project_file(document)?;
     }
     Ok(())
+}
+
+/// Mime type of a passage of the file `path`: Markdown for a Markdown file, else plain text (a JSON | YAML | code
+/// passage read as Markdown would be misread).
+fn passage_mime(path: &str) -> &'static str {
+    let markdown = Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"));
+    if markdown {
+        "text/markdown"
+    } else {
+        "text/plain"
+    }
 }
 
 /// `file://` URI of a file of the copy.
@@ -693,7 +725,7 @@ pub fn blocks(
             out.push(ContentBlock::Resource(EmbeddedResource::new(
                 EmbeddedResourceResource::TextResourceContents(
                     TextResourceContents::new(text.clone(), uri.to_string())
-                        .mime_type(PASSAGE_MIME),
+                        .mime_type(passage_mime(path)),
                 ),
             )));
         } else {
@@ -722,11 +754,7 @@ fn said(message: &str) -> Option<String> {
     if message.is_empty() {
         return None;
     }
-    let mut end = message.len().min(WORDS_CAP);
-    while !message.is_char_boundary(end) {
-        end -= 1;
-    }
-    Some(message[..end].to_owned())
+    Some(start_of(message, WORDS_CAP).to_owned())
 }
 
 /// `error` with the newest lines of the agent's stderr (`settle`: waits that long for the stream to end).
@@ -1062,7 +1090,7 @@ impl Core {
             agent.stop();
             return Ok(None);
         }
-        let (methods, embedded) = initialize(&agent.connection, &plan.shown)?;
+        let (methods, embedded) = initialize(&agent.connection, &plan)?;
         let methods: Arc<[LoginMethod]> = methods.into();
         match open_session(&agent.connection, &agent.dir) {
             Ok(session) => Ok(Some(Opened::Live(Live {
@@ -1205,8 +1233,8 @@ impl Core {
     }
 
     /// Routes a permission question of `generation`: plainly work on the copy's files ([`plain_work`], on what the
-    /// agent told of the tool call so far) -> allowed once; else a card.
-    fn route(&self, generation: u64, id: RequestId, asked: &RequestPermissionRequest) -> Route {
+    /// agent told of the tool call so far) -> allowed once; else a card, told before the lock is let go.
+    fn route(&self, generation: u64, id: RequestId, asked: Question) -> Route {
         let mut inner = lock(&self.inner);
         if inner.generation != generation || inner.stopping {
             return Route::Drop;
@@ -1222,24 +1250,26 @@ impl Core {
             .unwrap_or_default();
         tool.apply(&asked.tool_call.fields);
         if plain_work(&tool, copy) {
-            if let Some(option) = allow_once(asked) {
+            if let Some(option) = allow_once(&asked.options) {
                 return Route::Allow(option);
             }
         }
-        // the JSON text of the id: unique for numbers and strings alike
-        let request_id = serde_json::to_string(&id).unwrap_or_default();
+        let request_id = question_key(generation, &id);
         let update = AcpUpdate::Permission {
             request_id: request_id.clone(),
             kind: tool.kind(),
+            reach: reach(&tool, copy),
             detail: detail(&tool, copy),
+            diff: diff(&tool, copy),
+            summary: summary(&tool),
             title: tool.title,
             options: asked
                 .options
                 .iter()
                 .map(|o| PermissionChoice {
-                    id: o.option_id.0.to_string(),
+                    id: o.id.0.to_string(),
                     name: o.name.clone(),
-                    kind: option_kind(o.kind),
+                    kind: o.kind,
                 })
                 .collect(),
         };
@@ -1247,10 +1277,12 @@ impl Core {
             request_id,
             Ask {
                 id,
-                options: asked.options.iter().map(|o| o.option_id.clone()).collect(),
+                options: asked.options.into_iter().map(|o| o.id).collect(),
             },
         );
-        Route::Ask(update)
+        // told under the lock: a Stop | a turn's end takes this question only after its card went out
+        self.emit(update);
+        Route::Asked
     }
 }
 
@@ -1272,9 +1304,9 @@ fn empty_folder(dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)
 }
 
-/// `initialize`: answers the agent's sign-in methods (a terminal method's line = `shown` + its arguments) and whether
-/// it takes embedded resources in prompts.
-fn initialize(connection: &Connection, shown: &str) -> Result<(Vec<LoginMethod>, bool), AcpError> {
+/// `initialize`: answers the agent's sign-in methods (a terminal method's line: `plan`'s variables + command, then the
+/// method's own) and whether it takes embedded resources in prompts.
+fn initialize(connection: &Connection, plan: &Plan) -> Result<(Vec<LoginMethod>, bool), AcpError> {
     // terminal sign-in: the person runs the shown line in a terminal; the app itself never opens one
     let caps = ClientCapabilities::new().auth(AuthCapabilities::new().terminal(true));
     let hello = InitializeRequest::new(ProtocolVersion::V1)
@@ -1289,10 +1321,10 @@ fn initialize(connection: &Connection, shown: &str) -> Result<(Vec<LoginMethod>,
         return Err(AcpError::new(AcpErrorCode::ProtocolVersion));
     }
     let embedded = init.agent_capabilities.prompt_capabilities.embedded_context;
-    Ok((login_methods(raw.get("authMethods"), shown), embedded))
+    Ok((login_methods(raw.get("authMethods"), plan), embedded))
 }
 
-/// `session/new` -> `session/set_mode` (when the asking mode is offered and not on).
+/// `session/new` -> the asking mode when offered and not on ([`ask_mode`]).
 fn open_session(connection: &Connection, dir: &Path) -> Result<SessionId, Opening> {
     let new: NewSessionResponse = match connection.call(
         AGENT_METHOD_NAMES.session_new,
@@ -1309,19 +1341,59 @@ fn open_session(connection: &Connection, dir: &Path) -> Result<SessionId, Openin
             )))
         }
     };
+    let set: Result<Value, CallError> = match ask_mode(&new) {
+        Some(AskMode::Mode) => connection.call(
+            AGENT_METHOD_NAMES.session_set_mode,
+            SetSessionModeRequest::new(new.session_id.clone(), ASK_MODE),
+            Some(SETUP_WAIT),
+        ),
+        Some(AskMode::Option(config)) => connection.call(
+            AGENT_METHOD_NAMES.session_set_config_option,
+            SetSessionConfigOptionRequest::new(new.session_id.clone(), config, ASK_MODE),
+            Some(SETUP_WAIT),
+        ),
+        None => Ok(Value::Null),
+    };
+    set.map_err(|e| Opening::Failed(call_failed(connection, Step::Session, e)))?;
+    Ok(new.session_id)
+}
+
+/// How a session is set to the asking mode.
+enum AskMode {
+    /// `session/set_mode`.
+    Mode,
+    /// `session/set_config_option` on this mode option.
+    Option(SessionConfigId),
+}
+
+/// How to set `new` to the asking mode (`None`: not offered | on already): the session modes when they offer it,
+/// else a config option of category `mode` that offers it (agents move from modes to config options).
+fn ask_mode(new: &NewSessionResponse) -> Option<AskMode> {
     if let Some(modes) = &new.modes {
-        let offered = modes.available_modes.iter().any(|m| &*m.id.0 == ASK_MODE);
-        if offered && &*modes.current_mode_id.0 != ASK_MODE {
-            let _: Value = connection
-                .call(
-                    AGENT_METHOD_NAMES.session_set_mode,
-                    SetSessionModeRequest::new(new.session_id.clone(), ASK_MODE),
-                    Some(SETUP_WAIT),
-                )
-                .map_err(|e| Opening::Failed(call_failed(connection, Step::Session, e)))?;
+        if modes.available_modes.iter().any(|m| &*m.id.0 == ASK_MODE) {
+            return (&*modes.current_mode_id.0 != ASK_MODE).then_some(AskMode::Mode);
         }
     }
-    Ok(new.session_id)
+    new.config_options.iter().flatten().find_map(|option| {
+        let SessionConfigKind::Select(select) = &option.kind else {
+            return None;
+        };
+        if option.category != Some(SessionConfigOptionCategory::Mode) {
+            return None;
+        }
+        let offered = match &select.options {
+            SessionConfigSelectOptions::Ungrouped(values) => {
+                values.iter().any(|v| &*v.value.0 == ASK_MODE)
+            }
+            SessionConfigSelectOptions::Grouped(groups) => groups
+                .iter()
+                .flat_map(|g| &g.options)
+                .any(|v| &*v.value.0 == ASK_MODE),
+            _ => false,
+        };
+        (offered && &*select.current_value.0 != ASK_MODE)
+            .then(|| AskMode::Option(option.id.clone()))
+    })
 }
 
 /// `_meta` of `session/new`: Claude's adapter offers (and a settings file | a subagent header may pick) a mode that
@@ -1393,7 +1465,7 @@ impl Listener {
         let Some(Ok(note)) = params.map(serde_json::from_value::<CancelRequestNotification>) else {
             return;
         };
-        let key = serde_json::to_string(&note.request_id).unwrap_or_default();
+        let key = question_key(self.generation, &note.request_id);
         let Some(Some(ask)) = self
             .core
             .with_current(self.generation, |inner| inner.asks.remove(&key))
@@ -1433,11 +1505,11 @@ impl Inbox for Listener {
             let _ = connection.reply::<Value>(id, Err(RpcError::method_not_found()));
             return;
         }
-        let Some(Ok(asked)) = params.map(serde_json::from_value::<RequestPermissionRequest>) else {
+        let Some(asked) = params.and_then(Question::read) else {
             let _ = connection.reply::<Value>(id, Err(RpcError::invalid_params()));
             return;
         };
-        match self.core.route(self.generation, id.clone(), &asked) {
+        match self.core.route(self.generation, id.clone(), asked) {
             Route::Allow(option) => {
                 let _ = connection.reply(
                     id,
@@ -1446,7 +1518,7 @@ impl Inbox for Listener {
                     )),
                 );
             }
-            Route::Ask(update) => self.core.emit(update),
+            Route::Asked => {}
             Route::Drop => {
                 let _ = connection.reply(
                     id,

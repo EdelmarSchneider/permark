@@ -170,7 +170,13 @@ impl Connection {
         loop {
             match next_line(&mut from, &mut line) {
                 Ok(Line::Full) => {}
-                Ok(Line::TooLong) => continue,
+                Ok(Line::TooLong) => {
+                    // a request still gets its one answer, by the id its start names; else it waits forever
+                    if let Some(id) = cut_request(&line) {
+                        let _ = self.reply::<Value>(id, Err(RpcError::invalid_request()));
+                    }
+                    continue;
+                }
                 Ok(Line::End) | Err(_) => break,
             }
             // not a JSON-RPC message: skipped (its content is never logged: it may carry the person's account)
@@ -401,6 +407,42 @@ fn next_line(from: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<Line> {
         let all = buffer.len();
         from.consume(all);
     }
+}
+
+/// The id of a request whose line ran past [`LINE_CAP`], from `head` (the line's start): its top-level members are
+/// read in order until both `id` and `method` were seen (`None`: a member cut off | of no JSON shape first, or no
+/// request: an answer has no `method`).
+fn cut_request(head: &[u8]) -> Option<RequestId> {
+    let mut rest = head.trim_ascii_start().strip_prefix(b"{")?;
+    let mut id = None;
+    let mut method = false;
+    while id.is_none() || !method {
+        let (key, after) = first_value::<String>(rest)?;
+        rest = after.trim_ascii_start().strip_prefix(b":")?;
+        rest = match key.as_str() {
+            "id" => {
+                let (value, after) = first_value::<RequestId>(rest)?;
+                id = Some(value);
+                after
+            }
+            "method" => {
+                let (value, after) = first_value::<Value>(rest)?;
+                method = value.is_string();
+                after
+            }
+            _ => first_value::<serde::de::IgnoredAny>(rest)?.1,
+        };
+        // a value that ends the head may be cut short: only one followed by more members counts
+        rest = rest.trim_ascii_start().strip_prefix(b",")?;
+    }
+    id
+}
+
+/// The first JSON value of `bytes` (leading white space skipped) + the bytes after it.
+fn first_value<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Option<(T, &'a [u8])> {
+    let mut values = serde_json::Deserializer::from_slice(bytes).into_iter::<T>();
+    let value = values.next()?.ok()?;
+    Some((value, bytes.get(values.byte_offset()..)?))
 }
 
 /// The newest stderr lines, at most [`TAIL_CAP`] bytes.
@@ -766,6 +808,55 @@ mod tests {
         let reply = wire.next().unwrap();
         assert_eq!(reply["id"], "q-1");
         assert_eq!(reply["error"]["code"], -32601);
+    }
+
+    /// A request whose line runs past the cap still gets its one answer (`-32600`, by the id its start names); one
+    /// whose id comes only after the cap, or an answer to no request, is skipped; reading goes on.
+    #[test]
+    fn a_request_past_the_cap_is_refused_by_the_id_its_start_names() {
+        let mut wire = Wire::new();
+        let cap = usize::try_from(LINE_CAP).unwrap();
+        let filler = "x".repeat(cap);
+        wire.write(&format!(
+            "{{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"session/request_permission\",\"params\":{{\"content\":\"{filler}\"}}}}\n"
+        ));
+        let reply = wire.next().unwrap();
+        assert_eq!(reply["id"], 12);
+        assert_eq!(reply["error"]["code"], -32600);
+        // the id after the cut | no method: nothing to answer
+        wire.write(&format!(
+            "{{\"jsonrpc\":\"2.0\",\"method\":\"session/request_permission\",\"params\":{{\"content\":\"{filler}\"}},\"id\":13}}\n"
+        ));
+        wire.write(&format!(
+            "{{\"jsonrpc\":\"2.0\",\"id\":14,\"result\":{{\"content\":\"{filler}\"}}}}\n"
+        ));
+        wire.write("{\"jsonrpc\":\"2.0\",\"id\":\"q-2\",\"method\":\"fs/read_text_file\"}\n");
+        wire.heard.wait_for("request fs/read_text_file \"q-2\"");
+        let reply = wire.next().unwrap();
+        assert_eq!(reply["id"], "q-2");
+        assert_eq!(reply["error"]["code"], -32601);
+        // nothing reached the inbox from the long lines
+        assert_eq!(
+            *lock(&wire.heard.list),
+            ["request fs/read_text_file \"q-2\""]
+        );
+    }
+
+    #[test]
+    fn the_id_of_a_cut_request_is_read_member_by_member() {
+        let id = |head: &str| cut_request(head.as_bytes());
+        assert_eq!(
+            id(" { \"jsonrpc\" : \"2.0\" , \"method\":\"m\", \"id\" : \"a\" , \"params\":{\"x\":"),
+            Some(RequestId::Str("a".to_owned()))
+        );
+        assert_eq!(
+            id("{\"id\":[1],\"method\":\"m\",\"params\":"),
+            None,
+            "an id of no request shape"
+        );
+        assert_eq!(id("{\"id\":7,\"params\":{\"x\":"), None, "no method");
+        assert_eq!(id("{\"method\":\"m\",\"id\":7"), None, "the id may be cut");
+        assert_eq!(id("[1,2"), None);
     }
 
     /// Close: every waiting call ends at once even while the agent's output stays open; the agent's stdin closes

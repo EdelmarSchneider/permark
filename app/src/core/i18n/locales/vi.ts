@@ -2998,6 +2998,8 @@ export default {
   "acp.error.busy": "Agent vẫn đang làm việc. Hãy chờ hoặc dừng agent.",
   "acp.error.emptyPrompt": "Hãy viết tin nhắn trước.",
   "acp.error.lineRange": "Các dòng đã đính kèm không còn trong tài liệu.",
+  "acp.error.passageTooLarge":
+    "Đoạn văn đính kèm quá dài. Hãy chọn một phần ngắn hơn của tài liệu.",
   "acp.error.noQuestion": "Agent không còn chờ câu trả lời này nữa.",
   "acp.error.unsaved": "Tài liệu này có chỉnh sửa chưa lưu. Hãy lưu trước, rồi thử lại.",
   "acp.error.changed":
@@ -3015,7 +3017,7 @@ export default {
   "acp.retry": "Thử lại",
   "acp.pick.title": "Chọn agent",
   "acp.pick.intro":
-    "Agent là một chương trình AI, như Claude hoặc Codex, mà PerMark khởi động cho bạn. Agent sửa một bản sao của thư mục này được lưu bên ngoài thư mục, và các chỉnh sửa của nó chỉ đến được tệp của bạn khi bạn chấp nhận. Những gì bạn gửi, và những gì agent đọc trong bản sao, sẽ đến agent và nhà cung cấp của nó. Agent dùng tài khoản riêng của bạn ở đó, việc này có thể tốn tiền.",
+    "Agent sửa một bản sao của thư mục này được lưu bên ngoài thư mục, và các chỉnh sửa của nó chỉ đến được tệp của bạn khi bạn chấp nhận. Những gì bạn gửi, và những gì agent đọc trong bản sao, sẽ đến agent và nhà cung cấp của nó. Agent dùng tài khoản riêng của bạn ở đó, việc này có thể tốn tiền.",
   "acp.pick.search": "Tìm agent",
   "acp.pick.loading": "Đang đọc danh sách…",
   "acp.pick.none": "Không có agent nào khớp với tìm kiếm.",
@@ -3029,7 +3031,7 @@ export default {
   "acp.pick.commandWarning":
     "PerMark sẽ khởi động chương trình này trên máy tính của bạn, với quyền của bạn. Chỉ dùng chương trình mà bạn tin tưởng.",
   "acp.pick.useCommand": "Dùng lệnh này",
-  "acp.how.native": "Đã cài đặt",
+  "acp.how.native": "Tìm thấy trên máy tính của bạn",
   "acp.how.npx": "Tải xuống trong lần dùng đầu tiên",
   "acp.how.uvx": "Tải xuống trong lần dùng đầu tiên",
   "acp.how.custom": "Lệnh của bạn",
@@ -3138,4 +3140,33 @@ export default {
   "acp.error.hiddenFromAgents": "Đoạn văn này đến từ một tệp mà agent không được phép thấy.",
   "acp.error.insideProject": "Không thể lưu bản sao dành cho agent bên trong thư mục này.",
   "acp.error.notApplied": "PerMark không thể áp dụng thay đổi này.",
+  "acp.option.allowOnce": "Cho phép một lần",
+  "acp.option.rejectOnce": "Không cho phép",
+  "acp.alwaysHidden":
+    "PerMark không giữ được các lựa chọn “luôn luôn”: nó xóa cài đặt riêng của agent trong bản sao, nên agent sẽ hỏi lại.",
+  "acp.questionSettings":
+    "Việc này sẽ thay đổi cài đặt riêng của agent, vốn được PerMark giữ ngoài bản sao.",
+  "acp.noDetails": "Agent không đưa ra chi tiết nào.",
+  "acp.diffCut": "Chỉ hiển thị phần đầu của thay đổi này.",
+  "acp.stopHint": "Esc để dừng agent.",
+  "acp.toolKind.read": "Đọc",
+  "acp.toolKind.edit": "Sửa",
+  "acp.toolKind.delete": "Xóa",
+  "acp.toolKind.move": "Di chuyển",
+  "acp.toolKind.search": "Tìm kiếm",
+  "acp.toolKind.execute": "Lệnh",
+  "acp.toolKind.think": "Lập kế hoạch",
+  "acp.toolKind.fetch": "Truy cập web",
+  "acp.toolKind.switchMode": "Đổi chế độ",
+  "acp.toolKind.other": "Khác",
+  "acp.pick.introShort":
+    "Agent là một chương trình AI, như Claude hoặc Codex, mà PerMark khởi động cho bạn.",
+  "acp.pick.more": "Điều gì xảy ra khi tôi dùng một agent?",
+  "acp.about.claude-acp": "Claude, AI của Anthropic.",
+  "acp.about.codex-acp": "Codex, agent lập trình của OpenAI.",
+  "acp.about.github-copilot-cli": "GitHub Copilot, trợ lý AI của GitHub.",
+  "acp.about.gemini": "Gemini, AI của Google.",
+  "acp.about.opencode": "OpenCode, một agent mã nguồn mở hoạt động với nhiều nhà cung cấp AI.",
+  "acp.about.goose": "goose, một agent mã nguồn mở của Block hoạt động với nhiều nhà cung cấp AI.",
+  "acp.about.cursor": "Agent của trình soạn thảo mã Cursor.",
 } satisfies Messages;

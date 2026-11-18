@@ -3029,6 +3029,8 @@ export default {
   "acp.error.busy": "エージェントはまだ作業中です。終わるのを待つか、停止してください。",
   "acp.error.emptyPrompt": "先にメッセージを書いてください。",
   "acp.error.lineRange": "添付した行はもうドキュメントにありません。",
+  "acp.error.passageTooLarge":
+    "添付した箇所が長すぎます。ドキュメントのもっと短い部分を選択してください。",
   "acp.error.noQuestion": "エージェントはもうこの回答を待っていません。",
   "acp.error.unsaved":
     "このドキュメントには未保存の編集があります。先に保存してから、もう一度お試しください。",
@@ -3047,7 +3049,7 @@ export default {
   "acp.retry": "再試行",
   "acp.pick.title": "エージェントを選択",
   "acp.pick.intro":
-    "エージェントとは、Claude や Codex などの AI プログラムで、PerMark があなたの代わりに起動します。エージェントはこのフォルダーの外に置かれたコピーを編集し、その編集は適用したときにだけファイルに反映されます。送信した内容と、エージェントがコピー内で読んだ内容は、エージェントとその提供元に送られます。提供元ではあなた自身のアカウントが使われ、料金がかかる場合があります。",
+    "エージェントはこのフォルダーの外に置かれたコピーを編集し、その編集は適用したときにだけファイルに反映されます。送信した内容と、エージェントがコピー内で読んだ内容は、エージェントとその提供元に送られます。提供元ではあなた自身のアカウントが使われ、料金がかかる場合があります。",
   "acp.pick.search": "エージェントを検索",
   "acp.pick.loading": "一覧を読み込んでいます…",
   "acp.pick.none": "検索に一致するエージェントはありません。",
@@ -3061,7 +3063,7 @@ export default {
   "acp.pick.commandWarning":
     "PerMark はこのプログラムを、あなたの権限でこのコンピューター上で起動します。信頼できるプログラムだけを使ってください。",
   "acp.pick.useCommand": "このコマンドを使用",
-  "acp.how.native": "インストール済み",
+  "acp.how.native": "このコンピューターで検出",
   "acp.how.npx": "初回使用時にダウンロード",
   "acp.how.uvx": "初回使用時にダウンロード",
   "acp.how.custom": "独自のコマンド",
@@ -3171,4 +3173,34 @@ export default {
   "acp.error.hiddenFromAgents": "この箇所は、エージェントに見せてはいけないファイルのものです。",
   "acp.error.insideProject": "エージェント用のコピーをこのフォルダーの中に置くことはできません。",
   "acp.error.notApplied": "PerMark はこの変更を適用できませんでした。",
+  "acp.option.allowOnce": "1 回だけ許可",
+  "acp.option.rejectOnce": "許可しない",
+  "acp.alwaysHidden":
+    "PerMark は「常に」の選択を保持できません。コピー内のエージェント自身の設定を消去するため、エージェントは再び確認します。",
+  "acp.questionSettings":
+    "これはエージェント自身の設定を変更します。PerMark はこの設定をコピーに含めません。",
+  "acp.noDetails": "エージェントは詳細を示していません。",
+  "acp.diffCut": "この変更の最初の部分だけを表示しています。",
+  "acp.stopHint": "Esc でエージェントを停止します。",
+  "acp.toolKind.read": "読み取り",
+  "acp.toolKind.edit": "編集",
+  "acp.toolKind.delete": "削除",
+  "acp.toolKind.move": "移動",
+  "acp.toolKind.search": "検索",
+  "acp.toolKind.execute": "コマンド",
+  "acp.toolKind.think": "計画",
+  "acp.toolKind.fetch": "Web アクセス",
+  "acp.toolKind.switchMode": "モード変更",
+  "acp.toolKind.other": "その他",
+  "acp.pick.introShort":
+    "エージェントとは、Claude や Codex などの AI プログラムで、PerMark があなたの代わりに起動します。",
+  "acp.pick.more": "エージェントを使うと何が起こりますか？",
+  "acp.about.claude-acp": "Anthropic の AI、Claude。",
+  "acp.about.codex-acp": "OpenAI のコーディングエージェント、Codex。",
+  "acp.about.github-copilot-cli": "GitHub の AI アシスタント、GitHub Copilot。",
+  "acp.about.gemini": "Google の AI、Gemini。",
+  "acp.about.opencode": "多くの AI プロバイダーで使える、オープンソースのエージェント OpenCode。",
+  "acp.about.goose":
+    "Block が開発した、多くの AI プロバイダーで使えるオープンソースのエージェント goose。",
+  "acp.about.cursor": "コードエディター Cursor のエージェント。",
 } satisfies Messages;

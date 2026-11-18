@@ -3012,6 +3012,8 @@ export default {
   "acp.error.busy": "Agen masih bekerja. Tunggu hingga selesai, atau hentikan.",
   "acp.error.emptyPrompt": "Tulis pesan terlebih dahulu.",
   "acp.error.lineRange": "Baris yang dilampirkan sudah tidak ada di dokumen.",
+  "acp.error.passageTooLarge":
+    "Bagian teks yang dilampirkan terlalu panjang. Pilih bagian dokumen yang lebih pendek.",
   "acp.error.noQuestion": "Agen tidak lagi menunggu jawaban ini.",
   "acp.error.unsaved":
     "Dokumen ini memiliki perubahan yang belum disimpan. Simpan terlebih dahulu, lalu coba lagi.",
@@ -3029,7 +3031,7 @@ export default {
   "acp.retry": "Coba lagi",
   "acp.pick.title": "Pilih agen",
   "acp.pick.intro":
-    "Agen adalah program AI, seperti Claude atau Codex, yang dijalankan PerMark untuk Anda. Agen mengedit salinan folder ini yang disimpan di luar folder tersebut, dan perubahannya baru sampai ke file Anda setelah Anda menerimanya. Apa yang Anda kirim, dan apa yang dibaca agen di salinan, dikirim ke agen dan penyedianya. Agen menggunakan akun Anda sendiri di sana, yang mungkin memerlukan biaya.",
+    "Agen mengedit salinan folder ini yang disimpan di luar folder tersebut, dan perubahannya baru sampai ke file Anda setelah Anda menerimanya. Apa yang Anda kirim, dan apa yang dibaca agen di salinan, dikirim ke agen dan penyedianya. Agen menggunakan akun Anda sendiri di sana, yang mungkin memerlukan biaya.",
   "acp.pick.search": "Cari agen",
   "acp.pick.loading": "Membaca daftar…",
   "acp.pick.none": "Tidak ada agen yang cocok dengan pencarian Anda.",
@@ -3043,7 +3045,7 @@ export default {
   "acp.pick.commandWarning":
     "PerMark akan menjalankan program ini di komputer Anda, dengan izin Anda. Gunakan hanya program yang Anda percayai.",
   "acp.pick.useCommand": "Gunakan perintah ini",
-  "acp.how.native": "Terinstal",
+  "acp.how.native": "Ditemukan di komputer Anda",
   "acp.how.npx": "Diunduh saat pertama kali digunakan",
   "acp.how.uvx": "Diunduh saat pertama kali digunakan",
   "acp.how.custom": "Perintah Anda",
@@ -3150,4 +3152,34 @@ export default {
   "acp.error.hiddenFromAgents": "Bagian teks ini berasal dari file yang tidak boleh dilihat agen.",
   "acp.error.insideProject": "Salinan untuk agen tidak dapat disimpan di dalam folder ini.",
   "acp.error.notApplied": "PerMark tidak dapat menerapkan perubahan ini.",
+  "acp.option.allowOnce": "Izinkan sekali",
+  "acp.option.rejectOnce": "Jangan izinkan",
+  "acp.alwaysHidden":
+    "PerMark tidak dapat menyimpan pilihan “selalu”: PerMark menghapus pengaturan milik agen di salinan, jadi agen akan bertanya lagi.",
+  "acp.questionSettings":
+    "Ini akan mengubah pengaturan milik agen, yang dijauhkan PerMark dari salinan.",
+  "acp.noDetails": "Agen tidak memberikan detail.",
+  "acp.diffCut": "Hanya awal perubahan ini yang ditampilkan.",
+  "acp.stopHint": "Esc menghentikan agen.",
+  "acp.toolKind.read": "Membaca",
+  "acp.toolKind.edit": "Mengedit",
+  "acp.toolKind.delete": "Menghapus",
+  "acp.toolKind.move": "Memindahkan",
+  "acp.toolKind.search": "Mencari",
+  "acp.toolKind.execute": "Perintah",
+  "acp.toolKind.think": "Perencanaan",
+  "acp.toolKind.fetch": "Akses web",
+  "acp.toolKind.switchMode": "Ganti mode",
+  "acp.toolKind.other": "Lainnya",
+  "acp.pick.introShort":
+    "Agen adalah program AI, seperti Claude atau Codex, yang dijalankan PerMark untuk Anda.",
+  "acp.pick.more": "Apa yang terjadi saat saya menggunakan agen?",
+  "acp.about.claude-acp": "Claude, AI dari Anthropic.",
+  "acp.about.codex-acp": "Codex, agen pemrograman dari OpenAI.",
+  "acp.about.github-copilot-cli": "GitHub Copilot, asisten AI dari GitHub.",
+  "acp.about.gemini": "Gemini, AI dari Google.",
+  "acp.about.opencode": "OpenCode, agen sumber terbuka yang bekerja dengan banyak penyedia AI.",
+  "acp.about.goose":
+    "goose, agen sumber terbuka dari Block yang bekerja dengan banyak penyedia AI.",
+  "acp.about.cursor": "Agen dari editor kode Cursor.",
 } satisfies Messages;

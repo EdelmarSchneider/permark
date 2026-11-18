@@ -10,9 +10,12 @@
 import type {
   AcpError,
   AcpErrorCode,
+  AcpOptionKind,
+  AcpReach,
   AcpState,
   AcpStatus,
   AcpStopReason,
+  AcpToolKind,
   AcpToolStatus,
   AcpUpdate,
   AgentEntry,
@@ -23,6 +26,7 @@ import type {
   IpcError,
   LoginMethod,
   PermissionChoice,
+  PermissionDiff,
   PromptArgs,
   PromptSelection,
 } from "../../api";
@@ -74,7 +78,14 @@ export type Entry =
       id: number;
       requestId: string;
       title: string;
+      /** The kind of tool, as the agent told it. */
+      toolKind: AcpToolKind;
+      reach: AcpReach;
       detail: string;
+      /** What it would write (`null`: the agent sent no diff). */
+      diff: PermissionDiff | null;
+      /** Words the agent attached to the tool call (`null`: none). */
+      summary: string | null;
       options: PermissionChoice[];
       answer: Answer;
     }
@@ -138,6 +149,8 @@ export class AcpStore {
   );
 
   #ids = 0;
+  /** Files whose passage the backend refused as hidden from agents: a selection there is never attached again. */
+  #hidden = new Set<string>();
   /** Reads a selection change still waiting for its moment now (`null`: none waits). */
   #flush: (() => void) | null = null;
   readonly #client: PluginClient;
@@ -287,7 +300,11 @@ export class AcpStore {
           kind: "question",
           requestId: update.requestId,
           title: update.title,
+          toolKind: update.kind,
+          reach: update.reach,
           detail: update.detail,
+          diff: update.diff ?? null,
+          summary: update.summary ?? null,
           options: update.options,
           answer: { status: "open" },
         });
@@ -342,12 +359,14 @@ export class AcpStore {
       const result = await this.#client.call("acp.prompt", args);
       if (result.ok || this.#root() !== root) return;
       this.#notice(t("acp.notSent", { reason: errorText(result.error) }));
+      const detail = result.error.kind === "backend" ? result.error.error.detail : null;
       // another window may have changed the choice: the picker | the name follows what the backend holds
-      if (result.error.kind === "backend" && result.error.error.detail === "noAgent")
-        void this.#readStatus();
-      // nothing was sent: the message and its passage come back unless the person wrote | selected anew
+      if (detail === "noAgent") void this.#readStatus();
+      // nothing was sent: the message comes back unless the person wrote anew; the passage too, unless agents may
+      // not see its file (attached again, every later message would be refused for it)
       if (this.draft === "") this.draft = text;
-      this.passage ??= passage;
+      if (detail === "hiddenFromAgents" && passage !== null) this.#hidden.add(passage.path);
+      else this.passage ??= passage;
     } finally {
       if (this.#root() === root) this.sending = false;
     }
@@ -378,7 +397,7 @@ export class AcpStore {
   /** Answers the question `requestId` with `option`. */
   async answer(requestId: string, option: PermissionChoice): Promise<void> {
     // a restarted agent numbers its questions afresh: an earlier card of the same id keeps its own answer
-    this.#answer(requestId, { status: "answered", option: option.name }, true);
+    this.#answer(requestId, { status: "answered", option: optionLabel(option) }, true);
     const root = this.#root();
     const result = await this.#client.call("acp.answer", { requestId, optionId: option.id });
     if (result.ok || this.#root() !== root) return;
@@ -446,12 +465,13 @@ export class AcpStore {
     } else this.refusal = { path, text: errorText(result.error) };
   }
 
-  /** Takes the passage selected in the open document as the one to attach (none selected: none). A selection | the
-   *  keyboard inside the panel changes nothing. */
+  /** Takes the passage selected in the open document as the one to attach (none selected | a file agents may not
+   *  see: none). A selection | the keyboard inside the panel changes nothing. */
   capture(): void {
     if (inPanel(document.activeElement) || inPanel(document.getSelection()?.anchorNode ?? null))
       return;
-    this.passage = selectedPassage();
+    const selected = selectedPassage();
+    this.passage = selected !== null && this.#hidden.has(selected.path) ? null : selected;
   }
 
   /** The header's Change, the palette command: the panel shows the picker. */
@@ -573,6 +593,7 @@ export class AcpStore {
     this.choosing = false;
     this.choiceRefusal = null;
     this.signingIn = false;
+    this.#hidden.clear();
   }
 
   /** Reads the chosen agent again (its state comes as news). */
@@ -737,15 +758,16 @@ export function canStart(entry: AgentEntry): boolean {
   return entry.how !== "missing" && entry.needs === null;
 }
 
-/** Registry ids the picker lists first, in this order (those this computer's list has). */
-const POPULAR: readonly string[] = [
-  "claude-acp",
-  "codex-acp",
-  "github-copilot-cli",
-  "gemini",
-  "opencode",
-  "goose",
-  "cursor",
+/** Registry ids the picker lists first, in this order (those this computer's list has), each with PerMark's own
+ *  words for it (the registry's are written for developers of the protocol). */
+const POPULAR: readonly { id: string; about: MessageKey }[] = [
+  { id: "claude-acp", about: "acp.about.claude-acp" },
+  { id: "codex-acp", about: "acp.about.codex-acp" },
+  { id: "github-copilot-cli", about: "acp.about.github-copilot-cli" },
+  { id: "gemini", about: "acp.about.gemini" },
+  { id: "opencode", about: "acp.about.opencode" },
+  { id: "goose", about: "acp.about.goose" },
+  { id: "cursor", about: "acp.about.cursor" },
 ];
 
 /** The picker's groups: the person's own command (when chosen), the popular agents, all the others A-Z. */
@@ -755,7 +777,8 @@ export type PickerGroups = {
   all: AgentEntry[];
 };
 
-/** The agents whose name, id, description (an own command: its words too) hold every word of `query`, in groups. */
+/** The agents whose name, id, descriptions (the registry's, the one shown; an own command: its words too) hold every
+ *  word of `query`, in groups. */
 export function pickerList(agents: readonly AgentEntry[], query: string): PickerGroups {
   const words = query
     .toLocaleLowerCase()
@@ -764,11 +787,11 @@ export function pickerList(agents: readonly AgentEntry[], query: string): Picker
   const found = agents.filter((agent) => {
     const command = agent.how === "custom" ? agent.command : "";
     const text =
-      `${entryName(agent)} ${agent.id} ${agent.description} ${command}`.toLocaleLowerCase();
+      `${entryName(agent)} ${agent.id} ${agent.description} ${entryAbout(agent)} ${command}`.toLocaleLowerCase();
     return words.every((word) => text.includes(word));
   });
   const listed = found.filter((agent) => agent.how !== "custom");
-  const rank = (agent: AgentEntry): number => POPULAR.indexOf(agent.id);
+  const rank = (agent: AgentEntry): number => POPULAR.findIndex((p) => p.id === agent.id);
   return {
     own: found.filter((agent) => agent.how === "custom"),
     popular: listed.filter((agent) => rank(agent) >= 0).sort((a, b) => rank(a) - rank(b)),
@@ -781,6 +804,12 @@ export function pickerList(agents: readonly AgentEntry[], query: string): Picker
 /** How the picker | a notice names an agent: the registry's name; the person's own command in words. */
 export function entryName(entry: AgentEntry): string {
   return entry.how === "custom" ? t("acp.ownCommand") : entry.name;
+}
+
+/** What the picker says an agent is: PerMark's words for a popular one, else the registry's. */
+export function entryAbout(entry: AgentEntry): string {
+  const about = entry.how === "custom" ? undefined : POPULAR.find((p) => p.id === entry.id)?.about;
+  return about === undefined ? entry.description : t(about);
 }
 
 /** What the chip of a listed agent says: how it would start, else what it needs first. */
@@ -833,6 +862,81 @@ export function whyNot(entry: AgentEntry): {
       return { why: "acp.why.install", help: "acp.pick.howToInstall", url: null };
     default:
       return lack satisfies never;
+  }
+}
+
+/** What a question's answer button says: what it does, in the person's words; another kind keeps the agent's words
+ *  (its own label is the button's tooltip either way). */
+export function optionLabel(option: PermissionChoice): string {
+  switch (option.kind) {
+    case "allow_once":
+      return t("acp.option.allowOnce");
+    case "reject_once":
+      return t("acp.option.rejectOnce");
+    case "allow_always":
+    case "reject_always":
+    case "other":
+      return option.name;
+    default:
+      return option.kind satisfies never;
+  }
+}
+
+/** The answers a card offers: an "always" answer goes when the same answer for once is offered. The agent keeps an
+ *  "always" in its own settings in the copy, which PerMark clears before each message, so it would ask again;
+ *  `hidden`: one went (the card says why). */
+export function shownOptions(options: readonly PermissionChoice[]): {
+  shown: PermissionChoice[];
+  hidden: boolean;
+} {
+  const offers = (kind: AcpOptionKind): boolean => options.some((o) => o.kind === kind);
+  const shown = options.filter(
+    (o) =>
+      !(o.kind === "allow_always" && offers("allow_once")) &&
+      !(o.kind === "reject_always" && offers("reject_once")),
+  );
+  return { shown, hidden: shown.length < options.length };
+}
+
+/** What a card names the kind of action by. */
+export function toolKindKey(kind: AcpToolKind): MessageKey {
+  switch (kind) {
+    case "read":
+      return "acp.toolKind.read";
+    case "edit":
+      return "acp.toolKind.edit";
+    case "delete":
+      return "acp.toolKind.delete";
+    case "move":
+      return "acp.toolKind.move";
+    case "search":
+      return "acp.toolKind.search";
+    case "execute":
+      return "acp.toolKind.execute";
+    case "think":
+      return "acp.toolKind.think";
+    case "fetch":
+      return "acp.toolKind.fetch";
+    case "switch_mode":
+      return "acp.toolKind.switchMode";
+    case "other":
+      return "acp.toolKind.other";
+    default:
+      return kind satisfies never;
+  }
+}
+
+/** What a card warns of before its answers (`null`: it stays inside the copy, whose edits wait for the person). */
+export function reachKey(reach: AcpReach): MessageKey | null {
+  switch (reach) {
+    case "outside":
+      return "acp.questionHint";
+    case "agentSettings":
+      return "acp.questionSettings";
+    case "copy":
+      return null;
+    default:
+      return reach satisfies never;
   }
 }
 
@@ -947,6 +1051,8 @@ function refusalKey(error: IpcError): MessageKey | null {
       return "acp.error.emptyPrompt";
     case "lineRange":
       return "acp.error.lineRange";
+    case "passageTooLarge":
+      return "acp.error.passageTooLarge";
     case "noQuestion":
     case "unknownOption":
       return "acp.error.noQuestion";

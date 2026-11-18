@@ -112,6 +112,7 @@ describe("the Assistant panel", () => {
       requestId: "7",
       title: "Run tests",
       kind: "execute",
+      reach: "outside",
       detail: "npm test",
       options: [
         { id: "yes", name: "Allow", kind: "allow_once" },
@@ -122,12 +123,151 @@ describe("the Assistant panel", () => {
     expect(root.textContent).toContain("npm test");
     // what Allow reaches is said beside the buttons: the person's computer, not the copy
     expect(root.textContent).toContain(t("acp.questionHint"));
-    buttonNamed("Allow").click();
+    buttonNamed(t("acp.option.allowOnce")).click();
     expect(answer).toHaveBeenCalledWith("7", { id: "yes", name: "Allow", kind: "allow_once" });
     acp.take({ type: "permissionDone", requestId: "7" });
     flushSync();
     expect(root.textContent).toContain(t("acp.questionClosed"));
     expect(root.textContent).not.toContain(t("acp.questionHint"));
+  });
+
+  it("a question's answers say what they do (the agent's words as a tooltip); 'always' answers are left out, with why", () => {
+    const answer = vi.spyOn(acp, "answer").mockResolvedValue();
+    const once = { id: "allow-once", name: "Yes", kind: "allow_once" } as const;
+    acp.take({
+      type: "permission",
+      requestId: "1:7",
+      title: "Run tests",
+      kind: "execute",
+      reach: "outside",
+      detail: "npm test",
+      options: [
+        once,
+        { id: "always", name: "Yes, and don't ask again", kind: "allow_always" },
+        { id: "reject", name: "No", kind: "reject_once" },
+        { id: "never", name: "No, never", kind: "reject_always" },
+      ],
+    });
+    open();
+    const card = root.querySelector(".question");
+    const shown = [...(card?.querySelectorAll(".options button") ?? [])].map((b) => [
+      b.textContent?.trim(),
+      b.getAttribute("title"),
+    ]);
+    expect(shown).toEqual([
+      [t("acp.option.allowOnce"), "Yes"],
+      [t("acp.option.rejectOnce"), "No"],
+    ]);
+    expect(card?.textContent).toContain(t("acp.alwaysHidden"));
+    buttonNamed(t("acp.option.allowOnce")).click();
+    expect(answer).toHaveBeenCalledWith("1:7", once);
+  });
+
+  it("the card warns of what allowing reaches: the computer, the agent's own settings, or nothing past the copy", () => {
+    const allow = { id: "yes", name: "Yes", kind: "allow_once" } as const;
+    const ask = (requestId: string, reach: "outside" | "agentSettings" | "copy"): void =>
+      acp.take({
+        type: "permission",
+        requestId,
+        title: "Do it",
+        kind: reach === "outside" ? "execute" : "edit",
+        reach,
+        detail: "x",
+        options: [allow],
+      });
+    ask("1", "outside");
+    ask("2", "agentSettings");
+    ask("3", "copy");
+    open();
+    const [outside, settings, copy] = [...root.querySelectorAll(".question")].map(
+      (card) => card.textContent ?? "",
+    );
+    expect(outside).toContain(t("acp.questionHint"));
+    expect(outside).not.toContain(t("acp.questionSettings"));
+    expect(settings).toContain(t("acp.questionSettings"));
+    expect(settings).not.toContain(t("acp.questionHint"));
+    expect(copy).not.toContain(t("acp.questionHint"));
+    expect(copy).not.toContain(t("acp.questionSettings"));
+  });
+
+  it("the card names the kind of action and shows the change it would write; a card with no details says so", () => {
+    const allow = { id: "yes", name: "Yes", kind: "allow_once" } as const;
+    acp.take({
+      type: "permission",
+      requestId: "1",
+      title: "Write settings",
+      kind: "edit",
+      reach: "agentSettings",
+      detail: ".claude/settings.json",
+      diff: {
+        path: ".claude/settings.json",
+        oldLines: ["{}"],
+        newLines: ["{", '  "allow": ["Bash(*)"]', "}"],
+        truncated: true,
+      },
+      summary: "Allow every command",
+      options: [allow],
+    });
+    acp.take({
+      type: "permission",
+      requestId: "2",
+      title: "Read notes",
+      kind: "execute",
+      reach: "outside",
+      detail: "",
+      options: [allow],
+    });
+    open();
+    const [edit, bare] = root.querySelectorAll(".question");
+    const rows = (kind: string): (string | null | undefined)[] =>
+      [...(edit?.querySelectorAll(`.row.${kind} .text`) ?? [])].map((row) => row.textContent);
+    expect(edit?.querySelector(".ask-kind")?.textContent).toBe(t("acp.toolKind.edit"));
+    expect(rows("del")).toEqual(["{}"]);
+    expect(rows("add")).toEqual(["{", '  "allow": ["Bash(*)"]', "}"]);
+    expect(edit?.textContent).toContain(t("acp.diffCut"));
+    expect(edit?.textContent).toContain("Allow every command");
+    expect(edit?.textContent).not.toContain(t("acp.noDetails"));
+    // a command titled like a read: its kind is said, and that the agent told nothing more
+    expect(bare?.querySelector(".ask-kind")?.textContent).toBe(t("acp.toolKind.execute"));
+    expect(bare?.textContent).toContain(t("acp.noDetails"));
+  });
+
+  it("Escape in the message box stops the agent while it works, as the hint says; on a card it answers nothing", () => {
+    const cancel = vi.spyOn(acp, "cancel").mockResolvedValue();
+    const answer = vi.spyOn(acp, "answer").mockResolvedValue();
+    open();
+    const escape = (isComposing = false): KeyboardEvent =>
+      new KeyboardEvent("keydown", { key: "Escape", isComposing, cancelable: true, bubbles: true });
+    const hint = (): string =>
+      document.getElementById(box().getAttribute("aria-describedby") ?? "")?.textContent ?? "";
+    box().dispatchEvent(escape());
+    expect(cancel).not.toHaveBeenCalled();
+    expect(hint()).not.toContain(t("acp.stopHint"));
+    acp.take({ type: "status", state: "working", error: null });
+    flushSync();
+    expect(hint()).toContain(t("acp.stopHint"));
+    // an IME's Escape ends its composition
+    box().dispatchEvent(escape(true));
+    expect(cancel).not.toHaveBeenCalled();
+    const stopKey = escape();
+    box().dispatchEvent(stopKey);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(stopKey.defaultPrevented).toBe(true);
+    acp.take({
+      type: "permission",
+      requestId: "9",
+      title: "Run",
+      kind: "execute",
+      reach: "outside",
+      detail: "x",
+      options: [{ id: "yes", name: "Yes", kind: "allow_once" }],
+    });
+    flushSync();
+    const card = root.querySelector<HTMLElement>(".question");
+    card?.dispatchEvent(escape());
+    card?.querySelector("button")?.dispatchEvent(escape());
+    expect(answer).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it("Enter sends; Shift+Enter and an IME's Enter do not", () => {
@@ -178,6 +318,7 @@ describe("the Assistant panel", () => {
       requestId: "7",
       title: "Run tests",
       kind: "execute",
+      reach: "outside",
       detail: "npm test",
       options: [
         { id: "no", name: "Reject", kind: "reject_once" },
@@ -190,7 +331,7 @@ describe("the Assistant panel", () => {
     const card = root.querySelector<HTMLElement>(".question");
     expect(document.activeElement).toBe(card);
     expect(card?.getAttribute("aria-labelledby")).toBe(card?.querySelector(".ask")?.id);
-    buttonNamed("Allow").click();
+    buttonNamed(t("acp.option.allowOnce")).click();
     await settle();
     expect(document.activeElement).toBe(box());
   });
@@ -204,6 +345,7 @@ describe("the Assistant panel", () => {
       requestId: "8",
       title: "Run",
       kind: "execute",
+      reach: "outside",
       detail: "x",
       options: [{ id: "yes", name: "Allow", kind: "allow_once" }],
     });
@@ -433,6 +575,35 @@ describe("the Assistant panel", () => {
     expect(rows(added)).toEqual([["add", "# New"]]);
   });
 
+  it("a blank line above | below a run places nothing: no empty row is drawn for it", () => {
+    acp.changes = [
+      {
+        path: "docs/a.md",
+        kind: "modified",
+        hunks: [
+          {
+            key: "a7",
+            oldStart: 7,
+            oldLines: ["| a |"],
+            newLines: ["| a |", "| b |"],
+            truncated: false,
+            contextBefore: "",
+            contextAfter: "  ",
+          },
+        ],
+      },
+    ];
+    open();
+    const rows = [...root.querySelectorAll(".hunk .row")].map((row) => [
+      row.classList.contains("same") ? "same" : row.classList.contains("add") ? "add" : "del",
+      row.querySelector(".text")?.textContent,
+    ]);
+    expect(rows).toEqual([
+      ["same", "| a |"],
+      ["add", "| b |"],
+    ]);
+  });
+
   it("a long run draws its first rows until Show all; a run the backend cut says so", () => {
     const lines = Array.from({ length: 450 }, (_, i) => `line ${String(i)}`);
     acp.changes = [
@@ -571,6 +742,26 @@ describe("the choice of the agent", () => {
     expect(acp.loadAgents).toHaveBeenCalled();
   });
 
+  it("popular agents are described in PerMark's words, others in the list's; the intro is one sentence, the rest behind a disclosure", () => {
+    firstRun();
+    open();
+    const about = (name: string): string | null | undefined =>
+      [...root.querySelectorAll(".agent")]
+        .find((a) => a.querySelector(".name")?.textContent === name)
+        ?.querySelector(".description")?.textContent;
+    expect(about("Claude Agent")).toBe(t("acp.about.claude-acp"));
+    expect(about("Codex")).toBe(t("acp.about.codex-acp"));
+    expect(about("goose")).toBe(t("acp.about.goose"));
+    expect(root.textContent).not.toContain("ACP wrapper for Anthropic");
+    expect(about("Cline")).toBe(MOCK_AGENTS.find((a) => a.id === "cline")?.description);
+    expect(root.textContent).toContain(t("acp.pick.introShort"));
+    const more = root.querySelector(".picker details.intro");
+    expect(more?.querySelector("summary")?.textContent).toBe(t("acp.pick.more"));
+    expect(more?.hasAttribute("open")).toBe(false);
+    expect(more?.textContent).toContain(t("acp.pick.intro"));
+    expect(more?.textContent).toContain(t("acp.pick.signInHint"));
+  });
+
   it("an own command shows as Own command with its command line, in the list and the header", () => {
     const typed = '"C:\\a b\\node.exe" agent.mjs --acp';
     acp.status = {
@@ -687,7 +878,8 @@ describe("the choice of the agent", () => {
     search.dispatchEvent(new Event("input", { bubbles: true }));
     flushSync();
     const names = [...root.querySelectorAll(".agents .name")].map((n) => n.textContent);
-    expect(names).toEqual(["Amp", "Cline"]);
+    // a popular agent by PerMark's words for it too
+    expect(names).toEqual(["Codex", "Amp", "Cline"]);
     search.value = "zzz";
     search.dispatchEvent(new Event("input", { bubbles: true }));
     flushSync();

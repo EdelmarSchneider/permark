@@ -3019,6 +3019,8 @@ export default {
   "acp.error.busy": "Ajan hâlâ çalışıyor. Bitmesini bekleyin veya durdurun.",
   "acp.error.emptyPrompt": "Önce bir mesaj yazın.",
   "acp.error.lineRange": "Eklenen satırlar artık belgede yok.",
+  "acp.error.passageTooLarge":
+    "Eklenen metin parçası çok uzun. Belgenin daha kısa bir bölümünü seçin.",
   "acp.error.noQuestion": "Ajan artık bu yanıtı beklemiyor.",
   "acp.error.unsaved":
     "Bu belgede kaydedilmemiş düzenlemeler var. Önce kaydedin, sonra yeniden deneyin.",
@@ -3035,7 +3037,7 @@ export default {
   "acp.retry": "Yeniden dene",
   "acp.pick.title": "Bir ajan seçin",
   "acp.pick.intro":
-    "Ajan, Claude veya Codex gibi, PerMark'ın sizin için başlattığı bir yapay zeka programıdır. Bu klasörün dışında tutulan bir kopyasını düzenler ve düzenlemeleri dosyalarınıza yalnızca siz kabul ettiğinizde ulaşır. Gönderdikleriniz ve ajanın kopyada okudukları ajana ve sağlayıcısına gider. Ajan orada kendi hesabınızı kullanır ve bu ücretli olabilir.",
+    "Bu klasörün dışında tutulan bir kopyasını düzenler ve düzenlemeleri dosyalarınıza yalnızca siz kabul ettiğinizde ulaşır. Gönderdikleriniz ve ajanın kopyada okudukları ajana ve sağlayıcısına gider. Ajan orada kendi hesabınızı kullanır ve bu ücretli olabilir.",
   "acp.pick.search": "Ajanlarda ara",
   "acp.pick.loading": "Liste okunuyor…",
   "acp.pick.none": "Aramanızla eşleşen ajan yok.",
@@ -3049,7 +3051,7 @@ export default {
   "acp.pick.commandWarning":
     "PerMark bu programı bilgisayarınızda sizin yetkilerinizle başlatacak. Yalnızca güvendiğiniz bir programı kullanın.",
   "acp.pick.useCommand": "Bu komutu kullan",
-  "acp.how.native": "Yüklü",
+  "acp.how.native": "Bilgisayarınızda bulundu",
   "acp.how.npx": "İlk kullanımda indirilir",
   "acp.how.uvx": "İlk kullanımda indirilir",
   "acp.how.custom": "Komutunuz",
@@ -3157,4 +3159,35 @@ export default {
   "acp.error.hiddenFromAgents": "Metin parçası, ajanların göremeyeceği bir dosyadan geliyor.",
   "acp.error.insideProject": "Ajan için kopya bu klasörün içinde tutulamaz.",
   "acp.error.notApplied": "PerMark bu değişikliği uygulayamadı.",
+  "acp.option.allowOnce": "Bir kez izin ver",
+  "acp.option.rejectOnce": "İzin verme",
+  "acp.alwaysHidden":
+    "PerMark “her zaman” seçimlerini koruyamaz: kopyadaki ajanın kendi ayarlarını temizler, bu yüzden ajan yeniden sorar.",
+  "acp.questionSettings":
+    "Bu, ajanın kendi ayarlarını değiştirir; PerMark bu ayarları kopyanın dışında tutar.",
+  "acp.noDetails": "Ajan ayrıntı vermedi.",
+  "acp.diffCut": "Bu değişikliğin yalnızca başı gösteriliyor.",
+  "acp.stopHint": "Esc ajanı durdurur.",
+  "acp.toolKind.read": "Okuma",
+  "acp.toolKind.edit": "Düzenleme",
+  "acp.toolKind.delete": "Silme",
+  "acp.toolKind.move": "Taşıma",
+  "acp.toolKind.search": "Arama",
+  "acp.toolKind.execute": "Komut",
+  "acp.toolKind.think": "Planlama",
+  "acp.toolKind.fetch": "Web erişimi",
+  "acp.toolKind.switchMode": "Mod değişikliği",
+  "acp.toolKind.other": "Diğer",
+  "acp.pick.introShort":
+    "Ajan, Claude veya Codex gibi, PerMark'ın sizin için başlattığı bir yapay zeka programıdır.",
+  "acp.pick.more": "Bir ajan kullandığımda ne olur?",
+  "acp.about.claude-acp": "Claude, Anthropic'in yapay zekası.",
+  "acp.about.codex-acp": "Codex, OpenAI'ın kodlama ajanı.",
+  "acp.about.github-copilot-cli": "GitHub Copilot, GitHub'ın yapay zeka asistanı.",
+  "acp.about.gemini": "Gemini, Google'ın yapay zekası.",
+  "acp.about.opencode":
+    "OpenCode, birçok yapay zeka sağlayıcısıyla çalışan açık kaynaklı bir ajan.",
+  "acp.about.goose":
+    "goose, Block'un birçok yapay zeka sağlayıcısıyla çalışan açık kaynaklı ajanı.",
+  "acp.about.cursor": "Cursor kod düzenleyicisinin ajanı.",
 } satisfies Messages;

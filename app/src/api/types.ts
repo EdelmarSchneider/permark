@@ -238,6 +238,7 @@ import type { Version } from "./generated/Version";
 import type { AcpError } from "./generated/AcpError";
 import type { AcpErrorCode } from "./generated/AcpErrorCode";
 import type { AcpOptionKind } from "./generated/AcpOptionKind";
+import type { AcpReach } from "./generated/AcpReach";
 import type { AcpState } from "./generated/AcpState";
 import type { AcpStatus } from "./generated/AcpStatus";
 import type { AcpStopReason } from "./generated/AcpStopReason";
@@ -259,6 +260,7 @@ import type { LoginArgs } from "./generated/LoginArgs";
 import type { LoginKind } from "./generated/LoginKind";
 import type { LoginMethod } from "./generated/LoginMethod";
 import type { PermissionChoice } from "./generated/PermissionChoice";
+import type { PermissionDiff } from "./generated/PermissionDiff";
 import type { PromptArgs } from "./generated/PromptArgs";
 import type { PromptSelection } from "./generated/PromptSelection";
 import type { UndoArgs } from "./generated/UndoArgs";
@@ -1020,6 +1022,7 @@ export type {
   AcpError,
   AcpErrorCode,
   AcpOptionKind,
+  AcpReach,
   AcpState,
   AcpStatus,
   AcpStopReason,
@@ -1041,6 +1044,7 @@ export type {
   LoginKind,
   LoginMethod,
   PermissionChoice,
+  PermissionDiff,
   PromptArgs,
   PromptSelection,
   UndoArgs,

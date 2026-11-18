@@ -224,9 +224,9 @@ function guideChanges(): FileChange[] {
 }
 
 const OPTIONS: PermissionChoice[] = [
-  { id: "allow-once", name: "Allow", kind: "allow_once" },
-  { id: "allow-always", name: "Always allow", kind: "allow_always" },
-  { id: "reject", name: "Reject", kind: "reject_once" },
+  { id: "allow-once", name: "Yes", kind: "allow_once" },
+  { id: "allow-always", name: "Yes, and don't ask again", kind: "allow_always" },
+  { id: "reject", name: "No", kind: "reject_once" },
 ];
 
 /** One news of a reply, or the question the reply stops at until it is answered. */
@@ -248,6 +248,9 @@ function projectFile(path: string): void {
     throw new MockPluginError("invalidPath", path, null);
 }
 
+/** Longest passage a prompt attaches, in UTF-8 bytes (the plugin's `MAX_PASSAGE_BYTES`). */
+const MAX_PASSAGE_BYTES = 256 * 1024;
+
 /** Refuses a prompt the plugin would refuse before anything starts. */
 function check(args: PromptArgs): void {
   if (args.text.trim() === "" && args.selection === undefined)
@@ -257,6 +260,8 @@ function check(args: PromptArgs): void {
     projectFile(selection.path);
     if (selection.fromLine === 0 || selection.toLine < selection.fromLine)
       throw new MockPluginError("invalidData", selection.path, "lineRange");
+    if (new TextEncoder().encode(selection.text).length > MAX_PASSAGE_BYTES)
+      throw new MockPluginError("tooLarge", selection.path, "passageTooLarge");
   }
   if (args.document !== undefined) projectFile(args.document);
 }
@@ -390,7 +395,9 @@ export function createMockAcp(
           requestId: `q${String(turn)}`,
           title: "Run the link check",
           kind: "execute",
+          reach: "outside",
           detail: "npm run check-links",
+          summary: "Checks every link in the guide",
           options: OPTIONS,
         },
       },

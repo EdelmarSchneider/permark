@@ -67,10 +67,11 @@ pub struct HunkView {
     pub key: String,
     /// 1-based line of the real file where the run starts (no old lines: the line the new ones go before).
     pub old_start: u32,
-    /// At most 400 lines per side (`truncated`).
+    /// At most 400 lines per side, each at most 4 KiB (`truncated`).
     pub old_lines: Vec<String>,
     pub new_lines: Vec<String>,
-    /// A side had more than 400 lines: only the first are shown; a choice still applies the whole run.
+    /// A side had more than 400 lines | a line longer than 4 KiB: only the first lines | bytes are shown; a choice still
+    /// applies the whole run.
     pub truncated: bool,
     /// The real file's line just above the run, shown so the run reads in place (`None`: the run starts the file);
     /// never part of a choice.
@@ -249,8 +250,10 @@ pub struct LoginMethod {
     pub name: String,
     pub description: Option<String>,
     pub kind: LoginKind,
-    /// `terminal`: the whole command line to run (the agent's command + the method's arguments; variables first as
-    /// `NAME=value`); `env`: the variable names, comma separated; `agent`: `null`.
+    /// `terminal`: what to paste into a terminal: the variables to set first on a line of their own (when any), in
+    /// the shell of this computer (Windows: PowerShell `$env:NAME='value'`; else `export NAME=value`), then the agent's
+    /// command + the method's arguments (a word that is not plain in single quotes); `env`: the variable names, comma
+    /// separated; `agent`: `null`.
     pub hint: Option<String>,
 }
 
@@ -343,6 +346,7 @@ pub struct PromptSelection {
     pub from_line: u32,
     /// Last line, 1-based (inclusive).
     pub to_line: u32,
+    /// At most 256 KiB (longer: refused, `passageTooLarge`).
     pub text: String,
 }
 
@@ -439,6 +443,33 @@ pub struct PermissionChoice {
     pub kind: AcpOptionKind,
 }
 
+/// Where what a permission question asks for would act: what its card warns of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum AcpReach {
+    /// Files inside the copy only, none of them agent settings (reading, planning, its own mode included).
+    Copy,
+    /// Agent settings | project machinery inside the copy: kept out of it, a next start of the agent would load them.
+    AgentSettings,
+    /// The person's computer: a command, a fetch, a kind not known to be work on files, or a file outside the copy.
+    Outside,
+}
+
+/// What a permission question's tool call would write to a file (its first diff), cut for the card.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PermissionDiff {
+    /// Project path inside the copy, else the path as the agent wrote it.
+    pub path: String,
+    /// Empty: a new file.
+    pub old_lines: Vec<String>,
+    pub new_lines: Vec<String>,
+    /// A side had more lines | a longer line than shown, or the call writes more than one file.
+    pub truncated: bool,
+}
+
 /// Event `acp:update`: what the agent of the project does, as it happens.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(
@@ -474,8 +505,18 @@ pub enum AcpUpdate {
         request_id: String,
         title: String,
         kind: AcpToolKind,
+        /// Where it would act.
+        reach: AcpReach,
         /// The command to run, else the paths it touches (project paths inside the copy), one per line.
         detail: String,
+        /// What it would write (`None`: the agent sent no diff).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        diff: Option<PermissionDiff>,
+        /// Text the agent attached to the tool call, cut (`None`: none).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        summary: Option<String>,
         options: Vec<PermissionChoice>,
     },
     /// The question was answered | dropped (Stop, the agent withdrew it, the turn ended, new conversation): its card

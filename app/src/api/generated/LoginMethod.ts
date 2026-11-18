@@ -10,7 +10,9 @@ export type LoginMethod = { id: string,
  */
 name: string, description: string | null, kind: LoginKind, 
 /**
- * `terminal`: the whole command line to run (the agent's command + the method's arguments; variables first as
- * `NAME=value`); `env`: the variable names, comma separated; `agent`: `null`.
+ * `terminal`: what to paste into a terminal: the variables to set first on a line of their own (when any), in
+ * the shell of this computer (Windows: PowerShell `$env:NAME='value'`; else `export NAME=value`), then the agent's
+ * command + the method's arguments (a word that is not plain in single quotes); `env`: the variable names, comma
+ * separated; `agent`: `null`.
  */
 hint: string | null, };

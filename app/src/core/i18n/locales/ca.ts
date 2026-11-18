@@ -3046,6 +3046,8 @@ export default {
   "acp.error.busy": "L'agent encara treballa. Espereu-lo o atureu-lo.",
   "acp.error.emptyPrompt": "Primer escriviu un missatge.",
   "acp.error.lineRange": "Les línies adjuntes ja no són al document.",
+  "acp.error.passageTooLarge":
+    "El fragment adjunt és massa llarg. Seleccioneu una part més curta del document.",
   "acp.error.noQuestion": "L'agent ja no espera aquesta resposta.",
   "acp.error.unsaved":
     "Aquest document té edicions sense desar. Deseu-lo primer i torneu-ho a provar.",
@@ -3064,7 +3066,7 @@ export default {
   "acp.retry": "Torna-ho a provar",
   "acp.pick.title": "Tria un agent",
   "acp.pick.intro":
-    "Un agent és un programa d'IA, com ara Claude o Codex, que el PerMark inicia per a vós. Edita una còpia d'aquesta carpeta que es guarda fora d'ella, i les seves edicions només arriben als vostres fitxers quan les accepteu. El que envieu, i el que llegeix a la còpia, va a l'agent i al seu proveïdor. Hi fa servir el vostre propi compte, cosa que pot costar diners.",
+    "Edita una còpia d'aquesta carpeta que es guarda fora d'ella, i les seves edicions només arriben als vostres fitxers quan les accepteu. El que envieu, i el que llegeix a la còpia, va a l'agent i al seu proveïdor. Hi fa servir el vostre propi compte, cosa que pot costar diners.",
   "acp.pick.search": "Cerca agents",
   "acp.pick.loading": "S'està llegint la llista…",
   "acp.pick.none": "Cap agent no coincideix amb la cerca.",
@@ -3078,7 +3080,7 @@ export default {
   "acp.pick.commandWarning":
     "El PerMark iniciarà aquest programa al vostre ordinador, amb els vostres permisos. Feu servir només un programa en què confieu.",
   "acp.pick.useCommand": "Fes servir aquesta ordre",
-  "acp.how.native": "Instal·lat",
+  "acp.how.native": "Trobat al vostre ordinador",
   "acp.how.npx": "Es baixa en el primer ús",
   "acp.how.uvx": "Es baixa en el primer ús",
   "acp.how.custom": "La vostra ordre",
@@ -3189,4 +3191,34 @@ export default {
   "acp.error.hiddenFromAgents": "El fragment prové d'un fitxer que els agents no poden veure.",
   "acp.error.insideProject": "La còpia per a l'agent no es pot desar dins d'aquesta carpeta.",
   "acp.error.notApplied": "El PerMark no ha pogut aplicar aquest canvi.",
+  "acp.option.allowOnce": "Permet una vegada",
+  "acp.option.rejectOnce": "No ho permetis",
+  "acp.alwaysHidden":
+    "El PerMark no pot conservar les respostes «sempre»: esborra la configuració pròpia de l'agent a la còpia, de manera que l'agent tornarà a preguntar.",
+  "acp.questionSettings":
+    "Això canviaria la configuració pròpia de l'agent, que el PerMark manté fora de la còpia.",
+  "acp.noDetails": "L'agent no ha donat detalls.",
+  "acp.diffCut": "Només es mostra el començament d'aquest canvi.",
+  "acp.stopHint": "Esc atura l'agent.",
+  "acp.toolKind.read": "Lectura",
+  "acp.toolKind.edit": "Edició",
+  "acp.toolKind.delete": "Supressió",
+  "acp.toolKind.move": "Trasllat",
+  "acp.toolKind.search": "Cerca",
+  "acp.toolKind.execute": "Ordre",
+  "acp.toolKind.think": "Planificació",
+  "acp.toolKind.fetch": "Accés al web",
+  "acp.toolKind.switchMode": "Canvi de mode",
+  "acp.toolKind.other": "Altres",
+  "acp.pick.introShort":
+    "Un agent és un programa d'IA, com ara Claude o Codex, que el PerMark inicia per a vós.",
+  "acp.pick.more": "Què passa quan faig servir un agent?",
+  "acp.about.claude-acp": "Claude, la IA d'Anthropic.",
+  "acp.about.codex-acp": "Codex, l'agent de programació d'OpenAI.",
+  "acp.about.github-copilot-cli": "GitHub Copilot, l'assistent d'IA de GitHub.",
+  "acp.about.gemini": "Gemini, la IA de Google.",
+  "acp.about.opencode": "OpenCode, un agent de codi obert que funciona amb molts proveïdors d'IA.",
+  "acp.about.goose":
+    "goose, un agent de codi obert de Block que funciona amb molts proveïdors d'IA.",
+  "acp.about.cursor": "L'agent de l'editor de codi Cursor.",
 } satisfies Messages;

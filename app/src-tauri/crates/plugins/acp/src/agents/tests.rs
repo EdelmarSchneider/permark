@@ -82,13 +82,37 @@ fn exact_version(version: &str) -> bool {
             .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
 }
 
-/// Variables that change how a runner loads code or finds programs: never set by a catalog entry.
+/// Variables that change how a runner loads code, finds programs, or where it downloads a pinned package from and how
+/// it checks that download: never set by a catalog entry (mirror of `LOADER_NAMES` | `LOADER_PREFIXES` in
+/// `agents/refresh.mjs`).
 fn loader_variable(name: &str) -> bool {
     let name = name.to_ascii_uppercase();
-    ["NODE_OPTIONS", "NODE_PATH", "PATH"].contains(&name.as_str())
-        || ["LD_", "DYLD_", "PYTHON", "UV_", "NPM_CONFIG_"]
-            .iter()
-            .any(|prefix| name.starts_with(prefix))
+    [
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "PATH",
+        "PATHEXT",
+        "COMSPEC",
+        "NODE_TLS_REJECT_UNAUTHORIZED",
+        "NODE_EXTRA_CA_CERTS",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "REQUESTS_CA_BUNDLE",
+        "CURL_CA_BUNDLE",
+    ]
+    .contains(&name.as_str())
+        || name.ends_with("_PROXY")
+        || [
+            "LD_",
+            "DYLD_",
+            "PYTHON",
+            "UV_",
+            "PIP_",
+            "NPM_CONFIG_",
+            "BUN_",
+        ]
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
 }
 
 /// What the app may start from the shipped catalog: each package pinned to one exact version (`npx`: `name@x.y.z`,
@@ -120,7 +144,26 @@ fn the_snapshot_pins_every_package_and_sets_no_loader_variable() {
     }
     assert!(loader_variable("node_options") && loader_variable("LD_PRELOAD"));
     assert!(loader_variable("npm_config_registry") && loader_variable("PYTHONPATH"));
+    // where a pinned package is downloaded from, and how much its download is checked
+    for weakening in [
+        "NODE_TLS_REJECT_UNAUTHORIZED",
+        "node_extra_ca_certs",
+        "HTTP_PROXY",
+        "https_proxy",
+        "ALL_PROXY",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+        "UV_INDEX_URL",
+        "PIP_INDEX_URL",
+        "PIP_EXTRA_INDEX_URL",
+        "BUN_CONFIG_REGISTRY",
+        "COMSPEC",
+        "PATHEXT",
+    ] {
+        assert!(loader_variable(weakening), "{weakening}");
+    }
     assert!(!loader_variable("FAST_AGENT_MODEL"));
+    assert!(!loader_variable("VT_ACP_ENABLED"));
 
     for listed in snapshot() {
         let d = &listed.distribution;

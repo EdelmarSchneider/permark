@@ -1,5 +1,6 @@
 <script lang="ts">
-  // The choice of the agent: a top row that stays in view (the title, Cancel once an agent is chosen), the person's
+  // The choice of the agent: a top row that stays in view (the title, Cancel once an agent is chosen), one sentence of
+  // what an agent is (the rest, what happens to the person's words and account, behind a disclosure), the person's
   // own command ("Other command…" near the top, never below a long list), then the popular agents, then all the others
   // A-Z, found by a word of the name | description. An agent that can start has Choose (the one in use says so); one
   // that cannot says why and where to get what it needs, never a Choose that does nothing. The command each runs waits
@@ -9,7 +10,7 @@
   import type { AgentEntry } from "../../api";
   import { t } from "../../core/i18n";
   import Note from "./Note.svelte";
-  import { acp, canStart, entryName, howKey, pickerList, whyNot } from "./store.svelte";
+  import { acp, canStart, entryAbout, entryName, howKey, pickerList, whyNot } from "./store.svelte";
 
   type Props = {
     /** The person opened the picker: the search field takes the keyboard. */
@@ -103,6 +104,7 @@
       {@const ready = canStart(entry)}
       {@const name = entryName(entry)}
       {@const how = howKey(entry)}
+      {@const about = entryAbout(entry)}
       <li class={["agent", entry.chosen && "chosen"]}>
         <div class="head">
           <span class="name">{name}</span>
@@ -112,8 +114,8 @@
             <span class={["how", ready ? "ready" : "missing"]}>{t(how)}</span>
           {/if}
         </div>
-        {#if entry.description !== ""}
-          <p class="description" title={entry.description}>{entry.description}</p>
+        {#if about !== ""}
+          <p class="description" title={about}>{about}</p>
         {/if}
         {#if entry.how === "custom"}
           <!-- the person's own words: what they typed is what identifies it -->
@@ -178,8 +180,14 @@
   {#if snap}
     <Note tone="muted">{t("acp.snap")}</Note>
   {:else}
-    <Note tone="muted">{t("acp.pick.intro")}</Note>
-    <Note tone="muted">{t("acp.pick.signInHint")}</Note>
+    <Note tone="muted">{t("acp.pick.introShort")}</Note>
+    <details class="intro">
+      <summary>{t("acp.pick.more")}</summary>
+      <div class="intro-text">
+        <Note tone="muted">{t("acp.pick.intro")}</Note>
+        <Note tone="muted">{t("acp.pick.signInHint")}</Note>
+      </div>
+    </details>
 
     {#if other}
       <form class="other" onsubmit={(event) => void useCommand(event)}>
@@ -376,6 +384,18 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
+  }
+  .intro-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+  .intro summary {
+    min-height: var(--icon-btn-sm);
+    color: var(--accent-text);
+    font-size: var(--fs-ui-sm);
+    line-height: var(--icon-btn-sm);
+    cursor: pointer;
   }
   .details summary {
     min-height: var(--icon-btn-sm);
