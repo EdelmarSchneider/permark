@@ -52,7 +52,7 @@ use agent_client_protocol_schema::v1::{
     AGENT_METHOD_NAMES, CLIENT_METHOD_NAMES, PROTOCOL_LEVEL_METHOD_NAMES,
 };
 use agent_client_protocol_schema::ProtocolVersion;
-use permark_core::paths::{Root, Vault, VaultPath};
+use permark_core::paths::{self, Root, Vault, VaultPath};
 use permark_core::plugins::PluginEvents;
 use permark_core::{ErrorKind, IpcError};
 use serde_json::Value;
@@ -1019,7 +1019,10 @@ impl Core {
             .place
             .as_ref()
             .ok_or_else(|| AcpError::new(AcpErrorCode::NoProfile))?;
+        // the real spelling (links, 8.3 names): the agent's cwd, and so every place it names, matches the copy's
+        // canonical root without a second lookup (which only runs on the same volume)
         let dir = copy_dir(place, self.host.project.root());
+        let dir = paths::canonicalize_lenient(&dir).unwrap_or(dir);
         let built = WorkCopy::build(self.host.project.clone(), dir).map_err(|e| copy_error(&e))?;
         if !self.is_current(generation) {
             let _ = built.remove();

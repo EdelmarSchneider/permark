@@ -1517,6 +1517,47 @@ fn the_agent_program_starts_in_an_empty_folder_never_in_the_copy() {
     assert_eq!(PathBuf::from(new["params"]["cwd"].as_str().unwrap()), copy);
 }
 
+/// The profile reached through a link (macOS temp folders sit behind /var -> /private/var, Windows ones can carry 8.3
+/// names, a junction can lead to another volume): the session opens on the copy's real spelling, so the places the
+/// agent names in it match the copy's own root; places named through the link still count as inside.
+#[test]
+fn the_session_opens_on_the_real_spelling_of_the_copy() {
+    let fx = Fx::new(|peer, _| {
+        let notes = peer.in_copy("notes.md");
+        peer.update(&json!({
+            "sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Edit notes.md", "kind": "edit",
+            "status": "pending", "locations": [{ "path": notes }], "rawInput": { "file_path": notes },
+        }));
+        peer.ask(&json!(1), &json!({ "toolCallId": "t1" }));
+        peer.until(|m| m["id"] == 1)?;
+        Some("end_turn")
+    });
+    let real = fx.profile.path().join("real");
+    std::fs::create_dir_all(&real).unwrap();
+    let alias = fx.profile.path().join("work");
+    if crate::work::tests::link(&real, &alias).is_err() {
+        return; // the system refused a folder link here: nothing to spell through
+    }
+    fx.ask("Edit the notes.");
+    fx.events.turn_end();
+    let spelled = alias.join(fx.project.path().file_name().unwrap());
+    let copy = Root::open(&spelled).unwrap();
+    let new = fx
+        .fake
+        .seen()
+        .into_iter()
+        .find(|m| m["method"] == "session/new")
+        .unwrap();
+    let cwd = PathBuf::from(new["params"]["cwd"].as_str().unwrap());
+    assert_eq!(cwd, copy.path());
+    assert_ne!(cwd, spelled);
+    assert_eq!(
+        fx.fake.reply_to(&json!(1))["result"],
+        json!({ "outcome": { "outcome": "selected", "optionId": "allow-once" } })
+    );
+    assert!(inside(&Vault::new(copy), &spelled.join("notes.md")));
+}
+
 /// Claude's adapter turns on its mode that skips every question unless the client opts out: the session asks it never
 /// to, whatever a settings file | a subagent asks for.
 #[test]

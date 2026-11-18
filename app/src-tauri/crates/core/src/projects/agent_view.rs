@@ -1,0 +1,357 @@
+//! What an agent may see of the project: one predicate for every tool, every list, every snippet and every copy made
+//! for an agent. Hidden paths are answered exactly as missing ones. Silenced paths are not hidden: silence quiets the
+//! person's attention only. Projects inside the folder narrow it (`projects.md` §5.2): found projects not included,
+//! missing ones, members the person switched off, each member's own `.aiignore` + `[agent] deny_paths`, a member's
+//! `[agent] deny` for the call's group, and (opened alone) the rules of an ancestor whose record lists this folder.
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
+
+use super::map::{within, AgentRules, ProjectMap};
+use crate::organizing::SilenceLookup;
+use crate::paths::{fold, key_of, Root, Vault, VaultPath, CASE_INSENSITIVE, WORKTREE_PREFIX};
+
+/// The ignore file agents honor (project root, gitignore syntax).
+pub const AI_IGNORE: &str = ".aiignore";
+/// Largest `.aiignore` read (a bigger one is read up to this size).
+pub(crate) const MAX_IGNORE_BYTES: u64 = 1024 * 1024;
+/// Folders of the project's own machinery (at any depth: a nested repository has its own), never shared.
+pub const PRIVATE_FOLDERS: [&str; 2] = [".permark", ".git"];
+
+/// Why [`Guard::file`] gives no file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refusal {
+    /// Outside, through a link, hidden, a folder, missing: all answered alike, so nothing hidden is named.
+    Missing,
+    /// A visible member's `[agent] deny` takes the call's group away below it (`member`: its project path).
+    DeniedBelow { member: String },
+}
+
+/// The rules of one call (read fresh: `.aiignore` and `.permark/config.toml` can change while an agent runs).
+pub struct Guard {
+    /// The project folder only: linked worktrees live outside it.
+    vault: Vault,
+    rules: Option<Gitignore>,
+    /// Projects inside the folder (none: a plain folder, nothing more to check).
+    scope: Option<Scope>,
+    /// The tool group of the call (a member's `[agent] deny` may take it away below it).
+    deny_group: Option<String>,
+}
+
+/// The narrowing the projects of the folder add to one call.
+struct Scope {
+    map: Arc<ProjectMap>,
+    /// Member key, segment count, its `.aiignore` + `deny_paths` (matched member-relative).
+    members: Vec<(String, usize, Gitignore)>,
+    /// Members whose `[agent] deny` holds the call's group: key + path (rows below them omitted, direct calls denied).
+    denied: Vec<(String, String)>,
+    /// Opened alone: an ancestor's rules (the folder's path below it, its rules).
+    ancestors: Vec<(String, Gitignore)>,
+    /// An ancestor listing this folder denies the call's group.
+    ancestor_denied: bool,
+}
+
+/// `.aiignore` lines + `deny_paths` patterns as one matcher (`None`: nothing in them).
+fn matcher(base: &Path, rules: &AgentRules) -> Option<Gitignore> {
+    let mut builder = GitignoreBuilder::new(base);
+    builder.case_insensitive(CASE_INSENSITIVE).ok();
+    let mut any = false;
+    for line in rules.aiignore.iter().chain(&rules.deny_paths) {
+        any |= builder.add_line(None, line).is_ok();
+    }
+    any.then(|| builder.build().ok())
+        .flatten()
+        .filter(|g| !g.is_empty())
+}
+
+/// Whether `rules` hide `path`, as written or in its composed (NFC) spelling: a name made on macOS can reach the
+/// folder decomposed while the person types `.aiignore` composed.
+fn ignores(rules: &Gitignore, path: &str, is_dir: bool) -> bool {
+    let hit = |p: &str| {
+        rules
+            .matched_path_or_any_parents(Path::new(p), is_dir)
+            .is_ignore()
+    };
+    // `key_of` is the NFC spelling, folded only where the matcher ignores case too
+    hit(path) || (!path.is_ascii() && hit(&key_of(path)))
+}
+
+impl Scope {
+    fn new(root: &Path, map: Arc<ProjectMap>, group: Option<&str>) -> Self {
+        let denies = |rules: &AgentRules| group.is_some_and(|g| rules.deny.contains(g));
+        let members = map
+            .members()
+            .iter()
+            .filter_map(|m| {
+                let mut base = root.to_path_buf();
+                base.extend(m.path.segments());
+                matcher(&base, &m.agent).map(|g| (m.key.clone(), m.path.segments().count(), g))
+            })
+            .collect();
+        // a member the agent may not see (off, or inside a closed one) never names itself in a denial
+        let denying = map
+            .members()
+            .iter()
+            .filter(|m| denies(&m.agent) && !map.closed_to_agent(m.path.as_str()))
+            .map(|m| (m.key.clone(), m.path.as_str().to_owned()))
+            .collect();
+        let ancestors = map
+            .ancestors
+            .iter()
+            .filter_map(|a| matcher(&a.base, &a.rules).map(|g| (a.rel.clone(), g)))
+            .collect();
+        let ancestor_denied = map.ancestors.iter().any(|a| denies(&a.rules));
+        Self {
+            map,
+            members,
+            denied: denying,
+            ancestors,
+            ancestor_denied,
+        }
+    }
+
+    /// Hidden by the projects of the folder, a member's group denial included.
+    fn hides(&self, path: &str, is_dir: bool) -> bool {
+        self.hides_absent(path, is_dir)
+            || self
+                .denied
+                .iter()
+                .any(|(member, _)| within(&key_of(path), member))
+    }
+
+    /// Hidden as if absent (answered `not found`): closed projects, rules along the chain, an ancestor's denial; not a
+    /// visible member's group denial (that one answers `denied below <member>`).
+    fn hides_absent(&self, path: &str, is_dir: bool) -> bool {
+        if self.ancestor_denied || self.map.closed_to_agent(path) {
+            return true;
+        }
+        let key = key_of(path);
+        let member_rule = self.members.iter().any(|(member, depth, rules)| {
+            within(&key, member) && {
+                let rel: Vec<&str> = path.split('/').skip(*depth).collect();
+                !rel.is_empty() && ignores(rules, &rel.join("/"), is_dir)
+            }
+        });
+        member_rule
+            || self
+                .ancestors
+                .iter()
+                .any(|(rel, rules)| ignores(rules, &format!("{rel}/{path}"), is_dir))
+    }
+
+    /// The member whose `[agent] deny` takes the call's group away at `path`.
+    fn denied_at(&self, path: &str) -> Option<&str> {
+        let key = key_of(path);
+        self.denied
+            .iter()
+            .find(|(member, _)| within(&key, member))
+            .map(|(_, shown)| shown.as_str())
+    }
+}
+
+impl Guard {
+    #[must_use]
+    pub fn new(root: &Root, deny_paths: &[String]) -> Self {
+        let mut builder = GitignoreBuilder::new(root.path());
+        builder.case_insensitive(CASE_INSENSITIVE).ok();
+        let mut any = false;
+        let file = root.path().join(AI_IGNORE);
+        if let Ok(bytes) = crate::fsx::read_bytes(&file, MAX_IGNORE_BYTES) {
+            for line in String::from_utf8_lossy(&bytes).lines() {
+                any |= builder.add_line(None, line).is_ok();
+            }
+        }
+        for pattern in deny_paths {
+            any |= builder.add_line(None, pattern).is_ok();
+        }
+        let rules = if any { builder.build().ok() } else { None };
+        Self {
+            vault: Vault::new(root.clone()),
+            rules,
+            scope: None,
+            deny_group: None,
+        }
+    }
+
+    /// The narrowing of the folder's projects for a call of the tool group `deny_group` (`None`: no tool group, e.g.
+    /// the published context or a copy for an agent). A plain folder's map adds nothing.
+    #[must_use]
+    pub fn with_projects(mut self, map: Arc<ProjectMap>, deny_group: Option<&str>) -> Self {
+        if !map.is_plain() {
+            self.scope = Some(Scope::new(self.vault.main().path(), map, deny_group));
+        }
+        self.deny_group = deny_group.map(str::to_owned);
+        self
+    }
+
+    /// The tool group this call was narrowed for (named by a [`Refusal::DeniedBelow`]).
+    #[must_use]
+    pub fn deny_group(&self) -> Option<&str> {
+        self.deny_group.as_deref()
+    }
+
+    /// Whether a project path (as the app stores it: `/` separators) is kept from agents.
+    #[must_use]
+    pub fn hidden(&self, path: &str, is_dir: bool) -> bool {
+        self.hidden_as(path, is_dir, true)
+    }
+
+    /// [`Guard::hidden`]; `denied`: a visible member's group denial counts too (lists), else only what answers as
+    /// absent (a direct call then names the denial).
+    fn hidden_as(&self, path: &str, is_dir: bool, denied: bool) -> bool {
+        if path.starts_with(WORKTREE_PREFIX) {
+            return true;
+        }
+        if path
+            .split('/')
+            .any(|segment| PRIVATE_FOLDERS.iter().any(|p| fold(segment) == fold(p)))
+        {
+            return true;
+        }
+        if self.scope.as_ref().is_some_and(|s| {
+            if denied {
+                s.hides(path, is_dir)
+            } else {
+                s.hides_absent(path, is_dir)
+            }
+        }) {
+            return true;
+        }
+        self.rules
+            .as_ref()
+            .is_some_and(|rules| ignores(rules, path, is_dir))
+    }
+
+    /// An existing, shared file of the project from an agent's word: `(project path, absolute path)`.
+    ///
+    /// # Errors
+    /// [`Refusal::Missing`] for anything else (outside, through a link, hidden, a folder, missing);
+    /// [`Refusal::DeniedBelow`] when a visible member denies the call's group there.
+    pub fn file(&self, raw: &str) -> Result<(String, PathBuf), Refusal> {
+        let path = VaultPath::parse(raw.trim()).map_err(|_| Refusal::Missing)?;
+        // what the agent may not see answers as missing first: a denial would name a hidden project
+        if path.is_root() || self.hidden_as(path.as_str(), false, false) {
+            return Err(Refusal::Missing);
+        }
+        if let Some(member) = self
+            .scope
+            .as_ref()
+            .and_then(|scope| scope.denied_at(path.as_str()))
+        {
+            return Err(Refusal::DeniedBelow {
+                member: member.to_owned(),
+            });
+        }
+        let abs = self.vault.resolve(&path).map_err(|_| Refusal::Missing)?;
+        if !abs.is_file() {
+            return Err(Refusal::Missing);
+        }
+        // `abs` is the real place (links followed): a link inside the project may lead to a hidden part of it
+        let shown = self.vault.relativize(&abs).ok_or(Refusal::Missing)?;
+        if self.hidden(shown.as_str(), false) {
+            return Err(Refusal::Missing);
+        }
+        Ok((path.as_str().to_owned(), abs))
+    }
+
+    /// Whether the file a read opened is a shared file of the folder (`None`: the system cannot tell, refused). A read
+    /// checks the place it really opened: a link swapped in after [`Guard::file`] and before the open never leads out
+    /// of the folder or to a hidden part of it.
+    #[must_use]
+    pub fn opened_shared(&self, opened: Option<&Path>) -> bool {
+        opened
+            .and_then(|o| self.vault.relativize(o))
+            .is_some_and(|shown| !shown.is_root() && !self.hidden(shown.as_str(), false))
+    }
+
+    /// The guard as a search filter: hidden paths do not answer.
+    #[must_use]
+    pub fn as_lookup(self: &Arc<Self>) -> Arc<dyn SilenceLookup> {
+        Arc::new(Lookup(Arc::clone(self)))
+    }
+}
+
+struct Lookup(Arc<Guard>);
+
+impl SilenceLookup for Lookup {
+    fn is_silenced(&self, path: &str) -> bool {
+        self.0.hidden(path, false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The file a read opened is checked where it really is: a link swapped in between the check of the path and the
+    /// open can lead nowhere outside the folder or hidden in it.
+    #[test]
+    fn a_read_is_kept_only_when_the_opened_file_is_shared() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dunce::canonicalize(dir.path()).unwrap();
+        let proj = base.join("proj");
+        for (path, text) in [
+            ("docs/a.md", "# A\n"),
+            ("private/s.md", "# S\n"),
+            (".aiignore", "private/\n"),
+        ] {
+            let file = proj.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, text).unwrap();
+        }
+        std::fs::write(base.join("outside.md"), "# Out\n").unwrap();
+        let root = Root::open(&proj).unwrap();
+        let guard = Guard::new(&root, &[]);
+        assert_eq!(
+            guard.file("docs/a.md").unwrap(),
+            ("docs/a.md".to_owned(), proj.join("docs").join("a.md"))
+        );
+        assert_eq!(guard.file("private/s.md"), Err(Refusal::Missing));
+        assert_eq!(guard.file("../outside.md"), Err(Refusal::Missing));
+        assert!(guard.opened_shared(Some(&proj.join("docs/a.md"))));
+        #[cfg(windows)]
+        assert!(guard.opened_shared(Some(Path::new(&format!(
+            r"\\?\{}",
+            proj.join("docs/a.md").display()
+        )))));
+        assert!(!guard.opened_shared(Some(&base.join("outside.md"))));
+        assert!(!guard.opened_shared(Some(&proj.join("private/s.md"))));
+        assert!(!guard.opened_shared(None), "unknown: refused");
+    }
+
+    #[test]
+    fn machinery_folders_at_any_depth_are_hidden_and_key_files_are_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Root::open(dir.path()).unwrap();
+        let guard = Guard::new(&root, &[]);
+        for path in [
+            ".git/config",
+            "sub/.git/config",
+            "a/b/.permark/local/comments.json",
+            "sub/.git",
+        ] {
+            assert!(guard.hidden(path, false), "{path}");
+        }
+        assert!(guard.hidden("sub/.git", true));
+        // the file system's own case rule: `.GIT` is git's folder only where case is ignored
+        assert_eq!(guard.hidden("sub/.GIT/FETCH_HEAD", false), CASE_INSENSITIVE);
+        // key files are not hidden by name: `.aiignore` keeps them away
+        for path in [
+            "docs/plan.md",
+            "deploy/id_ed25519",
+            "deploy/id_ed25519.pub",
+            "id_rsa",
+            "certs/server.key",
+            "certs/chain.PEM",
+            "store.p12",
+            "home/.netrc",
+            ".git-credentials",
+            "a.gitignore",
+            ".github/workflows/ci.yml",
+        ] {
+            assert!(!guard.hidden(path, false), "{path}");
+        }
+    }
+}

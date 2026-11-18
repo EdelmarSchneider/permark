@@ -16,13 +16,13 @@ use permark_core::format::sections;
 use permark_core::organizing::{CommentFilter, CommentsApi};
 use permark_core::paths::{Vault, VaultPath};
 use permark_core::plugins::RepoHandle;
+use permark_core::projects::agent_view::Guard;
 use permark_core::tokens::estimate;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use ts_rs::TS;
 
 use crate::format::{self, CEILING_CHARS};
-use crate::guard::Guard;
 use crate::render::activity_text;
 use crate::tools::Tools;
 use crate::ToolError;
@@ -53,7 +53,7 @@ impl Disk for ProjectDisk<'_> {
     }
 
     fn headings(&self, path: &str) -> Option<Vec<String>> {
-        let (_, text) = self.guard.text(path).ok()?;
+        let (_, text) = crate::guard::text(self.guard, path).ok()?;
         Some(
             sections(&text)
                 .into_iter()

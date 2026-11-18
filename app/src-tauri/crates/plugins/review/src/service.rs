@@ -15,6 +15,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use permark_core::activity::{Fact, ReviewOp};
+use permark_core::edit::linediff::{self, Hunk, HunkKind};
 use permark_core::edit::lines::apply;
 use permark_core::edit::{LineEdit, SaveOutcome};
 use permark_core::error::{ErrorKind, IpcError};
@@ -28,7 +29,6 @@ use permark_plugin_unread::{hash_from_hex, ReadObserver, UnreadHub};
 use serde::{Deserialize, Serialize};
 
 use crate::diff::{self, Change, Kind};
-use crate::linediff::{self, Hunk, HunkKind};
 use crate::splice::{self, Span, Text};
 use crate::store::{CopyStore, MAX_COPY_BYTES};
 use crate::types::{

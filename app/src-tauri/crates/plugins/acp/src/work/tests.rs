@@ -888,7 +888,7 @@ fn a_short_name_never_reaches_git() {
 
 /// A link at `link` to `target`; Windows: a folder link falls back to a junction (needs no privilege).
 #[cfg(windows)]
-fn link(target: &Path, link: &Path) -> std::io::Result<()> {
+pub(crate) fn link(target: &Path, link: &Path) -> std::io::Result<()> {
     if !target.is_dir() {
         return std::os::windows::fs::symlink_file(target, link);
     }
@@ -908,7 +908,7 @@ fn link(target: &Path, link: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(unix)]
-fn link(target: &Path, link: &Path) -> std::io::Result<()> {
+pub(crate) fn link(target: &Path, link: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(target, link)
 }
 
