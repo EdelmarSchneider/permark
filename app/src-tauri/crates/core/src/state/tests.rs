@@ -175,6 +175,30 @@ fn plugin_namespaces_are_separate_and_removable() {
     s.remove_plugin_data(&git).unwrap();
 }
 
+/// A plugin's profile folder stays in the profile even when the project keeps its state in `.permark/local/`, and
+/// "remove data" sweeps it.
+#[test]
+fn a_profile_plugin_folder_never_lives_in_the_project() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let s = f.store();
+    assert_eq!(s.location(), StateLocation::Project);
+    let acp = PluginId::of("acp");
+    let dir = s.profile_plugin_dir(&acp);
+    let expected = f
+        .dirs
+        .profile
+        .join("projects")
+        .join(ProjectId::of(&f.root()).as_str())
+        .join("plugins")
+        .join("acp");
+    assert_eq!(dir, expected);
+    assert!(!dir.starts_with(f.project.path()));
+    fs::create_dir_all(dir.join("work")).unwrap();
+    remove_plugin_data_everywhere(&f.dirs, &acp, &[]).unwrap();
+    assert!(!dir.exists());
+}
+
 #[test]
 fn remove_everywhere_covers_app_known_projects_and_open_roots() {
     let f = fx();

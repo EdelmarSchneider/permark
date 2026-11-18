@@ -169,7 +169,8 @@ Markdown leads, and many files around it open too: config files as clean sheets,
 - **Your editor, at the line.** A path like `src/main.rs:42` that names a file of the project is a link: it opens your own
   editor at that line.
 
-Many features are plugins, and every plugin is on from the start. Turn off what you do not need in **Settings → Plugins**; a plugin that is off leaves nothing behind.
+Many features are plugins. All of them are on from the start, except the experimental [Assistant](#work-with-an-assistant-experimental),
+which waits until you turn it on. Turn off what you do not need in **Settings → Plugins**; a plugin that is off leaves nothing behind.
 
 ## Questions people ask
 
@@ -181,20 +182,27 @@ has committed, and you keep or revert each change.
 No. PerMark is for the documents around the code. **Open in external editor** takes you to your own editor at the place you are reading.
 
 **"What does the agent get, and how do I stop it?"**<br>
-Sharing is off in every project until you turn it on. The agent reads, shows you a place and marks comments done. It never edits
-through PerMark. Details in [Use with an AI agent](#use-with-an-ai-agent).
+Sharing is off in every project until you turn it on. The agent reads, shows you a place and marks comments done. An agent
+connected this way never edits through PerMark. Details in [Use with an AI agent](#use-with-an-ai-agent). The optional
+Assistant is different: the agent you choose there works on a copy of your folder, and you accept each change. Details in
+[Work with an assistant](#work-with-an-assistant-experimental).
 
 **"Does it go online?"**<br>
 No account, no telemetry, no tracking. PerMark goes online only to check for its own updates (installer versions; the Store and
-snap update it instead), and when you ask: a picture from the web, the optional token-count vocabulary, or a local AI model and the engine that runs it. Your documents never
-leave your computer through PerMark. An AI agent you connect is a separate program: what it sends online is up to that agent.
+snap update it instead), and when you ask: a picture from the web, a spelling dictionary, the optional token-count vocabulary, or a local AI model and the engine that runs it. PerMark itself
+never sends your documents online. An AI agent you connect is a separate program: what it sends online is up to that agent.
+If you turn on the Assistant, the agent you choose gets a copy of your folder without the files listed in `.aiignore`, and it
+sends your messages and what it reads to its own AI service. An agent that starts with `npx` or `uvx` is downloaded by that
+tool the first time.
 The Windows installers may also download Microsoft's WebView2 component while they install, if your computer does not have it.
 
 ## What PerMark is not
 
 - **Not a code editor.** No completion, refactoring, build, run or debug. Real code work opens in your own editor.
-- **Not an agent.** It does not run, host or replace your AI agents. It shows what your AI writes, and you decide what stays. The small
-  local models it can use work only for PerMark's own features, such as correcting your text.
+- **Not an agent.** It does not train or replace your AI agents. It shows what your AI writes, and you decide what stays. The
+  optional Assistant can start an agent you choose, but that agent works on a copy of your folder, and its edits reach your files
+  only when you accept them. A command you allow runs on your computer, with your permissions. The small local models it can use work
+  only for PerMark's own features, such as correcting your text.
 - **Not tested by hand on macOS or Linux.** PerMark is tested by hand on Windows; the macOS and Linux builds are checked automatically.
 
 ## Why Markdown
@@ -268,7 +276,7 @@ that speaks the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
   or run **Agent connection: turn on** from the command palette. Nothing inside a project can turn it on.
 - **Local.** It talks only to programs on your computer and opens no network port.
 - **Read, never edit.** The agent sees where you are, what you selected, what changed, your comments and the notes you shared one
-  by one. It reads, shows you a place and marks comments done. It never edits a file through PerMark.
+  by one. It reads, shows you a place and marks comments done. It never edits a file through this connection.
 - **Your limits.** You choose what it may do, group by group. Files in `.aiignore` never reach an agent; everything else it reads
   as written, passwords and keys included, so list files with secrets in `.aiignore`.
 - **Visible.** While the connection is on, the status bar shows **Agent**. Click it to see what is shared and the latest requests.
@@ -346,6 +354,30 @@ the same answer as a file, for a script or a tool without MCP. **It holds the op
 selected text, and any program running as you can read it, as can a folder-sync tool that watches the project.** It stays out of git and is deleted when the connection is turned off.
 
 </details>
+
+## Work with an assistant (experimental)
+
+The **Assistant** plugin lets an AI agent you choose work on your folder from a panel beside the document, while you decide
+which of its changes reach your files. It is experimental and off until you turn it on in **Settings → Plugins**. It is not
+available in the snap, which cannot start other programs.
+
+- **Your agent, your account.** Choose an agent from the list of the [Agent Client Protocol](https://agentclientprotocol.com)
+  registry, or type the command that starts your own. PerMark starts that program on your computer. Depending on the agent,
+  you need Node.js (for agents that start with `npx`), uv (for `uvx`) or the agent itself installed. The agent uses your own
+  account with its provider, which may cost money, and most agents ask you to sign in the first time.
+- **A copy, not your files.** Ask for a change, with a passage you selected if you like. The agent works on a copy of your folder
+  that PerMark keeps outside it, without the files listed in `.aiignore`, the `.git` and `.permark` folders and agent settings files.
+- **You accept each change.** The agent's edits are listed line by line and reach your files only when you accept them, one
+  change or a whole file at a time, and you can undo a change you accepted. Changes you have not accepted are deleted when you
+  close the folder or turn the plugin off.
+- **It asks first.** When the agent wants to run a command or do something outside its copy, PerMark asks you, unless the
+  agent's own settings already allow it. A command you allow runs on your computer, with your permissions.
+- **What goes online.** Your message, the passage you attached and what the agent reads in its copy go to the agent and its
+  provider, under that provider's terms. An agent that starts with `npx` or `uvx` is downloaded by that tool the first time.
+  PerMark itself makes no network call for this.
+
+The agent runs with your rights. Its copy keeps your files out of its way, but it is not a security boundary, so use only agents
+you trust. The read-only [agent connection](#use-with-an-ai-agent) for agents you run yourself stays as it is.
 
 ## Keyboard shortcuts
 
@@ -438,6 +470,8 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 **PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
 
+- **0.16.0:** the experimental **Assistant**, off until you turn it on: an AI agent you choose works on a copy of your folder,
+  and its edits reach your files only when you accept them, with Undo; in all 20 interface languages.
 - **0.15.0:** a **Panels** menu in the status bar to show or hide every panel from one place, with **Show** entries in the
   command palette and **Undo** when you close one; sidebar tabs added by plugins can now be closed; and a crowded row of tabs
   keeps every tab in sight.

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ import {
   licenseText,
   nameOfKey,
   npmNotices,
+  registryHeader,
   renderGroup,
   renderNotices,
   resolveDependency,
@@ -191,18 +192,70 @@ describe("rendering", () => {
     expect(out).toContain("ship no license file");
     expect(out).not.toContain("~~~~");
   });
-  it("puts the three sources under their own headings", () => {
+  it("puts the four sources under their own headings", () => {
     const file = renderNotices({
       rust: "### MIT License\n\nUsed by: x 1.0.0\n",
       npm: [{ licenses: ["MIT"], text: "t", users: ["y 1.0.0"] }],
       libgit2: { version: "1.9.7", text: "GPL text\n" },
+      registry: {
+        source: "https://example.org/registry.json",
+        fetched: "2026-01-02",
+        notice: "Agent list taken from the registry.",
+        apache: "Apache License\nVersion 2.0\n",
+      },
     });
     const headings = file.split("\n").filter((line) => line.startsWith("## "));
     expect(headings).toEqual([
       "## Rust crates (compiled into the program)",
       "## npm packages (bundled in the interface, fonts included)",
       "## libgit2 1.9.7 (C library compiled into the program)",
+      "## Agent Client Protocol registry (agent list built into the Assistant plugin)",
     ]);
+    const registry = file.slice(file.indexOf("## Agent Client Protocol registry"));
+    expect(registry).toContain("Agent list taken from the registry.");
+    expect(registry).toContain("https://example.org/registry.json on 2026-01-02");
+    expect(registry).toContain("~~~~text\nApache License\nVersion 2.0\n~~~~\n");
     expect(file.endsWith("~~~~\n")).toBe(true);
+  });
+});
+
+describe("registryHeader", () => {
+  const header = {
+    source: "https://example.org/registry.json",
+    fetched: "2026-01-02",
+    license: "Apache-2.0",
+    notice: "Agent list taken from the registry.",
+    agents: [],
+  };
+  it("reads the attribution of the built-in agent list", () => {
+    expect(registryHeader(header)).toEqual({
+      source: "https://example.org/registry.json",
+      fetched: "2026-01-02",
+      notice: "Agent list taken from the registry.",
+    });
+  });
+  it("fails on a missing field or another license, so no wrong notice ships", () => {
+    expect(() => registryHeader({ ...header, notice: "" })).toThrow(/notice/);
+    expect(() => registryHeader({ ...header, source: undefined })).toThrow(/source/);
+    expect(() => registryHeader({ ...header, license: "MIT" })).toThrow(/MIT/);
+    expect(() => registryHeader(null)).toThrow(/license/);
+  });
+  it("accepts the agent list the plugin compiles in", () => {
+    const shipped = JSON.parse(
+      readFileSync(
+        join(
+          import.meta.dirname,
+          "..",
+          "src-tauri",
+          "crates",
+          "plugins",
+          "acp",
+          "agents",
+          "registry.json",
+        ),
+        "utf8",
+      ),
+    );
+    expect(registryHeader(shipped).notice).toContain("Apache License 2.0");
   });
 });

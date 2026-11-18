@@ -33,6 +33,8 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_notes::plugin());
     #[cfg(feature = "plugin-agent")]
     plugins.push(permark_plugin_agent::plugin());
+    #[cfg(feature = "plugin-acp")]
+    plugins.push(permark_plugin_acp::plugin());
     #[cfg(feature = "plugin-md-family")]
     plugins.push(permark_plugin_md_family::plugin());
     #[cfg(feature = "plugin-symbols")]
@@ -142,6 +144,7 @@ mod tests {
             "comments",
             "broken-links",
             "notes",
+            "acp",
             "local-ai",
             "correction",
             "translation",
@@ -177,18 +180,30 @@ mod tests {
     }
 
     /// Director 2026-10-20: every plugin starts on (the agent connection's per-project switch stays off: that is the
-    /// agent plugin's own state, not its enablement).
+    /// agent plugin's own state, not its enablement). Exception: `acp`, experimental, starts a program the person
+    /// names, so it stays off until the person turns it on.
     #[test]
     fn every_plugin_is_on_by_default() {
+        const OFF_BY_DEFAULT: [&str; 1] = ["acp"];
         let registry = registry_of_all();
         let off: Vec<_> = registry
             .ordered()
             .filter(|m| !m.default_enabled)
             .map(|m| m.id.to_string())
             .collect();
-        assert!(off.is_empty(), "off by default: {off:?}");
+        assert!(
+            off.iter().all(|id| OFF_BY_DEFAULT.contains(&id.as_str())),
+            "off by default: {off:?}"
+        );
         let resolved = resolve_enabled(&registry, &EnableInputs::default());
-        assert!(resolved.values().all(|state| *state == Enablement::On));
+        for (id, state) in &resolved {
+            let expected = if OFF_BY_DEFAULT.contains(&id.as_str()) {
+                Enablement::Off(OffReason::Setting)
+            } else {
+                Enablement::On
+            };
+            assert_eq!(*state, expected, "{id}");
+        }
     }
 
     fn resolved_from(text: &str) -> BTreeMap<PluginId, Enablement> {

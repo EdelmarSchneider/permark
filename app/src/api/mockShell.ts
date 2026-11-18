@@ -21,6 +21,7 @@ function manifest(
   kind: PluginKind,
   scope: Manifest["scope"],
   dependsOn: string[] = [],
+  defaultEnabled = true,
 ): Manifest {
   return {
     id,
@@ -28,7 +29,7 @@ function manifest(
     scope,
     requires: scope === "project" ? PROJECT : NONE,
     dependsOn,
-    defaultEnabled: true,
+    defaultEnabled,
   };
 }
 
@@ -45,6 +46,8 @@ export const MOCK_MANIFESTS: readonly Manifest[] = [
   manifest("broken-links", "checker", "project"),
   manifest("notes", "feature", "app"),
   manifest("agent", "feature", "project"),
+  // experimental: it starts the person's own program, so it waits until the person turns it on
+  manifest("acp", "feature", "project", [], false),
   manifest("md-family", "role", "app"),
   manifest("symbols", "feature", "app"),
   manifest("word-count", "analysis", "app"),

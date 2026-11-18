@@ -9,6 +9,18 @@ export type DiffRow =
 /** Lines of context kept around a change. */
 export const CONTEXT = 3;
 
+/** A run given as its old and new lines: a side with no lines draws the other as it is (a diff against an empty
+ *  text would show a blank removed | added line), else as `diffRows`. */
+export function runRows(
+  before: readonly string[],
+  after: readonly string[],
+  context = CONTEXT,
+): DiffRow[] {
+  if (before.length === 0) return after.map((text, i) => ({ kind: "add", text, key: `a${i}` }));
+  if (after.length === 0) return before.map((text, i) => ({ kind: "del", text, key: `d${i}` }));
+  return diffRows(before.join("\n"), after.join("\n"), context);
+}
+
 /** `before` -> `after`: removed lines as `del`, new ones as `add`, long unchanged runs folded. */
 export function diffRows(before: string, after: string, context = CONTEXT): DiffRow[] {
   const a = splitLines(before);

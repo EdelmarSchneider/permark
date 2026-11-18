@@ -4,7 +4,7 @@ resolver = "2"
 
 # Version source = app/package.json; written here by `npm run version:sync`.
 [workspace.package]
-version = "0.15.0"
+version = "0.16.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/EdelmarSchneider/permark"
@@ -34,6 +34,7 @@ permark-plugin-notes = { path = "crates/plugins/notes" }
 permark-plugin-quiet = { path = "crates/plugins/quiet" }
 permark-plugin-comments = { path = "crates/plugins/comments" }
 permark-plugin-agent = { path = "crates/plugins/agent" }
+permark-plugin-acp = { path = "crates/plugins/acp" }
 permark-plugin-tags = { path = "crates/plugins/tags" }
 permark-plugin-unread = { path = "crates/plugins/unread" }
 permark-plugin-word-count = { path = "crates/plugins/word-count" }
@@ -141,7 +142,7 @@ name = "permark_lib"
 # default = the direct build; `store` = the Microsoft Store build (`--no-default-features --features store`): the
 # store updates the app and the package declares the file manager entries.
 default = ["common", "plugin-updates", "plugin-shell-integration"]
-common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-symbols", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-graphviz", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-local-ai", "plugin-correction", "plugin-translation", "plugin-spelling", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore", "plugin-fmt-toon", "plugin-convert", "plugin-export"]
+common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-symbols", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-graphviz", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-local-ai", "plugin-correction", "plugin-translation", "plugin-spelling", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-acp", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore", "plugin-fmt-toon", "plugin-convert", "plugin-export"]
 plugin-git = ["dep:permark-plugin-git"]
 plugin-live-feed = ["dep:permark-plugin-live-feed"]
 # follow needs the feed; review needs unread (a build without the dependency has no plugin that needs it)
@@ -184,6 +185,7 @@ plugin-comments = ["dep:permark-plugin-comments"]
 plugin-broken-links = ["dep:permark-plugin-broken-links"]
 plugin-notes = ["dep:permark-plugin-notes"]
 plugin-agent = ["dep:permark-plugin-agent"]
+plugin-acp = ["dep:permark-plugin-acp"]
 plugin-updates = ["dep:permark-plugin-updates", "dep:tauri-plugin-updater"]
 plugin-shell-integration = ["dep:permark-plugin-shell-integration"]
 store = ["common"]
@@ -234,6 +236,7 @@ permark-plugin-comments = { workspace = true, optional = true }
 permark-plugin-broken-links = { workspace = true, optional = true }
 permark-plugin-notes = { workspace = true, optional = true }
 permark-plugin-agent = { workspace = true, optional = true }
+permark-plugin-acp = { workspace = true, optional = true }
 permark-plugin-updates = { workspace = true, optional = true }
 permark-plugin-shell-integration = { workspace = true, optional = true }
 # generate_context! expands to serde_json (plugin config).

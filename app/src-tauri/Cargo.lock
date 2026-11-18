@@ -20,6 +20,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "agent-client-protocol-schema"
+version = "1.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5128cd57704892e3978c85bfce0d532ef3162f585739f44726fa80d464c1782f"
+dependencies = [
+ "anyhow",
+ "derive_more",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "strum",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -692,6 +706,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
+name = "convert_case"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
+dependencies = [
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "cookie"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1013,10 +1036,12 @@ version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "799a97264921d8623a957f6c3b9011f3b5492f557bbb7a5a19b7fa6d06ba8dcb"
 dependencies = [
+ "convert_case",
  "proc-macro2",
  "quote",
  "rustc_version",
  "syn 2.0.119",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -3358,7 +3383,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "permark"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "block2",
  "gtk",
@@ -3369,6 +3394,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-web-kit",
  "permark-core",
+ "permark-plugin-acp",
  "permark-plugin-agent",
  "permark-plugin-broken-links",
  "permark-plugin-comments",
@@ -3428,7 +3454,7 @@ dependencies = [
 
 [[package]]
 name = "permark-core"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "ammonia",
  "comrak",
@@ -3456,7 +3482,7 @@ dependencies = [
 
 [[package]]
 name = "permark-engine"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "libc",
  "llama-cpp-2",
@@ -3468,8 +3494,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "permark-plugin-acp"
+version = "0.16.0"
+dependencies = [
+ "agent-client-protocol-schema",
+ "ignore",
+ "permark-core",
+ "permark-plugin-agent",
+ "permark-plugin-review",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
+ "url",
+]
+
+[[package]]
 name = "permark-plugin-agent"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "chrono",
  "dunce",
@@ -3486,7 +3528,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-broken-links"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3498,7 +3540,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-comments"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3510,7 +3552,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-convert"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "csv",
  "permark-core",
@@ -3526,7 +3568,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-correction"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
  "permark-plugin-local-ai",
@@ -3538,7 +3580,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-export"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
  "serde",
@@ -3549,35 +3591,35 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-fmt-dotenv"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-fmt-ignore"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-fmt-ini"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-fmt-properties"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-fmt-toml"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
  "toml_edit 0.25.17+spec-1.1.0",
@@ -3585,7 +3627,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-fmt-toon"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
  "serde",
@@ -3595,21 +3637,21 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-fmt-yaml"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-follow"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-frontmatter-card"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
  "toml_edit 0.25.17+spec-1.1.0",
@@ -3617,7 +3659,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-git"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "dirs",
  "dunce",
@@ -3634,28 +3676,28 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-graphviz"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-highlight"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-json-view"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-live-feed"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
  "serde",
@@ -3666,7 +3708,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-local-ai"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
  "permark-engine",
@@ -3682,35 +3724,35 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-math"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-md-family"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-media"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-mermaid"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-notes"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "chrono",
  "dirs",
@@ -3724,21 +3766,21 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-plantuml"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-prompt-blocks"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-quiet"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3750,7 +3792,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-review"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "dunce",
  "git2",
@@ -3765,7 +3807,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-shell-integration"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3779,7 +3821,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-spelling"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
  "serde",
@@ -3795,14 +3837,14 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-symbols"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-tags"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3815,14 +3857,14 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-text-view"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-token-count"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "base64 0.22.1",
  "permark-core",
@@ -3836,7 +3878,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-translation"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
  "permark-plugin-local-ai",
@@ -3848,7 +3890,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-unread"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3860,7 +3902,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-updates"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
  "serde",
@@ -3870,7 +3912,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-word-count"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
  "serde",
@@ -3879,14 +3921,14 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-xml-view"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-shell"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "static_vcruntime",
  "windows",
@@ -5083,6 +5125,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
+name = "strum"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9628de9b8791db39ceda2b119bbe13134770b56c138ec1d3af810d045c04f9bd"
+dependencies = [
+ "strum_macros",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab85eea0270ee17587ed4156089e10b9e6880ee688791d45a905f5b1ca36f664"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6065,6 +6128,12 @@ name = "unicode-segmentation"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
+
+[[package]]
+name = "unicode-xid"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
 name = "untrusted"

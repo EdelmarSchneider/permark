@@ -11,6 +11,7 @@ import type {
   Result,
 } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
+import { pageSelection, type PageSelection } from "../../core/doc/selection";
 import { editing } from "../../core/editing/session.svelte";
 import { t } from "../../core/i18n";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
@@ -27,9 +28,6 @@ export type Place = PluginEvents["agent:open"];
 /** What the window shows now, as the agent connection takes it. Reactive. */
 export type ContextPort = () => AgentWindowContext;
 
-/** The page selection (reading view), kept by a `selectionchange` listener while the switch is on. */
-type PageSelection = { text: string; lines: [number, number] | null } | null;
-
 export class AgentStore {
   status = $state.raw<AgentStatus | null>(null);
   /** The running program's path (for the setup lines), asked once. */
@@ -39,6 +37,7 @@ export class AgentStore {
   /** The notes shared with this project and the ones that can be added; `null`: not read yet | the notes plugin is
    *  off (then nothing about notes is drawn). */
   sharedNotes = $state.raw<ProjectNotes | null>(null);
+  /** The page selection (reading view), kept by a `selectionchange` listener while the switch is on. */
   #page = $state.raw<PageSelection>(null);
   #sent: AgentWindowContext | null = null;
   readonly #client: PluginClient;
@@ -247,22 +246,6 @@ export class AgentStore {
       onGone: () => {},
     });
   }
-}
-
-/** The selection in the page (reading view): its text and lines; `null` outside the page. */
-function pageSelection(): PageSelection {
-  const selection = document.getSelection();
-  if (selection === null || selection.isCollapsed) return null;
-  const inPage = (node: Node | null): boolean => {
-    const element = node instanceof Element ? node : (node?.parentElement ?? null);
-    return element?.closest("[data-b]") != null;
-  };
-  if (!inPage(selection.anchorNode) || !inPage(selection.focusNode)) return null;
-  const a = documents.referenceAt(selection.anchorNode)?.line ?? null;
-  const b = documents.referenceAt(selection.focusNode)?.line ?? null;
-  const lines: [number, number] | null =
-    a !== null && b !== null ? [Math.min(a, b), Math.max(a, b)] : null;
-  return { text: selection.toString(), lines };
 }
 
 /** Shows an agent's place: at once when the person reads, as a notice with a button while they edit. Never focuses. */

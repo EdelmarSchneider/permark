@@ -357,6 +357,7 @@ export function createMockApi(): Api & {
     "agent:status": new Set(),
     "agent:open": new Set(),
     "agent:ask": new Set(),
+    "acp:update": new Set(),
   };
   /** The folder the window shows, as the events of its plugins name it. */
   function rootNow(): string {
