@@ -609,14 +609,14 @@ describe("the status line", () => {
 });
 
 describe("the views of the window", () => {
-  it("every view has a default region; only the outline and the right panels can be closed", () => {
+  it("every view has a default region; all but Files and Search can be closed; the project's own views", () => {
     addLeftPanel();
-    expect(arrangement.views.map((v) => [v.id, v.region, v.closable])).toEqual([
-      [FILES, "left", false],
-      [SEARCH, "left", false],
-      [LEFT_VIEW, "left", false],
-      [OUTLINE, "right", true],
-      [LIVE_VIEW, "right", true],
+    expect(arrangement.views.map((v) => [v.id, v.region, v.closable, v.projectOnly])).toEqual([
+      [FILES, "left", false, true],
+      [SEARCH, "left", false, true],
+      [LEFT_VIEW, "left", true, true],
+      [OUTLINE, "right", true, false],
+      [LIVE_VIEW, "right", true, false],
     ]);
     expect(arrangement.viewOf(LEFT_VIEW)?.panel?.id).toBe(LEFT_VIEW);
     expect(arrangement.viewOf(FILES)?.panel).toBeNull();
@@ -658,6 +658,26 @@ describe("the views of the window", () => {
     expect(arrangement.isPresent(LIVE_VIEW)).toBe(false);
     expect(arrangement.isPresent("gone")).toBe(false);
     expect(arrangement.presentCount).toBe(0);
+  });
+
+  it("a left panel is open until the project closes it, and that choice is the project's", async () => {
+    addLeftPanel();
+    // no choice yet: open, as a sidebar tab always was
+    expect(arrangement.isPresent(LEFT_VIEW)).toBe(true);
+    layout.setOpen(LEFT_VIEW, false);
+    expect(arrangement.isPresent(LEFT_VIEW)).toBe(false);
+    expect(viewsOf(arrangement.drawn("left"))).toEqual([[FILES, SEARCH]]);
+    // written to the project's session, read back with it
+    await vi.advanceTimersByTimeAsync(1000);
+    await layout.load(api, true);
+    flushSync();
+    expect(layout.views.open[LEFT_VIEW]).toBe(false);
+    expect(arrangement.isPresent(LEFT_VIEW)).toBe(false);
+    // open again: only in a project, as before
+    layout.setOpen(LEFT_VIEW, true);
+    expect(arrangement.isPresent(LEFT_VIEW)).toBe(true);
+    conditions.set({ ...neutralContext(), workspace: "singleFile" });
+    expect(arrangement.isPresent(LEFT_VIEW)).toBe(false);
   });
 
   it("a left panel its plugin does not offer is not a view of the window", () => {

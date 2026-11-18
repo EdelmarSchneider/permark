@@ -101,8 +101,8 @@ export type SidePanel = { readonly id: string; readonly open: boolean; readonly 
 
 /** What decides one region (left | right | bottom): the views arranged in it, the person's choices. */
 export type RegionState = {
-  /** Something that is always open shows there: a view the person cannot close (Files, Search, a plugin's sidebar
-   *  tab), the Notes' own list. */
+  /** Something that is always open shows there: a view the person cannot close (Files, Search), the Notes' own
+   *  list. */
   fixed: boolean;
   /** The outline is arranged there and the document shown has one. */
   hasOutline: boolean;

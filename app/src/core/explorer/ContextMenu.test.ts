@@ -138,3 +138,67 @@ describe("icons of the context menu", () => {
     expect(root.querySelector(".icon")).toBeNull();
   });
 });
+
+describe("entries that are on | off on their own", () => {
+  const runs = { files: vi.fn(), tags: vi.fn(), wide: vi.fn() };
+  const entries = (): MenuEntry[] => [
+    { kind: "heading", label: "Sidebar" },
+    {
+      kind: "item",
+      label: "Files",
+      checkbox: true,
+      checked: true,
+      disabled: true,
+      why: "Always open",
+      run: runs.files,
+    },
+    { kind: "item", label: "Tags", checkbox: true, checked: false, run: runs.tags },
+    { kind: "heading", label: "Bottom panel" },
+    { kind: "note", label: "None" },
+    { kind: "separator" },
+    { kind: "item", label: "Wide", checked: true, run: runs.wide },
+  ];
+
+  it("are checkboxes with their state, apart from a choice of a set (a radio)", () => {
+    const root = show(entries());
+    const roles = [...root.querySelectorAll<HTMLElement>("[data-at]")].map((el) => [
+      el.textContent.trim(),
+      el.getAttribute("role"),
+      el.getAttribute("aria-checked"),
+    ]);
+    expect(roles).toEqual([
+      ["Files", "menuitemcheckbox", "true"],
+      ["Tags", "menuitemcheckbox", "false"],
+      ["Wide", "menuitemradio", "true"],
+    ]);
+  });
+
+  it("one that cannot act says why once: its tooltip, which is also its description", () => {
+    const root = show(entries());
+    const files = root.querySelector<HTMLElement>('[data-at="1"]');
+    expect(files?.getAttribute("title")).toBe("Always open");
+    // no second copy of the reason for assistive tech to read after the title
+    expect(files?.hasAttribute("aria-describedby")).toBe(false);
+    expect(root.querySelectorAll("[hidden]")).toHaveLength(0);
+    expect(root.querySelector('[data-at="2"]')?.hasAttribute("title")).toBe(false);
+  });
+
+  it("a quiet note is passed by the keyboard and does nothing; Space switches the focused entry", () => {
+    const close = vi.fn();
+    const root = show(entries(), close);
+    expect(root.querySelector(".note")?.textContent).toBe("None");
+    expect(root.querySelector(".note")?.getAttribute("role")).toBe("presentation");
+    // the keyboard starts on the first entry that can act, not the disabled one before it
+    expect(focused()).toBe("Tags");
+    key("ArrowUp");
+    expect(focused()).toBe("Files");
+    key("ArrowDown");
+    key("ArrowDown");
+    // the arrows go over the note to the next entries
+    expect(focused()).toBe("Wide");
+    key("ArrowUp");
+    key(" ");
+    expect(runs.tags).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+});

@@ -52,7 +52,7 @@ export type FinderHost = {
   singleFile: boolean;
   /** The commands of the palette, now. */
   commands(): CommandEntry[];
-  label(key: MessageKey): string;
+  label(key: MessageKey, params?: Readonly<Record<string, string>>): string;
   /** The headings of the open document. */
   outline(): SectionRow[];
   /** Files opened in this project, newest first. */
@@ -97,7 +97,7 @@ export class FinderStore {
       scope: this.scope,
       query: this.query,
       data: this.data,
-      commands: matchCommands(this.#host.commands(), this.query, (k) => this.#host.label(k)),
+      commands: matchCommands(this.#host.commands(), this.query, (k, p) => this.#host.label(k, p)),
       outline: this.#host.outline(),
       tags: this.scope === "all" || this.scope === "tags" ? this.#host.tags?.hits(this.query) : [],
       singleFile: this.#host.singleFile,

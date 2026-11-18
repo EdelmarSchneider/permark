@@ -1,9 +1,9 @@
 // The command list: what the palette and the keyboard dialog show, from the registry, the context and the map.
-// Pure.
+// Pure, but for the words of a label (the interface language).
 
 import type { Availability, Context } from "../conditions/available";
 import { available } from "../conditions/available";
-import type { MessageKey } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import { fuzzyMatch } from "../search/fuzzy";
 import type { Contribution, ContributionOf } from "../plugins/registry.svelte";
 import { comboLabel } from "./combo";
@@ -45,6 +45,11 @@ export function listCommands(
   return out;
 }
 
+/** What a command is called on screen: its label in the interface language, its placeholders filled. */
+export function commandLabel(command: CommandItem): string {
+  return t(command.label, command.labelParams?.());
+}
+
 /** A combo as typed into the palette: lower case, no spaces. */
 const typed = (text: string): string => text.toLowerCase().replace(/\s+/g, "");
 
@@ -67,7 +72,7 @@ const looksLikeKeys = (query: string): boolean => /\+|[⌘⌥⇧⌃]/.test(query
 export function matchCommands(
   entries: readonly CommandEntry[],
   query: string,
-  label: (key: MessageKey) => string,
+  label: (key: MessageKey, params?: Readonly<Record<string, string>>) => string,
 ): { entry: CommandEntry; positions: number[] }[] {
   if (query.trim() === "") return entries.map((entry) => ({ entry, positions: [] }));
   const keys = looksLikeKeys(query) ? typed(query) : null;
@@ -81,7 +86,7 @@ export function matchCommands(
       ranked.push({ entry, score: Number.MAX_SAFE_INTEGER - 2 + onKeys, positions: [], at });
       return;
     }
-    const found = fuzzyMatch(query, label(entry.command.label));
+    const found = fuzzyMatch(query, label(entry.command.label, entry.command.labelParams?.()));
     if (found) ranked.push({ entry, score: found.score, positions: found.positions, at });
   });
   ranked.sort((a, b) => b.score - a.score || a.at - b.at);

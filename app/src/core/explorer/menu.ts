@@ -19,11 +19,18 @@ export type MenuEntry =
       opens?: boolean;
       /** Can't act now: still reached by the arrows and announced (`aria-disabled`), does nothing. */
       disabled?: boolean;
+      /** Why it can't act now: its tooltip, which assistive tech reads as its description. */
+      why?: string;
       /** One of a set where one is chosen (`menuitemradio`): its state, announced as such and drawn as a check mark
        *  before the label (never a mark in the label, read aloud as a word); the labels of the set stay aligned. */
       checked?: boolean;
+      /** With `checked`: on | off on its own, whatever the other entries are (`menuitemcheckbox`), not the one
+       *  chosen of a set. */
+      checkbox?: boolean;
       /** `shift`: picked with Shift held (Shift+click | Shift+Enter). */
       run: (shift: boolean) => void;
     }
   | { kind: "heading"; label: string }
+  /** A quiet line that does nothing (a group with nothing in it): passed over by the keyboard. */
+  | { kind: "note"; label: string }
   | { kind: "separator" };

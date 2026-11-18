@@ -87,6 +87,8 @@ export type Contribution = Owned &
         when?: () => boolean;
         /** `false`: not listed in the palette (the commands that open the box itself). */
         inPalette?: boolean;
+        /** Values for the placeholders of `label` ("Show {name}"), read whenever the label is drawn. */
+        labelParams?: () => Readonly<Record<string, string>>;
       }
     | { kind: "paletteEntry"; id: string; label: MessageKey; command: string }
     | { kind: "shortcut"; keys: string; command: string }
@@ -95,8 +97,8 @@ export type Contribution = Owned &
         id: string;
         /**
          * What kind of view it is, and the region it goes to while the arrangement does not place it elsewhere.
-         * `left`: a sidebar tab (a body alone: its tab names it; in a project only, always open). `right`: a panel
-         * with a header of its own, that the person opens | closes.
+         * `left`: a sidebar tab (a body alone: its tab names it; in a project only, open until the person closes
+         * it). `right`: a panel with a header of its own. The person opens | closes both.
          */
         side: "left" | "right";
         label: MessageKey;

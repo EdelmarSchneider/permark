@@ -77,6 +77,8 @@ export default definePlugin({
         id: "tags.show",
         label: "tags.show",
         requires: NO_REQUIREMENT,
+        // the Panels menu and the palette's "Show <name>" cover it: its key stays
+        inPalette: false,
         run: () => showView(PANEL),
       }),
       cx.contribute({

@@ -1,10 +1,10 @@
-// How many same-size buttons a row can show beside a part that must stay whole (a heading, the tab shown); the rest
-// move into a menu whose button needs room too. Pure; the row measures itself and asks.
+// How many same-size buttons a row can show beside a part that must stay (a whole heading, the tab shown at its
+// smallest); the rest move into a menu whose button needs room too. Pure; the row measures itself and asks.
 
 export type RowRoom = {
   /** Px the row has for its content. */
   readonly room: number;
-  /** Px of what always stays (the whole label and the buttons that never move out, with their gaps). */
+  /** Px of what always stays (a label at the least it keeps and the buttons that never move out, with their gaps). */
   readonly fixed: number;
   /** Buttons that can move into the menu. */
   readonly count: number;
