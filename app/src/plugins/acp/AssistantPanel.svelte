@@ -431,6 +431,8 @@
                   <pre class="detail">{entry.detail}</pre>
                 {/if}
                 {#if entry.answer.status === "open"}
+                  <!-- what is allowed here acts outside the copy: said before the buttons, gone once answered -->
+                  <Note tone="muted">{t("acp.questionHint")}</Note>
                   <div class="options">
                     {#each entry.options as option (option.id)}
                       <button

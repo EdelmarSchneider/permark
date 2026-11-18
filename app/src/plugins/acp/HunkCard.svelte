@@ -1,6 +1,7 @@
 <script lang="ts">
   // One run of lines the agent changed in its copy: where it sits in the real file (Open shows the file there), the
-  // removed lines in red and the new ones in green (unchanged lines between them kept to one line of context), and
+  // removed lines in red and the new ones in green between the real line above and below them (unchanged lines muted,
+  // those between changes kept to one line of context), and
   // Accept | Reject for this run alone. A file that is accepted | rejected only as a whole (new, deleted) shows its
   // lines without the buttons. A long run draws its first `MAX_ROWS` rows until the person asks for all; a run the
   // backend cut says so (a choice still takes all of it).
@@ -51,6 +52,17 @@
     return diffRows(hunk.oldLines.join("\n"), hunk.newLines.join("\n"), 1);
   });
   const shown = $derived(all || rows.length <= MAX_ROWS ? rows : rows.slice(0, MAX_ROWS));
+  /** The run between the real file's line above and below it (a whole file has none; a cut run ends where cut). */
+  const drawn = $derived.by((): DiffRow[] => {
+    if (whole) return shown;
+    const out: DiffRow[] = [];
+    if (hunk.contextBefore !== null)
+      out.push({ kind: "same", text: hunk.contextBefore, key: "context-before" });
+    out.push(...shown);
+    if (hunk.contextAfter !== null && shown.length === rows.length)
+      out.push({ kind: "same", text: hunk.contextAfter, key: "context-after" });
+    return out;
+  });
 </script>
 
 <div class="hunk" role="group" aria-label={whole ? undefined : t("acp.hunkGroup", { path, where })}>
@@ -84,7 +96,7 @@
     </div>
   {/if}
   <div class="diff">
-    <DiffLines rows={shown} />
+    <DiffLines rows={drawn} />
   </div>
   {#if shown.length < rows.length}
     <button type="button" class="btn btn--sm btn--ghost more" onclick={() => (all = true)}
@@ -142,6 +154,10 @@
   .diff {
     font-family: var(--font-code);
     font-size: var(--fs-ui-sm);
+  }
+  /* unchanged lines only place the change: they step back */
+  .diff :global(.row.same) {
+    color: var(--muted);
   }
   .more {
     align-self: center;

@@ -134,7 +134,9 @@ describe("Settings > AI agents", () => {
     mountPage(AGENT_PAGE, true);
     await until(() => text(target).includes("Off for this folder"), "state card");
     expect(text(target.querySelector(".title"))).toBe("AI agents");
-    expect(text(target)).toContain("agents never edit files through PerMark.");
+    expect(text(target)).toContain(
+      "Agents connected this way only read and never edit files through PerMark",
+    );
     expect(text(target)).toContain("an agent can still open files on your computer by itself.");
     expect(text(target)).toContain("search and read this folder's files");
     expect(text(target)).toContain("You can turn it off at any time.");

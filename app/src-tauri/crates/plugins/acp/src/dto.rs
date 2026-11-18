@@ -72,6 +72,11 @@ pub struct HunkView {
     pub new_lines: Vec<String>,
     /// A side had more than 400 lines: only the first are shown; a choice still applies the whole run.
     pub truncated: bool,
+    /// The real file's line just above the run, shown so the run reads in place (`None`: the run starts the file);
+    /// never part of a choice.
+    pub context_before: Option<String>,
+    /// The real file's line just below the run (`None`: the run ends the file).
+    pub context_after: Option<String>,
 }
 
 /// Arguments of `acp.changes`.

@@ -160,15 +160,39 @@ describe("a message and its reply", () => {
         path: "docs/guide.md",
         kind: "modified",
         hunks: [
-          { key: "k7", oldStart: 7, oldLines: ["a"], newLines: ["b", "c"], truncated: false },
-          { key: "k17", oldStart: 17, oldLines: ["d"], newLines: ["e"], truncated: false },
+          {
+            key: "k7",
+            oldStart: 7,
+            oldLines: ["a"],
+            newLines: ["b", "c"],
+            truncated: false,
+            contextBefore: null,
+            contextAfter: null,
+          },
+          {
+            key: "k17",
+            oldStart: 17,
+            oldLines: ["d"],
+            newLines: ["e"],
+            truncated: false,
+            contextBefore: null,
+            contextAfter: null,
+          },
         ],
       },
     ];
     await store.refreshChanges();
     await store.decide("accept", "docs/guide.md", ["k7"]);
     expect(store.changes[0]?.hunks).toEqual([
-      { key: "k17", oldStart: 18, oldLines: ["d"], newLines: ["e"], truncated: false },
+      {
+        key: "k17",
+        oldStart: 18,
+        oldLines: ["d"],
+        newLines: ["e"],
+        truncated: false,
+        contextBefore: null,
+        contextAfter: null,
+      },
     ]);
     await store.decide("reject", "docs/guide.md", null);
     expect(store.changes).toEqual([]);
@@ -181,7 +205,17 @@ describe("a message and its reply", () => {
       {
         path: "docs/guide.md",
         kind: "modified",
-        hunks: [{ key: "k7", oldStart: 7, oldLines: ["a"], newLines: ["b"], truncated: false }],
+        hunks: [
+          {
+            key: "k7",
+            oldStart: 7,
+            oldLines: ["a"],
+            newLines: ["b"],
+            truncated: false,
+            contextBefore: null,
+            contextAfter: null,
+          },
+        ],
       },
     ];
     await store.refreshChanges();
@@ -740,7 +774,17 @@ describe("the conversation as the person follows it", () => {
       {
         path: "docs/guide.md",
         kind: "modified",
-        hunks: [{ key: "k7", oldStart: 7, oldLines: ["a"], newLines: ["b"], truncated: false }],
+        hunks: [
+          {
+            key: "k7",
+            oldStart: 7,
+            oldLines: ["a"],
+            newLines: ["b"],
+            truncated: false,
+            contextBefore: null,
+            contextAfter: null,
+          },
+        ],
       },
     ];
     await store.refreshChanges();
@@ -969,8 +1013,24 @@ describe("the mock follows the plugin's checks", () => {
         path: "new.md",
         kind: "added",
         hunks: [
-          { key: "n1", oldStart: 1, oldLines: [], newLines: ["a"], truncated: false },
-          { key: "n2", oldStart: 1, oldLines: [], newLines: ["b"], truncated: false },
+          {
+            key: "n1",
+            oldStart: 1,
+            oldLines: [],
+            newLines: ["a"],
+            truncated: false,
+            contextBefore: null,
+            contextAfter: null,
+          },
+          {
+            key: "n2",
+            oldStart: 1,
+            oldLines: [],
+            newLines: ["b"],
+            truncated: false,
+            contextBefore: null,
+            contextAfter: null,
+          },
         ],
       },
       { path: "both.md", kind: "conflict", hunks: [] },

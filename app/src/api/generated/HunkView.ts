@@ -20,4 +20,13 @@ oldLines: Array<string>, newLines: Array<string>,
 /**
  * A side had more than 400 lines: only the first are shown; a choice still applies the whole run.
  */
-truncated: boolean, };
+truncated: boolean, 
+/**
+ * The real file's line just above the run, shown so the run reads in place (`None`: the run starts the file);
+ * never part of a choice.
+ */
+contextBefore: string | null, 
+/**
+ * The real file's line just below the run (`None`: the run ends the file).
+ */
+contextAfter: string | null, };

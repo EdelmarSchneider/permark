@@ -543,6 +543,13 @@ impl Look {
             let first = run.iter().take(MAX_HUNK_LINES).map(|l| (*l).to_owned());
             (first.collect(), run.len() > MAX_HUNK_LINES)
         };
+        // a text ending in a line break splits into a last empty piece that is no line of the file
+        let real_lines = old.len() - usize::from(old.last() == Some(&""));
+        let context = |at: Option<usize>| {
+            at.filter(|i| *i < real_lines)
+                .and_then(|i| old.get(i))
+                .map(|l| (*l).to_owned())
+        };
         FileChange {
             path: path.to_owned(),
             kind: self.kind,
@@ -558,6 +565,8 @@ impl Look {
                         old_lines,
                         new_lines,
                         truncated: old_cut || new_cut,
+                        context_before: context(hunk.old.start.checked_sub(1)),
+                        context_after: context(Some(hunk.old.end)),
                     }
                 })
                 .collect(),

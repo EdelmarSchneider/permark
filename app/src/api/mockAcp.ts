@@ -206,6 +206,8 @@ function guideChanges(): FileChange[] {
             "Links between documents work like a wiki: press Alt+Left to go back.",
           ],
           truncated: false,
+          contextBefore: "",
+          contextAfter: "",
         },
         {
           key: "guide-17",
@@ -213,6 +215,8 @@ function guideChanges(): FileChange[] {
           oldLines: ["| Ctrl+= / Ctrl+- | Zoom         |"],
           newLines: ["| Ctrl+= / Ctrl+- | Zoom         |", "| Ctrl+E       | Edit            |"],
           truncated: false,
+          contextBefore: "| Alt+Left     | Back            |",
+          contextAfter: null,
         },
       ],
     },

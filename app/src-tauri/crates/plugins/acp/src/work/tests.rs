@@ -281,6 +281,42 @@ fn each_kind_of_change_is_listed() {
     assert!(changes[0].hunks.is_empty() && changes[4].hunks.is_empty());
 }
 
+/// Each run carries the real file's line above and below it; the empty piece after a final line break is no line.
+#[test]
+fn a_hunk_shows_one_real_line_around_it() {
+    let f = fx(&[
+        ("notes.md", b"one\ntwo\nthree\nfour\nfive\n"),
+        ("open.md", b"x\ny"),
+        ("gone.md", b"bye\n"),
+    ]);
+    let mut work = f.build();
+    edit_copy(&work, "notes.md", b"ONE\ntwo\nTHREE\nfour\nfive\nsix\n");
+    edit_copy(&work, "open.md", b"x\nY");
+    edit_copy(&work, "new.md", b"hello\n");
+    std::fs::remove_file(work.copy_path("gone.md").unwrap()).unwrap();
+    let changes = work.refresh().unwrap().files;
+    let around = |path: &str| -> Vec<(Option<String>, Option<String>)> {
+        let file = changes.iter().find(|c| c.path == path).unwrap();
+        file.hunks
+            .iter()
+            .map(|h| (h.context_before.clone(), h.context_after.clone()))
+            .collect()
+    };
+    let line = |s: &str| Some(s.to_owned());
+    assert_eq!(
+        around("notes.md"),
+        [
+            (None, line("two")),
+            (line("two"), line("four")),
+            (line("five"), None),
+        ]
+    );
+    assert_eq!(around("open.md"), [(line("x"), None)]);
+    // a whole new | deleted file has no real line around it
+    assert_eq!(around("new.md"), [(None, None)]);
+    assert_eq!(around("gone.md"), [(None, None)]);
+}
+
 /// One hunk of two lands: every other byte of the real file stays, CRLF breaks included (the agent wrote LF).
 #[test]
 fn accepting_one_hunk_keeps_every_other_byte() {

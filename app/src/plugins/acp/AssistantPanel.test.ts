@@ -120,11 +120,14 @@ describe("the Assistant panel", () => {
     });
     open();
     expect(root.textContent).toContain("npm test");
+    // what Allow reaches is said beside the buttons: the person's computer, not the copy
+    expect(root.textContent).toContain(t("acp.questionHint"));
     buttonNamed("Allow").click();
     expect(answer).toHaveBeenCalledWith("7", { id: "yes", name: "Allow", kind: "allow_once" });
     acp.take({ type: "permissionDone", requestId: "7" });
     flushSync();
     expect(root.textContent).toContain(t("acp.questionClosed"));
+    expect(root.textContent).not.toContain(t("acp.questionHint"));
   });
 
   it("Enter sends; Shift+Enter and an IME's Enter do not", () => {
@@ -285,14 +288,40 @@ describe("the Assistant panel", () => {
         path: "docs/a.md",
         kind: "modified",
         hunks: [
-          { key: "a3", oldStart: 3, oldLines: ["old"], newLines: ["new"], truncated: false },
-          { key: "a9", oldStart: 9, oldLines: [], newLines: ["added"], truncated: false },
+          {
+            key: "a3",
+            oldStart: 3,
+            oldLines: ["old"],
+            newLines: ["new"],
+            truncated: false,
+            contextBefore: null,
+            contextAfter: null,
+          },
+          {
+            key: "a9",
+            oldStart: 9,
+            oldLines: [],
+            newLines: ["added"],
+            truncated: false,
+            contextBefore: null,
+            contextAfter: null,
+          },
         ],
       },
       {
         path: "docs/new.md",
         kind: "added",
-        hunks: [{ key: "n1", oldStart: 1, oldLines: [], newLines: ["# New"], truncated: false }],
+        hunks: [
+          {
+            key: "n1",
+            oldStart: 1,
+            oldLines: [],
+            newLines: ["# New"],
+            truncated: false,
+            contextBefore: null,
+            contextAfter: null,
+          },
+        ],
       },
     ];
     open();
@@ -322,7 +351,17 @@ describe("the Assistant panel", () => {
       {
         path: "docs/a.md",
         kind: "modified",
-        hunks: [{ key: "a3", oldStart: 3, oldLines: ["old"], newLines: ["new"], truncated: false }],
+        hunks: [
+          {
+            key: "a3",
+            oldStart: 3,
+            oldLines: ["old"],
+            newLines: ["new"],
+            truncated: false,
+            contextBefore: null,
+            contextAfter: null,
+          },
+        ],
       },
       { path: "docs/new.md", kind: "added", hunks: [] },
     ];
@@ -343,13 +382,72 @@ describe("the Assistant panel", () => {
     );
   });
 
+  it("a run shows the real line above and below it as unchanged rows; a whole file shows none", () => {
+    acp.changes = [
+      {
+        path: "docs/a.md",
+        kind: "modified",
+        hunks: [
+          {
+            key: "a3",
+            oldStart: 3,
+            oldLines: ["old"],
+            newLines: ["new"],
+            truncated: false,
+            contextBefore: "above",
+            contextAfter: "below",
+          },
+        ],
+      },
+      {
+        path: "docs/new.md",
+        kind: "added",
+        hunks: [
+          {
+            key: "n1",
+            oldStart: 1,
+            oldLines: [],
+            newLines: ["# New"],
+            truncated: false,
+            contextBefore: "never",
+            contextAfter: "never",
+          },
+        ],
+      },
+    ];
+    open();
+    const rows = (hunk: Element | undefined) =>
+      [...(hunk?.querySelectorAll(".row") ?? [])].map((row) => [
+        row.classList.contains("same") ? "same" : row.classList.contains("add") ? "add" : "del",
+        row.querySelector(".text")?.textContent,
+      ]);
+    const [modified, added] = root.querySelectorAll(".hunk");
+    expect(rows(modified)).toEqual([
+      ["same", "above"],
+      ["del", "old"],
+      ["add", "new"],
+      ["same", "below"],
+    ]);
+    expect(rows(added)).toEqual([["add", "# New"]]);
+  });
+
   it("a long run draws its first rows until Show all; a run the backend cut says so", () => {
     const lines = Array.from({ length: 450 }, (_, i) => `line ${String(i)}`);
     acp.changes = [
       {
         path: "big.md",
         kind: "added",
-        hunks: [{ key: "b", oldStart: 1, oldLines: [], newLines: lines, truncated: true }],
+        hunks: [
+          {
+            key: "b",
+            oldStart: 1,
+            oldLines: [],
+            newLines: lines,
+            truncated: true,
+            contextBefore: null,
+            contextAfter: null,
+          },
+        ],
       },
     ];
     open();
@@ -368,7 +466,17 @@ describe("the Assistant panel", () => {
       {
         path: "docs/a.md",
         kind: "modified",
-        hunks: [{ key: "a3", oldStart: 3, oldLines: ["old"], newLines: ["new"], truncated: false }],
+        hunks: [
+          {
+            key: "a3",
+            oldStart: 3,
+            oldLines: ["old"],
+            newLines: ["new"],
+            truncated: false,
+            contextBefore: null,
+            contextAfter: null,
+          },
+        ],
       },
     ];
     open();
