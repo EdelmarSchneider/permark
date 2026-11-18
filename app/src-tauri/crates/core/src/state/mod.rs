@@ -669,6 +669,14 @@ impl StateStore {
         self.dir.join("plugins").join(id.as_str())
     }
 
+    /// A plugin's folder in the profile for this project (`<profile>/projects/<id>/plugins/<plugin>/`), whatever the
+    /// project holds: for data that must never sit inside the project folder (a tool walking up from it would find
+    /// the project). "Remove data" sweeps it with the rest of the plugin's data.
+    #[must_use]
+    pub fn profile_plugin_dir(&self, id: &PluginId) -> PathBuf {
+        self.profile_dir.join("plugins").join(id.as_str())
+    }
+
     #[must_use]
     pub fn plugin_file<T: StateData>(&self, id: &PluginId, name: &str) -> StateFile<T> {
         StateFile {

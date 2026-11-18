@@ -1,0 +1,31 @@
+[package]
+name = "permark-plugin-acp"
+description = "PerMark plugin acp (experimental): the person's own agent works in a copy of the project; every change reaches a real file only when the person accepts it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` + two plugin crates for their pure code only (no manifest dependency): `agent` (what an
+# agent may see of the project) and `review` (line differences).
+[dependencies]
+permark-core.workspace = true
+permark-plugin-agent.workspace = true
+permark-plugin-review.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+# walks the work copy with the ignore files it holds (the project's own walker only reads the project)
+ignore.workspace = true
+# Agent Client Protocol v1 message types + JSON-RPC envelope (the transport is our own, on threads)
+agent-client-protocol-schema = { version = "1.18.0", default-features = false }
+# file URIs of the copy's files in prompts
+url = "2.5"
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

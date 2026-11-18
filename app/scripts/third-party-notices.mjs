@@ -7,13 +7,16 @@
 // done. Fails (no file written) when a Rust crate's license is not accepted in about.toml, when `cargo-about` or `cargo`
 // are missing, or when a bundled npm package says nothing about its license.
 //
-// Three sources:
+// Four sources:
 // - Rust crates (what is compiled into the program): `cargo about generate`, per license text with the crates using it.
 // - npm packages (what the interface bundles): the dependency tree of `dependencies` in package.json + BUNDLED_DEV
 //   (from package-lock.json), each one's license files read from node_modules, grouped by text the same way. A superset
 //   of what the bundler keeps: over-listing is harmless, a miss is not.
 // - libgit2: the C library compiled in by the `libgit2-sys` crate; cargo-about only sees the crate, so its COPYING (the
 //   license + the notices of the components it bundles) is added as it is.
+// - The agent list of the `acp` plugin: data from the Agent Client Protocol registry (Apache-2.0) compiled in with
+//   `include_str!`, which no package manager sees; its own header names source, date and notice. The registry ships no
+//   NOTICE file, so the attribution + the Apache-2.0 text (the repository's LICENSE-APACHE, the same text) suffice.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -42,6 +45,7 @@ export const BUNDLED_DEV = ["svelte"];
 /** @typedef {{ packages: Record<string, LockEntry> }} Lock */
 /** @typedef {{ name: string, version: string, license: string, text: string }} Notice */
 /** @typedef {{ licenses: string[], text: string, users: string[] }} Group */
+/** @typedef {{ source: string, fetched: string, notice: string }} RegistryHeader */
 
 /**
  * Where `name` resolves to when required from the package at `from` ("" = the app): Node's walk up the node_modules
@@ -218,6 +222,29 @@ export function groupNotices(notices) {
 }
 
 /**
+ * The attribution header of the built-in agent list. Only Apache-2.0 is accepted: the file renders that license's
+ * text, so a registry under another license must fail the build instead of shipping a wrong notice.
+ * @param {unknown} registry the parsed registry.json
+ * @returns {RegistryHeader}
+ */
+export function registryHeader(registry) {
+  const r = typeof registry === "object" && registry !== null ? registry : {};
+  /** @param {string} key */
+  const field = (key) => {
+    const value = /** @type {Record<string, unknown>} */ (r)[key];
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new Error(`agent registry: "${key}" is missing (refresh it with agents/refresh.mjs)`);
+    }
+    return value.trim();
+  };
+  const license = field("license");
+  if (license !== "Apache-2.0") {
+    throw new Error(`agent registry: license ${license} is not Apache-2.0: update this script`);
+  }
+  return { source: field("source"), fetched: field("fetched"), notice: field("notice") };
+}
+
+/**
  * A code fence longer than any run of `~` inside the text, so license text can never close it.
  * @param {string} text
  * @returns {string}
@@ -250,11 +277,13 @@ export function renderGroup(group) {
 
 /**
  * The whole file.
- * @param {{ rust: string, npm: readonly Group[], libgit2: { version: string, text: string } }} parts
+ * @param {{ rust: string, npm: readonly Group[], libgit2: { version: string, text: string },
+ *   registry: RegistryHeader & { apache: string } }} parts
  * @returns {string}
  */
 export function renderNotices(parts) {
   const fence = fenceFor(parts.libgit2.text);
+  const apacheFence = fenceFor(parts.registry.apache);
   return [
     "# Third-party notices",
     "",
@@ -279,6 +308,17 @@ export function renderNotices(parts) {
     `${fence}text`,
     parts.libgit2.text.trim(),
     fence,
+    "",
+    "## Agent Client Protocol registry (agent list built into the Assistant plugin)",
+    "",
+    parts.registry.notice,
+    "",
+    `Taken from ${parts.registry.source} on ${parts.registry.fetched}. PerMark does not review or endorse the agents in this list. The Apache License 2.0 follows.`,
+    "",
+    `${apacheFence}text`,
+    // blank lines dropped, but not the indent of the license's centered title
+    parts.registry.apache.replace(/^\s*\n/, "").trimEnd(),
+    apacheFence,
     "",
   ].join("\n");
 }
@@ -355,10 +395,18 @@ function main(argv) {
   if (!existsSync(copying)) throw new Error(`${copying} not found`);
   const version = String(sys.version).split("+")[1] ?? String(sys.version);
 
+  const registry = registryHeader(
+    JSON.parse(
+      readFileSync(join(tauri, "crates", "plugins", "acp", "agents", "registry.json"), "utf8"),
+    ),
+  );
+  const apache = readFileSync(join(app, "..", "LICENSE-APACHE"), "utf8").replace(/\r\n/g, "\n");
+
   const file = renderNotices({
     rust,
     npm: groupNotices(notices),
     libgit2: { version, text: readFileSync(copying, "utf8").replace(/\r\n/g, "\n") },
+    registry: { ...registry, apache },
   });
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, file);

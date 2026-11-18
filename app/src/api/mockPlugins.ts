@@ -2,6 +2,7 @@
 // unread documents, and a review of `docs/guide.md`. In memory; the same shapes the real plugins serve.
 
 import type { Block } from "./generated/Block";
+import { createMockAcp, type AcpProbe } from "./mockAcp";
 import { createMockAgent, type AgentProbe } from "./mockAgent";
 import { MockPluginError, type OrganizingProbe } from "./mockOrganizing";
 import type { createMockOrganizing } from "./mockOrganizing";
@@ -67,6 +68,8 @@ export type MockPluginProbe = {
   notes: NotesProbe;
   /** The agent connection: what the window published, a client connecting, requests. */
   agent: AgentProbe;
+  /** The assistant: what was sent and answered, the work copy's changes, the reply timer. */
+  acp: AcpProbe;
   /** Announces a plugin event as the backend would. */
   announce<E extends PluginEventName>(event: E, data: PluginEvents[E]): void;
   /** Repair calls, oldest first. */
@@ -319,12 +322,14 @@ export function createMockPlugins(
   };
 
   const agent = createMockAgent(emit);
+  const acp = createMockAcp(emit);
   const members = createMockGitMembers({ view: projectsView, emit, baseline: () => baseline });
   const repairs: RepairArgs[] = [];
   let nextRefusal: RepairRefusal | null = null;
   const handlers: Handlers = {
     ...organizing.handlers,
     ...agent.handlers,
+    ...acp.handlers,
     ...notes.handlers,
     ...notes.agentHandlers,
     ...distribution,
@@ -466,6 +471,7 @@ export function createMockPlugins(
       organizing: organizing.probe,
       notes: notes.probe,
       agent: agent.probe,
+      acp: acp.probe,
       announce: emit,
       repairs,
       refuseNext: (reason) => {

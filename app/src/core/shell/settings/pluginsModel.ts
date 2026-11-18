@@ -17,6 +17,7 @@ export const KNOWN_PLUGINS = [
   "broken-links",
   "notes",
   "agent",
+  "acp",
   "md-family",
   "symbols",
   "word-count",

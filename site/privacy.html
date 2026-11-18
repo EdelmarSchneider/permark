@@ -36,18 +36,18 @@
           <p class="legal__updated">Last updated November 18, 2026. This page covers PerMark, the desktop app, in every build: the versions from GitHub, the Microsoft Store and the snap. It also covers this website.</p>
 
           <h2>In short</h2>
-          <p>PerMark has no account, no telemetry and no tracking. It goes online only to check for its own updates (in the versions you download from GitHub; the Microsoft Store and the snap update PerMark for it), and when you ask: a picture from the web, a spelling dictionary, the optional vocabulary of the Token count plugin, or a local AI model and the engine that runs it. Your documents do not leave your computer through PerMark. An AI agent you connect is a separate program: what it sends online is up to that agent.</p>
+          <p>PerMark has no account, no telemetry and no tracking. It goes online only to check for its own updates (in the versions you download from GitHub; the Microsoft Store and the snap update PerMark for it), and when you ask: a picture from the web, a spelling dictionary, the optional vocabulary of the Token count plugin, or a local AI model and the engine that runs it. PerMark itself never sends your documents over the internet. An AI agent you connect is a separate program: what it sends online is up to that agent. If you turn on the Assistant plugin (experimental, off until you turn it on), PerMark starts the AI agent you choose on your computer and gives it a copy of your folder, without the files listed in <code>.aiignore</code>. That agent goes online by itself: it sends your messages and what it reads to its own AI service, and an agent that starts with npx or uvx is first downloaded by that tool. <a href="#assistant">More about the Assistant</a>.</p>
 
           <h2>What PerMark does not do</h2>
           <ul>
             <li>It has no account and no sign-in.</li>
             <li>It has no telemetry, no analytics and no crash reporting.</li>
-            <li>It does not send your documents over the internet. When you turn on the agent connection, it gives parts of them only to an agent on your own computer.</li>
+            <li>It does not send your documents over the internet. When you turn on the agent connection, it gives parts of them only to an agent on your own computer. When you use the Assistant, it gives the agent you chose a copy of your folder on your own computer, without the files listed in <code>.aiignore</code>; that agent may send what it reads to its own AI service.</li>
           </ul>
 
           <h2>What stays on your computer</h2>
           <ul>
-            <li><strong>Your documents.</strong> PerMark reads the folders and files you open. It changes them only when you act in it: for example, when you save an edit, revert a change in Review, add a picture, or create, rename, move or delete a file (and, if you agree, the links to it in other documents). Notes save themselves as you type, as plain Markdown files in a folder you can see.</li>
+            <li><strong>Your documents.</strong> PerMark reads the folders and files you open. It changes them only when you act in it: for example, when you save an edit, revert a change in Review, accept a change from the Assistant, add a picture, or create, rename, move or delete a file (and, if you agree, the links to it in other documents). Notes save themselves as you type, as plain Markdown files in a folder you can see.</li>
             <li><strong>What you add in PerMark.</strong> Your tags, descriptions and comments, and which documents you have read. PerMark keeps them in its data folder in your user profile, or in the project's <code>.permark</code> folder if you chose to keep them there.</li>
             <li><strong>Your settings</strong>, your recent folders, and your windows and tabs.</li>
           </ul>
@@ -118,6 +118,13 @@
                   <td role="cell" data-label="Does it ask you?">Yes. One click per picture, or your choice per project</td>
                 </tr>
                 <tr role="row">
+                  <td role="cell" data-label="What">The AI agent you choose in the Assistant plugin (experimental, off until you turn it on). It is a separate program that PerMark starts on your computer; PerMark itself sends nothing for it</td>
+                  <td role="cell" data-label="When">When you send a message in the Assistant panel. An agent marked <strong>Starts with npx</strong> or <strong>Starts with uvx</strong> is downloaded by that tool the first time</td>
+                  <td role="cell" data-label="Where it goes">The agent's own AI service, which the agent chooses, not PerMark. For the download: the npm registry (<code>registry.<wbr>npmjs.<wbr>org</code>) or PyPI (<code>pypi.<wbr>org</code>), or the source your npx or uv is set to use</td>
+                  <td role="cell" data-label="Which builds">All builds except the snap, which cannot start other programs</td>
+                  <td role="cell" data-label="Does it ask you?">Yes. Nothing starts until you turn the plugin on, choose an agent and send a message</td>
+                </tr>
+                <tr role="row">
                   <td role="cell" data-label="What">WebView2 installer (the Windows part PerMark uses to show its pages)</td>
                   <td role="cell" data-label="When">Once, while you install PerMark, and only if your computer does not have WebView2</td>
                   <td role="cell" data-label="Where it goes">Microsoft, which provides the WebView2 installer</td>
@@ -147,6 +154,7 @@
             <li><strong>Links.</strong> A web or email link opens in your browser or mail app. That program goes online, not PerMark.</li>
             <li><strong>Git.</strong> PerMark never runs <code>fetch</code>, <code>pull</code>, <code>push</code> or <code>clone</code>. Its built-in git cannot go online.</li>
             <li><strong>The agent connection.</strong> It talks only to programs on your own computer, and it opens no network port.</li>
+            <li><strong>The Assistant's list of agents.</strong> It comes with PerMark. Opening it or choosing an agent fetches nothing.</li>
           </ul>
 
           <h2>Outside PerMark's control</h2>
@@ -159,11 +167,22 @@
           <ul>
             <li>It is local: it talks only to programs on your computer and opens no network port.</li>
             <li>It works only while PerMark has the project open, so you see when an agent is connected. With PerMark closed, an agent can only ask to start it.</li>
-            <li>The agent reads, shows you a place and marks your comments done. It never edits a file through PerMark.</li>
+            <li>The agent reads, shows you a place and marks your comments done. It never edits a file through this connection.</li>
             <li>A note reaches an agent only if you share that note.</li>
             <li>Files listed in <code>.aiignore</code> never reach an agent. Everything else it reads as written, passwords and keys included, so list files that hold secrets in <code>.aiignore</code>.</li>
           </ul>
           <p>The agent you connect is a separate program, and your choice. It may send what it reads through PerMark (your selection, your comments, search results) to its own AI service, as it would with anything else you show it. What that service does with it is between you and that service, under its terms and privacy policy. Turn the connection off, and the agent gets nothing more through PerMark.</p>
+
+          <h2 id="assistant">The Assistant</h2>
+          <p>The Assistant is an experimental plugin, <strong>off until you turn it on</strong> in <strong>Settings → Plugins</strong>. It lets an AI agent you choose work on your folder. You choose the agent from a list that comes with PerMark (taken from the Agent Client Protocol registry), or you type the command that starts your own. PerMark starts that program on your computer when you send your first message. The Assistant is not available in the snap.</p>
+          <ul>
+            <li>The agent works on a copy of your folder that PerMark keeps in its data folder, outside your folder. The copy leaves out the files listed in <code>.aiignore</code>, the <code>.git</code> and <code>.permark</code> folders and agent settings files.</li>
+            <li>The agent receives your message and the passage you attached, with its file name and lines. It can read every file in its copy.</li>
+            <li>Its changes reach your files only when you accept them, and you can undo a change you accepted. Changes you have not accepted are deleted with the copy when you close the folder or turn the plugin off.</li>
+            <li>When the agent wants to run a command or do something outside its copy, PerMark asks you first, unless the agent's own settings already allow it. A command you allow runs on your computer, with your permissions.</li>
+            <li>The agent runs with your own rights. The copy keeps your files out of its way, but it is not a security boundary: the agent could still open other files on your computer by itself. Use only agents you trust.</li>
+          </ul>
+          <p>The agent is a separate program, and your choice. It uses your own account with its provider, which may cost money. It may send anything it receives or reads to its own AI service; what that service does with it is between you and that service, under its terms and privacy policy. PerMark itself makes no network call for the Assistant. An agent that starts with npx or uvx is downloaded by that tool the first time, from the npm registry or PyPI, or from the source that tool is set to use.</p>
 
           <h2>This website</h2>
           <p>This website is hosted on GitHub Pages. When you visit, GitHub receives your request the way any web server does, including your IP address, under <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>. The site has no analytics, no tracking scripts and no cookies, and it loads its fonts and pictures from its own address.</p>

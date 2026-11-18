@@ -235,6 +235,35 @@ import type { NoteList } from "./generated/NoteList";
 import type { NotesIntent } from "./generated/NotesIntent";
 import type { NotesSummary } from "./generated/NotesSummary";
 import type { Version } from "./generated/Version";
+import type { AcpError } from "./generated/AcpError";
+import type { AcpErrorCode } from "./generated/AcpErrorCode";
+import type { AcpOptionKind } from "./generated/AcpOptionKind";
+import type { AcpReach } from "./generated/AcpReach";
+import type { AcpState } from "./generated/AcpState";
+import type { AcpStatus } from "./generated/AcpStatus";
+import type { AcpStopReason } from "./generated/AcpStopReason";
+import type { AcpToolKind } from "./generated/AcpToolKind";
+import type { AcpToolStatus } from "./generated/AcpToolStatus";
+import type { AcpUpdate } from "./generated/AcpUpdate";
+import type { AgentEntry } from "./generated/AgentEntry";
+import type { AgentHow } from "./generated/AgentHow";
+import type { AgentNeed } from "./generated/AgentNeed";
+import type { AnswerArgs } from "./generated/AnswerArgs";
+import type { ChangeList } from "./generated/ChangeList";
+import type { ChangesArgs } from "./generated/ChangesArgs";
+import type { ChooseArgs } from "./generated/ChooseArgs";
+import type { DecideArgs } from "./generated/DecideArgs";
+import type { FileChange } from "./generated/FileChange";
+import type { FileChangeKind } from "./generated/FileChangeKind";
+import type { HunkView } from "./generated/HunkView";
+import type { LoginArgs } from "./generated/LoginArgs";
+import type { LoginKind } from "./generated/LoginKind";
+import type { LoginMethod } from "./generated/LoginMethod";
+import type { PermissionChoice } from "./generated/PermissionChoice";
+import type { PermissionDiff } from "./generated/PermissionDiff";
+import type { PromptArgs } from "./generated/PromptArgs";
+import type { PromptSelection } from "./generated/PromptSelection";
+import type { UndoArgs } from "./generated/UndoArgs";
 
 export type {
   DropOpened,
@@ -839,6 +868,39 @@ export interface PluginMethods {
   /** Opens | shows in the file manager the file last written for this window. */
   "export.open": { args: Record<string, never>; result: null };
   "export.reveal": { args: Record<string, never>; result: null };
+  /** Where the project's agent stands, the chosen agent (name, command as it would run), its sign-in methods. */
+  "acp.status": { args: Record<string, never>; result: AcpStatus };
+  /** The agents the person can choose, as each would start on this computer (the own command last when chosen). */
+  "acp.agents": { args: Record<string, never>; result: AgentEntry[] };
+  /** Keeps the person's choice and stops the agent (copy + changes stay); answers the list with the new choice.
+   *  Refused while the agent starts | works (`conflict` `busy`), `invalidData` `unknownAgent` | `emptyCommand` |
+   *  `oneChoice`, `unavailable` `noProfile`. */
+  "acp.choose": { args: ChooseArgs; result: AgentEntry[] };
+  /** Signs in while the agent waits for it (`needsLogin`): an `agent` method signs in through the agent, none | any
+   *  other tries again. Refused `notFound` `noLogin` | `invalidData` `unknownMethod`. */
+  "acp.login": { args: LoginArgs; result: null };
+  /** Sends a message (the agent starts first when none runs); answers at once, the reply comes as `acp:update`.
+   *  Refused while the agent starts | works (`conflict` `busy`). */
+  "acp.prompt": { args: PromptArgs; result: null };
+  /** Stops the turn in progress (its end comes as `acp:update` `turnEnd`). */
+  "acp.cancel": { args: Record<string, never>; result: null };
+  /** A new conversation: the agent stops, the next message starts a fresh one; the changes stay. */
+  "acp.reset": { args: Record<string, never>; result: null };
+  /** Answers one of the agent's questions (`optionId` null: dismissed). */
+  "acp.answer": { args: AnswerArgs; result: null };
+  /** The files of the work copy that differ from the real ones, as kept since the last turn's end (`refresh`:
+   *  computed again); at most 500 (`more`: the rest). Empty while there is no copy. */
+  "acp.changes": { args: ChangesArgs; result: ChangeList };
+  /** Puts the hunks named by `hunks` keys (null: the whole file) of the copy into the real file; answers the updated
+   *  list. Refused `conflict` `outdated` (a key of an older list: read `acp.changes` again) | `changed` | `unsaved`,
+   *  `denied` `denied`, `invalidData` `link` | `wholeFileOnly`. */
+  "acp.accept": { args: DecideArgs; result: ChangeList };
+  /** Drops the hunks named by `hunks` keys (null: the whole file) from the copy; answers the updated list. Refused
+   *  `conflict` `outdated` | `linkInPath`. */
+  "acp.reject": { args: DecideArgs; result: ChangeList };
+  /** Takes back the last accept | reject of `path` once (lost when the plugin stops); answers the updated list.
+   *  Refused `notFound` `noUndo`, `conflict` `changed` (the file changed since) | `unsaved`. */
+  "acp.undo": { args: UndoArgs; result: ChangeList };
 }
 
 /** What the converter reads: a file of the workspace, or a text from the page. */
@@ -866,6 +928,8 @@ export interface PluginEvents {
     window: string | null;
   };
   "agent:ask": { group: string };
+  /** What the project's agent does, as it happens (status, reply text, tool lines, questions, turn end). */
+  "acp:update": AcpUpdate;
 }
 export type PluginEventName = keyof PluginEvents;
 export type PluginEnvelope<E extends PluginEventName> = { root: string; data: PluginEvents[E] };
@@ -954,6 +1018,37 @@ export type {
   VersionsReason,
 };
 export type { UnreadList };
+export type {
+  AcpError,
+  AcpErrorCode,
+  AcpOptionKind,
+  AcpReach,
+  AcpState,
+  AcpStatus,
+  AcpStopReason,
+  AcpToolKind,
+  AcpToolStatus,
+  AcpUpdate,
+  AgentEntry,
+  AgentHow,
+  AgentNeed,
+  AnswerArgs,
+  ChangeList,
+  ChangesArgs,
+  ChooseArgs,
+  DecideArgs,
+  FileChange,
+  FileChangeKind,
+  HunkView,
+  LoginArgs,
+  LoginKind,
+  LoginMethod,
+  PermissionChoice,
+  PermissionDiff,
+  PromptArgs,
+  PromptSelection,
+  UndoArgs,
+};
 export type {
   AgentMode,
   AgentRequest,
