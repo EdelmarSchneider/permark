@@ -439,9 +439,9 @@ describe("the plugins page", () => {
   const switchOf = (name: string): HTMLInputElement =>
     row(name).querySelector<HTMLInputElement>('input[role="switch"]') as HTMLInputElement;
 
-  it("every plugin is listed once, grouped by kind, with its switch on", async () => {
+  it("every plugin is listed once, grouped by kind, with its switch on unless off by default", async () => {
     await pluginsPage();
-    expect(target.querySelectorAll(".plugin")).toHaveLength(41);
+    expect(target.querySelectorAll(".plugin")).toHaveLength(42);
     const groups = Array.from(target.querySelectorAll("section.group h4")).map(
       (h) => h.textContent,
     );
@@ -453,11 +453,12 @@ describe("the plugins page", () => {
       "Checkers",
       "Blocks in Markdown",
     ]);
-    // every plugin starts on, the specialist tools too (director 2026-10-20)
+    // every plugin starts on, the specialist tools too; only the experimental
+    // Assistant (an outside agent working on a copy) waits for the person to turn it on
     const off = Array.from(target.querySelectorAll<HTMLInputElement>('input[role="switch"]'))
       .filter((i) => !i.checked)
       .map((i) => i.closest(".plugin")?.querySelector(".name")?.textContent?.trim());
-    expect(off).toEqual([]);
+    expect(off).toEqual(["Assistant"]);
   });
 
   it("turning a plugin off turns its dependents off with a reason and a way back", async () => {

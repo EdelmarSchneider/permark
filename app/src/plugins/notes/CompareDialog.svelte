@@ -1,6 +1,7 @@
 <script lang="ts">
   // The text found after a crash against the note as it is on disk: removed lines in red, new ones in green, long
   // unchanged runs folded. The person keeps the recovered text or lets it go.
+  import DiffLines from "../../core/editing/DiffLines.svelte";
   import { diffRows } from "../../core/editing/diffRows";
   import { t } from "../../core/i18n";
   import NoteDialog from "./NoteDialog.svelte";
@@ -24,18 +25,7 @@
       aria-multiline="true"
       aria-label={t("notes.recovered.compareTitle")}
     >
-      {#each rows as row (row.key)}
-        {#if row.kind === "fold"}
-          <div class="row fold">{t("conflict.folded", { count: row.count })}</div>
-        {:else}
-          <div class={["row", row.kind]}>
-            <span class="sign" aria-hidden="true"
-              >{row.kind === "add" ? "+" : row.kind === "del" ? "−" : ""}</span
-            >
-            <span class="text">{row.text === "" ? " " : row.text}</span>
-          </div>
-        {/if}
-      {/each}
+      <DiffLines {rows} />
     </div>
     {#snippet footer()}
       <button type="button" class="btn" onclick={() => store.closeCompare()}>
@@ -74,35 +64,5 @@
     background: var(--surface);
     font-family: var(--font-code);
     font-size: var(--fs-ui-sm);
-  }
-  .row {
-    display: flex;
-    gap: var(--sp-2);
-    padding: 0 var(--sp-2);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .sign {
-    flex: none;
-    width: 1ch;
-    color: var(--faint);
-  }
-  .add {
-    background: var(--review-add-bg);
-  }
-  .add .sign {
-    color: var(--git-added-text);
-  }
-  .del {
-    background: var(--review-del-bg);
-  }
-  .del .sign {
-    color: var(--git-deleted-text);
-  }
-  .fold {
-    justify-content: center;
-    color: var(--faint);
-    font-family: var(--font-ui);
-    font-size: var(--fs-ui-xs);
   }
 </style>

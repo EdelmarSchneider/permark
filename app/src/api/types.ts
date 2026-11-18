@@ -235,6 +235,16 @@ import type { NoteList } from "./generated/NoteList";
 import type { NotesIntent } from "./generated/NotesIntent";
 import type { NotesSummary } from "./generated/NotesSummary";
 import type { Version } from "./generated/Version";
+import type { AcpState } from "./generated/AcpState";
+import type { AcpStatus } from "./generated/AcpStatus";
+import type { AcpUpdate } from "./generated/AcpUpdate";
+import type { AnswerArgs } from "./generated/AnswerArgs";
+import type { FileChange } from "./generated/FileChange";
+import type { FileChangeKind } from "./generated/FileChangeKind";
+import type { HunkView } from "./generated/HunkView";
+import type { PermissionChoice } from "./generated/PermissionChoice";
+import type { PromptArgs } from "./generated/PromptArgs";
+import type { PromptSelection } from "./generated/PromptSelection";
 
 export type {
   DropOpened,
@@ -839,6 +849,23 @@ export interface PluginMethods {
   /** Opens | shows in the file manager the file last written for this window. */
   "export.open": { args: Record<string, never>; result: null };
   "export.reveal": { args: Record<string, never>; result: null };
+  /** Where the project's agent stands, and its command as the person typed it. */
+  "acp.status": { args: Record<string, never>; result: AcpStatus };
+  /** Sends a message (the agent starts first when none runs); answers at once, the reply comes as `acp:update`.
+   *  Refused while the agent starts | works (`conflict` `busy`). */
+  "acp.prompt": { args: PromptArgs; result: null };
+  /** Stops the turn in progress (its end comes as `acp:update` `turnEnd`). */
+  "acp.cancel": { args: Record<string, never>; result: null };
+  /** A new conversation: the agent stops, the next message starts a fresh one; the changes stay. */
+  "acp.reset": { args: Record<string, never>; result: null };
+  /** Answers one of the agent's questions (`optionId` null: dismissed). */
+  "acp.answer": { args: AnswerArgs; result: null };
+  /** The files of the work copy that differ from the real ones (empty while there is no copy). */
+  "acp.changes": { args: Record<string, never>; result: FileChange[] };
+  /** Puts hunks `hunks` (null: the whole file) of the copy into the real file; answers the fresh list. */
+  "acp.accept": { args: { path: string; hunks: number[] | null }; result: FileChange[] };
+  /** Drops hunks `hunks` (null: the whole file) from the copy; answers the fresh list. */
+  "acp.reject": { args: { path: string; hunks: number[] | null }; result: FileChange[] };
 }
 
 /** What the converter reads: a file of the workspace, or a text from the page. */
@@ -866,6 +893,8 @@ export interface PluginEvents {
     window: string | null;
   };
   "agent:ask": { group: string };
+  /** What the project's agent does, as it happens (status, reply text, tool lines, questions, turn end). */
+  "acp:update": AcpUpdate;
 }
 export type PluginEventName = keyof PluginEvents;
 export type PluginEnvelope<E extends PluginEventName> = { root: string; data: PluginEvents[E] };
@@ -954,6 +983,18 @@ export type {
   VersionsReason,
 };
 export type { UnreadList };
+export type {
+  AcpState,
+  AcpStatus,
+  AcpUpdate,
+  AnswerArgs,
+  FileChange,
+  FileChangeKind,
+  HunkView,
+  PermissionChoice,
+  PromptArgs,
+  PromptSelection,
+};
 export type {
   AgentMode,
   AgentRequest,

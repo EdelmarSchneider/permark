@@ -305,6 +305,36 @@ describe("the symbols plugin", () => {
   });
 });
 
+describe("the assistant plugin", () => {
+  afterEach(() => layout.setOpen("acp.panel", false));
+
+  it("adds its panel (in a project only) and its command, and leaves nothing when off", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    await host.enable("acp");
+    const found = [...new Set(registry.ownedBy("acp").map((c) => c.kind))].sort();
+    expect(found).toEqual(["command", "panel"]);
+    const panel = registry.of("panel").find((p) => p.id === "acp.panel");
+    expect(panel?.side).toBe("right");
+    expect(panel?.requires.needs).toEqual([{ need: "workspace", kinds: ["project"] }]);
+    // turned on means asked for: it opens by itself in a project with no choice for it yet
+    expect(panel?.defaultOpen?.()).toBe(true);
+    expect(registry.of("shortcut")).toEqual([]);
+    expect(host.disable("acp"), "contributions left after deactivate").toBe(0);
+    expect(registry.items).toHaveLength(0);
+  });
+
+  it("switching off takes the panel away from the window", async () => {
+    conditions.set({ ...neutralContext(), workspace: "project" });
+    const window = new PluginHost(contributions, pluginLoaders());
+    await window.enable("acp");
+    showView("acp.panel");
+    expect(arrangement.isSelected("acp.panel")).toBe(true);
+    expect(window.disable("acp")).toBe(0);
+    expect(arrangement.viewOf("acp.panel")).toBeUndefined();
+  });
+});
+
 describe("the export plugin", () => {
   it("adds its menu entries, the print command and its key, dormant, and leaves nothing when off", async () => {
     const registry = new ContributionRegistry();
