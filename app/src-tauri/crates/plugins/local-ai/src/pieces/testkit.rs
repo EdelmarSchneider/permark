@@ -31,17 +31,22 @@ use crate::tasks::Task;
 /// Piece word that makes the fake answer hit its cap.
 pub const RAMBLE: &str = "ramble";
 
+/// Longest [`wait`]: only a failing test reaches it. Wide because a loaded CI runner stalls the paced fake for
+/// seconds while the run itself needs milliseconds.
+const WAIT: Duration = Duration::from_secs(30);
+
 /// Polls `f` until it answers.
 ///
 /// # Panics
-/// No answer within 10 s.
+/// No answer within [`WAIT`]; the panic names the caller's line (the step that hung).
+#[track_caller]
 pub fn wait<T>(mut f: impl FnMut() -> Option<T>) -> T {
     let start = Instant::now();
     loop {
         if let Some(value) = f() {
             return value;
         }
-        assert!(start.elapsed() < Duration::from_secs(10), "timed out");
+        assert!(start.elapsed() < WAIT, "timed out after {WAIT:?}");
         std::thread::sleep(Duration::from_millis(2));
     }
 }
@@ -106,7 +111,9 @@ impl Events {
             .collect()
     }
 
-    /// Phases of `run` once its last one (`done` | `cancelled` | `failed`) went out ([`wait`]s for it).
+    /// Phases of `run` once its last one (`done` | `cancelled` | `failed`) went out ([`wait`]s for it; a timeout
+    /// names the caller's line).
+    #[track_caller]
     pub fn ended(&self, run: &str) -> Vec<Value> {
         wait(|| {
             let phases = self.phases(run);

@@ -38,7 +38,7 @@ const { windowStore } = await import("../window.svelte");
 const { tabs } = await import("./tabs.svelte");
 const { registerCoreCommands } = await import("../commands/core");
 const { installWindowKeys } = await import("../commands/install");
-const { contributions } = await import("../plugins/instance.svelte");
+const { contributions, host } = await import("../plugins/instance.svelte");
 const { conditions } = await import("../conditions/context.svelte");
 const { pluginsStore, projectSettings } = await import("./settings/stores.svelte");
 const { confirmInit, askInitHere, newProject, answerInit } = await import("./initProject");
@@ -413,8 +413,16 @@ describe("the settings page", () => {
       "handoff",
     );
     expect(target.textContent).toContain("Opens with PerMark");
-    // plugins off: their sections go, the default app stays
-    for (const id of ["git", "notes", "token-count", "updates", "shell-integration", "spelling"]) {
+    // plugins off: their sections go, the default app stays. Every plugin that is on has loaded first, so the owners
+    // read here are all of them: a section of a plugin left out of a fixed list (one that loaded late) never went.
+    await until(
+      () => conditions.current.plugins.every((id) => host.state(id) !== "loading"),
+      "the plugins loaded",
+    );
+    const owners = new Set(
+      contributions.visible("settingsSection", conditions.current).map((c) => c.owner),
+    );
+    for (const id of owners) {
       await store.changeSetting({ key: "pluginEnabled", value: { plugin: id, enabled: false } });
     }
     await until(
