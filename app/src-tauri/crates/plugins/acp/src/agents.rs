@@ -24,7 +24,7 @@ use permark_core::{ErrorKind, IpcError};
 use serde::{Deserialize, Serialize};
 
 use crate::client::AgentPipes;
-use crate::dto::{AgentEntry, AgentHow, AgentNeed, ChooseArgs};
+use crate::dto::{AgentEntry, AgentHow, AgentNeed, ChooseArgs, ResolvedCommand};
 
 /// The registry snapshot.
 const SNAPSHOT: &str = include_str!("../agents/registry.json");
@@ -513,6 +513,41 @@ impl Agents {
     /// file under the folder the agent starts in) | `oneChoice` (none or both given); `Unavailable` (`snap`: inside a
     /// Snap nothing can start | `noProfile`); IO.
     pub fn choose(&self, args: &ChooseArgs) -> Result<(), IpcError> {
+        let (choice, file) = self.checked(args)?;
+        file.update(|_| Some(choice.clone()))?;
+        Ok(())
+    }
+
+    /// What [`Agents::choose`] would make of an own command, nothing kept: the full path of the program that would
+    /// start (`None`: refused | not found) or the refusal's detail. Looks the program up on `PATH`, never runs it.
+    #[must_use]
+    pub fn preview(&self, typed: &str) -> ResolvedCommand {
+        let args = ChooseArgs {
+            agent: None,
+            command: Some(typed.to_owned()),
+        };
+        match self.checked(&args) {
+            Ok((Choice::Command(kept), _)) => ResolvedCommand {
+                program: self
+                    .resolve_typed(&kept)
+                    .plan
+                    .map(|plan| plan.program.to_string_lossy().into_owned()),
+                error: None,
+            },
+            Ok((Choice::Agent(_), _)) => ResolvedCommand {
+                program: None,
+                error: None,
+            },
+            Err(refused) => ResolvedCommand {
+                program: None,
+                error: refused.detail,
+            },
+        }
+    }
+
+    /// The choice `args` asks for and the file that keeps it, every refusal of [`Agents::choose`] checked (one place:
+    /// a preview never says yes to what a choice refuses).
+    fn checked(&self, args: &ChooseArgs) -> Result<(Choice, &StateFile<Choice>), IpcError> {
         if self.snap {
             return Err(IpcError::new(ErrorKind::Unavailable).detail("snap"));
         }
@@ -547,8 +582,7 @@ impl Agents {
             .file
             .as_ref()
             .ok_or_else(|| IpcError::new(ErrorKind::Unavailable).detail("noProfile"))?;
-        file.update(|_| Some(choice.clone()))?;
-        Ok(())
+        Ok((choice, file))
     }
 }
 

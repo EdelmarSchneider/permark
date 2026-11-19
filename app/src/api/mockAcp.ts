@@ -35,6 +35,7 @@ type AcpMethods = Pick<
   | "acp.status"
   | "acp.agents"
   | "acp.choose"
+  | "acp.resolve"
   | "acp.login"
   | "acp.prompt"
   | "acp.cancel"
@@ -334,13 +335,39 @@ function check(args: PromptArgs): void {
   if (args.document !== undefined) projectFile(args.document);
 }
 
-/** The command's program (its first word; double quotes group) is a path with a folder that is not absolute. */
-function relativeProgram(command: string): boolean {
-  const program = command.startsWith('"')
+/** The command's program: its first word (double quotes group). */
+function programOf(command: string): string {
+  return command.startsWith('"')
     ? command.slice(1, command.indexOf('"', 1))
     : (command.split(/\s+/)[0] ?? "");
-  const absolute = /^([A-Za-z]:[\\/]|[\\/])/.test(program);
-  return /[\\/]/.test(program) && !absolute;
+}
+
+const isAbsolute = (program: string): boolean => /^([A-Za-z]:[\\/]|[\\/])/.test(program);
+
+/** Why the plugin refuses an own command (trimmed), by its detail; `null`: it would be kept. */
+function commandRefusal(command: string): string | null {
+  if (command === "") return "emptyCommand";
+  // double quotes group a word: one left open is refused, as the plugin does
+  if (command.split('"').length % 2 === 0) return "openQuote";
+  const program = programOf(command);
+  if (program === "") return "emptyCommand";
+  // a path with a folder that is not absolute would name a file under the folder the agent starts in
+  if (/[\\/]/.test(program) && !isAbsolute(program)) return "relativeProgram";
+  return null;
+}
+
+/** The programs the mock computer finds by their bare name (as `PATH` would). */
+const MOCK_PROGRAMS: Readonly<Record<string, string>> = {
+  npx: "C:\\Program Files\\nodejs\\npx.cmd",
+  node: "C:\\Program Files\\nodejs\\node.exe",
+  uvx: "C:\\Users\\you\\.local\\bin\\uvx.exe",
+  "my-agent": "C:\\Users\\you\\.local\\bin\\my-agent.exe",
+};
+
+/** The full path of the program a kept own command would start; `null`: not found on the mock computer. */
+function programFound(command: string): string | null {
+  const program = programOf(command);
+  return isAbsolute(program) ? program : (MOCK_PROGRAMS[program] ?? null);
 }
 
 export function createMockAcp(
@@ -657,12 +684,8 @@ export function createMockAcp(
             throw new MockPluginError("invalidData", args.agent, "unknownAgent");
           probe.choice = { agent: args.agent };
         } else if (args.agent === undefined && command !== undefined) {
-          if (command === "") throw new MockPluginError("invalidData", null, "emptyCommand");
-          // double quotes group a word: one left open is refused, as the plugin does
-          if (command.split('"').length % 2 === 0)
-            throw new MockPluginError("invalidData", null, "openQuote");
-          if (relativeProgram(command))
-            throw new MockPluginError("invalidData", null, "relativeProgram");
+          const refusal = commandRefusal(command);
+          if (refusal !== null) throw new MockPluginError("invalidData", null, refusal);
           probe.choice = { command };
         } else throw new MockPluginError("invalidData", null, "oneChoice");
         // as the plugin does: the agent stops, the next message starts the chosen one
@@ -670,6 +693,11 @@ export function createMockAcp(
         started = false;
         become("idle");
         return agents();
+      },
+      "acp.resolve": (args) => {
+        const command = args.command.trim();
+        const error = probe.snap ? "snap" : commandRefusal(command);
+        return { program: error === null ? programFound(command) : null, error };
       },
       "acp.prompt": (sent) => {
         probe.calls.push("prompt");

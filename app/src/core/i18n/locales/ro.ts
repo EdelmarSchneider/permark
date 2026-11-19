@@ -3202,6 +3202,11 @@ export default {
   "acp.pick.commandWarning":
     "PerMark va porni acest program pe computerul tău, cu permisiunile tale. Folosește doar un program în care ai încredere.",
   "acp.pick.useCommand": "Folosește această comandă",
+  "acp.preview.starts": "Pornește: {program}",
+  "acp.page.inUse": "Agent folosit",
+  "acp.page.none": "Niciun agent ales încă",
+  "acp.page.change": "Schimbă…",
+  "acp.page.saved": "Salvat. Asistentul va folosi această comandă de la următorul tău mesaj.",
   "acp.how.native": "Găsit pe computerul tău",
   "acp.how.npx": "Se descarcă la prima utilizare",
   "acp.how.uvx": "Se descarcă la prima utilizare",

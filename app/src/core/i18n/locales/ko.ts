@@ -2989,6 +2989,11 @@ export default {
   "acp.pick.commandWarning":
     "PerMark가 이 프로그램을 내 권한으로 이 컴퓨터에서 시작합니다. 신뢰하는 프로그램만 사용하세요.",
   "acp.pick.useCommand": "이 명령 사용",
+  "acp.preview.starts": "실행할 프로그램: {program}",
+  "acp.page.inUse": "사용 중인 에이전트",
+  "acp.page.none": "아직 선택한 에이전트가 없습니다",
+  "acp.page.change": "변경…",
+  "acp.page.saved": "저장했습니다. 다음 메시지부터 어시스턴트가 이 명령을 사용합니다.",
   "acp.how.native": "이 컴퓨터에서 찾음",
   "acp.how.npx": "처음 사용할 때 다운로드",
   "acp.how.uvx": "처음 사용할 때 다운로드",

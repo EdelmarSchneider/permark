@@ -3051,6 +3051,11 @@ export default {
   "acp.pick.commandWarning":
     "PerMark bu programı bilgisayarınızda sizin yetkilerinizle başlatacak. Yalnızca güvendiğiniz bir programı kullanın.",
   "acp.pick.useCommand": "Bu komutu kullan",
+  "acp.preview.starts": "Başlatılacak: {program}",
+  "acp.page.inUse": "Kullanılan ajan",
+  "acp.page.none": "Henüz bir ajan seçilmedi",
+  "acp.page.change": "Değiştir…",
+  "acp.page.saved": "Kaydedildi. Asistan bu komutu sonraki mesajınızdan itibaren kullanır.",
   "acp.how.native": "Bilgisayarınızda bulundu",
   "acp.how.npx": "İlk kullanımda indirilir",
   "acp.how.uvx": "İlk kullanımda indirilir",

@@ -1304,6 +1304,12 @@ fn without_a_choice_the_prompt_is_refused_until_the_person_chooses() {
     assert_eq!(refused.detail.as_deref(), Some("noAgent"));
     assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 0);
     assert!(fx.session.agents().iter().all(|entry| !entry.chosen));
+    // a preview of an own command keeps nothing
+    let preview = fx.session.resolve(&ResolveArgs {
+        command: "./agent --acp".to_owned(),
+    });
+    assert_eq!(preview.error.as_deref(), Some("relativeProgram"));
+    assert!(!fx.session.status().chosen);
 
     let list = fx.session.choose(&choose_agent("codex-acp")).unwrap();
     let chosen: Vec<&str> = list

@@ -70,7 +70,8 @@ use crate::client::{lock, AgentPipes, CallError, Connection, Inbox};
 use crate::dto::{
     AcpError, AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason, AcpToolKind,
     AcpToolStatus, AcpUpdate, AgentEntry, AnswerArgs, ChooseArgs, ContinueWay, LoginArgs,
-    LoginKind, LoginMethod, PermissionChoice, PromptArgs, PromptSelection,
+    LoginKind, LoginMethod, PermissionChoice, PromptArgs, PromptSelection, ResolveArgs,
+    ResolvedCommand,
 };
 use crate::work::{copy_dir, kept_out, start_of, Project, WorkCopy};
 use crate::SharedCopy;
@@ -449,6 +450,12 @@ impl Session {
     #[must_use]
     pub fn agents(&self) -> Vec<AgentEntry> {
         self.core.host.agents.list()
+    }
+
+    /// What a choice of the own command `args` would do, nothing kept and nothing stopped ([`Agents::preview`]).
+    #[must_use]
+    pub fn resolve(&self, args: &ResolveArgs) -> ResolvedCommand {
+        self.core.host.agents.preview(&args.command)
     }
 
     /// Keeps the person's choice and stops the agent (the copy and its pending changes stay): the next prompt starts

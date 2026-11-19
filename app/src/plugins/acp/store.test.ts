@@ -36,6 +36,7 @@ import {
   PANEL_MARK,
   passageLabel,
   pickerList,
+  previewText,
   firstPlace,
   MAX_ENTRIES,
   PANEL,
@@ -513,6 +514,36 @@ describe("the choice of the agent", () => {
     expect(await store.choose({ agent: "gone-agent" })).toBe(false);
     expect(store.choiceRefusal).toBe(t("acp.error.unknownAgent"));
     expect(store.status?.chosen).toBe(false);
+  });
+
+  it("an own command is previewed before it is kept: the program that would start, or why not, in words", async () => {
+    const { store, acp } = await setup(null);
+    const said = async (command: string) => {
+      const resolved = await store.resolve(command);
+      return resolved === null ? "failed" : previewText(resolved);
+    };
+    expect(await said('  "C:\\my tools\\my-agent.cmd" --acp ')).toBe(
+      t("acp.preview.starts", { program: "C:\\my tools\\my-agent.cmd" }),
+    );
+    expect(await said("npx -y my-agent")).toBe(
+      t("acp.preview.starts", { program: "C:\\Program Files\\nodejs\\npx.cmd" }),
+    );
+    expect(await said("missing-agent --acp")).toBe(t("acp.why.notFound"));
+    expect(await said("tools/agent --acp")).toBe(t("acp.error.relativeProgram"));
+    expect(await said('"my agent --acp')).toBe(t("acp.error.openQuote"));
+    expect(await said('"" --acp')).toBe(t("acp.error.emptyCommand"));
+    expect(acp.choice).toBeNull();
+    acp.snap = true;
+    expect(await said("my-agent")).toBe(t("acp.snap"));
+  });
+
+  it("a preview answered for another project is dropped", async () => {
+    const { store, client, root } = await setup();
+    const held = hold(client, "acp.resolve");
+    const asked = store.resolve("my-agent");
+    root.value = "C:/elsewhere";
+    held.answer({ ok: true, value: { program: "C:\\x\\my-agent.exe", error: null } });
+    expect(await asked).toBeNull();
   });
 
   it("How to install opens the agent's website through the app's link opening", async () => {
@@ -1264,6 +1295,28 @@ describe("the mock follows the plugin's checks", () => {
     expect(!own.ok && own.error.kind === "backend" && own.error.error.detail).toBe(
       "relativeProgram",
     );
+  });
+
+  it("a preview refuses exactly what a choice refuses, and keeps nothing", async () => {
+    const { api, acp } = await setup(null);
+    for (const command of [
+      "",
+      "  ",
+      '"" --acp',
+      '"my agent',
+      "./agent",
+      "bin\\agent.exe",
+      "my-agent",
+    ]) {
+      const preview = await api.pluginCall("acp.resolve", { command });
+      if (!preview.ok) throw new Error("no preview");
+      expect(acp.choice, command).toBeNull();
+      const choice = await api.pluginCall("acp.choose", { command });
+      const refusal =
+        !choice.ok && choice.error.kind === "backend" ? choice.error.error.detail : null;
+      expect(preview.value.error, command).toBe(refusal);
+      acp.choice = null;
+    }
   });
 });
 

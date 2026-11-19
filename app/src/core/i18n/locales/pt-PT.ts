@@ -3070,6 +3070,11 @@ export default {
   "acp.pick.commandWarning":
     "O PerMark vai iniciar este programa no seu computador, com as suas permissões. Use apenas um programa em que confie.",
   "acp.pick.useCommand": "Usar este comando",
+  "acp.preview.starts": "Inicia: {program}",
+  "acp.page.inUse": "Agente em uso",
+  "acp.page.none": "Ainda não foi escolhido nenhum agente",
+  "acp.page.change": "Mudar…",
+  "acp.page.saved": "Guardado. O Assistente usará este comando a partir da sua próxima mensagem.",
   "acp.how.native": "Encontrado no seu computador",
   "acp.how.npx": "Transferido na primeira utilização",
   "acp.how.uvx": "Transferido na primeira utilização",

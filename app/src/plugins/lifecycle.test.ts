@@ -310,12 +310,12 @@ describe("the symbols plugin", () => {
 describe("the assistant plugin", () => {
   afterEach(() => layout.setOpen("acp.panel", false));
 
-  it("adds its panel (in a project only) and its command, and leaves nothing when off", async () => {
+  it("adds its panel and settings page (in a project only) and its commands, and leaves nothing when off", async () => {
     const registry = new ContributionRegistry();
     const host = new PluginHost(registry, pluginLoaders());
     await host.enable("acp");
     const found = [...new Set(registry.ownedBy("acp").map((c) => c.kind))].sort();
-    expect(found).toEqual(["command", "panel"]);
+    expect(found).toEqual(["command", "panel", "settingsPage"]);
     expect(registry.of("command").map((c) => c.id)).toEqual(["acp.toggle", "acp.chooseAgent"]);
     expect(registry.of("command").find((c) => c.id === "acp.toggle")?.inPalette).toBe(false);
     const panel = registry.of("panel").find((p) => p.id === "acp.panel");

@@ -3080,6 +3080,12 @@ export default {
   "acp.pick.commandWarning":
     "El PerMark iniciarà aquest programa al vostre ordinador, amb els vostres permisos. Feu servir només un programa en què confieu.",
   "acp.pick.useCommand": "Fes servir aquesta ordre",
+  "acp.preview.starts": "S'inicia: {program}",
+  "acp.page.inUse": "Agent en ús",
+  "acp.page.none": "Encara no heu triat cap agent",
+  "acp.page.change": "Canvia…",
+  "acp.page.saved":
+    "Desat. L'Assistent farà servir aquesta ordre a partir del vostre missatge següent.",
   "acp.how.native": "Trobat al vostre ordinador",
   "acp.how.npx": "Es baixa en el primer ús",
   "acp.how.uvx": "Es baixa en el primer ús",

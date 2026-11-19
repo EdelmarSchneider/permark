@@ -3045,6 +3045,11 @@ export default {
   "acp.pick.commandWarning":
     "PerMark akan menjalankan program ini di komputer Anda, dengan izin Anda. Gunakan hanya program yang Anda percayai.",
   "acp.pick.useCommand": "Gunakan perintah ini",
+  "acp.preview.starts": "Menjalankan: {program}",
+  "acp.page.inUse": "Agen yang digunakan",
+  "acp.page.none": "Belum ada agen yang dipilih",
+  "acp.page.change": "Ganti…",
+  "acp.page.saved": "Tersimpan. Asisten memakai perintah ini mulai pesan Anda berikutnya.",
   "acp.how.native": "Ditemukan di komputer Anda",
   "acp.how.npx": "Diunduh saat pertama kali digunakan",
   "acp.how.uvx": "Diunduh saat pertama kali digunakan",

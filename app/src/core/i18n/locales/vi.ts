@@ -3031,6 +3031,11 @@ export default {
   "acp.pick.commandWarning":
     "PerMark sẽ khởi động chương trình này trên máy tính của bạn, với quyền của bạn. Chỉ dùng chương trình mà bạn tin tưởng.",
   "acp.pick.useCommand": "Dùng lệnh này",
+  "acp.preview.starts": "Sẽ chạy: {program}",
+  "acp.page.inUse": "Agent đang dùng",
+  "acp.page.none": "Chưa chọn agent nào",
+  "acp.page.change": "Đổi…",
+  "acp.page.saved": "Đã lưu. Trợ lý sẽ dùng lệnh này từ tin nhắn tiếp theo của bạn.",
   "acp.how.native": "Tìm thấy trên máy tính của bạn",
   "acp.how.npx": "Tải xuống trong lần dùng đầu tiên",
   "acp.how.uvx": "Tải xuống trong lần dùng đầu tiên",

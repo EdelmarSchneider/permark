@@ -267,6 +267,8 @@ import type { PromptArgs } from "./generated/PromptArgs";
 import type { PromptSelection } from "./generated/PromptSelection";
 import type { RenderArgs } from "./generated/RenderArgs";
 import type { RenderedReply } from "./generated/RenderedReply";
+import type { ResolveArgs } from "./generated/ResolveArgs";
+import type { ResolvedCommand } from "./generated/ResolvedCommand";
 import type { UndoArgs } from "./generated/UndoArgs";
 
 export type {
@@ -880,6 +882,9 @@ export interface PluginMethods {
    *  Refused while the agent starts | works (`conflict` `busy`), `invalidData` `unknownAgent` | `emptyCommand` |
    *  `oneChoice`, `unavailable` `noProfile`. */
   "acp.choose": { args: ChooseArgs; result: AgentEntry[] };
+  /** What `acp.choose` would make of an own command, nothing kept: the full path of the program that would start
+   *  (`null`: refused | not found here) and the refusal's detail `choose` would answer (`null`: it would be kept). */
+  "acp.resolve": { args: ResolveArgs; result: ResolvedCommand };
   /** Signs in while the agent waits for it (`needsLogin`): an `agent` method signs in through the agent, none | any
    *  other tries again. Refused `notFound` `noLogin` | `invalidData` `unknownMethod`. */
   "acp.login": { args: LoginArgs; result: null };
@@ -1062,6 +1067,8 @@ export type {
   PromptSelection,
   RenderArgs,
   RenderedReply,
+  ResolveArgs,
+  ResolvedCommand,
   UndoArgs,
 };
 export type {

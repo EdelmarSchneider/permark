@@ -530,6 +530,56 @@ fn an_own_command_with_a_relative_program_path_is_refused() {
     assert!(!profile.path().join(CHOICE_FILE).exists());
 }
 
+/// The preview of an own command answers what a choice of it would: the same refusal, else the file that would start
+/// (`None`: not found here). It keeps nothing.
+#[test]
+fn an_own_command_preview_answers_what_a_choice_would() {
+    let profile = tempfile::tempdir().unwrap();
+    let chooser = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let own = testing::program(bin.path(), "my-agent");
+    let agents = testing::agents(profile.path(), bin.path());
+    for typed in [
+        "  my-agent --acp \"a b\" ",
+        "missing-agent --acp",
+        "",
+        "   ",
+        r#""" --acp"#,
+        r#""C:\Program Files\node.exe --acp"#,
+        "./agent --acp",
+        "bin/agent",
+    ] {
+        let preview = agents.preview(typed);
+        let choice = testing::agents(chooser.path(), bin.path()).choose(&command(typed));
+        assert_eq!(
+            preview.error,
+            choice.err().and_then(|e| e.detail),
+            "{typed:?}"
+        );
+        if preview.error.is_some() {
+            assert_eq!(preview.program, None, "{typed:?}");
+        }
+    }
+    let found = agents.preview("  my-agent --acp ");
+    same_file(Path::new(&found.program.unwrap()), &own);
+    assert_eq!(
+        agents.preview("missing-agent --acp"),
+        ResolvedCommand {
+            program: None,
+            error: None
+        }
+    );
+    assert!(!profile.path().join(CHOICE_FILE).exists());
+
+    let snap = testing::agents(profile.path(), bin.path()).in_snap(true);
+    assert_eq!(snap.preview("my-agent").error.as_deref(), Some("snap"));
+    let unkept = Agents::with(None, testing::find_in(bin.path()), platforms());
+    assert_eq!(
+        unkept.preview("my-agent").error.as_deref(),
+        Some("noProfile")
+    );
+}
+
 /// Inside a strict Snap no program of the computer can start: every agent needs `snap`, nothing can be chosen, and
 /// a choice made before starts nothing.
 #[test]

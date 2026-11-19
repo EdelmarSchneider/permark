@@ -5,7 +5,8 @@
 //! never chooses the program the app starts.
 //!
 //! RPC (project scope): `status {}` -> [`AcpStatus`]; `agents {}` -> [`AgentEntry`]`[]`; `choose` [`ChooseArgs`] ->
-//! [`AgentEntry`]`[]`; `prompt` [`PromptArgs`] -> `null` (the reply comes as events); `login` [`LoginArgs`] -> `null`;
+//! [`AgentEntry`]`[]`; `resolve` [`ResolveArgs`] -> [`ResolvedCommand`] (what `choose` would make of an own command,
+//! nothing kept); `prompt` [`PromptArgs`] -> `null` (the reply comes as events); `login` [`LoginArgs`] -> `null`;
 //! `cancel {}` | `reset {}` -> `null`; `continue {}` -> `null` (the project's last conversation continued, kept in the
 //! profile: [`session::Saved`]); `answer` [`AnswerArgs`] -> `null`; `changes` [`ChangesArgs`] -> the kept
 //! [`ChangeList`] (computed at each turn's end | when asked to refresh; empty while no copy exists); `accept | reject`
@@ -45,7 +46,7 @@ pub use dto::{
     AcpToolStatus, AcpUpdate, AgentEntry, AgentHow, AgentNeed, AnswerArgs, ChangeList, ChangesArgs,
     ChooseArgs, ContinueWay, DecideArgs, FileChange, FileChangeKind, HunkView, LastConversation,
     LoginArgs, LoginKind, LoginMethod, PermissionChoice, PromptArgs, PromptSelection, RenderArgs,
-    RenderedReply, UndoArgs,
+    RenderedReply, ResolveArgs, ResolvedCommand, UndoArgs,
 };
 pub use session::{Host, Remembered, Saved, Session, SAVED_FILE};
 pub use work::{copy_dir, Project, WorkCopy};
@@ -164,6 +165,11 @@ fn register(
     rpc.extend(cx.rpc("agents", typed(move |_: NoArgs, _| Ok(s.agents()))));
     let s = session.clone();
     rpc.extend(cx.rpc("choose", typed(move |args: ChooseArgs, _| s.choose(&args))));
+    let s = session.clone();
+    rpc.extend(cx.rpc(
+        "resolve",
+        typed(move |args: ResolveArgs, _| Ok(s.resolve(&args))),
+    ));
     let s = session.clone();
     rpc.extend(cx.rpc("prompt", typed(move |args: PromptArgs, _| s.prompt(args))));
     let s = session.clone();

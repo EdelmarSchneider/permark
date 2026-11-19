@@ -3063,6 +3063,11 @@ export default {
   "acp.pick.commandWarning":
     "PerMark はこのプログラムを、あなたの権限でこのコンピューター上で起動します。信頼できるプログラムだけを使ってください。",
   "acp.pick.useCommand": "このコマンドを使用",
+  "acp.preview.starts": "起動するプログラム：{program}",
+  "acp.page.inUse": "使用中のエージェント",
+  "acp.page.none": "エージェントはまだ選択されていません",
+  "acp.page.change": "変更…",
+  "acp.page.saved": "保存しました。次のメッセージから、アシスタントはこのコマンドを使います。",
   "acp.how.native": "このコンピューターで検出",
   "acp.how.npx": "初回使用時にダウンロード",
   "acp.how.uvx": "初回使用時にダウンロード",

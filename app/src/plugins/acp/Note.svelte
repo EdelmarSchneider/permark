@@ -8,13 +8,22 @@
     tone?: "quiet" | "muted" | "refusal" | "warning";
     /** Said by assistive technology at once (a refusal right after the person's action). */
     alert?: boolean;
+    /** Said by assistive technology when the person pauses (a line that follows what they type). */
+    live?: boolean;
     id?: string;
     children: Snippet;
   };
-  let { tone = "quiet", alert = false, id, children }: Props = $props();
+  let { tone = "quiet", alert = false, live = false, id, children }: Props = $props();
 </script>
 
-<p class={["note", tone]} role={alert ? "alert" : undefined} {id}>{@render children()}</p>
+<p
+  class={["note", tone]}
+  role={alert ? "alert" : undefined}
+  aria-live={live ? "polite" : undefined}
+  {id}
+>
+  {@render children()}
+</p>
 
 <style>
   .note {

@@ -355,6 +355,26 @@ pub struct ChooseArgs {
     pub command: Option<String>,
 }
 
+/// Arguments of `acp.resolve`: an own command as typed so far.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export)]
+pub struct ResolveArgs {
+    pub command: String,
+}
+
+/// What `acp.choose` would make of an own command, nothing kept: the program it would start | why it would refuse.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ResolvedCommand {
+    /// Full path of the program that would start (`null`: refused, or not found on this computer).
+    pub program: Option<String>,
+    /// The refusal `acp.choose` would answer, by its detail (`emptyCommand` | `openQuote` | `relativeProgram` | `snap`
+    /// | `noProfile`); `null`: the command would be kept.
+    pub error: Option<String>,
+}
+
 /// Arguments of `acp.login`: `methodId` of an `agent` method -> the agent signs in, then the prompt goes on; any
 /// other method | none -> tries again (the person signed in outside the app).
 #[derive(Debug, Clone, Default, Deserialize, TS)]

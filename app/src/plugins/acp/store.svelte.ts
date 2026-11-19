@@ -30,6 +30,7 @@ import type {
   PermissionDiff,
   PromptArgs,
   PromptSelection,
+  ResolvedCommand,
 } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
 import { pageSelection } from "../../core/doc/selection";
@@ -50,6 +51,8 @@ import { windowStore, type NoticeAction } from "../../core/window.svelte";
 
 /** The id of the Assistant panel. */
 export const PANEL = "acp.panel";
+/** The id of the Assistant's settings page. */
+export const ACP_PAGE = "acp.page";
 /** The attribute on the panel's element: a selection | the keyboard inside it never changes the passage. */
 export const PANEL_MARK = "data-acp-panel";
 /** The conversation keeps this many lines; older ones go (a long session never grows the window without end). */
@@ -596,6 +599,14 @@ export class AcpStore {
     return result.ok && this.#root() === root ? result.value.blocks : null;
   }
 
+  /** What a choice of the own command `command` would start, nothing kept (`null`: the call failed | another project
+   *  shows now). */
+  async resolve(command: string): Promise<ResolvedCommand | null> {
+    const root = this.#root();
+    const result = await this.#client.call("acp.resolve", { command });
+    return result.ok && this.#root() === root ? result.value : null;
+  }
+
   /** A website in the person's browser (how to install an agent | what it needs). */
   openWebsite(url: string): void {
     void documents.openWeb(url);
@@ -1099,7 +1110,26 @@ export function errorText(error: ApiError): string {
 }
 
 function refusalKey(error: IpcError): MessageKey | null {
-  switch (error.detail) {
+  const key = detailKey(error.detail);
+  if (key !== null) return key;
+  return error.kind === "invalidPath" || error.kind === "pathEscape" ? "acp.error.path" : null;
+}
+
+/** The line under an own command before it is kept: the program it would start, else why it would not (`null`: a
+ *  refusal without words of its own). */
+export function previewText(resolved: ResolvedCommand): string | null {
+  if (resolved.error !== null) {
+    const key = detailKey(resolved.error);
+    return key === null ? null : t(key);
+  }
+  return resolved.program === null
+    ? t("acp.why.notFound")
+    : t("acp.preview.starts", { program: resolved.program });
+}
+
+/** The words of a refusal of the plugin, by its detail. */
+function detailKey(detail: string | null): MessageKey | null {
+  switch (detail) {
     case "busy":
       return "acp.error.busy";
     case "emptyPrompt":
@@ -1168,7 +1198,7 @@ function refusalKey(error: IpcError): MessageKey | null {
     case "edits":
       return "acp.error.notApplied";
     default:
-      return error.kind === "invalidPath" || error.kind === "pathEscape" ? "acp.error.path" : null;
+      return null;
   }
 }
 

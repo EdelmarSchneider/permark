@@ -2989,6 +2989,11 @@ const en = {
   "acp.pick.commandWarning":
     "PerMark will start this program on your computer, with your permissions. Use only a program you trust.",
   "acp.pick.useCommand": "Use this command",
+  "acp.preview.starts": "Starts: {program}",
+  "acp.page.inUse": "Agent in use",
+  "acp.page.none": "No agent chosen yet",
+  "acp.page.change": "Change…",
+  "acp.page.saved": "Saved. The Assistant uses this command from your next message.",
   "acp.how.native": "Found on your computer",
   "acp.how.npx": "Downloads when first used",
   "acp.how.uvx": "Downloads when first used",
