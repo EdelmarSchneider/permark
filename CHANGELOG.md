@@ -5,6 +5,23 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Closing a panel now leaves its own notice with **Undo**, so closing two panels gives you two ways back. The **Panels** menu stays open while you tick several panels, and it groups them by where they sit. <!-- f: side-panels -->
+
+### Fixed
+- **Keep mine** for a note file now writes only over the version you saw; if the file changed meanwhile, PerMark says so and leaves it alone. <!-- f: notes -->
+- After switching folders, a late answer for the previous folder could reset the Explorer list; it is now ignored. <!-- f: explorer -->
+- Turning the agent connection on or off while it was also being changed elsewhere could lose one of the two choices. <!-- f: agent-connection -->
+- **Ctrl+R**, **Ctrl+Shift+R** and **Ctrl+P** no longer reload or print the app window when no command uses them. <!-- f: shell -->
+- A region could refuse a new group of panels when one of its groups held only closed panels. <!-- f: side-panels -->
+- In Edit, the caret now starts where the document opened instead of at the top, **Ctrl+Home**, **Ctrl+End** and **Tab** move past blocks kept as written, and a link to a file line (`file:3`) opens Source and Edit at that line. <!-- f: edit-mode -->
+- **Ctrl+A** and **Ctrl+Z** in the Explorer now work with non-Latin keyboard layouts. <!-- f: explorer -->
+- An HTML link in a table cell after escaped pipes (`\|`) is found again. <!-- f: view-mode -->
+- The symbols popup search takes the keyboard when it opens, and the number of matches is read out. Earlier versions of a document: "more versions" is announced, the list opens on the version you picked, and Esc cancels bringing one back. <!-- f: symbols, document-history -->
+- The Notes list shows at once which notes are shared after you change it in the agent panel, and **Undo** after disconnecting an agent keeps the agent menu open. <!-- f: notes, agent-connection -->
+- Assistant: moving through the model list with the arrow keys no longer sends a change at every step, and a very long list of changes stops at a safe size. <!-- f: assistant -->
+- Releasing or removing a local model no longer waits forever on a busy model worker. <!-- f: local-ai -->
+
 ## [0.17.0] - 2026-11-19
 
 ### Added
