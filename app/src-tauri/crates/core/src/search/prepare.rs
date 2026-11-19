@@ -132,7 +132,8 @@ pub fn read_and_prepare(
         // a config format that is on says what of the file may be searched: keys, never values
         formats.pick(path, &[])?;
     }
-    let meta = std::fs::metadata(abs).ok()?;
+    // never through a link: a link is no file here
+    let meta = std::fs::symlink_metadata(abs).ok()?;
     if !meta.is_file() || meta.len() > limit {
         return None;
     }
@@ -234,7 +235,7 @@ pub fn front_matter_tags(text: &str) -> Vec<String> {
 #[must_use]
 pub fn head_tags(abs: &Path) -> Option<(Vec<String>, Sig)> {
     use std::io::Read;
-    let meta = std::fs::metadata(abs).ok()?;
+    let meta = std::fs::symlink_metadata(abs).ok()?;
     if !meta.is_file() {
         return None;
     }

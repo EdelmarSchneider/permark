@@ -496,7 +496,15 @@ impl Tools {
         let hits: Vec<Value> = results
             .hits
             .into_iter()
-            .map(|hit| {
+            .filter_map(|hit| {
+                // the index knows a path only: where the file really is now decides (gone, a link to a hidden part)
+                let read = crate::guard::text(guard, &hit.path);
+                if matches!(
+                    read,
+                    Err(ToolError::NotFound(_) | ToolError::DeniedBelow { .. })
+                ) {
+                    return None;
+                }
                 let snippet: String = hit.snippet.iter().map(|p| p.text.as_str()).collect();
                 let mut item = json!({
                     "path": hit.path,
@@ -505,15 +513,13 @@ impl Tools {
                     "snippet": snippet.trim(),
                 });
                 // the size of reading this section next (`read at=<heading path>`)
-                let size = crate::guard::text(guard, &hit.path)
-                    .ok()
-                    .and_then(|(path, text)| {
-                        structure::section_size(&formats, &path, &text, &hit.heading_path, hit.line)
-                    });
+                let size = read.ok().and_then(|(path, text)| {
+                    structure::section_size(&formats, &path, &text, &hit.heading_path, hit.line)
+                });
                 if let (Some(size), Some(map)) = (size, item.as_object_mut()) {
                     map.insert("size_tok".to_owned(), json!(size));
                 }
-                item
+                Some(item)
             })
             .collect();
         let mut answer = json!({

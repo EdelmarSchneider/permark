@@ -1599,6 +1599,82 @@ fn scan_documents_names_a_root_and_knows_when_there_is_none() {
     assert_eq!(f.explorer.scan_documents("@wt/none").0.len(), 0);
 }
 
+/// A link at `link` leading to `target` (Unix: symlink; Windows: junction, which needs no privilege). `false`: the
+/// system would not make one here.
+pub(crate) fn link_out(link: &Path, target: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        // `mklink` wants one kind of separator
+        std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .is_ok_and(|o| o.status.success())
+    }
+}
+
+#[test]
+fn a_root_scan_lists_links_by_name_and_never_enters_them() {
+    let f = fixture(&["real/inner.md", "a.md"]);
+    let outside = tempfile::tempdir().unwrap();
+    write(outside.path(), "secret/s.md");
+    if !(link_out(&f.dir.path().join("escape"), outside.path())
+        && link_out(&f.dir.path().join("alias"), &f.dir.path().join("real")))
+    {
+        eprintln!("links could not be made here; skipped");
+        return;
+    }
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(
+        outside.path().join("secret/s.md"),
+        f.dir.path().join("link.md"),
+    )
+    .unwrap();
+    let (files, _) = scanned(&f);
+    let mut expected = vec!["a.md", "alias", "escape", "real/inner.md"];
+    if cfg!(unix) {
+        expected.push("link.md");
+    }
+    expected.sort_unstable();
+    assert_eq!(files, expected);
+}
+
+#[test]
+fn a_root_scan_gives_a_link_no_place_on_disk_so_its_target_is_never_read() {
+    let f = fixture(&["real/inner.md", "a.md"]);
+    // a link to a folder named like a document
+    if !link_out(&f.dir.path().join("folder.md"), &f.dir.path().join("real")) {
+        eprintln!("links could not be made here; skipped");
+        return;
+    }
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(
+        f.dir.path().join("real/inner.md"),
+        f.dir.path().join("link.md"),
+    )
+    .unwrap();
+    let never = std::sync::atomic::AtomicBool::new(false);
+    let scan = &f.explorer.scan(&never)[0].1;
+    let abs_of = |path: &str| {
+        scan.files
+            .iter()
+            .find(|x| x.path == path)
+            .unwrap_or_else(|| panic!("{path} listed: {:?}", scan.files))
+            .abs
+            .clone()
+    };
+    assert!(abs_of("a.md").is_some());
+    assert!(abs_of("real/inner.md").is_some());
+    assert_eq!(abs_of("folder.md"), None);
+    #[cfg(unix)]
+    assert_eq!(abs_of("link.md"), None);
+}
+
 #[test]
 fn scan_stops_when_cancelled_and_never_follows_links_or_enters_git() {
     let f = fixture(&["a.md", "sub/b.md", ".git/config"]);

@@ -18,6 +18,7 @@ use crate::events::{CoreEvent, Recorder};
 use crate::format::MarkdownFeatures;
 use crate::paths::{Root, Vault};
 use crate::settings::ProjectConfig;
+use crate::tree::tests::link_out;
 use crate::tree::{key_of, Category};
 use crate::watch::{Change, ChangeKind, FsBatch};
 
@@ -684,6 +685,15 @@ impl Fx {
             .map(|f| f.path)
             .collect()
     }
+
+    /// Feeds `changes`, then a new document `name` holding `word`, and waits until it is found: the worker takes the
+    /// changes of a batch in order, so by then it is done with `changes`.
+    fn feed_fenced(&self, mut changes: Vec<Change>, name: &str, word: &str) {
+        write(self.dir.path(), name, &format!("# Fence\n\n{word}\n"));
+        changes.push(change(name, ChangeKind::Created, false));
+        self.feed(changes);
+        self.wait(name, |f| f.found(word) == [name]);
+    }
 }
 
 #[test]
@@ -891,6 +901,109 @@ fn binary_oversized_and_unreadable_documents_stay_in_the_list_by_name() {
     f.feed(vec![change("ok.md", ChangeKind::Modified, false)]);
     f.wait("content gone", |f| f.found("readable").is_empty());
     assert_eq!(f.files("ok.md"), ["ok.md"]);
+}
+
+// ---- links: listed by name, never read --------------------------------------------------------------------------------
+
+#[test]
+fn a_link_stays_in_the_list_by_name() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "private/secret.md", "# S\n\nsecretwords\n");
+    if !link_out(&dir.path().join("jalias"), &dir.path().join("private")) {
+        eprintln!("links could not be made here; skipped");
+        return;
+    }
+    let outside = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        write(outside.path(), "far.md", "# F\n\nfarwords\n");
+        std::os::unix::fs::symlink(
+            dir.path().join("private/secret.md"),
+            dir.path().join("alias.md"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(outside.path().join("far.md"), dir.path().join("out.md"))
+            .unwrap();
+    }
+    let f = start(dir);
+    assert_eq!(f.files("jalias"), ["jalias"]);
+    #[cfg(unix)]
+    {
+        assert_eq!(f.files("alias.md"), ["alias.md"]);
+        assert_eq!(f.files("out.md"), ["out.md"]);
+    }
+    drop(outside);
+}
+
+#[cfg(unix)]
+#[test]
+fn text_behind_a_file_link_is_never_indexed() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    write(outside.path(), "far.md", "# F\n\nfarwords\n");
+    write(dir.path(), "private/secret.md", "# S\n\nsecretwords\n");
+    write(dir.path(), "docs/plain.md", "# P\n\nplainwords\n");
+    write(dir.path(), "docs/other.md", "# O\n\notherwords\n");
+    let link = |target: &Path, at: &str| {
+        let at = dir.path().join(at);
+        let _ = fs::remove_file(&at);
+        std::os::unix::fs::symlink(target, at).unwrap();
+    };
+    link(&dir.path().join("private/secret.md"), "docs/alias.md");
+    link(&outside.path().join("far.md"), "docs/out.md");
+    let f = start(dir);
+    assert_eq!(f.found("secretwords"), ["private/secret.md"]);
+    assert!(f.found("farwords").is_empty());
+    // a link that appears later
+    let root = f.dir.path().to_path_buf();
+    let link = |target: &Path, at: &str| {
+        let at = root.join(at);
+        let _ = fs::remove_file(&at);
+        std::os::unix::fs::symlink(target, at).unwrap();
+    };
+    link(&root.join("private/secret.md"), "docs/late.md");
+    f.feed_fenced(
+        vec![change("docs/late.md", ChangeKind::Created, false)],
+        "fence1.md",
+        "fenceone",
+    );
+    assert_eq!(f.found("secretwords"), ["private/secret.md"]);
+    assert_eq!(f.files("late.md"), ["docs/late.md"]);
+    // an indexed document replaced by a link: its text goes, the target's never comes (watch batch, then a rescan)
+    link(&root.join("private/secret.md"), "docs/plain.md");
+    f.feed_fenced(
+        vec![change("docs/plain.md", ChangeKind::Modified, false)],
+        "fence2.md",
+        "fencetwo",
+    );
+    assert!(f.found("plainwords").is_empty());
+    assert_eq!(f.files("plain.md"), ["docs/plain.md"]);
+    link(&outside.path().join("far.md"), "docs/other.md");
+    f.feed_bulk();
+    f.wait("rescanned", |f| f.found("otherwords").is_empty());
+    assert_eq!(f.found("secretwords"), ["private/secret.md"]);
+    assert!(f.found("farwords").is_empty());
+    assert_eq!(f.files("other.md"), ["docs/other.md"]);
+}
+
+#[test]
+fn text_below_a_folder_link_is_never_indexed() {
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), "private/s.md", "# S\n\nbehindlink\n");
+    if !link_out(&dir.path().join("alias"), &dir.path().join("private")) {
+        eprintln!("links could not be made here; skipped");
+        return;
+    }
+    let f = start(dir);
+    assert_eq!(f.found("behindlink"), ["private/s.md"]);
+    // the watch names a path below the link
+    f.feed_fenced(
+        vec![change("alias/s.md", ChangeKind::Created, false)],
+        "fence.md",
+        "fenceword",
+    );
+    assert_eq!(f.found("behindlink"), ["private/s.md"]);
+    assert!(f.files("s.md").contains(&"alias/s.md".to_owned()));
 }
 
 #[test]

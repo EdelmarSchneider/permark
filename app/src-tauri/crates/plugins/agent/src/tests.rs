@@ -844,6 +844,47 @@ fn hidden_files_never_reach_any_list_or_snippet() {
     assert!(!search.to_string().contains("docs/plan.md"), "{search}");
 }
 
+#[cfg(unix)]
+#[test]
+fn search_never_answers_with_text_behind_a_link() {
+    let fx = fx();
+    fx.on();
+    let tools = fx.tools();
+    std::os::unix::fs::symlink(
+        fx.root.join("private/secret.md"),
+        fx.root.join("docs/alias.md"),
+    )
+    .unwrap();
+    write(&fx.root, "docs/fence.md", "# Fence\n\nfenceword\n");
+    // the watch reports in order: once the later file is found, the link was looked at
+    assert!(wait_for(|| tools
+        .call("search", json!({ "query": "fenceword" }))
+        .is_ok_and(|s| s["hits"]
+            .as_array()
+            .is_some_and(|h| !h.is_empty()))));
+    let search = tools
+        .call("search", json!({ "query": "launch code", "limit": 25 }))
+        .unwrap();
+    let hits = search["hits"].to_string();
+    assert!(
+        !hits.contains("alias") && !hits.contains("launch code"),
+        "{search}"
+    );
+}
+
+#[test]
+fn a_hit_whose_file_is_gone_is_left_out() {
+    let fx = fx();
+    fx.on();
+    let tools = fx.tools();
+    let before = tools.call("search", json!({ "query": "Friday" })).unwrap();
+    assert!(before.to_string().contains("docs/plan.md"), "{before}");
+    // asked before the watch tells the index (it waits for a quiet moment first)
+    std::fs::remove_file(fx.root.join("docs/plan.md")).unwrap();
+    let after = tools.call("search", json!({ "query": "Friday" })).unwrap();
+    assert!(!after.to_string().contains("docs/plan.md"), "{after}");
+}
+
 #[test]
 fn every_text_reaches_the_agent_as_written() {
     let fx = fx();
