@@ -200,6 +200,12 @@ export function returnFocus(before: Element | null = null): void {
   focusPage();
 }
 
+/** `target` lies in the notices (`Notices.svelte`): a press there (Undo of what a popover did) is no press outside
+ *  that popover. */
+export function inNotices(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("[data-notices]") !== null;
+}
+
 /** The first control of the view `id` as drawn (`null`: none, or the view is not drawn). */
 function firstControl(id: string): HTMLElement | null {
   const controls = ':is(button:not([disabled]), [tabindex="0"], input, a[href])';

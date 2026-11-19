@@ -196,6 +196,7 @@ export class NotesStore {
     // a wish from another view (the Welcome of another window, a project tab) while this tab is open already; before
     // the first read, that read takes it
     let offIntent: (() => void) | null = null;
+    let offShares: (() => void) | null = null;
     let gone = false;
     void this.#api
       .onAppPlugin("notes:intent", () => {
@@ -205,10 +206,19 @@ export class NotesStore {
         if (gone) off();
         else offIntent = off;
       });
+    // a project's agent panel (another tab | window) changed a share: the marks follow at once, hidden or not (one
+    // read per change; the tab shown next draws them right)
+    void this.#api
+      .onAppPlugin("notes:shares", () => void this.refresh())
+      .then((off) => {
+        if (gone) off();
+        else offShares = off;
+      });
     void this.refresh();
     return () => {
       gone = true;
       offIntent?.();
+      offShares?.();
       clearInterval(timer);
       offShown();
       if (this.#refreshTimer !== null) clearTimeout(this.#refreshTimer);

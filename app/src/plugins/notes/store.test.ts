@@ -91,6 +91,22 @@ describe("the list", () => {
     }
   });
 
+  it("is read again when a project's agent panel shares a note or stops sharing it, on screen or not", async () => {
+    const shown = new Box(false);
+    const { api, store } = await setup(undefined, () => shown.value);
+    const marks = (): string[] =>
+      store.entries.find((e) => e.path === FIRST)?.sharedWith.map((s) => s.label) ?? [];
+    expect(marks()).toEqual([]);
+    await api.pluginCall("agent.shareNote", { name: FIRST });
+    await settle();
+    expect(marks()).toEqual(["permark-docs"]);
+    shown.value = true;
+    await settle();
+    await api.pluginCall("agent.unshareNote", { name: FIRST });
+    await settle();
+    expect(marks()).toEqual([]);
+  });
+
   it("is read when the window attaches: pinned first, then the newest", async () => {
     const { store } = await setup();
     expect(store.list.status).toBe("ready");

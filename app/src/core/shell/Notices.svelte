@@ -98,6 +98,7 @@
 {#if store.notices.length > 0}
   <div
     class="notices"
+    data-notices
     role="status"
     aria-live="polite"
     style:--notices-right="{rightInset}px"

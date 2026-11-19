@@ -93,6 +93,8 @@ export function createMockNotes(
   announceIntent: () => void = () => {},
   /** The notes plugin is on: off, the agent's note calls answer `unavailable`, as the real backend does. */
   on: () => boolean = () => true,
+  /** The agent area shared a note | stopped sharing one (`notes:shares`). */
+  announceShares: () => void = () => {},
 ): {
   handlers: NotesHandlers;
   agentHandlers: AgentNotesHandlers;
@@ -469,11 +471,13 @@ export function createMockNotes(
         (s) => s.project !== MOCK_NOTES_PROJECT.project,
       );
       shares.set(name, [...others, MOCK_NOTES_PROJECT]);
+      announceShares();
       return projectNotes();
     },
     "agent.unshareNote": ({ name }) => {
       needOn();
       handlers["notes.unshare"]({ path: name, project: MOCK_NOTES_PROJECT.project });
+      announceShares();
       return projectNotes();
     },
   };

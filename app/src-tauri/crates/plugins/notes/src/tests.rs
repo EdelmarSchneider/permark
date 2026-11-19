@@ -1580,6 +1580,22 @@ mod plugin {
         fn emit(&self, _event: CoreEvent) {}
     }
 
+    /// The names of the plugin events it heard.
+    #[derive(Default)]
+    struct Heard(std::sync::Mutex<Vec<String>>);
+    impl EventSink for Heard {
+        fn emit(&self, event: CoreEvent) {
+            if let CoreEvent::Plugin { name, .. } = event {
+                self.0.lock().unwrap().push(name);
+            }
+        }
+    }
+    impl Heard {
+        fn take(&self) -> Vec<String> {
+            std::mem::take(&mut *self.0.lock().unwrap())
+        }
+    }
+
     fn call(
         table: &RpcTable,
         method: &str,
@@ -1596,6 +1612,7 @@ mod plugin {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)] // one run: methods, shares and what they tell, a setting, teardown
     fn the_plugin_serves_its_methods_while_it_runs_and_leaves_nothing_behind() {
         let tmp = tempfile::tempdir().unwrap();
         let notes = tmp.path().join("notes");
@@ -1611,13 +1628,14 @@ mod plugin {
             notes_folder: notes.display().to_string(),
             ..AppSettings::default()
         }));
+        let heard = Arc::new(Heard::default());
         let cx = PluginCx::new(
             PluginId::of("notes"),
             CxWorkspace::App,
             store.plugin_dir(&PluginId::of("notes")),
             None,
             Context::welcome(Distribution::Direct),
-            Arc::new(Quiet),
+            Arc::clone(&heard) as Arc<dyn EventSink>,
         )
         .with_store(store)
         .with_app(AppServices::new(
@@ -1655,8 +1673,15 @@ mod plugin {
             .unwrap();
         assert!(api.0.candidates().iter().any(|n| n.id == "a.md"));
         api.0.share(&key, "a.md").unwrap();
+        // the Notes tab hears it: its marks follow without waiting for its next read
+        assert_eq!(heard.take(), ["notes:shares"]);
         assert_eq!(api.0.list(&key).len(), 1);
         assert_eq!(api.0.read(&key, "a.md").unwrap(), "# Hello\nworld");
+        assert!(api.0.share(&key, "gone.md").is_err());
+        api.0.unshare(&key, "a.md");
+        assert_eq!(heard.take(), ["notes:shares"]);
+        api.0.share(&key, "a.md").unwrap();
+        heard.take();
         let list = call(&rpc, "list", json!({})).unwrap();
         let row = list["entries"]
             .as_array()

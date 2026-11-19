@@ -525,6 +525,9 @@ export function createMockApi(): Api & {
       for (const handler of appListeners["notes:intent"]) handler(null);
     },
     () => settings.plugins["notes"] !== false,
+    () => {
+      for (const handler of appListeners["notes:shares"]) handler(null);
+    },
   );
   const appListeners: { [E in AppPluginEventName]: Set<(payload: AppPluginEvents[E]) => void> } = {
     "updates:state": new Set(),
@@ -534,6 +537,7 @@ export function createMockApi(): Api & {
     "spelling:download": new Set(),
     "spelling:personal": new Set(),
     "notes:intent": new Set(),
+    "notes:shares": new Set(),
     "local-ai:state": new Set(),
     "local-ai:progress": new Set(),
     "local-ai:move": new Set(),

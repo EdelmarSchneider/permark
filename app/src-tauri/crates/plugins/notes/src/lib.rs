@@ -32,8 +32,8 @@ use permark_core::notes::{
     NotesScope, ObserverLease, ProjectKey, SharedNote, SharedNotes, SharedNotesApi,
 };
 use permark_core::plugins::{
-    typed, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
-    RpcRegistration, Running, ServiceLease,
+    typed, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginEvents, PluginId, PluginKind,
+    PluginScope, RpcRegistration, Running, ServiceLease,
 };
 use permark_core::settings::AppSettings;
 use permark_core::state::ProjectId;
@@ -163,8 +163,18 @@ struct MoveArgs {
     name: String,
 }
 
-/// What an agent area may ask of the notes: the ones the person shared with its project.
-struct Shared(Arc<NotesService>);
+/// What an agent area may ask of the notes: the ones the person shared with its project. A share changed there is
+/// told (`notes:shares`): the Notes tab, another view, draws its marks from its own list read.
+struct Shared(Arc<NotesService>, PluginEvents);
+
+impl Shared {
+    fn told(&self, done: Result<(), IpcError>) -> Result<(), IpcError> {
+        if done.is_ok() {
+            self.1.emit("shares", serde_json::Value::Null);
+        }
+        done
+    }
+}
 
 impl SharedNotes for Shared {
     fn list(&self, project: &ProjectKey) -> Vec<SharedNote> {
@@ -176,12 +186,12 @@ impl SharedNotes for Shared {
     }
 
     fn share(&self, project: &ProjectKey, id: &str) -> Result<(), IpcError> {
-        self.0.share(project, id)
+        self.told(self.0.share(project, id))
     }
 
     fn unshare(&self, project: &ProjectKey, id: &str) {
         // a name that is not a note is shared with nobody: nothing to stop
-        let _ = self.0.unshare(id, Some(&project.id));
+        let _ = self.told(self.0.unshare(id, Some(&project.id)));
     }
 
     fn candidates(&self) -> Vec<SharedNote> {
@@ -238,9 +248,10 @@ impl Plugin for NotesPlugin {
         }
         let lease = app
             .services
-            .provide(Arc::new(SharedNotesApi(Arc::new(Shared(Arc::clone(
-                &service,
-            ))))));
+            .provide(Arc::new(SharedNotesApi(Arc::new(Shared(
+                Arc::clone(&service),
+                cx.events().clone(),
+            )))));
         let observer = scope.install_observer(Arc::new(Observer(Arc::clone(&service))));
         Ok(Box::new(NotesRunning {
             service,

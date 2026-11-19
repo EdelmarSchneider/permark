@@ -21,6 +21,7 @@ const { conditions } = await import("../../core/conditions/context.svelte");
 const { agent } = await import("./store.svelte");
 const { AGENT_PAGE } = await import("./offer.svelte");
 const { default: AgentStatus } = await import("./AgentStatus.svelte");
+const { default: Notices } = await import("../../core/shell/Notices.svelte");
 const { t } = await import("../../core/i18n");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
@@ -472,5 +473,49 @@ describe("the connected agents", () => {
     flushSync();
     expect(target.querySelector(".popover")).toBeNull();
     expect(document.activeElement).toBe(chip());
+  });
+
+  it("Undo in the notice of a Disconnect keeps the popover open: the agent comes back into it", async () => {
+    await open();
+    await agent.setEnabled(true);
+    component = mount(AgentStatus, { target });
+    const notices = mount(Notices, { target, props: { store } });
+    try {
+      const probe = mock.probe.plugins.agent;
+      probe.connect("Zed", "sessionzzzz");
+      await until(() => target.querySelector(".chip") !== null, "the chip");
+      target.querySelector<HTMLButtonElement>(".chip")?.click();
+      flushSync();
+      await until(() => target.querySelector(".popover button[data-disconnect]") !== null, "row");
+      target.querySelector<HTMLButtonElement>(".popover button[data-disconnect]")?.click();
+      await until(() => agent.sessions.length === 0, "disconnected");
+      // the notices of earlier tests may still be up: this disconnect's own
+      const undo = await vi.waitFor(() => {
+        const notice = Array.from(target.querySelectorAll(".notice")).find((n) =>
+          text(n).includes("Zed disconnected."),
+        );
+        const found = Array.from(notice?.querySelectorAll("button") ?? []).find(
+          (b) => text(b) === t("fileOps.undo"),
+        );
+        if (!found) throw new Error("no Undo");
+        return found;
+      });
+      undo.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      undo.click();
+      flushSync();
+      expect(target.querySelector(".popover")).not.toBeNull();
+      await until(() => !probe.refused.has("sessionzzzz"), "the refusal lifted");
+      probe.connect("Zed", "sessionzzzz");
+      await until(
+        () => target.querySelector(".popover button[data-disconnect]") !== null,
+        "back in the popover",
+      );
+      // a press anywhere else still closes it
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      flushSync();
+      expect(target.querySelector(".popover")).toBeNull();
+    } finally {
+      await unmount(notices);
+    }
   });
 });

@@ -979,6 +979,8 @@ export interface AppPluginEvents {
   "spelling:personal": string[];
   /** Something asked the Notes tab to show a note | a new note: the Notes tab takes it (`notes.takeIntent`). */
   "notes:intent": null;
+  /** A project's agent panel shared a note with the project | stopped sharing one: the Notes tab reads its list. */
+  "notes:shares": null;
   /** Local AI installs changed (a download finished | failed, terms accepted, assignment, token). */
   "local-ai:state": LocalAiState;
   /** One model's download progress (throttled). */

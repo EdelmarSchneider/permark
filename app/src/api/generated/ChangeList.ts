@@ -2,11 +2,11 @@
 import type { FileChange } from "./FileChange";
 
 /**
- * The copy's changes as last computed (at each turn's end | on `refresh`; a choice updates its own file): at most
- * 500 files, by path.
+ * The copy's changes as last computed (at each turn's end | on `refresh`; a choice updates its own file): the first
+ * files by path, at most 500 and 8 MiB of lines.
  */
 export type ChangeList = { files: Array<FileChange>, 
 /**
- * Changed files past the first 500, not listed.
+ * Changed files past the listed ones (500 files | 8 MiB of lines), not listed.
  */
 more: number, };

@@ -4,14 +4,14 @@ use permark_core::format::Block;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// The copy's changes as last computed (at each turn's end | on `refresh`; a choice updates its own file): at most
-/// 500 files, by path.
+/// The copy's changes as last computed (at each turn's end | on `refresh`; a choice updates its own file): the first
+/// files by path, at most 500 and 8 MiB of lines.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ChangeList {
     pub files: Vec<FileChange>,
-    /// Changed files past the first 500, not listed.
+    /// Changed files past the listed ones (500 files | 8 MiB of lines), not listed.
     pub more: u32,
 }
 
