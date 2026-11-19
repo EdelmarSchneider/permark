@@ -580,6 +580,24 @@ fn an_own_command_preview_answers_what_a_choice_would() {
     );
 }
 
+/// An extension the program lookup added from `PATHEXT` (upper case there) shows in lower case; one the person typed
+/// stays as typed.
+#[test]
+fn the_preview_shows_an_added_extension_in_lower_case() {
+    let profile = tempfile::tempdir().unwrap();
+    let file = testing::app_store(profile.path()).app_file(CHOICE_FILE);
+    let found = Path::new("nodejs").join("node.EXE");
+    let answer = found.clone();
+    let agents = Agents::with(
+        Some(file),
+        Arc::new(move |_: &OsStr| Some(answer.clone())),
+        platforms(),
+    );
+    let shown = |typed: &str| PathBuf::from(agents.preview(typed).program.unwrap());
+    assert_eq!(shown("node --acp"), Path::new("nodejs").join("node.exe"));
+    assert_eq!(shown("node.EXE --acp"), found);
+}
+
 /// Inside a strict Snap no program of the computer can start: every agent needs `snap`, nothing can be chosen, and
 /// a choice made before starts nothing.
 #[test]

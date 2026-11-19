@@ -3099,7 +3099,7 @@ export default {
   "acp.continue": "Continuar a última conversa",
   "acp.restored.notShown": "As mensagens anteriores não são exibidas. O agente se lembra delas.",
   "acp.restored.changesLost":
-    "As alterações que o agente fez antes e que você não aceitou não foram mantidas.",
+    "As alterações da conversa anterior que você não aceitou não estão mais lá.",
   "acp.say.restored": "Conversa restaurada",
   "acp.fail.sessionGone": "A última conversa não pode mais ser continuada.",
   "acp.error.noSaved": "Não há uma conversa anterior para continuar.",

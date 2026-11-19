@@ -10,6 +10,7 @@ use permark_core::events::{CoreEvent, EventSink};
 use serde_json::{json, Value};
 
 use super::permission::inside;
+use super::resume::{fingerprint, MAX_SESSION_ID_BYTES, MAX_TITLE_CHARS};
 use super::*;
 use crate::agents::{platforms, Choice, Launch, Plan, CHOICE_FILE};
 use crate::dto::{AcpReach, AgentNeed, PermissionDiff};
@@ -141,6 +142,8 @@ struct Story {
     gone: AtomicBool,
     /// Messages a `session/load` sends before its answer (the conversation replayed).
     replay: Mutex<Vec<Value>>,
+    /// `session/new` answers this id (`None`: [`SESSION`]).
+    new_id: Mutex<Option<String>>,
 }
 
 /// What the fake agent asks of sign-ins.
@@ -320,11 +323,15 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
                         peer.send(message);
                     }
                 }
+                let id = match peer.story.new_id.lock().unwrap().clone() {
+                    Some(id) if method == "session/new" => id,
+                    _ => SESSION.to_owned(),
+                };
                 if peer.config_modes {
-                    json!({ "sessionId": SESSION, "configOptions": [MODEL_OPTION.clone(), mode_option("auto")] })
+                    json!({ "sessionId": id, "configOptions": [MODEL_OPTION.clone(), mode_option("auto")] })
                 } else {
                     json!({
-                        "sessionId": SESSION,
+                        "sessionId": id,
                         "modes": {
                             "currentModeId": "auto",
                             "availableModes": [
@@ -2705,7 +2712,8 @@ fn the_last_conversation_is_kept_and_continued_with_its_history() {
     fx.ask("One.");
     fx.events.turn_end();
     let saved = fx.saved().unwrap();
-    assert_eq!(saved.agent, Choice::Agent("claude-acp".to_owned()));
+    assert!(saved.started_by(&Choice::Agent("claude-acp".to_owned())));
+    assert!(!saved.started_by(&Choice::Agent("codex-acp".to_owned())));
     assert_eq!(saved.session_id, SESSION);
     assert_eq!(saved.title.as_deref(), Some("Notes"));
     assert!(!saved.had_changes);
@@ -2779,6 +2787,44 @@ fn the_last_conversation_is_kept_and_continued_with_its_history() {
     assert_eq!(prompt_text(&prompt), "Two.");
     assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 2);
     assert_eq!(fx.fake.count("session/new"), 1);
+}
+
+/// Claude's adapter 0.108.0 replays a message of the person with its attachments flattened into text pieces: a link
+/// per file of the copy (`[@name](file:///…)`) and the passage it carried (`<context ref="…">`). The window gets the
+/// person's words only, never a place in the copy.
+#[test]
+fn a_replayed_message_never_shows_the_copy() {
+    let fx = Fx::new(|_, _| Some("end_turn"));
+    fx.ask("One.");
+    fx.events.turn_end();
+    fx.leave(1);
+    let file = url::Url::from_file_path(fx.copy_dir().join("notes.md")).unwrap();
+    let passage = format!("{file}#L1:1");
+    let chunk = |text: String| {
+        json!({
+            "jsonrpc": "2.0", "method": "session/update",
+            "params": { "sessionId": SESSION, "update": {
+                "sessionUpdate": "user_message_chunk", "content": { "type": "text", "text": text },
+            } },
+        })
+    };
+    let context = format!("\n<context ref=\"{passage}\">\nLine one of the notes.\n</context>");
+    *fx.fake.story.replay.lock().unwrap() = vec![
+        chunk("One.".to_owned()),
+        chunk(format!("[@notes.md#L1:1]({passage})")),
+        chunk(format!("[@notes.md]({file})")),
+        chunk(context.clone()),
+        chunk(format!("Two.[@notes.md]({file}){context}")),
+    ];
+    let told = fx.continue_last();
+    let said: Vec<&Value> = told.iter().filter(|e| e["type"] == "you").collect();
+    assert_eq!(
+        said,
+        [
+            &json!({ "type": "you", "text": "One." }),
+            &json!({ "type": "you", "text": "Two." })
+        ]
+    );
 }
 
 /// An agent that cannot replay a conversation but can resume one: `session/resume`, and the window is told that
@@ -2906,6 +2952,72 @@ fn the_last_conversation_is_offered_only_for_its_agent() {
     fx.turns_ended(2);
     assert_eq!(fx.saved().unwrap().way, None);
     assert_eq!(fx.session.status().last, None);
+}
+
+/// What the agent names is bounded before it is kept and shown: a long title is cut, control | bidi characters leave
+/// it, an id too long to be one is never kept (nothing to continue). An own command's text is never kept with it.
+#[test]
+fn what_the_agent_names_is_bounded_before_it_is_kept() {
+    let fx = Fx::new(|peer, message| {
+        let title = match prompt_text(message) {
+            "Long." => "a".repeat(10_000),
+            _ => "\u{202e}Notes\u{7}\nagain\u{2066}".to_owned(),
+        };
+        peer.update(&json!({ "sessionUpdate": "session_info_update", "title": title }));
+        Some("end_turn")
+    });
+    fx.ask("Long.");
+    fx.events.turn_end();
+    let title = fx.saved().unwrap().title.unwrap();
+    assert_eq!(title, "a".repeat(MAX_TITLE_CHARS));
+    fx.ask("Bidi.");
+    fx.turns_ended(2);
+    assert_eq!(fx.saved().unwrap().title.as_deref(), Some("Notesagain"));
+    assert_eq!(
+        fx.session.status().last.unwrap().title.as_deref(),
+        Some("Notesagain")
+    );
+    // a new conversation whose id is too long: nothing is kept, so nothing is offered
+    fx.leave(1);
+    *fx.fake.story.new_id.lock().unwrap() = Some("x".repeat(MAX_SESSION_ID_BYTES + 1));
+    fx.ask("Three.");
+    fx.turns_ended(3);
+    assert_eq!(fx.saved(), None);
+    assert_eq!(fx.session.status().last, None);
+
+    let own = Choice::Command("my-agent --api-key s3cret".to_owned());
+    assert!(!fingerprint(&own).contains("s3cret"));
+    assert_ne!(
+        fingerprint(&own),
+        fingerprint(&Choice::Agent("claude-acp".to_owned()))
+    );
+}
+
+/// A new conversation on the copy of the one before takes its unaccepted changes along: kept with it from its start,
+/// not only at its first turn's end.
+#[test]
+fn a_new_conversation_on_the_same_copy_keeps_its_changes_noted() {
+    let fx = Fx::new(|peer, message| {
+        if prompt_text(message) == "Edit." {
+            peer.write("notes.md", "Changed by the agent.\n");
+            return Some("end_turn");
+        }
+        // the second conversation's turn waits on its question
+        peer.ask(
+            &json!(0),
+            &json!({ "toolCallId": "t1", "title": "Run it", "kind": "execute" }),
+        );
+        peer.until(|m| m["id"] == 0 && m.get("method").is_none())?;
+        Some("end_turn")
+    });
+    fx.ask("Edit.");
+    assert_eq!(fx.events.turn_end()["changed"], 1);
+    fx.leave(1);
+    fx.ask("Two.");
+    let card = fx.permission();
+    assert!(fx.saved().unwrap().had_changes);
+    fx.reject(card["requestId"].as_str().unwrap());
+    fx.turns_ended(2);
 }
 
 /// Changes the agent left for the person are noted with the conversation. Continued on the same copy they are still

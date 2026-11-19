@@ -3109,7 +3109,7 @@ export default {
   "acp.continue": "Continuar la última conversación",
   "acp.restored.notShown": "Los mensajes anteriores no se muestran. El agente los recuerda.",
   "acp.restored.changesLost":
-    "Los cambios que el agente hizo antes y que no aceptaste no se conservaron.",
+    "Los cambios de la conversación anterior que no aceptaste ya no están.",
   "acp.say.restored": "Conversación restaurada",
   "acp.fail.sessionGone": "La última conversación ya no se puede continuar.",
   "acp.error.noSaved": "No hay ninguna conversación anterior que continuar.",

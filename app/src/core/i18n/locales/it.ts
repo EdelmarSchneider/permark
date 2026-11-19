@@ -3124,7 +3124,7 @@ export default {
   "acp.continue": "Riprendi l'ultima conversazione",
   "acp.restored.notShown": "I messaggi precedenti non sono mostrati. L'agente li ricorda.",
   "acp.restored.changesLost":
-    "Le modifiche fatte prima dall'agente che non avevi accettato non sono state conservate.",
+    "Le modifiche della conversazione precedente che non avevi accettato non ci sono più.",
   "acp.say.restored": "Conversazione ripristinata",
   "acp.fail.sessionGone": "L'ultima conversazione non può più essere ripresa.",
   "acp.error.noSaved": "Non c'è nessuna conversazione precedente da riprendere.",

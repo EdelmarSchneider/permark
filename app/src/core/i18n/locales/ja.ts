@@ -3123,8 +3123,7 @@ export default {
   "acp.examples": "例：",
   "acp.continue": "前回の会話を続ける",
   "acp.restored.notShown": "以前のメッセージは表示されませんが、エージェントは覚えています。",
-  "acp.restored.changesLost":
-    "以前にエージェントが行い、承認されていなかった変更は保持されていません。",
+  "acp.restored.changesLost": "以前の会話で承認しなかった変更は、もう残っていません。",
   "acp.say.restored": "会話を復元しました",
   "acp.fail.sessionGone": "前回の会話はもう続けられません。",
   "acp.error.noSaved": "続けられる以前の会話はありません。",

@@ -3106,7 +3106,7 @@ export default {
   "acp.continue": "Lanjutkan percakapan terakhir",
   "acp.restored.notShown": "Pesan sebelumnya tidak ditampilkan. Agen masih mengingatnya.",
   "acp.restored.changesLost":
-    "Perubahan yang dibuat agen sebelumnya dan belum Anda terima tidak disimpan.",
+    "Perubahan dari percakapan sebelumnya yang belum Anda terima sudah tidak ada.",
   "acp.say.restored": "Percakapan dipulihkan",
   "acp.fail.sessionGone": "Percakapan terakhir tidak bisa dilanjutkan lagi.",
   "acp.error.noSaved": "Tidak ada percakapan sebelumnya untuk dilanjutkan.",

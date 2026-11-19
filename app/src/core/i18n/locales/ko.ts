@@ -3048,8 +3048,7 @@ export default {
   "acp.examples": "예:",
   "acp.continue": "마지막 대화 이어 가기",
   "acp.restored.notShown": "이전 메시지는 표시되지 않지만 에이전트는 기억하고 있습니다.",
-  "acp.restored.changesLost":
-    "에이전트가 이전에 했지만 수락하지 않은 변경 내용은 유지되지 않았습니다.",
+  "acp.restored.changesLost": "이전 대화에서 수락하지 않은 변경 내용은 더 이상 남아 있지 않습니다.",
   "acp.say.restored": "대화를 복원했습니다",
   "acp.fail.sessionGone": "마지막 대화는 더 이상 이어 갈 수 없습니다.",
   "acp.error.noSaved": "이어 갈 이전 대화가 없습니다.",

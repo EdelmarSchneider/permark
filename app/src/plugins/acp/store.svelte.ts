@@ -25,6 +25,7 @@ import type {
   ChooseArgs,
   FileChange,
   IpcError,
+  LinkTarget,
   LoginMethod,
   PermissionChoice,
   PermissionDiff,
@@ -32,6 +33,7 @@ import type {
   PromptSelection,
   ResolvedCommand,
 } from "../../api";
+import { anchorLine } from "../../core/doc/codeRefs";
 import { documents } from "../../core/doc/document.svelte";
 import { pageSelection } from "../../core/doc/selection";
 import { editing, type TextRange } from "../../core/editing/session.svelte";
@@ -55,6 +57,8 @@ export const PANEL = "acp.panel";
 export const ACP_PAGE = "acp.page";
 /** The attribute on the panel's element: a selection | the keyboard inside it never changes the passage. */
 export const PANEL_MARK = "data-acp-panel";
+/** The one notice a link of a message that leads nowhere gives (a second click replaces it). */
+const LINK_NOTICE = "acp.link";
 /** The conversation keeps this many lines; older ones go (a long session never grows the window without end). */
 export const MAX_ENTRIES = 500;
 /** The agent's error output shown under Details: its newest characters, at most this many. */
@@ -268,7 +272,8 @@ export class AcpStore {
           methods: update.methods ?? [],
           needs: this.status?.needs,
           skippedFiles: this.status?.skippedFiles ?? 0,
-          last: this.status?.last ?? null,
+          // a conversation its agent no longer has is forgotten by the backend too: never offered meanwhile
+          last: update.error?.code === "sessionGone" ? null : (this.status?.last ?? null),
         };
         if (update.state !== "starting" && update.state !== "working") {
           this.thinking = false;
@@ -615,6 +620,37 @@ export class AcpStore {
   /** Opens a file of the project at a line (the real file, as it is now). */
   openAt(path: string, line: number | null): void {
     documents.navigate(path, null, line);
+  }
+
+  /** Follows a link of a message as the reading view follows a document's: a file opens at the line its anchor names
+   *  (`#L3`) | at its heading, a web address in the browser; a missing file | a place outside the project is said.
+   *  A folder | a place in the message itself: nothing here. */
+  openLink(target: LinkTarget): void {
+    switch (target.type) {
+      case "doc": {
+        const line = target.anchor === null ? null : anchorLine(target.anchor);
+        if (target.anchor === null || line !== null) this.openAt(target.path, line);
+        else documents.navigate(target.path, target.anchor);
+        break;
+      }
+      case "asset":
+        this.openAt(target.path, null);
+        break;
+      case "web":
+        this.openWebsite(target.url);
+        break;
+      case "missing":
+        this.#deps.notices.notifyKeyed(LINK_NOTICE, t("link.missing", { path: target.path }));
+        break;
+      case "outside":
+        this.#deps.notices.notifyKeyed(LINK_NOTICE, t("link.outside"));
+        break;
+      case "anchor":
+      case "folder":
+        break;
+      default:
+        target satisfies never;
+    }
   }
 
   /** Puts `text` on the clipboard; false when the system refused. */

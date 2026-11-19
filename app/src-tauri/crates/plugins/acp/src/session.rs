@@ -73,6 +73,7 @@ use crate::dto::{
     LoginKind, LoginMethod, PermissionChoice, PromptArgs, PromptSelection, ResolveArgs,
     ResolvedCommand,
 };
+use crate::reply;
 use crate::work::{copy_dir, kept_out, start_of, Project, WorkCopy};
 use crate::SharedCopy;
 use login::login_methods;
@@ -123,6 +124,8 @@ struct Core {
     /// Files the copy left out for their size at its last build | update (read by the status without the copy's lock,
     /// which a build | an update holds for long).
     skipped: AtomicU32,
+    /// The places the copy is named by ([`reply::copy_spellings`]): never shown in the person's replayed words.
+    copy_names: Vec<PathBuf>,
 }
 
 #[derive(Default)]
@@ -411,13 +414,21 @@ impl Step {
 impl Session {
     #[must_use]
     pub fn new(host: Host) -> Self {
+        let copy_names = reply::copy_spellings(host.place.as_deref(), host.project.root());
         Self {
             core: Arc::new(Core {
                 host,
                 inner: Mutex::new(Inner::default()),
                 skipped: AtomicU32::new(0),
+                copy_names,
             }),
         }
+    }
+
+    /// The places the copy is named by ([`reply::copy_spellings`]).
+    #[must_use]
+    pub fn copy_names(&self) -> &[PathBuf] {
+        &self.core.copy_names
     }
 
     #[must_use]
@@ -1257,7 +1268,7 @@ impl Core {
             .chosen()
             .ok_or_else(|| AcpError::new(AcpErrorCode::NoAgent))?;
         // another agent was chosen since: it never continues a conversation of the one before
-        if matches!(then, Then::Continue(saved) if saved.agent != chosen.choice) {
+        if matches!(then, Then::Continue(saved) if !saved.started_by(&chosen.choice)) {
             return Err(AcpError::new(AcpErrorCode::SessionGone));
         }
         // nothing to start it with: the status's `needs` says what
@@ -1418,6 +1429,14 @@ impl Core {
         lock(&self.host.copy)
             .as_mut()
             .and_then(|copy| copy.refresh().ok())
+            .map_or(0, |list| list.count())
+    }
+
+    /// Files left for the person in the copy as last listed (`0`: no copy | it cannot be read).
+    fn left_in_copy(&self) -> u32 {
+        lock(&self.host.copy)
+            .as_mut()
+            .and_then(|copy| copy.changes().ok())
             .map_or(0, |list| list.count())
     }
 
@@ -1662,8 +1681,8 @@ struct Listener {
 }
 
 impl Inner {
-    /// Updates for one piece of the agent's news.
-    fn news(&mut self, update: SessionUpdate) -> Vec<AcpUpdate> {
+    /// Updates for one piece of the agent's news; `copy`: the places the copy is named by.
+    fn news(&mut self, update: SessionUpdate, copy: &[PathBuf]) -> Vec<AcpUpdate> {
         match update {
             // a replayed thought is no thinking now
             SessionUpdate::AgentThoughtChunk(_) if self.telling == Telling::Replayed => Vec::new(),
@@ -1681,10 +1700,14 @@ impl Inner {
                     _ => Vec::new(),
                 }
             }
-            // the person's earlier messages, shown again (their text only: attached passages are not repeated)
+            // the person's earlier messages, shown again: their words only (attachments come back as other blocks, or
+            // flattened into the text by Claude's adapter)
             SessionUpdate::UserMessageChunk(chunk) if self.telling == Telling::Replayed => {
                 match chunk.content {
-                    ContentBlock::Text(text) => vec![AcpUpdate::You { text: text.text }],
+                    ContentBlock::Text(text) => reply::replayed_words(&text.text, copy)
+                        .map(|text| AcpUpdate::You { text })
+                        .into_iter()
+                        .collect(),
                     _ => Vec::new(),
                 }
             }
@@ -1756,10 +1779,9 @@ impl Inbox for Listener {
             },
             _ => None,
         };
-        let Some(updates) = self
-            .core
-            .with_current(self.generation, |inner| inner.news(note.update))
-        else {
+        let Some(updates) = self.core.with_current(self.generation, |inner| {
+            inner.news(note.update, &self.core.copy_names)
+        }) else {
             return;
         };
         if let Some(title) = title {

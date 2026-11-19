@@ -3094,7 +3094,7 @@ export default {
   "acp.continue": "Tiếp tục cuộc trò chuyện gần nhất",
   "acp.restored.notShown": "Các tin nhắn trước đó không được hiển thị. Agent vẫn nhớ chúng.",
   "acp.restored.changesLost":
-    "Những thay đổi agent đã thực hiện trước đó mà bạn chưa chấp nhận không được giữ lại.",
+    "Những thay đổi từ cuộc trò chuyện trước mà bạn chưa chấp nhận không còn nữa.",
   "acp.say.restored": "Đã khôi phục cuộc trò chuyện",
   "acp.fail.sessionGone": "Không thể tiếp tục cuộc trò chuyện gần nhất nữa.",
   "acp.error.noSaved": "Không có cuộc trò chuyện nào trước đó để tiếp tục.",

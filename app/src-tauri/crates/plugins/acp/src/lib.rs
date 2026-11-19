@@ -240,7 +240,6 @@ impl Plugin for Acp {
         let own = cx.store().map(|store| store.profile_plugin_dir(&cx.id));
         let place = own.as_ref().map(|dir| dir.join(WORK));
         let run = own.map(|dir| dir.join(RUN));
-        let copy_names = reply::copy_spellings(place.as_deref(), vault.main());
         // the profile folder itself, whatever the project holds: read at every agent start
         let choice = cx
             .store()
@@ -260,7 +259,13 @@ impl Plugin for Acp {
             events: cx.events().clone(),
         });
         Ok(Box::new(Started {
-            _rpc: register(cx, &copy, &session, services.clone(), copy_names),
+            _rpc: register(
+                cx,
+                &copy,
+                &session,
+                services.clone(),
+                session.copy_names().to_vec(),
+            ),
             session,
             place,
             run,

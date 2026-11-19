@@ -7,10 +7,14 @@
 //! - offered only while its agent is the chosen one and that agent offered a way at its start: `session/load` (it
 //!   replays the conversation) else `session/resume` (it remembers it, the window shows none of it).
 //! - an agent that refuses to continue it no longer has it: forgotten.
+//! - what the agent names (the id, the title) is bounded: a title is cut and loses control | bidi characters (it
+//!   labels a button), an id too long to be one is never kept.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use agent_client_protocol_schema::v1::{AgentCapabilities, SessionId};
+use permark_core::fsx;
+use permark_core::settings::is_unsafe_char;
 use permark_core::state::{Loaded, StateData};
 use serde::{Deserialize, Serialize};
 
@@ -20,13 +24,18 @@ use crate::dto::{ContinueWay, LastConversation};
 
 /// File of the last conversation in the plugin's profile folder for the project.
 pub const SAVED_FILE: &str = "session.json";
+/// Longest title kept, in characters.
+pub const MAX_TITLE_CHARS: usize = 200;
+/// Longest session id kept, in bytes (a longer one: the conversation cannot be continued).
+pub const MAX_SESSION_ID_BYTES: usize = 512;
 
 /// The project's last conversation with an agent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Saved {
-    /// The person's choice that started it: offered again only while it is chosen.
-    pub agent: Choice,
+    /// Fingerprint of the person's choice that started it ([`fingerprint`]): offered again only while it is chosen.
+    /// Never the choice itself: an own command may carry what the person typed as an argument.
+    pub agent: String,
     pub session_id: String,
     /// The agent's title for it.
     #[serde(default)]
@@ -45,7 +54,7 @@ impl Saved {
     /// What the window is offered while `choice` is the chosen agent (`None`: another agent's, or no way).
     #[must_use]
     pub fn offer(&self, choice: &Choice) -> Option<LastConversation> {
-        if self.agent != *choice {
+        if !self.started_by(choice) {
             return None;
         }
         Some(LastConversation {
@@ -54,6 +63,29 @@ impl Saved {
             supports: self.way?,
         })
     }
+
+    /// Whether `choice` is the one that started it.
+    #[must_use]
+    pub fn started_by(&self, choice: &Choice) -> bool {
+        self.agent == fingerprint(choice)
+    }
+}
+
+/// What a kept conversation names its agent by: a hash of the choice, never its text.
+#[must_use]
+pub fn fingerprint(choice: &Choice) -> String {
+    fsx::hash(&serde_json::to_vec(choice).unwrap_or_default()).hex()
+}
+
+/// A title as kept and shown: control | bidi characters dropped, at most [`MAX_TITLE_CHARS`] (`None`: nothing left).
+fn clean_title(title: &str) -> Option<String> {
+    let kept: String = title
+        .chars()
+        .filter(|c| !c.is_control() && !is_unsafe_char(*c))
+        .take(MAX_TITLE_CHARS)
+        .collect();
+    let kept = kept.trim();
+    (!kept.is_empty()).then(|| kept.to_owned())
 }
 
 /// The file's content (`last: None`: forgotten).
@@ -108,17 +140,25 @@ impl Core {
         });
     }
 
-    /// The conversation `session` of `agent` just opened: kept in place of any other.
+    /// The conversation `session` of `agent` just opened: kept in place of any other (an id too long to be one:
+    /// none kept). The copy is shared by every conversation of this run: one it already had still holds the changes
+    /// left for the person, which go with the new conversation (else lost unsaid if the app quits before its first
+    /// turn ends).
     pub(super) fn remember(&self, agent: &Agent, session: &SessionId) {
         let Some(file) = &self.host.saved else {
             return;
         };
+        if session.0.len() > MAX_SESSION_ID_BYTES {
+            let _ = file.save(&Remembered::default());
+            return;
+        }
+        let had_changes = !agent.fresh && self.left_in_copy() > 0;
         let _ = file.save(&Remembered {
             last: Some(Saved {
-                agent: agent.choice.clone(),
+                agent: fingerprint(&agent.choice),
                 session_id: session.0.to_string(),
                 title: None,
-                had_changes: false,
+                had_changes,
                 at: now_ms(),
                 way: agent.way(),
             }),
@@ -138,9 +178,10 @@ impl Core {
 
     /// The agent named `session` (`None`: cleared its title).
     pub(super) fn retitle(&self, session: &SessionId, title: Option<&str>) {
+        let title = title.and_then(clean_title);
         self.change_saved(Some(session), |kept| {
-            let changed = kept.title.as_deref() != title;
-            kept.title = title.map(str::to_owned);
+            let changed = kept.title != title;
+            kept.title.clone_from(&title);
             changed
         });
     }

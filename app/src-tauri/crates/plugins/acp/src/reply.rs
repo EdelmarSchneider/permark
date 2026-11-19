@@ -104,6 +104,25 @@ fn continues_name(c: char) -> bool {
     c.is_alphanumeric() || matches!(c, '_' | '.' | '-')
 }
 
+/// Length of the rest of a path that starts at `at` of `text`, from `from` (past the copy's folder): up to whitespace |
+/// a [`PATH_END`] character; a path right after `` ` `` | `<` | `"` runs to that quote's closer on its line (names with
+/// spaces). A bare path with a space in a name stops at the space: its tail keeps its separators and names no project
+/// file.
+fn path_len(text: &str, at: usize, from: usize) -> usize {
+    let rest = &text[from..];
+    let closer = match text[..at].chars().next_back() {
+        Some('`') => Some('`'),
+        Some('<') => Some('>'),
+        Some('"') => Some('"'),
+        _ => None,
+    };
+    let end = match closer {
+        Some(closer) => rest.find([closer, '\n']),
+        None => rest.find(|c: char| c.is_whitespace() || PATH_END.contains(&c)),
+    };
+    end.unwrap_or(rest.len())
+}
+
 /// `text` with every path into the copy written as a project path: the copy's folder and the separator after it
 /// dropped, the rest of the path `/` separated. The folder named alone stays as written.
 fn project_paths<'t>(text: &'t str, copy: &[PathBuf]) -> Cow<'t, str> {
@@ -140,15 +159,89 @@ fn project_paths<'t>(text: &'t str, copy: &[PathBuf]) -> Cow<'t, str> {
             continue;
         }
         out.push_str(&text[done..at]);
-        let rest = &text[end..];
-        let len = rest
-            .find(|c: char| c.is_whitespace() || PATH_END.contains(&c))
-            .unwrap_or(rest.len());
-        out.extend(rest[..len].chars().map(|c| if c == '\\' { '/' } else { c }));
+        let len = path_len(text, at, end);
+        out.extend(
+            text[end..end + len]
+                .chars()
+                .map(|c| if c == '\\' { '/' } else { c }),
+        );
         done = end + len;
     }
     out.push_str(&text[done..]);
     Cow::Owned(out)
+}
+
+/// Opens the passage Claude's adapter adds to a prompt's text, read back at a replay.
+const CONTEXT_OPEN: &str = "<context ref=\"";
+const CONTEXT_CLOSE: &str = "</context>";
+
+/// Whether `uri` is a `file:` URI of a place inside the copy (any spelling of it, percent-encoded or not).
+fn in_copy(uri: &str, prefixes: &[String]) -> bool {
+    let Some(path) = url::Url::parse(uri)
+        .ok()
+        .filter(|url| url.scheme() == "file")
+        .and_then(|url| url.to_file_path().ok())
+    else {
+        return false;
+    };
+    let path = path.to_string_lossy();
+    let path = if paths::CASE_INSENSITIVE {
+        path.to_ascii_lowercase()
+    } else {
+        path.into_owned()
+    };
+    prefixes.iter().any(|prefix| {
+        path.strip_prefix(prefix.as_str())
+            .is_some_and(|rest| rest.starts_with(['/', '\\']))
+    })
+}
+
+/// Length of what an agent's adapter made of a prompt's attachment at the start of `text` (`None`: none there): a
+/// link `[@name](file:///…)` | a passage `<context ref="file:///…">…</context>`, into the copy.
+fn attachment_len(text: &str, prefixes: &[String]) -> Option<usize> {
+    if let Some(rest) = text.strip_prefix(CONTEXT_OPEN) {
+        let uri = &rest[..rest.find('"')?];
+        let close = rest.find(CONTEXT_CLOSE)?;
+        return in_copy(uri, prefixes).then_some(CONTEXT_OPEN.len() + close + CONTEXT_CLOSE.len());
+    }
+    let rest = text.strip_prefix("[@")?;
+    let name_end = rest.find("](")?;
+    if rest[..name_end].contains(['\n', '[']) {
+        return None;
+    }
+    let link = &rest[name_end + 2..];
+    let uri = &link[..link.find(')')?];
+    (!uri.contains(char::is_whitespace) && in_copy(uri, prefixes))
+        .then_some(2 + name_end + 2 + uri.len() + 1)
+}
+
+/// A piece of the person's message as an agent replays it: what its adapter added from the prompt's attachments
+/// (Claude's flattens a file link into `[@name](file:///…)` and a passage into `<context ref="file:///…">…</context>`
+/// within the text) dropped, any other path into the copy written as a project path: the window shows the person's
+/// words, never a place in the copy (`None`: none of the person's words in it).
+#[must_use]
+pub fn replayed_words(text: &str, copy: &[PathBuf]) -> Option<String> {
+    let prefixes = prefixes(copy);
+    let mut kept = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut dropped = false;
+    while let Some(at) = rest.find(['<', '[']) {
+        kept.push_str(&rest[..at]);
+        let from = &rest[at..];
+        if let Some(len) = attachment_len(from, &prefixes) {
+            dropped = true;
+            rest = &from[len..];
+        } else {
+            kept.push_str(&from[..1]);
+            rest = &from[1..];
+        }
+    }
+    kept.push_str(rest);
+    if !dropped {
+        return Some(project_paths(text, copy).into_owned());
+    }
+    let kept = kept.trim_end();
+    (!kept.trim_start().is_empty()).then(|| project_paths(kept, copy).into_owned())
 }
 
 #[cfg(test)]
@@ -280,6 +373,50 @@ mod tests {
             "/x/profile/work/projects/a.md"
         };
         assert_eq!(project_paths(other, &copy), other);
+    }
+
+    #[test]
+    fn a_quoted_path_with_spaces_reads_as_a_project_path() {
+        let base = tempfile::tempdir().unwrap();
+        let copy = base.path().join("work").join("my proj");
+        let sep = std::path::MAIN_SEPARATOR;
+        let given = copy.display().to_string();
+        let text = format!("Open `{given}{sep}My Notes{sep}a b.md` or <{given}{sep}x y.md> now.");
+        assert_eq!(
+            project_paths(&text, &[copy]),
+            "Open `My Notes/a b.md` or <x y.md> now."
+        );
+    }
+
+    /// A message of the person as Claude's adapter replays it: its text, then a link per attached file and the
+    /// passage it carried, flattened into text (one piece each, or all in one).
+    #[test]
+    fn a_replayed_message_keeps_the_persons_words_only() {
+        let base = tempfile::tempdir().unwrap();
+        let copy = base.path().join("work").join("my proj");
+        let file = url::Url::from_file_path(copy.join("guide.md")).unwrap();
+        let passage = format!("{file}#L3:3");
+        assert!(file.as_str().contains("my%20proj"), "{file}");
+        let copy = [copy];
+        let link = format!("[@guide.md#L3:3]({passage})");
+        let doc = format!("[@guide.md]({file})");
+        let context = format!("\n<context ref=\"{passage}\">\n3. Guide line number 3.\n</context>");
+        assert_eq!(
+            replayed_words("Make it clearer", &copy).as_deref(),
+            Some("Make it clearer")
+        );
+        for piece in [&link, &doc, &context] {
+            assert_eq!(replayed_words(piece, &copy), None, "{piece}");
+        }
+        assert_eq!(
+            replayed_words(&format!("Make it clearer{link}{doc}{context}"), &copy).as_deref(),
+            Some("Make it clearer")
+        );
+        // the same shapes naming anything but the copy are the person's own words
+        let elsewhere =
+            "See [@a.md](file:///elsewhere/a.md) and <context ref=\"https://x\">y</context>";
+        assert_eq!(replayed_words(elsewhere, &copy).as_deref(), Some(elsewhere));
+        assert_eq!(replayed_words("[@a](", &copy).as_deref(), Some("[@a]("));
     }
 
     #[test]

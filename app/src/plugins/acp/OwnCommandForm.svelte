@@ -1,8 +1,9 @@
 <script lang="ts">
   // The person's own command, in the picker and on the settings page alike: the field, the line that PerMark starts
   // this program, a line that follows the typing with what it would start (the program's full path | why not, asked a
-  // moment after the keys stop: a run of keys asks once; an empty field says nothing), Use this command, Cancel. Why
-  // a command was refused and why it must wait (the agent works) are said here, beside the button they concern.
+  // moment after the keys stop: a run of keys asks once; an empty field says nothing), Use this command, Cancel (on the
+  // page, where it only puts the command in use back: there only while something differs). Why a command was refused
+  // and why it must wait (the agent works) are said here, beside the button they concern.
   import { onMount, untrack } from "svelte";
   import { t } from "../../core/i18n";
   import Note from "./Note.svelte";
@@ -39,6 +40,10 @@
   let asked = 0;
 
   const locked = $derived(!acp.canChange || acp.choosing);
+  /** Cancel has something to undo: it always ends the picker's form; on the page it puts the command in use back. */
+  const cancellable = $derived(
+    oncancel !== undefined || typed !== initial || acp.choiceRefusal !== null,
+  );
 
   function ask(): void {
     clearTimeout(timer);
@@ -88,7 +93,9 @@
     typed = initial;
     ask();
     acp.choiceRefusal = null;
-    oncancel?.();
+    if (oncancel !== undefined) oncancel();
+    // the button turns disabled under the keyboard: the field takes it
+    else field?.focus();
   }
 </script>
 
@@ -117,7 +124,9 @@
     <Note tone="refusal" alert>{acp.choiceRefusal}</Note>
   {/if}
   <div class="actions">
-    <button type="button" class="btn btn--sm" onclick={cancel}>{t("common.cancel")}</button>
+    <button type="button" class="btn btn--sm" disabled={!cancellable} onclick={cancel}
+      >{t("common.cancel")}</button
+    >
     <button type="submit" class="btn btn--sm btn--primary" disabled={typed.trim() === "" || locked}
       >{t("acp.pick.useCommand")}</button
     >

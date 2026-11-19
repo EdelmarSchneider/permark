@@ -464,6 +464,7 @@
                 <MarkdownReply
                   text={entry.text}
                   final={at < acp.transcript.length - 1 || !working}
+                  last={at === acp.transcript.length - 1}
                 />
               </li>
             {:else if entry.kind === "tool"}

@@ -3108,8 +3108,7 @@ export default {
   "acp.examples": "Por exemplo:",
   "acp.continue": "Continuar a última conversa",
   "acp.restored.notShown": "As mensaxes anteriores non se mostran. O axente lémbraas.",
-  "acp.restored.changesLost":
-    "Os cambios que o axente fixera antes e que non aceptou non se conservaron.",
+  "acp.restored.changesLost": "Os cambios da conversa anterior que non aceptou xa non están.",
   "acp.say.restored": "Conversa restaurada",
   "acp.fail.sessionGone": "A última conversa xa non se pode continuar.",
   "acp.error.noSaved": "Non hai ningunha conversa anterior que continuar.",

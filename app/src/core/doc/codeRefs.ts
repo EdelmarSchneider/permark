@@ -111,6 +111,12 @@ export function findTextRefs(text: string): TextRef[] {
   return found;
 }
 
+/** The line a link's anchor names: `L10` as GitHub writes it (`L10C5`, `L10-L20`, `L10:12`: the first line), or null.
+ *  Heading ids are lower case, so none reads as a line. */
+export function anchorLine(anchor: string): number | null {
+  return number(/^L(\d{1,7})(?!\d)/.exec(anchor)?.[1]);
+}
+
 /** A reference as it is written back: `src/main.rs:42`. */
 export function refLabel(path: string, line: number | null): string {
   return line === null ? path : `${path}:${line}`;

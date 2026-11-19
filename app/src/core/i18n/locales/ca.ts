@@ -3143,7 +3143,7 @@ export default {
   "acp.continue": "Continua l'última conversa",
   "acp.restored.notShown": "Els missatges anteriors no es mostren. L'agent els recorda.",
   "acp.restored.changesLost":
-    "Els canvis que l'agent havia fet abans i que no vau acceptar no s'han conservat.",
+    "Els canvis de la conversa anterior que no vau acceptar ja no hi són.",
   "acp.say.restored": "Conversa restaurada",
   "acp.fail.sessionGone": "L'última conversa ja no es pot continuar.",
   "acp.error.noSaved": "No hi ha cap conversa anterior per continuar.",

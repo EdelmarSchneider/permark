@@ -3,12 +3,14 @@
   // line follows it, or the turn ended): the plugin's backend renders it once through the documents' Markdown pipeline,
   // and its sanitized blocks are drawn as the export builder draws blocks off the page (template, enhance, embeds near
   // each block) under the reading view's classes, in the panel's size. An answer for text no longer shown is dropped; a
-  // render that fails leaves the text. The message never shrinks under the reader at the swap. A click never navigates
-  // the window: web links open in the person's browser, project links and code references open the file at the line,
-  // a link to a note of the message scrolls to it; a picture on the web stays an inert chip (a reply never fetches it).
+  // render that fails leaves the text. The last message never shrinks under the reader at the swap (that floor goes once
+  // another line follows it). A click never navigates the window: web links open in the person's browser, project links
+  // and code references open the file at the line, a link to a note of the message scrolls to it; a picture on the web
+  // stays an inert chip (a reply never fetches it). Its headings sit below the panel's own (h4 and deeper), each keeping
+  // its look; code wraps its lines, so no block scrolls sideways (a scroller the keyboard cannot reach in WebKit).
   import type { Attachment } from "svelte/attachments";
   import { untrack } from "svelte";
-  import { api, type Block, type LinkTarget } from "../../api";
+  import { api, type Block } from "../../api";
   import { conditions } from "../../core/conditions/context.svelte";
   import {
     codeRefOf,
@@ -27,8 +29,10 @@
     text: string;
     /** The message is whole. */
     final: boolean;
+    /** The message is the conversation's last line: only then does it keep the plain text's height. */
+    last?: boolean;
   };
-  let { text, final }: Props = $props();
+  let { text, final, last = false }: Props = $props();
 
   /** The document the backend renders a message as: links and code references resolve from the project root. */
   const DOC = "assistant.md";
@@ -87,7 +91,7 @@
         if (block.html === null) continue;
         template.innerHTML = block.html;
         const first = template.content.firstElementChild;
-        if (first instanceof HTMLElement) elements.push(enhanceBlock(first, env));
+        if (first instanceof HTMLElement) elements.push(demote(enhanceBlock(first, env)));
       }
       host.replaceChildren(...elements);
       settle(host);
@@ -99,6 +103,27 @@
         if (decorator === drawn) decorator = null;
       };
     };
+  }
+
+  /** The block with its headings below the panel's (`h1` -> `h4`, deeper ones `h6`), `data-level` keeping the level
+   *  written for the look; the block's root replaced when it is one. */
+  function demote(element: HTMLElement): HTMLElement {
+    const own = /^H[1-6]$/.test(element.tagName) ? [element] : [];
+    let root = element;
+    for (const heading of [
+      ...own,
+      ...element.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"),
+    ]) {
+      const level = Number(heading.tagName.slice(1));
+      const lower = document.createElement(`h${String(Math.min(level + 3, 6))}`);
+      for (const attribute of [...heading.attributes])
+        lower.setAttribute(attribute.name, attribute.value);
+      lower.setAttribute("data-level", String(level));
+      lower.replaceChildren(...heading.childNodes);
+      heading.replaceWith(lower);
+      if (heading === element) root = lower;
+    }
+    return root;
   }
 
   /** What a message must not do that a document may: fetch a web picture (its chip loses the address it would load,
@@ -129,26 +154,6 @@
     part?.scrollIntoView({ block: "nearest" });
   }
 
-  function open(target: LinkTarget | null | undefined): void {
-    if (!target) return;
-    switch (target.type) {
-      case "doc":
-      case "asset":
-        acp.openAt(target.path, null);
-        break;
-      case "web":
-        acp.openWebsite(target.url);
-        break;
-      case "anchor":
-      case "folder":
-      case "missing":
-      case "outside":
-        break;
-      default:
-        target satisfies never;
-    }
-  }
-
   async function follow(href: string, host: HTMLElement): Promise<void> {
     const value = href.trim();
     if (value.startsWith("#")) {
@@ -162,7 +167,7 @@
     // any other scheme is never followed from a message
     if (/^[a-z][a-z0-9+.-]*:/i.test(value) || decorator === null) return;
     const [target] = await decorator.links.resolve([value]);
-    open(target);
+    if (target) acp.openLink(target);
   }
 
   /** A click | the middle button on a link or a code reference: never the web view's own way. */
@@ -201,7 +206,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="md md-body reply"
-    style:min-height={floor > 0 ? `${String(floor)}px` : undefined}
+    style:min-height={last && floor > 0 ? `${String(floor)}px` : undefined}
     onclick={activate}
     {onauxclick}
     {onkeydown}
@@ -243,27 +248,40 @@
   .reply > :global(:is(h1, h2, h3, h4, h5, h6):first-child) {
     margin-top: 0;
   }
-  .reply :global(h1) {
+  /* a heading keeps the look of the level written, whatever level it now has */
+  .reply :global([data-level]) {
+    font-weight: 600;
+    letter-spacing: normal;
+    color: inherit;
+  }
+  .reply :global([data-level="1"]) {
     font-size: 1.4em;
+    font-weight: 700;
   }
-  .reply :global(h2) {
+  .reply :global([data-level="2"]) {
     font-size: 1.25em;
+    font-weight: 650;
   }
-  .reply :global(h3) {
+  .reply :global([data-level="3"]) {
     font-size: 1.12em;
   }
-  .reply :global(:is(h4, h5, h6)) {
+  .reply :global(:is([data-level="4"], [data-level="5"], [data-level="6"])) {
     font-size: 1em;
+  }
+  .reply :global([data-level="6"]) {
+    color: var(--muted);
   }
   .reply :global(:is(ul, ol)) {
     padding-inline-start: 1.4em;
   }
-  /* code keeps its lines: a long one scrolls inside its block */
+  /* code wraps as in documents (a long word too): nothing scrolls sideways in the panel */
   .reply :global(pre) {
     padding: 8px 10px;
     font-size: 0.95em;
-    white-space: pre;
-    overflow-wrap: normal;
+  }
+  /* the first line starts below the corner (language, Copy), which would cover a line's end in the narrow panel */
+  .reply :global(.code-block > pre:not(.has-title)) {
+    padding-top: calc(var(--code-corner-top) + var(--icon-btn-sm) + 2px);
   }
   .reply :global(:is(th, td)) {
     padding: 4px 8px;

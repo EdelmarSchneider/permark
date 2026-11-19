@@ -3112,8 +3112,7 @@ export default {
   "acp.examples": "Örneğin:",
   "acp.continue": "Son konuşmaya devam et",
   "acp.restored.notShown": "Önceki mesajlar gösterilmiyor. Ajan bunları hatırlıyor.",
-  "acp.restored.changesLost":
-    "Ajanın daha önce yaptığı ve kabul etmediğiniz değişiklikler saklanmadı.",
+  "acp.restored.changesLost": "Önceki konuşmadan kabul etmediğiniz değişiklikler artık yok.",
   "acp.say.restored": "Konuşma geri yüklendi",
   "acp.fail.sessionGone": "Son konuşmaya artık devam edilemiyor.",
   "acp.error.noSaved": "Devam edilecek önceki bir konuşma yok.",

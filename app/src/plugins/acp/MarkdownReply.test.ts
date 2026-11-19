@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 // An agent's message: plain text while it comes; once whole, the plugin's sanitized blocks drawn as a document's
 // (raw markup of the message never becomes elements, a failed render keeps the text, a late answer is dropped); web
-// links open in the browser, project links | code references open the file at the line, a web picture stays an inert
-// chip, a link inside the message stays in it.
+// links open in the browser, project links | code references open the file at the line (`#L3`) | heading, a link that
+// leads nowhere is said, a web picture stays an inert chip, a link inside the message stays in it; its headings sit
+// below the panel's; only the last message keeps the plain text's height.
 import "../../core/testing/media";
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "../../api";
+import { t } from "../../core/i18n";
 import { Box } from "../../core/testing/box.svelte";
 
 vi.mock("../../api", async () => {
@@ -17,6 +19,8 @@ vi.mock("../../api", async () => {
 const { api } = await import("../../api");
 const { MOCK_FOLDER } = await import("../../api/mock");
 const { acp } = await import("./store.svelte");
+const { documents } = await import("../../core/doc/document.svelte");
+const { windowStore } = await import("../../core/window.svelte");
 const MarkdownReply = (await import("./MarkdownReply.svelte")).default;
 
 let component: Record<string, unknown> | null = null;
@@ -33,7 +37,7 @@ function blocks(...html: string[]): Block[] {
   }));
 }
 
-function show(text: Box<string>, final: Box<boolean>): void {
+function show(text: Box<string>, final: Box<boolean>, last = new Box(false)): void {
   component = mount(MarkdownReply, {
     target: root,
     props: {
@@ -42,6 +46,9 @@ function show(text: Box<string>, final: Box<boolean>): void {
       },
       get final() {
         return final.value;
+      },
+      get last() {
+        return last.value;
       },
     },
   });
@@ -109,7 +116,10 @@ describe("an agent's message", () => {
     await settle();
     expect(render).toHaveBeenCalledTimes(1);
     expect(render).toHaveBeenCalledWith(text);
-    expect(body().querySelector("h2")?.textContent).toBe("Done");
+    // below the panel's own headings, the level written kept for the look
+    expect(body().querySelector("h2")).toBeNull();
+    expect(body().querySelector("h5")?.textContent).toBe("Done");
+    expect(body().querySelector("h5")?.getAttribute("data-level")).toBe("2");
     expect(body().querySelector("strong")?.textContent).toBe("bold");
     expect(body().querySelector("img")).toBeNull();
     expect(root.querySelector(".text")).toBeNull();
@@ -178,6 +188,49 @@ describe("an agent's message", () => {
     openAt.mockClear();
     ref.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     expect(openAt).toHaveBeenCalledWith("docs/guide.md", 3);
+  });
+
+  it("opens a file link at the line its anchor names, else at its heading; a link that leads nowhere is said", async () => {
+    vi.spyOn(acp, "render").mockResolvedValue(
+      blocks(
+        '<p data-b="b0"><a href="docs/guide.md#L3">line</a> <a href="docs/guide.md#setup">part</a> <a href="nope.md">gone</a> <a href="../up.md">up</a></p>',
+      ),
+    );
+    const openAt = vi.spyOn(acp, "openAt").mockImplementation(() => {});
+    const navigate = vi.spyOn(documents, "navigate").mockImplementation(() => {});
+    const notify = vi.spyOn(windowStore, "notifyKeyed");
+    show(new Box("x"), new Box(true));
+    await settle();
+    const link = (name: string): Element => {
+      const found = [...body().querySelectorAll("a")].find((a) => a.textContent === name);
+      if (!found) throw new Error(`no link ${name}`);
+      return found;
+    };
+    click(link("line"));
+    await settle();
+    expect(openAt).toHaveBeenCalledWith("docs/guide.md", 3);
+    click(link("part"));
+    await settle();
+    expect(navigate).toHaveBeenCalledWith("docs/guide.md", "setup");
+    click(link("gone"));
+    await settle();
+    expect(notify).toHaveBeenLastCalledWith("acp.link", t("link.missing", { path: "nope.md" }));
+    click(link("up"));
+    await settle();
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(openAt).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the plain text's height only while it is the conversation's last line", async () => {
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(252);
+    vi.spyOn(acp, "render").mockResolvedValue(blocks('<p data-b="b0">short</p>'));
+    const last = new Box(true);
+    show(new Box("a long plain text"), new Box(true), last);
+    await settle();
+    expect(body().style.minHeight).toBe("252px");
+    last.value = false;
+    flushSync();
+    expect(body().style.minHeight).toBe("");
   });
 
   it("leaves a web picture an inert chip and keeps a link inside the message in it", async () => {

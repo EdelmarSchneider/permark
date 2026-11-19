@@ -3229,7 +3229,7 @@ export default {
   "acp.continue": "Kontynuuj ostatnią rozmowę",
   "acp.restored.notShown": "Wcześniejsze wiadomości nie są wyświetlane. Agent je pamięta.",
   "acp.restored.changesLost":
-    "Zmiany wprowadzone wcześniej przez agenta, których nie zaakceptowano, nie zostały zachowane.",
+    "Zmian z wcześniejszej rozmowy, których nie zaakceptowano, już nie ma.",
   "acp.say.restored": "Przywrócono rozmowę",
   "acp.fail.sessionGone": "Ostatniej rozmowy nie można już kontynuować.",
   "acp.error.noSaved": "Nie ma wcześniejszej rozmowy do kontynuowania.",

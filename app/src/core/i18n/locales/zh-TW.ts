@@ -2967,7 +2967,7 @@ export default {
   "acp.examples": "例如：",
   "acp.continue": "繼續上次的對話",
   "acp.restored.notShown": "先前的訊息不會顯示，但代理程式仍記得它們。",
-  "acp.restored.changesLost": "代理程式先前所做、您尚未接受的編輯沒有保留。",
+  "acp.restored.changesLost": "先前對話中您未接受的編輯已不存在。",
   "acp.say.restored": "對話已還原",
   "acp.fail.sessionGone": "上次的對話已無法繼續。",
   "acp.error.noSaved": "沒有可繼續的先前對話。",

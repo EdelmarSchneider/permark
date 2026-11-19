@@ -3265,7 +3265,7 @@ export default {
   "acp.continue": "Continuă ultima conversație",
   "acp.restored.notShown": "Mesajele anterioare nu sunt afișate. Agentul și le amintește.",
   "acp.restored.changesLost":
-    "Modificările făcute anterior de agent pe care nu le-ai acceptat nu au fost păstrate.",
+    "Modificările din conversația anterioară pe care nu le-ai acceptat nu mai sunt acolo.",
   "acp.say.restored": "Conversație restaurată",
   "acp.fail.sessionGone": "Ultima conversație nu mai poate fi continuată.",
   "acp.error.noSaved": "Nu există nicio conversație anterioară de continuat.",

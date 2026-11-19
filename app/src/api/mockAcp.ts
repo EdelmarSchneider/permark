@@ -8,7 +8,9 @@
 // taken only as a whole, links never accepted, relative program paths, inside a Snap nothing starts), so the window's
 // words for them are tested against the same refusals. The project's last conversation is kept (one from an earlier
 // run with Claude to start with; each new conversation takes its place) and continued: replayed by an agent that loads
-// conversations (Claude, Gemini), remembered without a replay by one that only resumes them (Codex). Nothing is
+// conversations (Claude, Gemini), remembered without a replay by one that only resumes them (Codex). A finished reply
+// renders through the mock note view, which draws headings, paragraphs, inline code and links only: lists, fenced code,
+// tables and pictures stay their Markdown text here (check their look against the real renderer). Nothing is
 // written: the real copy, agent, choice file and writes are the plugin's (tested there); the mock only feeds the
 // window's flow.
 

@@ -3050,7 +3050,7 @@ const en = {
   "acp.continue": "Continue last conversation",
   "acp.restored.notShown": "Earlier messages are not shown; the agent remembers them.",
   "acp.restored.changesLost":
-    "Changes the agent made before that you did not accept were not kept.",
+    "Edits from the earlier conversation that you did not accept are no longer there.",
   "acp.say.restored": "Conversation restored",
   "acp.fail.sessionGone": "The last conversation can no longer be continued.",
   "acp.error.noSaved": "There is no earlier conversation to continue.",

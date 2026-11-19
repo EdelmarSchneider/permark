@@ -2946,7 +2946,7 @@ export default {
   "acp.examples": "例如：",
   "acp.continue": "继续上次的对话",
   "acp.restored.notShown": "之前的消息不会显示，但智能体仍记得它们。",
-  "acp.restored.changesLost": "智能体之前所做、你尚未接受的修改没有保留。",
+  "acp.restored.changesLost": "之前对话中你未接受的修改已不复存在。",
   "acp.say.restored": "对话已恢复",
   "acp.fail.sessionGone": "上次的对话已无法继续。",
   "acp.error.noSaved": "没有可以继续的先前对话。",

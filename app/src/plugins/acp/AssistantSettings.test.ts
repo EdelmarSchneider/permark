@@ -230,6 +230,21 @@ describe("the Assistant settings page", () => {
     expect(field().value).toBe("my-agent --acp");
   });
 
+  it("Cancel is there only while the text differs from the command in use; the field keeps the keyboard", () => {
+    ownCommand("my-agent --acp");
+    open();
+    const cancel = buttonNamed(t("common.cancel"));
+    expect(cancel.disabled).toBe(true);
+    type("my-agent --acp --verbose");
+    expect(cancel.disabled).toBe(false);
+    cancel.focus();
+    cancel.click();
+    flushSync();
+    expect(field().value).toBe("my-agent --acp");
+    expect(cancel.disabled).toBe(true);
+    expect(document.activeElement).toBe(field());
+  });
+
   it("while the agent works Save waits and says why", () => {
     if (acp.status === null) throw new Error("no status");
     acp.status = { ...acp.status, state: "working" };

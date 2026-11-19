@@ -342,6 +342,19 @@ fn resolve_command(typed: &str, find: &FindFn) -> Resolved {
     }
 }
 
+/// The program found for the own command `typed`, as the preview shows it: an extension the lookup added (Windows
+/// `PATHEXT` lists them upper case: `node` -> `node.EXE`) in lower case, as file names usually are.
+fn shown_program(typed: &str, mut found: PathBuf) -> String {
+    let typed_ext =
+        command_program(typed).is_some_and(|program| Path::new(&program).extension().is_some());
+    if !typed_ext {
+        if let Some(ext) = found.extension().map(OsStr::to_ascii_lowercase) {
+            found.set_extension(ext);
+        }
+    }
+    found.to_string_lossy().into_owned()
+}
+
 /// Inside a Snap: nothing starts (`needs`: `snap`), the command as it would run elsewhere.
 fn in_snap(mut resolved: Resolved) -> Resolved {
     if resolved.how != AgentHow::Custom {
@@ -531,7 +544,7 @@ impl Agents {
                 program: self
                     .resolve_typed(&kept)
                     .plan
-                    .map(|plan| plan.program.to_string_lossy().into_owned()),
+                    .map(|plan| shown_program(&kept, plan.program)),
                 error: None,
             },
             Ok((Choice::Agent(_), _)) => ResolvedCommand {

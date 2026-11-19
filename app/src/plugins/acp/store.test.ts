@@ -432,12 +432,18 @@ describe("continuing the last conversation", () => {
     expect(store.status?.last).toBeNull();
   });
 
-  it("a conversation the agent no longer has is said in words", () => {
-    const store = new AcpStore();
+  it("a conversation the agent no longer has is said in words and no longer offered", async () => {
+    const { store } = await setup();
+    expect(store.status?.last).not.toBeNull();
     store.take({ type: "status", state: "error", error: { code: "sessionGone" } });
     expect(store.transcript.at(-1)).toEqual(
       expect.objectContaining({ kind: "notice", text: t("acp.fail.sessionGone") }),
     );
+    expect(store.status?.last).toBeNull();
+    // any other failure leaves the offer to the backend's next answer
+    const other = await setup();
+    other.store.take({ type: "status", state: "error", error: { code: "exited" } });
+    expect(other.store.status?.last).not.toBeNull();
   });
 });
 

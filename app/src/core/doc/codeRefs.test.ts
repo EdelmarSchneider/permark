@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  anchorLine,
   decideRef,
   extensionOf,
   findTextRefs,
@@ -84,6 +85,20 @@ describe("references in text", () => {
   it("writes a reference back", () => {
     expect(refLabel("a.rs", 3)).toBe("a.rs:3");
     expect(refLabel("a.rs", null)).toBe("a.rs");
+  });
+});
+
+describe("a link's anchor", () => {
+  it("names a line as GitHub writes it; a heading id never does", () => {
+    expect(anchorLine("L3")).toBe(3);
+    expect(anchorLine("L10C5")).toBe(10);
+    expect(anchorLine("L10-L20")).toBe(10);
+    expect(anchorLine("L3:3")).toBe(3);
+    expect(anchorLine("L0")).toBeNull();
+    expect(anchorLine("l3")).toBeNull();
+    expect(anchorLine("l2-cache")).toBeNull();
+    expect(anchorLine("setup")).toBeNull();
+    expect(anchorLine("L12345678")).toBeNull();
   });
 });
 

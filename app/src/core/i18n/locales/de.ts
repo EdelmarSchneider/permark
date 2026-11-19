@@ -3155,7 +3155,7 @@ export default {
   "acp.restored.notShown":
     "Frühere Nachrichten werden nicht angezeigt. Der Agent erinnert sich an sie.",
   "acp.restored.changesLost":
-    "Änderungen, die der Agent vorher gemacht und die du nicht übernommen hast, wurden nicht behalten.",
+    "Änderungen aus dem früheren Gespräch, die du nicht übernommen hast, sind nicht mehr da.",
   "acp.say.restored": "Unterhaltung wiederhergestellt",
   "acp.fail.sessionGone": "Die letzte Unterhaltung kann nicht mehr fortgesetzt werden.",
   "acp.error.noSaved": "Es gibt keine frühere Unterhaltung zum Fortsetzen.",
