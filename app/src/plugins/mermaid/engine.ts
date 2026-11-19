@@ -129,7 +129,9 @@ export function drawMermaid(
 ): Promise<string | null> {
   return diagrams.draw(`mermaid\u0000${paletteKey(theme, forced)}\u0000${source}`, async () => {
     counter += 1;
-    const id = `pm-mermaid-${counter}`;
+    // not guessable: Mermaid removes any page element with this id before it draws, and scopes its CSS to it, while a
+    // document can give its own drawings any id
+    const id = `pm-mermaid-${counter}-${Math.random().toString(36).slice(2, 10)}`;
     try {
       const mermaid = await load(theme, forced);
       const { svg } = await mermaid.render(id, source);

@@ -11,13 +11,24 @@ type Init = {
   themeCSS?: string;
 };
 const initialized: Init[] = [];
+const XLINK = "http://www.w3.org/1999/xlink";
+/**
+ * Mermaid's links (strict level): `xlink:href` only, a target when the source asks for one, and no `xmlns:xlink` on
+ * the root (Mermaid leaves the prefix undeclared).
+ */
+const LINKED =
+  `<svg id="pm-mermaid-1" width="100%" xmlns="http://www.w3.org/2000/svg" class="flowchart" viewBox="0 0 80 40"><g>` +
+  '<a xlink:href="docs/x.md" target="_blank"><text>x</text></a>' +
+  '<a xlink:href="about:blank"><text>b</text></a><a xlink:href="tel:123"><text>t</text></a>' +
+  "</g></svg>";
 let rendered = 0;
 
 vi.mock("mermaid", () => ({
   default: {
     initialize: (config: Init) => initialized.push(config),
-    render: (id: string) => {
+    render: (id: string, source: string) => {
       rendered += 1;
+      if (source.includes("click")) return Promise.resolve({ svg: LINKED });
       const background = initialized.at(-1)?.themeVariables.background ?? "";
       return Promise.resolve({
         svg: `<svg xmlns="http://www.w3.org/2000/svg" id="${id}" data-bg="${background}"></svg>`,
@@ -121,5 +132,25 @@ describe("mermaid palette", () => {
     document.documentElement.dataset["theme"] = "dark";
     await drawMermaid("sankey\na,b,1", "dark", false);
     expect(initialized.at(-1)?.themeCSS).toMatch(/\.link\s*\{[^}]*mix-blend-mode:\s*normal/);
+  });
+});
+
+describe("mermaid links", () => {
+  it("leave as plain page links the page's link handling reads; other addresses go nowhere", async () => {
+    const svg = await drawMermaid(
+      'graph TD; A-->B; click A href "docs/x.md" _blank',
+      "light",
+      true,
+    );
+    // read as the page reads it (HTML), and by attributes: jsdom's a[href] also matches an xlink-only link
+    const template = document.createElement("template");
+    template.innerHTML = svg ?? "";
+    const links = [...template.content.querySelectorAll("*")].filter((el) => el.localName === "a");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(["docs/x.md", null, null]);
+    for (const link of links) {
+      expect(link.hasAttributeNS(XLINK, "href")).toBe(false);
+      expect(link.hasAttribute("target")).toBe(false);
+    }
+    expect(links.map((link) => link.textContent)).toEqual(["x", "b", "t"]);
   });
 });

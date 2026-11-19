@@ -33,6 +33,23 @@
     return () => holder?.classList.remove("diagram");
   });
 
+  // a click on a <use> outside any link is held: the page resolves its `#id` against the whole page, so it may copy a
+  // link of another drawing, and a click on that copy is retargeted to the <use>, past every link router
+  $effect(() => {
+    const figure = host;
+    if (!figure) return;
+    const holdCopies = (event: MouseEvent): void => {
+      const use = event.target instanceof Element ? event.target.closest("use") : null;
+      if (use !== null && use.closest("a") === null) event.preventDefault();
+    };
+    figure.addEventListener("click", holdCopies, true);
+    figure.addEventListener("auxclick", holdCopies, true);
+    return () => {
+      figure.removeEventListener("click", holdCopies, true);
+      figure.removeEventListener("auxclick", holdCopies, true);
+    };
+  });
+
   // draws (again) when the source, the theme or the tone changes; an older answer never overwrites a newer
   $effect(() => {
     const forced = theme !== undefined;
