@@ -1503,7 +1503,7 @@ fn slip_in_save(path: &Path, text: &'static str) -> impl FnOnce() {
         assert!(
             saved.load(std::sync::atomic::Ordering::SeqCst),
             "the save landed"
-        )
+        );
     }
 }
 
