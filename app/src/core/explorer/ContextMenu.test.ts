@@ -10,7 +10,11 @@ import type { MenuEntry } from "./menu";
 let component: Record<string, unknown> | null = null;
 let opener: HTMLButtonElement;
 
-function show(entries: MenuEntry[], close = vi.fn()): HTMLElement {
+function show(
+  entries: MenuEntry[],
+  close = vi.fn(),
+  place: { y?: number; above?: boolean } = {},
+): HTMLElement {
   opener = document.createElement("button");
   document.body.append(opener);
   opener.focus();
@@ -18,7 +22,7 @@ function show(entries: MenuEntry[], close = vi.fn()): HTMLElement {
   document.body.append(target);
   component = mount(ContextMenu, {
     target,
-    props: { x: 10, y: 10, entries, close, label: "Options" },
+    props: { x: 10, y: 10, entries, close, label: "Options", ...place },
   });
   flushSync();
   return target;
@@ -199,6 +203,51 @@ describe("entries that are on | off on their own", () => {
     key("ArrowUp");
     key(" ");
     expect(runs.tags).toHaveBeenCalledTimes(1);
+    // the menu stays for the next switch, the keyboard on the same entry
+    expect(close).not.toHaveBeenCalled();
+    expect(focused()).toBe("Tags");
+  });
+
+  it("a click switches an entry and keeps the menu; Enter switches it and closes the menu", () => {
+    const close = vi.fn();
+    const root = show(entries(), close);
+    const tags = root.querySelector<HTMLElement>('[data-at="2"]');
+    tags?.click();
+    flushSync();
+    expect(runs.tags).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
+    key("Enter");
+    expect(runs.tags).toHaveBeenCalledTimes(2);
     expect(close).toHaveBeenCalledTimes(1);
+    // a choice of a set (a radio) closes the menu on a click, as any other item
+    root.querySelector<HTMLElement>('[data-at="6"]')?.click();
+    flushSync();
+    expect(runs.wide).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it("each heading names the group of the entries under it, up to the next heading | separator", () => {
+    const root = show(entries());
+    const groups = [...root.querySelectorAll<HTMLElement>('[role="group"]')];
+    const named = groups.map((group) => [
+      document.getElementById(group.getAttribute("aria-labelledby") ?? "")?.textContent,
+      [...group.querySelectorAll("[data-at], .note")].map((el) => el.textContent.trim()),
+    ]);
+    expect(named).toEqual([
+      ["Sidebar", ["Files", "Tags"]],
+      ["Bottom panel", ["None"]],
+    ]);
+    // an entry under no heading stands in the menu itself
+    expect(root.querySelector('[data-at="6"]')?.parentElement?.getAttribute("role")).toBe("menu");
+  });
+});
+
+describe("a menu that opens upward (a control at the bottom of the window)", () => {
+  it("is never taller than the room above its control: it scrolls instead of covering the control", () => {
+    const root = show([{ kind: "item", label: "One", run: vi.fn() }], vi.fn(), {
+      y: 120,
+      above: true,
+    });
+    expect(root.querySelector<HTMLElement>('[role="menu"]')?.style.maxHeight).toBe("116px");
   });
 });

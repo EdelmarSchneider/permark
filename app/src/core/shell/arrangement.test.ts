@@ -586,6 +586,61 @@ describe("the moves between regions", () => {
     expect(asGroup(full, "a", "right", 1)).toBe(full);
   });
 
+  it("a group with no present view is not drawn, so it leaves room: it joins its neighbor as tabs (never a fourth)", () => {
+    // the default right column (the outline over a closed Live changes) and one more group: two on screen
+    const full: Arrangement = {
+      v: 2,
+      left: [group(1, FILES, SEARCH)],
+      right: [group(0.4, OUTLINE), group(0.3, LIVE_VIEW), group(0.3, "c")],
+      bottom: [],
+    };
+    const present = (id: string): boolean => id !== LIVE_VIEW;
+    expect(canAddGroup(full, "right", FILES)).toBe(false);
+    expect(canAddGroup(full, "right", FILES, present)).toBe(true);
+    const last = asGroup(full, FILES, "right", 3, present);
+    expect(views(last.right)).toEqual([[OUTLINE, LIVE_VIEW], ["c"], [FILES]]);
+    // the groups on screen keep their proportions (0.4 : 0.3); the new one takes half of the one beside it
+    expect(shares(last.right)).toEqual([0.571, 0.214, 0.214]);
+    // a place after the closed group (before "c") and before it (after the outline) is the same place on screen
+    expect(views(asGroup(full, FILES, "right", 2, present).right)).toEqual([
+      [OUTLINE, LIVE_VIEW],
+      [FILES],
+      ["c"],
+    ]);
+    expect(views(asGroup(full, FILES, "right", 1, present).right)).toEqual([
+      [OUTLINE, LIVE_VIEW],
+      [FILES],
+      ["c"],
+    ]);
+    // the first group closed: it joins the group after it
+    const first: Arrangement = {
+      ...full,
+      right: [group(0.4, LIVE_VIEW), group(0.3, OUTLINE), group(0.3, "c")],
+    };
+    expect(views(asGroup(first, FILES, "right", 0, present).right)).toEqual([
+      [FILES],
+      [OUTLINE, LIVE_VIEW],
+      ["c"],
+    ]);
+    // every group on screen: still full
+    expect(canAddGroup(full, "right", FILES, all)).toBe(false);
+    expect(asGroup(full, FILES, "right", 3, all)).toBe(full);
+  });
+
+  it("a tab splits out of its group in a region whose third group is not drawn", () => {
+    const crowded = [group(0.4, "a", "b"), group(0.3, "c"), group(0.3, "x")];
+    const present = (id: string): boolean => id !== "x";
+    expect(canSplit(crowded, "a")).toBe(false);
+    expect(canSplit(crowded, "a", present)).toBe(true);
+    const out = splitOut(crowded, "a", "before", present);
+    expect(views(out)).toEqual([["a"], ["b"], ["c", "x"]]);
+    expect(out).toHaveLength(MAX_GROUPS);
+    // the group of the view itself never counts as closed
+    expect(canSplit([group(0.5, "a", "x"), group(0.25, "c"), group(0.25, "d")], "a", present)).toBe(
+      false,
+    );
+  });
+
   it("a move that changes nothing returns the same object", () => {
     // already the last tab of the last group; alone in the only group
     expect(moveTo(arr, "c", "right")).toBe(arr);

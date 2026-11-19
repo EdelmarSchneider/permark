@@ -1,6 +1,7 @@
 // The Panels menu (the status bar's Panels button, the palette's "Panels…"): every view this window can show now,
 // under the region that lists it, each on | off; a pick opens | closes it. And the palette's "Show <name>" entries:
-// one per view the person can close, there while that view is offered (a plugin off, a dormant panel: none).
+// one per view the person can close, there while that view is offered and not on screen (a plugin off, a dormant
+// panel: none); the view shown takes the keyboard.
 // Both read the window's views (`arrangement.views`) and their one presence rule (`isPresent`), never a project's
 // stored choices: a choice left by a plugin that is off lists nothing.
 
@@ -12,7 +13,7 @@ import { t, type MessageKey } from "../i18n";
 import { CORE_OWNER, type ContributionRegistry } from "../plugins/registry.svelte";
 import { REGIONS, type Region } from "./arrangement";
 import { arrangement, type KnownView } from "./arrangement.svelte";
-import { bringView, closeView } from "./sides";
+import { bringView, closeView, focusShownView } from "./sides";
 import { ui } from "./ui.svelte";
 
 /** The heading of each region. */
@@ -107,9 +108,17 @@ export function registerViewCommands(registry: ContributionRegistry): () => void
       requires: NO_REQUIREMENT,
       when: () => {
         const view = arrangement.viewOf(id);
-        return view !== undefined && inWindow(view) && blocked(view) === null;
+        return (
+          view !== undefined &&
+          inWindow(view) &&
+          blocked(view) === null &&
+          !arrangement.onScreen(id)
+        );
       },
-      run: () => bringView(id),
+      run: async () => {
+        bringView(id);
+        await focusShownView(id);
+      },
     });
   // the registry is not reactive state of the views: the entries follow the views as a subscription would
   const stop = $effect.root(() => {

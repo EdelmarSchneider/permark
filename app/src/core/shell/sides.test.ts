@@ -370,10 +370,12 @@ const { en } = await import("../i18n/table");
 
 describe("closing a view", () => {
   const closedNotices = () =>
-    windowStore.notices.flatMap((n) => (n.kind === "action" && n.key === "view-closed" ? [n] : []));
+    windowStore.notices.flatMap((n) =>
+      n.kind === "action" && n.key?.startsWith("view-closed") === true ? [n] : [],
+    );
 
   afterEach(() => {
-    windowStore.dismissKey("view-closed");
+    for (const notice of closedNotices()) windowStore.dismiss(notice.id);
     documents.state = { status: "empty" };
   });
 
@@ -402,7 +404,7 @@ describe("closing a view", () => {
     expect(arrangement.status).toBe(en["panel.shown"].replace("{name}", "Live changes"));
   });
 
-  it("by its toggle (a command, a status item) and the outline's toggle: the same one notice, the newest", () => {
+  it("by its toggle (a command, a status item) and the outline's toggle: one notice per view, each with its Undo", async () => {
     offerLive();
     layout.setOpen(LIVE_VIEW, true);
     showView(LIVE_VIEW);
@@ -434,7 +436,15 @@ describe("closing a view", () => {
     showView(OUTLINE);
     toggleOutlinePanel();
     expect(reading.outline).toBe(false);
-    expect(closedNotices().map((n) => n.text)).toEqual(["Outline closed"]);
+    // a second view closed keeps the first one's Undo
+    expect(closedNotices().map((n) => n.text)).toEqual(["Live changes closed", "Outline closed"]);
+    // the same view closed again: its own notice takes the place of the older one
+    showView(LIVE_VIEW);
+    togglePanel(LIVE_VIEW);
+    expect(closedNotices().map((n) => n.text)).toEqual(["Outline closed", "Live changes closed"]);
+    await closedNotices()[0]?.actions[0]?.run();
+    expect(reading.outline).toBe(true);
+    expect(arrangement.isPresent(LIVE_VIEW)).toBe(false);
   });
 
   it("nothing closed (a view not there, a toggle that opens): no notice", () => {

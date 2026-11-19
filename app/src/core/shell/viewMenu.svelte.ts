@@ -94,6 +94,8 @@ class ViewMenu {
     const folded = arrangement.short(region);
     const words = ALONG[axisOf(region)];
     const tabbed = (stacked.find((g) => g.views.includes(id))?.views.length ?? 0) > 1;
+    // a group with no present view is not drawn: it leaves room for the group a split makes
+    const present = (view: string): boolean => arrangement.isPresent(view);
     const item = (
       move: Words,
       can: boolean,
@@ -111,8 +113,12 @@ class ViewMenu {
     });
     const moves = tabbed
       ? [
-          item(words.before, canSplit(mine, id), (groups) => splitOut(groups, id, "before")),
-          item(words.after, canSplit(mine, id), (groups) => splitOut(groups, id, "after")),
+          item(words.before, canSplit(mine, id, present), (groups) =>
+            splitOut(groups, id, "before", present),
+          ),
+          item(words.after, canSplit(mine, id, present), (groups) =>
+            splitOut(groups, id, "after", present),
+          ),
         ]
       : [
           item(words.back, canMove(mine, id, -1, drawnAt), (groups) =>

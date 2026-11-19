@@ -226,6 +226,39 @@ describe("over a view's body", () => {
     expect(dragTarget({ x: 100, y: 300 }, three, "a", full)?.kind).toBe("group");
   });
 
+  it("a region with a group that is not drawn (its views closed) still takes a new group: the closed one folds", () => {
+    const full: Arrangement = {
+      v: 2,
+      left: [group(1, FILES, SEARCH)],
+      right: [group(0.4, OUTLINE), group(0.3, LIVE_VIEW), group(0.3, "c")],
+      bottom: [],
+    };
+    const present = (id: string): boolean => id !== LIVE_VIEW;
+    const two: DragScene = {
+      ...scene,
+      regions: [
+        { region: "left", folded: false, groups: [LEFT] },
+        {
+          region: "right",
+          folded: false,
+          groups: [
+            { at: 0, strip: null, body: box(720, 42, 1000, 356) },
+            { at: 2, strip: null, body: box(720, 363, 1000, 676) },
+          ],
+        },
+      ],
+    };
+    expect(dragTarget({ x: 800, y: 600 }, two, FILES, full)).toBeNull();
+    const target = dragTarget({ x: 800, y: 600 }, two, FILES, full, present);
+    expect(bare(target)).toEqual({ kind: "group", region: "right", at: 3, side: "after" });
+    if (target === null) throw new Error("no target");
+    expect(placed(dropOn(full, FILES, target, present)).right).toEqual([
+      [OUTLINE, LIVE_VIEW],
+      ["c"],
+      [FILES],
+    ]);
+  });
+
   it("a region folded by a small window has only its tabs as targets", () => {
     const folded: DragScene = {
       ...scene,
