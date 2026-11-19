@@ -8,12 +8,16 @@
 // taken only as a whole, links never accepted, relative program paths, inside a Snap nothing starts), so the window's
 // words for them are tested against the same refusals. The project's last conversation is kept (one from an earlier
 // run with Claude to start with; each new conversation takes its place) and continued: replayed by an agent that loads
-// conversations (Claude, Gemini), remembered without a replay by one that only resumes them (Codex). A finished reply
+// conversations (Claude, Gemini), remembered without a replay by one that only resumes them (Codex). A started agent
+// offers its settings (a model, an effort level, a fast mode, as Claude's adapter does); a change is checked as the
+// plugin checks it, answered by the new values and kept for that agent's next start. A finished reply
 // renders through the mock note view, which draws headings, paragraphs, inline code and links only: lists, fenced code,
 // tables and pictures stay their Markdown text here (check their look against the real renderer). Nothing is
 // written: the real copy, agent, choice file and writes are the plugin's (tested there); the mock only feeds the
 // window's flow.
 
+import type { AcpConfigOption } from "./generated/AcpConfigOption";
+import type { AcpConfigValue } from "./generated/AcpConfigValue";
 import type { AcpError } from "./generated/AcpError";
 import type { AcpState } from "./generated/AcpState";
 import type { AcpToolKind } from "./generated/AcpToolKind";
@@ -44,6 +48,7 @@ type AcpMethods = Pick<
   | "acp.reset"
   | "acp.continue"
   | "acp.answer"
+  | "acp.setOption"
   | "acp.changes"
   | "acp.accept"
   | "acp.reject"
@@ -205,6 +210,66 @@ export function mockEarlierConversation(): MockSaved {
   };
 }
 
+/** The settings a started agent offers, as Claude's adapter does: the model (default first), the effort, a fast mode. */
+export const MOCK_OPTIONS: readonly AcpConfigOption[] = [
+  {
+    id: "model",
+    name: "Model",
+    description: "AI model to use",
+    category: "model",
+    kind: {
+      type: "select",
+      current: "default",
+      choices: [
+        { value: "default", name: "Default (recommended)", description: "Opus 5.5" },
+        { value: "opus", name: "Opus 5.5", description: "For complex work and everyday tasks" },
+        { value: "sonnet", name: "Sonnet 5", description: "For everyday tasks" },
+        { value: "haiku", name: "Haiku 5", description: "Fastest for quick answers" },
+      ],
+    },
+  },
+  {
+    id: "effort",
+    name: "Effort",
+    description: "Available effort levels for this model",
+    category: "thoughtLevel",
+    kind: {
+      type: "select",
+      current: "default",
+      choices: [
+        { value: "default", name: "Default", description: null },
+        { value: "low", name: "Low", description: null },
+        { value: "medium", name: "Medium", description: null },
+        { value: "high", name: "High", description: null },
+      ],
+    },
+  },
+  {
+    id: "fast",
+    name: "Fast mode",
+    description: "Faster responses on supported models",
+    category: "modelConfig",
+    kind: { type: "toggle", on: false },
+  },
+];
+
+/** `options` with `value` set for option `id` (`null`: the option does not take it). */
+function withValue(
+  options: readonly AcpConfigOption[],
+  id: string,
+  value: AcpConfigValue,
+): AcpConfigOption[] | null {
+  const option = options.find((o) => o.id === id);
+  if (option === undefined) return null;
+  const kind = option.kind;
+  if (kind.type === "select") {
+    if (typeof value !== "string" || !kind.choices.some((c) => c.value === value)) return null;
+    return options.map((o) => (o.id === id ? { ...o, kind: { ...kind, current: value } } : o));
+  }
+  if (typeof value !== "boolean") return null;
+  return options.map((o) => (o.id === id ? { ...o, kind: { type: "toggle", on: value } } : o));
+}
+
 /** What a "Try again" without a sign-in answers (the window words the code). */
 export const MOCK_NOT_SIGNED_IN: AcpError = { code: "stillNeedsLogin" };
 
@@ -235,6 +300,10 @@ export type AcpProbe = {
   hidden: Set<string>;
   /** The project's last conversation (`null`: none kept). */
   saved: MockSaved | null;
+  /** The settings changes asked for, in order. */
+  optionSets: { id: string; value: AcpConfigValue }[];
+  /** The agent refuses the next settings change (with these words). */
+  refuseOption: string | null;
   /** Stops the reply timer (tests). */
   stopAll(): void;
 };
@@ -301,6 +370,8 @@ type Step =
   | { kind: "login"; then: Step[]; why: AcpError | null }
   /** The continued conversation is ready: its next news is kept again. */
   | { kind: "resumed" }
+  /** The started agent tells its settings (the person's picks for it applied). */
+  | { kind: "options" }
   | { kind: "end" };
 
 /** A project path of a file, as the plugin parses it: relative, `/` separated, no `.` | `..` step, not the folder. */
@@ -410,8 +481,14 @@ export function createMockAcp(
     snap: false,
     hidden: new Set(),
     saved: mockEarlierConversation(),
+    optionSets: [],
+    refuseOption: null,
     stopAll: stopTimer,
   };
+  /** The running agent's settings (empty: none runs | it has not told them yet). */
+  let options: readonly AcpConfigOption[] = [];
+  /** The person's picks, by agent. */
+  const picks = new Map<string, Map<string, AcpConfigValue>>();
   /** The news of the conversation of the running agent is kept for a replay (`false`: none runs | it replays). */
   let recording = false;
   const news = (update: AcpUpdate): void => {
@@ -422,6 +499,8 @@ export function createMockAcp(
   const become = (to: AcpState, why: AcpError | null = null): void => {
     state = to;
     error = why;
+    // no agent, no settings (the window drops them with the status, as the plugin's news says)
+    if (to === "idle" || to === "error") options = [];
     if (to !== "needsLogin") afterLogin = null;
     news(
       to === "needsLogin"
@@ -460,6 +539,15 @@ export function createMockAcp(
         recording = true;
         become("ready");
         return;
+      case "options": {
+        const agent = chosen();
+        let told: readonly AcpConfigOption[] = MOCK_OPTIONS;
+        for (const [id, value] of (agent === null ? undefined : picks.get(agentKey(agent))) ?? [])
+          told = withValue(told, id, value) ?? told;
+        options = told;
+        news({ type: "options", options: structuredClone([...told]) });
+        return;
+      }
       case "end":
         stopTimer();
         if (probe.changes.length === 0) probe.changes = guideChanges();
@@ -671,6 +759,7 @@ export function createMockAcp(
             saved === null || saved.supports === null
               ? null
               : { title: saved.title, at: saved.at, supports: saved.supports },
+          options: [...options],
         };
       },
       "acp.agents": () => {
@@ -732,6 +821,7 @@ export function createMockAcp(
           };
           started = true;
           become("starting");
+          steps.unshift({ kind: "options" });
           const working: Step = {
             kind: "news",
             update: { type: "status", state: "working", error: null },
@@ -767,6 +857,7 @@ export function createMockAcp(
             ? saved.history.map((update): Step => ({ kind: "news", update }))
             : [];
         next = [
+          { kind: "options" },
           ...replay,
           {
             kind: "news",
@@ -838,6 +929,34 @@ export function createMockAcp(
         dropQuestion();
         next = afterAnswer(option);
         run();
+        return null;
+      },
+      "acp.setOption": (args) => {
+        probe.calls.push("setOption");
+        if (state === "starting") throw new MockPluginError("conflict", null, "starting");
+        if (state !== "ready" && state !== "working")
+          throw new MockPluginError("unavailable", null, "notRunning");
+        if (!options.some((o) => o.id === args.id))
+          throw new MockPluginError("notFound", args.id, "unknownSetting");
+        const next = withValue(options, args.id, args.value);
+        if (next === null) throw new MockPluginError("invalidData", args.id, "notOffered");
+        probe.optionSets.push({ ...args });
+        const refusal = probe.refuseOption;
+        if (refusal !== null) {
+          probe.refuseOption = null;
+          // told again as they are (fresh, as from the backend), then why
+          news({ type: "options", options: structuredClone([...options]) });
+          news({ type: "status", state, error: { code: "optionRefused", message: refusal } });
+          return null;
+        }
+        options = next;
+        const agent = chosen();
+        if (agent !== null) {
+          const mine = picks.get(agentKey(agent)) ?? new Map<string, AcpConfigValue>();
+          mine.set(args.id, args.value);
+          picks.set(agentKey(agent), mine);
+        }
+        news({ type: "options", options: structuredClone(next) });
         return null;
       },
       "acp.changes": () => {

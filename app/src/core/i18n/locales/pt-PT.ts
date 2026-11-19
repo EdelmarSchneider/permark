@@ -3192,6 +3192,12 @@ export default {
   "acp.error.hiddenFromAgents": "O excerto vem de um ficheiro que os agentes não podem ver.",
   "acp.error.insideProject": "A cópia para o agente não pode ficar dentro desta pasta.",
   "acp.error.notApplied": "O PerMark não conseguiu aplicar esta alteração.",
+  "acp.options": "Definições do agente",
+  "acp.option.model": "Modelo",
+  "acp.fail.optionRefused": "O agente não aceitou a nova definição.",
+  "acp.error.starting": "O agente ainda está a iniciar. Tente novamente dentro de momentos.",
+  "acp.error.notRunning": "O agente não está em execução.",
+  "acp.error.settingGone": "O agente já não oferece esta definição.",
   "acp.option.allowOnce": "Permitir uma vez",
   "acp.option.rejectOnce": "Não permitir",
   "acp.alwaysHidden":

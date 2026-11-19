@@ -6,8 +6,12 @@
 // clicking into the message box keeps what was selected. Which agent runs is the person's choice (kept by the backend
 // for every project): none chosen, the picker stands in for the conversation. What changes for the person (the agent
 // answers, waits for an answer, is done) is said on the window's one polite status line, never by the growing text.
+// The running agent's settings the person may change (its model, reasoning level) are the agent's word: shown as it
+// tells them, gone when it stops.
 
 import type {
+  AcpConfigOption,
+  AcpConfigValue,
   AcpError,
   AcpErrorCode,
   AcpOptionKind,
@@ -193,6 +197,17 @@ export class AcpStore {
     return this.sending || state === "starting" || state === "working";
   }
 
+  /** The running agent's settings the person may change, as it last told them (empty: none runs | none offered). */
+  get options(): readonly AcpConfigOption[] {
+    return this.status?.options ?? [];
+  }
+
+  /** The agent's settings can be changed now: it runs (the backend refuses while it starts | waits for a sign-in). */
+  get canSetOptions(): boolean {
+    const state = this.status?.state;
+    return state === "ready" || state === "working";
+  }
+
   /** The agent can be changed now: not while it starts | works (the backend refuses then). */
   get canChange(): boolean {
     return !this.busy;
@@ -274,6 +289,9 @@ export class AcpStore {
           skippedFiles: this.status?.skippedFiles ?? 0,
           // a conversation its agent no longer has is forgotten by the backend too: never offered meanwhile
           last: update.error?.code === "sessionGone" ? null : (this.status?.last ?? null),
+          // no agent, no settings: the next one tells its own
+          options:
+            update.state === "idle" || update.state === "error" ? [] : (this.status?.options ?? []),
         };
         if (update.state !== "starting" && update.state !== "working") {
           this.thinking = false;
@@ -348,6 +366,10 @@ export class AcpStore {
         return;
       case "permissionDone":
         this.#answer(update.requestId, { status: "closed" }, true);
+        return;
+      case "options":
+        // before the first status read: that answer holds them
+        if (this.status !== null) this.status = { ...this.status, options: update.options };
         return;
       case "turnEnd": {
         this.thinking = false;
@@ -444,6 +466,16 @@ export class AcpStore {
     } finally {
       if (this.#root() === root) this.sending = false;
     }
+  }
+
+  /** Changes one of the agent's settings; resolves to false when the backend refused it (said in the conversation).
+   *  The new values come as news, and so does a refusal of the agent itself. */
+  async setOption(id: string, value: AcpConfigValue): Promise<boolean> {
+    const root = this.#root();
+    const result = await this.#client.call("acp.setOption", { id, value });
+    if (result.ok || this.#root() !== root) return result.ok;
+    this.#notice(errorText(result.error));
+    return false;
   }
 
   /** Answers the question `requestId` with `option`. */
@@ -998,6 +1030,12 @@ export function shownOptions(options: readonly PermissionChoice[]): {
   return { shown, hidden: shown.length < options.length };
 }
 
+/** What a setting's control is labelled: the model in the window's words (the panel shows it first, by that name),
+ *  any other by the agent's own name for it (a reasoning level is named differently by each agent). */
+export function configLabel(option: AcpConfigOption): string {
+  return option.category === "model" ? t("acp.option.model") : option.name;
+}
+
 /** What a card names the kind of action by. */
 export function toolKindKey(kind: AcpToolKind): MessageKey {
   switch (kind) {
@@ -1120,6 +1158,8 @@ function failKey(code: AcpErrorCode): MessageKey {
       return "acp.fail.sendFailed";
     case "sessionGone":
       return "acp.fail.sessionGone";
+    case "optionRefused":
+      return "acp.fail.optionRefused";
     default:
       return code satisfies never;
   }
@@ -1235,6 +1275,13 @@ function detailKey(detail: string | null): MessageKey | null {
     case "noText":
     case "edits":
       return "acp.error.notApplied";
+    case "starting":
+      return "acp.error.starting";
+    case "notRunning":
+      return "acp.error.notRunning";
+    case "unknownSetting":
+    case "notOffered":
+      return "acp.error.settingGone";
     default:
       return null;
   }

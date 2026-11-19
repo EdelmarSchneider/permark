@@ -175,6 +175,8 @@ pub enum AcpErrorCode {
     /// The last conversation can no longer be continued: the agent no longer has it | no longer offers a way (the
     /// conversation is forgotten).
     SessionGone,
+    /// The agent did not take the person's change of one of its settings (the setting stays as it was).
+    OptionRefused,
 }
 
 /// Why the agent failed | a step did not work.
@@ -232,6 +234,83 @@ pub struct AcpStatus {
     /// The project's last conversation with the chosen agent, which it can continue (`acp.continue`); `null`: none
     /// kept, kept with another agent, or one this agent cannot continue.
     pub last: Option<LastConversation>,
+    /// The running agent's settings the person may change (`acp.setOption`), as last told (`options` news); empty
+    /// while no session is open.
+    pub options: Vec<AcpConfigOption>,
+}
+
+/// What an agent setting the window shows is about (the protocol's categories; any other is never shown).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum AcpConfigCategory {
+    /// Which model answers.
+    Model,
+    /// A setting of the model (e.g. a fast mode).
+    ModelConfig,
+    /// How much the model reasons before it answers.
+    ThoughtLevel,
+}
+
+/// One value of a choice setting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AcpConfigChoice {
+    pub value: String,
+    /// Label from the agent.
+    pub name: String,
+    pub description: Option<String>,
+}
+
+/// How an agent setting is changed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(export)]
+pub enum AcpConfigKind {
+    /// One of `choices` (the agent's groups flattened, in its order).
+    Select {
+        current: String,
+        choices: Vec<AcpConfigChoice>,
+    },
+    /// On | off.
+    Toggle { on: bool },
+}
+
+/// One agent setting the person may change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AcpConfigOption {
+    pub id: String,
+    /// Label from the agent.
+    pub name: String,
+    pub description: Option<String>,
+    pub category: AcpConfigCategory,
+    pub kind: AcpConfigKind,
+}
+
+/// A value for an agent setting: a choice's `value` | a toggle's state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export)]
+pub enum AcpConfigValue {
+    On(bool),
+    Value(String),
+}
+
+/// Arguments of `acp.setOption`.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export)]
+pub struct SetOptionArgs {
+    /// `AcpConfigOption.id`.
+    pub id: String,
+    pub value: AcpConfigValue,
 }
 
 /// How a kept conversation is continued (as the agent offered when it last started).
@@ -597,6 +676,10 @@ pub enum AcpUpdate {
     /// The question was answered | dropped (Stop, the agent withdrew it, the turn ended, new conversation): its card
     /// goes.
     PermissionDone { request_id: String },
+    /// The agent's settings the person may change, whole, with their current values: told when they change (the
+    /// agent's answer to a change, its own news, a fresh agent); a refused change tells them again as they are. A
+    /// status `idle` | `error` empties them too (no agent, no settings).
+    Options { options: Vec<AcpConfigOption> },
     /// The prompt ended; `changed`: files whose copy now differs from the real file (`0` when Stop ended a start | a
     /// sign-in: the prompt never reached the agent).
     TurnEnd {

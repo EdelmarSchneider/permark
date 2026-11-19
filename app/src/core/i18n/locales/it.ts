@@ -3189,6 +3189,12 @@ export default {
   "acp.error.insideProject":
     "La copia per l'agente non può essere conservata dentro questa cartella.",
   "acp.error.notApplied": "PerMark non è riuscito ad applicare questa modifica.",
+  "acp.options": "Impostazioni dell'agente",
+  "acp.option.model": "Modello",
+  "acp.fail.optionRefused": "L'agente non ha accettato la nuova impostazione.",
+  "acp.error.starting": "L'agente si sta ancora avviando. Riprova tra un momento.",
+  "acp.error.notRunning": "L'agente non è in esecuzione.",
+  "acp.error.settingGone": "L'agente non offre più questa impostazione.",
   "acp.option.allowOnce": "Consenti una volta",
   "acp.option.rejectOnce": "Non consentire",
   "acp.alwaysHidden":

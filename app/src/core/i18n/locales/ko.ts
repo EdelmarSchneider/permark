@@ -3108,6 +3108,12 @@ export default {
   "acp.error.hiddenFromAgents": "이 부분은 에이전트가 볼 수 없는 파일에서 가져온 것입니다.",
   "acp.error.insideProject": "에이전트를 위한 복사본을 이 폴더 안에 둘 수 없습니다.",
   "acp.error.notApplied": "PerMark가 이 변경 내용을 적용할 수 없습니다.",
+  "acp.options": "에이전트 설정",
+  "acp.option.model": "모델",
+  "acp.fail.optionRefused": "에이전트가 새 설정을 받아들이지 않았습니다.",
+  "acp.error.starting": "에이전트가 아직 시작 중입니다. 잠시 후 다시 시도하세요.",
+  "acp.error.notRunning": "에이전트가 실행 중이 아닙니다.",
+  "acp.error.settingGone": "에이전트가 더 이상 이 설정을 제공하지 않습니다.",
   "acp.option.allowOnce": "한 번 허용",
   "acp.option.rejectOnce": "허용 안 함",
   "acp.alwaysHidden":

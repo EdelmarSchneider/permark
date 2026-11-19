@@ -3219,6 +3219,12 @@ export default {
     "Die Passage stammt aus einer Datei, die Agenten nicht sehen dürfen.",
   "acp.error.insideProject": "Die Kopie für den Agenten kann nicht in diesem Ordner liegen.",
   "acp.error.notApplied": "PerMark konnte diese Änderung nicht anwenden.",
+  "acp.options": "Agent-Einstellungen",
+  "acp.option.model": "Modell",
+  "acp.fail.optionRefused": "Der Agent hat die neue Einstellung nicht angenommen.",
+  "acp.error.starting": "Der Agent startet noch. Versuche es gleich noch einmal.",
+  "acp.error.notRunning": "Der Agent läuft nicht.",
+  "acp.error.settingGone": "Der Agent bietet diese Einstellung nicht mehr an.",
   "acp.option.allowOnce": "Einmal erlauben",
   "acp.option.rejectOnce": "Nicht erlauben",
   "acp.alwaysHidden":

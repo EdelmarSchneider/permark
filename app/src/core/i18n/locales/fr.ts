@@ -3247,6 +3247,12 @@ export default {
     "Le passage provient d'un fichier que les agents n'ont pas le droit de voir.",
   "acp.error.insideProject": "La copie pour l'agent ne peut pas être conservée dans ce dossier.",
   "acp.error.notApplied": "PerMark n'a pas pu appliquer cette modification.",
+  "acp.options": "Réglages de l'agent",
+  "acp.option.model": "Modèle",
+  "acp.fail.optionRefused": "L'agent n'a pas accepté le nouveau réglage.",
+  "acp.error.starting": "L'agent est encore en train de démarrer. Réessayez dans un instant.",
+  "acp.error.notRunning": "L'agent n'est pas en cours d'exécution.",
+  "acp.error.settingGone": "L'agent ne propose plus ce réglage.",
   "acp.option.allowOnce": "Autoriser une fois",
   "acp.option.rejectOnce": "Ne pas autoriser",
   "acp.alwaysHidden":

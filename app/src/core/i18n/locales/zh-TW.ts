@@ -3022,6 +3022,12 @@ export default {
   "acp.error.hiddenFromAgents": "此段落來自代理程式不得檢視的檔案。",
   "acp.error.insideProject": "代理程式的副本不能存放在此資料夾內。",
   "acp.error.notApplied": "PerMark 無法套用此變更。",
+  "acp.options": "代理程式設定",
+  "acp.option.model": "模型",
+  "acp.fail.optionRefused": "代理程式未接受新的設定。",
+  "acp.error.starting": "代理程式仍在啟動中。請稍後再試。",
+  "acp.error.notRunning": "代理程式未在執行。",
+  "acp.error.settingGone": "代理程式已不再提供此設定。",
   "acp.option.allowOnce": "允許一次",
   "acp.option.rejectOnce": "不允許",
   "acp.alwaysHidden":

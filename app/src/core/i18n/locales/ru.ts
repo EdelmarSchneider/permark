@@ -3309,6 +3309,12 @@ export default {
   "acp.error.hiddenFromAgents": "Фрагмент взят из файла, который агентам нельзя видеть.",
   "acp.error.insideProject": "Копию для агента нельзя хранить внутри этой папки.",
   "acp.error.notApplied": "PerMark не удалось применить это изменение.",
+  "acp.options": "Настройки агента",
+  "acp.option.model": "Модель",
+  "acp.fail.optionRefused": "Агент не принял новую настройку.",
+  "acp.error.starting": "Агент еще запускается. Попробуйте снова через мгновение.",
+  "acp.error.notRunning": "Агент не запущен.",
+  "acp.error.settingGone": "Агент больше не предлагает эту настройку.",
   "acp.option.allowOnce": "Разрешить один раз",
   "acp.option.rejectOnce": "Не разрешать",
   "acp.alwaysHidden":

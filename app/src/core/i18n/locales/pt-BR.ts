@@ -3159,6 +3159,12 @@ export default {
   "acp.error.hiddenFromAgents": "O trecho vem de um arquivo que os agentes não podem ver.",
   "acp.error.insideProject": "A cópia para o agente não pode ficar dentro desta pasta.",
   "acp.error.notApplied": "O PerMark não conseguiu aplicar esta mudança.",
+  "acp.options": "Configurações do agente",
+  "acp.option.model": "Modelo",
+  "acp.fail.optionRefused": "O agente não aceitou a nova configuração.",
+  "acp.error.starting": "O agente ainda está iniciando. Tente de novo em instantes.",
+  "acp.error.notRunning": "O agente não está em execução.",
+  "acp.error.settingGone": "O agente não oferece mais esta configuração.",
   "acp.option.allowOnce": "Permitir uma vez",
   "acp.option.rejectOnce": "Não permitir",
   "acp.alwaysHidden":

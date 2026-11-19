@@ -18,8 +18,9 @@
 //!   agents may not see is refused; such an open document is not named.
 //! - Stop: before the prompt is on its way it is never sent (the turn ends `cancelled`); after, `session/cancel`; a
 //!   question asked after Stop is answered `cancelled` at once. Stop during a start stops the agent.
-//! - news (`session/update`) -> `acp:update` events: reply text, "thinking", tool lines; a title is kept with the
-//!   conversation. Anything else the agent tells (modes, commands, usage, account status) is dropped unread.
+//! - news (`session/update`) -> `acp:update` events: reply text, "thinking", tool lines, the agent's settings the
+//!   person may change ([`options`]); a title is kept with the conversation. Anything else the agent tells (modes,
+//!   commands, usage, account status) is dropped unread.
 //! - permission questions ([`permission`]): plainly work on the copy's files -> allowed once by rule; anything else
 //!   is a card the person answers, told while the question is held under the session's lock (whatever answers it
 //!   takes that lock: its card always comes before its end). Every question gets exactly one answer: the person's,
@@ -29,12 +30,15 @@
 //! - continue ([`resume`]): the project's last conversation in a fresh agent: `session/load` (the agent replays it
 //!   as news: the person's messages, its replies, tool lines; no question of the replay reaches the person) else
 //!   `session/resume`, in the copy's folder, then the asking mode again; it ends `Ready` with no prompt sent.
+//! - every session opened | continued: after the asking mode, the person's picks of the agent's settings
+//!   ([`options`]: its model, reasoning level) apply where the agent still offers them.
 //! - states: Idle -> Starting -> Working <-> Ready; Starting (continue) -> Ready; Starting | Working -> `NeedsLogin`
 //!   -> Starting (login); failed start | agent gone -> Error (the next prompt starts a fresh one); "new conversation" |
 //!   a new choice -> Idle (the copy and its pending changes stay). Each run carries the generation it was started for
 //!   and does nothing once a newer one replaced it.
 
 mod login;
+mod options;
 mod permission;
 mod resume;
 
@@ -52,10 +56,10 @@ use agent_client_protocol_schema::v1::{
     PermissionOptionKind, PromptRequest, RequestId, RequestPermissionOutcome,
     RequestPermissionResponse, ResourceLink, ResumeSessionRequest, ResumeSessionResponse,
     SelectedPermissionOutcome, SessionConfigId, SessionConfigKind, SessionConfigOption,
-    SessionConfigOptionCategory, SessionConfigSelectOptions, SessionId, SessionModeState,
-    SessionNotification, SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest,
-    StopReason, TextContent, TextResourceContents, ToolCallStatus, ToolKind, AGENT_METHOD_NAMES,
-    CLIENT_METHOD_NAMES, PROTOCOL_LEVEL_METHOD_NAMES,
+    SessionConfigOptionCategory, SessionId, SessionModeState, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, SetSessionModeRequest, StopReason, TextContent,
+    TextResourceContents, ToolCallStatus, ToolKind, AGENT_METHOD_NAMES, CLIENT_METHOD_NAMES,
+    PROTOCOL_LEVEL_METHOD_NAMES,
 };
 use agent_client_protocol_schema::MaybeUndefined;
 use agent_client_protocol_schema::ProtocolVersion;
@@ -68,15 +72,16 @@ use serde_json::Value;
 use crate::agents::{Agents, Choice, Plan};
 use crate::client::{lock, AgentPipes, CallError, Connection, Inbox};
 use crate::dto::{
-    AcpError, AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason, AcpToolKind,
-    AcpToolStatus, AcpUpdate, AgentEntry, AnswerArgs, ChooseArgs, ContinueWay, LoginArgs,
-    LoginKind, LoginMethod, PermissionChoice, PromptArgs, PromptSelection, ResolveArgs,
-    ResolvedCommand,
+    AcpConfigOption, AcpError, AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason,
+    AcpToolKind, AcpToolStatus, AcpUpdate, AgentEntry, AnswerArgs, ChooseArgs, ContinueWay,
+    LoginArgs, LoginKind, LoginMethod, PermissionChoice, PromptArgs, PromptSelection, ResolveArgs,
+    ResolvedCommand, SetOptionArgs,
 };
 use crate::reply;
 use crate::work::{copy_dir, kept_out, start_of, Project, WorkCopy};
 use crate::SharedCopy;
 use login::login_methods;
+pub use options::{Picks, OPTIONS_FILE};
 use permission::{allow_once, detail, diff, plain_work, reach, summary, Question, ToolLine};
 pub use resume::{Remembered, Saved, SAVED_FILE};
 
@@ -109,6 +114,9 @@ pub struct Host {
     /// The project's last conversation, in the plugin's profile folder for the project ([`resume`]; `None`: no
     /// profile, nothing is kept).
     pub saved: Option<StateFile<Remembered>>,
+    /// The person's picks of agent settings, in the profile folder itself ([`options`]; `None`: no profile, nothing
+    /// is kept or applied).
+    pub picks: Option<StateFile<Picks>>,
     pub events: PluginEvents,
 }
 
@@ -146,6 +154,10 @@ struct Inner {
     sent: bool,
     /// What the agent's news is now.
     telling: Telling,
+    /// The config options of the agent's session as last told (empty: no session).
+    options: Vec<SessionConfigOption>,
+    /// Of `options`, those the window shows, as it was last told ([`options::exposed`]).
+    shown: Vec<AcpConfigOption>,
 }
 
 /// What the agent's news is: told as it happens | a conversation replayed by `session/load` (the person's messages
@@ -169,12 +181,26 @@ impl Inner {
         self.sent = false;
     }
 
-    /// Ends the current agent's time: state `Idle`, generation bumped; answers the agent to stop + its questions.
+    /// Ends the current agent's time: state `Idle` (the window drops its settings with it), generation bumped;
+    /// answers the agent to stop + its questions.
     fn end_agent(&mut self) -> (Option<Arc<Agent>>, Vec<(String, Ask)>) {
         self.generation += 1;
         let agent = std::mem::take(&mut self.state).agent();
         self.tools.clear();
+        self.drop_options();
         (agent, self.take_asks())
+    }
+
+    /// A fresh agent takes over: generation bumped, `Starting`; the settings of the one before go (`Some`: the window
+    /// still shows some, the news that empties them). Answers the agent that ran, to stop.
+    fn restart(&mut self) -> (Option<Arc<Agent>>, Option<AcpUpdate>) {
+        let left = self.state.agent();
+        self.generation += 1;
+        self.state = State::Starting(None);
+        let cleared = self.drop_options().then(|| AcpUpdate::Options {
+            options: Vec::new(),
+        });
+        (left, cleared)
     }
 }
 
@@ -454,6 +480,7 @@ impl Session {
                 .map_or_else(|| self.core.host.agents.blocked(), |c| c.resolved.needs),
             skipped_files: self.core.skipped.load(Ordering::Relaxed),
             last,
+            options: inner.shown.clone(),
         }
     }
 
@@ -500,16 +527,14 @@ impl Session {
         }
         let args = self.core.screen(args)?;
         let mut inner = lock(&self.core.inner);
-        let mut left = None;
+        let (mut left, mut cleared) = (None, None);
         let run = match &inner.state {
             State::Starting(_) | State::Working(_) => {
                 return Err(IpcError::new(ErrorKind::Conflict).detail("busy"));
             }
             // a prompt instead of signing in: a fresh agent for it
             State::Idle | State::Error(_) | State::NeedsLogin(_) => {
-                left = inner.state.agent();
-                inner.generation += 1;
-                inner.state = State::Starting(None);
+                (left, cleared) = inner.restart();
                 Run::Start
             }
             State::Ready(live) => {
@@ -525,7 +550,7 @@ impl Session {
         if let Some(agent) = left {
             stop_aside(&agent);
         }
-        self.core.emit(update);
+        self.core.emit_all(cleared.into_iter().chain([update]));
         self.run_aside(
             "acp-prompt",
             generation,
@@ -559,9 +584,7 @@ impl Session {
         if matches!(inner.state, State::Starting(_) | State::Working(_)) {
             return Err(IpcError::new(ErrorKind::Conflict).detail("busy"));
         }
-        let left = inner.state.agent();
-        inner.generation += 1;
-        inner.state = State::Starting(None);
+        let (left, cleared) = inner.restart();
         inner.begin_prompt();
         let generation = inner.generation;
         let update = inner.state.update();
@@ -569,7 +592,7 @@ impl Session {
         if let Some(agent) = left {
             stop_aside(&agent);
         }
-        self.core.emit(update);
+        self.core.emit_all(cleared.into_iter().chain([update]));
         self.run_aside(
             "acp-continue",
             generation,
@@ -669,13 +692,13 @@ impl Session {
         };
         // the person's go-ahead for the waiting prompt: an earlier Stop no longer holds it back
         inner.begin_prompt();
-        let left = if method.is_some() {
+        let (left, cleared) = if method.is_some() {
             inner.state = State::Starting(Some(Arc::clone(&login.agent)));
-            None
+            (None, None)
         } else {
-            inner.generation += 1;
-            inner.state = State::Starting(None);
-            Some(Arc::clone(&login.agent))
+            // the state was taken out above: the agent that waited is the one to stop
+            let (_, cleared) = inner.restart();
+            (Some(Arc::clone(&login.agent)), cleared)
         };
         let generation = inner.generation;
         let update = inner.state.update();
@@ -683,7 +706,7 @@ impl Session {
         if let Some(agent) = left {
             stop_aside(&agent);
         }
-        self.core.emit(update);
+        self.core.emit_all(cleared.into_iter().chain([update]));
         self.run_aside(
             "acp-login",
             generation,
@@ -754,6 +777,37 @@ impl Session {
             request_id: args.request_id.clone(),
         });
         Ok(())
+    }
+
+    /// The person changes one of the agent's settings ([`options`]): sent aside (the RPC thread never waits on the
+    /// agent); the new values come as `options` news, a refusal as a status news with `optionRefused`. Kept as the
+    /// person's pick for this agent once the agent took it.
+    ///
+    /// # Errors
+    /// `Conflict` (`starting`): the agent starts; `Unavailable` (`notRunning`): no agent runs | it waits for a
+    /// sign-in; `NotFound` (`unknownSetting`): no such setting the window may change; `InvalidData` (`notOffered`): a
+    /// value it does not offer; IO: no thread for it.
+    pub fn set_option(&self, args: &SetOptionArgs) -> Result<(), IpcError> {
+        let inner = lock(&self.core.inner);
+        let live = match &inner.state {
+            State::Ready(live) | State::Working(live) => live.clone(),
+            State::Starting(_) => {
+                return Err(IpcError::new(ErrorKind::Conflict).detail("starting"));
+            }
+            State::Idle | State::Error(_) | State::NeedsLogin(_) => {
+                return Err(IpcError::new(ErrorKind::Unavailable).detail("notRunning"));
+            }
+        };
+        let value = options::value_for(&inner.options, &args.id, &args.value)?;
+        let generation = inner.generation;
+        drop(inner);
+        let core = Arc::clone(&self.core);
+        let (id, picked) = (args.id.clone(), args.value.clone());
+        std::thread::Builder::new()
+            .name("acp-option".into())
+            .spawn(move || core.set_option(generation, &live, &id, value, &picked))
+            .map(|_| ())
+            .map_err(|error| IpcError::io("acp", &error))
     }
 }
 
@@ -939,6 +993,12 @@ impl Core {
         }
     }
 
+    fn emit_all(&self, updates: impl IntoIterator<Item = AcpUpdate>) {
+        for update in updates {
+            self.emit(update);
+        }
+    }
+
     /// Runs `f` while `generation` is still the current one.
     fn with_current<R>(&self, generation: u64, f: impl FnOnce(&mut Inner) -> R) -> Option<R> {
         let mut inner = lock(&self.inner);
@@ -1004,6 +1064,8 @@ impl Core {
             }
             let agent = inner.state.agent();
             inner.state = State::Error(error);
+            // the window drops its settings with `error`
+            inner.drop_options();
             Some((agent, inner.take_asks(), inner.state.update()))
         });
         let Some(Some((agent, asks, update))) = taken else {
@@ -1153,22 +1215,30 @@ impl Core {
     }
 
     /// Opens the session `then` needs in `agent`: a new one (kept as the project's last conversation) | the kept one
-    /// continued.
+    /// continued; then the person's picks of its settings apply, and the window is told them.
     fn open_in(&self, generation: u64, agent: &Agent, then: &Then) -> Result<SessionId, Opening> {
-        match then {
+        let (session, options) = match then {
             Then::Prompt(_) => {
-                let session = open_session(&agent.connection, &agent.dir)?;
+                let (session, options) = open_session(&agent.connection, &agent.dir)?;
                 self.remember(agent, &session);
-                Ok(session)
+                (session, options)
             }
-            Then::Continue(saved) => self.reopen(generation, agent, saved),
-        }
+            Then::Continue(saved) => self.reopen(generation, agent, saved)?,
+        };
+        let options = self.apply_picks(generation, agent, &session, options);
+        self.keep_options(generation, Some(options), false);
+        Ok(session)
     }
 
     /// `session/load` (the agent replays the conversation as news before it answers) | `session/resume`, as the
     /// agent offers, in the copy's folder the conversation was opened in; then the asking mode again. A refusal: the
     /// agent no longer has it, so it is forgotten.
-    fn reopen(&self, generation: u64, agent: &Agent, saved: &Saved) -> Result<SessionId, Opening> {
+    fn reopen(
+        &self,
+        generation: u64,
+        agent: &Agent,
+        saved: &Saved,
+    ) -> Result<(SessionId, Vec<SessionConfigOption>), Opening> {
         let session = SessionId::new(saved.session_id.clone());
         let connection = &agent.connection;
         let opened: Result<SessionSetup, CallError> = match agent.way() {
@@ -1198,8 +1268,8 @@ impl Core {
         };
         match opened {
             Ok((modes, options)) => {
-                set_ask_mode(connection, &session, modes.as_ref(), options.as_deref())?;
-                Ok(session)
+                let options = set_ask_mode(connection, &session, modes.as_ref(), options)?;
+                Ok((session, options))
             }
             Err(error) if error.needs_login() => Err(Opening::Login),
             Err(CallError::Refused { message, .. }) => {
@@ -1567,8 +1637,12 @@ fn initialize(
     ))
 }
 
-/// `session/new` -> the asking mode when offered and not on ([`ask_mode`]).
-fn open_session(connection: &Connection, dir: &Path) -> Result<SessionId, Opening> {
+/// `session/new` -> the asking mode when offered and not on ([`ask_mode`]). Answers the session with its config
+/// options as they are then.
+fn open_session(
+    connection: &Connection,
+    dir: &Path,
+) -> Result<(SessionId, Vec<SessionConfigOption>), Opening> {
     let new: NewSessionResponse = match connection.call(
         AGENT_METHOD_NAMES.session_new,
         NewSessionRequest::new(dir).meta(never_skip_questions()),
@@ -1584,27 +1658,29 @@ fn open_session(connection: &Connection, dir: &Path) -> Result<SessionId, Openin
             )))
         }
     };
-    set_ask_mode(
+    let options = set_ask_mode(
         connection,
         &new.session_id,
         new.modes.as_ref(),
-        new.config_options.as_deref(),
+        new.config_options,
     )?;
-    Ok(new.session_id)
+    Ok((new.session_id, options))
 }
 
 /// The modes and config options a session was opened | continued with.
 type SessionSetup = (Option<SessionModeState>, Option<Vec<SessionConfigOption>>);
 
 /// Sets `session` to the asking mode when offered and not on ([`ask_mode`]): every open | continue, since a
-/// conversation continued may come back in whatever mode its agent keeps.
+/// conversation continued may come back in whatever mode its agent keeps. Answers the config options afterwards (a
+/// config option answer carries them all; else `options` as they were).
 fn set_ask_mode(
     connection: &Connection,
     session: &SessionId,
     modes: Option<&SessionModeState>,
-    options: Option<&[SessionConfigOption]>,
-) -> Result<(), Opening> {
-    let set: Result<Value, CallError> = match ask_mode(modes, options) {
+    options: Option<Vec<SessionConfigOption>>,
+) -> Result<Vec<SessionConfigOption>, Opening> {
+    let options = options.unwrap_or_default();
+    let set: Result<Value, CallError> = match ask_mode(modes, &options) {
         Some(AskMode::Mode) => connection.call(
             AGENT_METHOD_NAMES.session_set_mode,
             SetSessionModeRequest::new(session.clone(), ASK_MODE),
@@ -1615,10 +1691,10 @@ fn set_ask_mode(
             SetSessionConfigOptionRequest::new(session.clone(), config, ASK_MODE),
             Some(SETUP_WAIT),
         ),
-        None => Ok(Value::Null),
+        None => return Ok(options),
     };
-    set.map(|_| ())
-        .map_err(|e| Opening::Failed(call_failed(connection, Step::Session, e)))
+    let answer = set.map_err(|e| Opening::Failed(call_failed(connection, Step::Session, e)))?;
+    Ok(options::answered(answer).unwrap_or(options))
 }
 
 /// How a session is set to the asking mode.
@@ -1632,32 +1708,22 @@ enum AskMode {
 /// How to set a session with `modes` | `options` to the asking mode (`None`: not offered | on already): the session
 /// modes when they offer it, else a config option of category `mode` that offers it (agents move from modes to
 /// config options).
-fn ask_mode(
-    modes: Option<&SessionModeState>,
-    options: Option<&[SessionConfigOption]>,
-) -> Option<AskMode> {
+fn ask_mode(modes: Option<&SessionModeState>, options: &[SessionConfigOption]) -> Option<AskMode> {
     if let Some(modes) = modes {
         if modes.available_modes.iter().any(|m| &*m.id.0 == ASK_MODE) {
             return (&*modes.current_mode_id.0 != ASK_MODE).then_some(AskMode::Mode);
         }
     }
-    options.into_iter().flatten().find_map(|option| {
+    options.iter().find_map(|option| {
         let SessionConfigKind::Select(select) = &option.kind else {
             return None;
         };
         if option.category != Some(SessionConfigOptionCategory::Mode) {
             return None;
         }
-        let offered = match &select.options {
-            SessionConfigSelectOptions::Ungrouped(values) => {
-                values.iter().any(|v| &*v.value.0 == ASK_MODE)
-            }
-            SessionConfigSelectOptions::Grouped(groups) => groups
-                .iter()
-                .flat_map(|g| &g.options)
-                .any(|v| &*v.value.0 == ASK_MODE),
-            _ => false,
-        };
+        let offered = options::values(&select.options)
+            .into_iter()
+            .any(|v| &*v.value.0 == ASK_MODE);
         (offered && &*select.current_value.0 != ASK_MODE)
             .then(|| AskMode::Option(option.id.clone()))
     })
@@ -1733,7 +1799,8 @@ impl Inner {
                     vec![after]
                 }
             }
-            // modes, commands, usage, plans, titles (kept by the listener): not shown
+            // modes, commands, usage, plans, titles (kept by the listener), config options (kept by the listener):
+            // not shown here
             _ => Vec::new(),
         }
     }
@@ -1771,6 +1838,11 @@ impl Inbox for Listener {
         let Some(Ok(note)) = params.map(serde_json::from_value::<SessionNotification>) else {
             return;
         };
+        if let SessionUpdate::ConfigOptionUpdate(update) = note.update {
+            return self
+                .core
+                .keep_options(self.generation, Some(update.config_options), false);
+        }
         let title = match &note.update {
             SessionUpdate::SessionInfoUpdate(info) => match &info.title {
                 MaybeUndefined::Value(title) => Some(Some(title.clone())),

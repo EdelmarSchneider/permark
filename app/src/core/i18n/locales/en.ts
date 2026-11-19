@@ -3110,6 +3110,12 @@ const en = {
   "acp.error.hiddenFromAgents": "The passage comes from a file agents may not see.",
   "acp.error.insideProject": "The copy for the agent cannot be kept inside this folder.",
   "acp.error.notApplied": "PerMark could not apply this change.",
+  "acp.options": "Agent settings",
+  "acp.option.model": "Model",
+  "acp.fail.optionRefused": "The agent did not accept the new setting.",
+  "acp.error.starting": "The agent is still starting. Try again in a moment.",
+  "acp.error.notRunning": "The agent is not running.",
+  "acp.error.settingGone": "The agent no longer offers this setting.",
   "acp.option.allowOnce": "Allow once",
   "acp.option.rejectOnce": "Don't allow",
   "acp.alwaysHidden":

@@ -4,7 +4,8 @@
 // refusals in words, and the passage attached from the open document (frozen while the panel has the keyboard); the
 // choice of the agent (none at first: the picker; a choice read back by name; refusals) and a sign-in the agent asks
 // for (Try again alone stays signed out, the agent's own method signs in and the reply goes on); another project
-// shown meanwhile (its news and late answers never reach it), the announcements, Undo after a decision, the caps.
+// shown meanwhile (its news and late answers never reach it), the announcements, Undo after a decision, the caps; the
+// agent's settings (its model, effort, a fast mode): shown while it runs, changed through the plugin, refusals in words.
 import "../../core/testing/media";
 import { flushSync, tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -27,6 +28,7 @@ import { Box } from "../../core/testing/box.svelte";
 import {
   AcpStore,
   canStart,
+  configLabel,
   entryAbout,
   entryName,
   errorText,
@@ -344,6 +346,7 @@ describe("a message and its reply", () => {
       methods: [],
       skippedFiles: 0,
       last: null,
+      options: [],
     });
   });
 });
@@ -848,6 +851,7 @@ describe("words of the panel", () => {
       "exited",
       "sendFailed",
       "sessionGone",
+      "optionRefused",
     ];
     for (const code of codes) expect(failureText({ code })).not.toBe(`acp.fail.${code}`);
     expect(new Set(codes.map((code) => failureText({ code }))).size).toBe(codes.length);
@@ -908,6 +912,10 @@ describe("words of the panel", () => {
       "projectsNotReady",
       "noText",
       "edits",
+      "starting",
+      "notRunning",
+      "unknownSetting",
+      "notOffered",
     ];
     for (const detail of details) {
       const error = backend("conflict", detail);
@@ -1089,6 +1097,107 @@ describe("the conversation as the person follows it", () => {
     expect(store.showsPicker).toBe(true);
     expect(await store.choose({ agent: "goose" })).toBe(false);
     expect(store.choiceRefusal).toBe(t("acp.snap"));
+  });
+});
+
+describe("the agent's settings", () => {
+  it("show once the agent runs; a change reaches it and comes back; a new conversation empties them", async () => {
+    const { store, acp, client, root } = await setup();
+    expect(store.options).toEqual([]);
+    expect(store.canSetOptions).toBe(false);
+    store.draft = "Hello";
+    await store.send();
+    await until(() => store.status?.state === "ready" || store.asking);
+    expect(store.options.map((o) => o.id)).toEqual(["model", "effort", "fast"]);
+    expect(store.canSetOptions).toBe(true);
+    expect(await store.setOption("model", "opus")).toBe(true);
+    expect(await store.setOption("fast", true)).toBe(true);
+    expect(acp.optionSets).toEqual([
+      { id: "model", value: "opus" },
+      { id: "fast", value: true },
+    ]);
+    const model = store.options.find((o) => o.id === "model");
+    expect(model?.kind.type === "select" && model.kind.current).toBe("opus");
+    const fast = store.options.find((o) => o.id === "fast");
+    expect(fast?.kind).toEqual({ type: "toggle", on: true });
+    // a window that reads the status later shows them too
+    const later = new AcpStore(client, () => root.value, {
+      say: vi.fn(),
+      notices: { notifyKeyed: vi.fn() },
+    });
+    stops.push(later.start());
+    await settle();
+    expect(later.options).toEqual(store.options);
+    await store.newConversation();
+    await settle();
+    expect(store.options).toEqual([]);
+    // the next start brings the picks back
+    store.draft = "Again";
+    await store.send();
+    await until(() => store.options.length > 0);
+    const again = store.options.find((o) => o.id === "model");
+    expect(again?.kind.type === "select" && again.kind.current).toBe("opus");
+  });
+
+  it("a change refused before it reaches the agent is said in words; the agent's own refusal with its words", async () => {
+    const { store, acp } = await setup();
+    expect(await store.setOption("model", "opus")).toBe(false);
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({ kind: "notice", text: t("acp.error.notRunning") }),
+    );
+    store.draft = "Hello";
+    await store.send();
+    await until(() => store.options.length > 0 && store.canSetOptions);
+    expect(await store.setOption("model", "gpt")).toBe(false);
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({ kind: "notice", text: t("acp.error.settingGone") }),
+    );
+    acp.refuseOption = "Not on your plan";
+    const before = store.options;
+    expect(await store.setOption("model", "haiku")).toBe(true);
+    expect(store.options).toEqual(before);
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({
+        kind: "notice",
+        text: t("acp.fail.said", {
+          reason: t("acp.fail.optionRefused"),
+          message: "Not on your plan",
+        }),
+      }),
+    );
+  });
+
+  it("are dropped when the agent stops | fails, and replaced whole by the agent's news", () => {
+    const store = new AcpStore();
+    store.take({ type: "status", state: "ready", error: null });
+    const options = [
+      {
+        id: "effort",
+        name: "Effort",
+        description: null,
+        category: "thoughtLevel" as const,
+        kind: { type: "toggle" as const, on: true },
+      },
+    ];
+    store.take({ type: "options", options });
+    expect(store.options).toEqual(options);
+    store.take({ type: "status", state: "error", error: { code: "exited" } });
+    expect(store.options).toEqual([]);
+    store.take({ type: "options", options });
+    store.take({ type: "status", state: "working", error: null });
+    expect(store.options).toEqual(options);
+    store.take({ type: "status", state: "idle", error: null });
+    expect(store.options).toEqual([]);
+  });
+
+  it("the model is labelled in the window's words, any other setting by the agent's name for it", () => {
+    const kind = { type: "toggle" as const, on: false };
+    expect(
+      configLabel({ id: "m", name: "Modelo", description: null, category: "model", kind }),
+    ).toBe(t("acp.option.model"));
+    expect(
+      configLabel({ id: "e", name: "Effort", description: null, category: "thoughtLevel", kind }),
+    ).toBe("Effort");
   });
 });
 

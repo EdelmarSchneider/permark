@@ -78,7 +78,7 @@ pub fn fingerprint(choice: &Choice) -> String {
 }
 
 /// A title as kept and shown: control | bidi characters dropped, at most [`MAX_TITLE_CHARS`] (`None`: nothing left).
-fn clean_title(title: &str) -> Option<String> {
+pub(super) fn clean_title(title: &str) -> Option<String> {
     let kept: String = title
         .chars()
         .filter(|c| !c.is_control() && !is_unsafe_char(*c))
