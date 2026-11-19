@@ -465,6 +465,22 @@ describe("loose files", () => {
     expect(store.current).toBeNull();
   });
 
+  it("keeps the typed text only over the version of the file its row shows", async () => {
+    const { store, api } = await setup();
+    await store.openFiles(["C:/Downloads/sent.md"]);
+    const path = store.current ?? "";
+    await api.pluginCall("notes.buffer", { path, baseHash: "h", text: "typed" });
+    // the file is not the one shown: its row's bar answers, not the editor
+    await store.select(FIRST);
+    await store.refresh();
+    const row = store.entries.find((e) => e.path === path);
+    if (row === undefined) throw new Error("no row");
+    const call = vi.spyOn(api, "pluginCall");
+    await store.keepMine(path);
+    const sent = call.mock.calls.find(([method]) => method === "notes.keepMine");
+    expect(sent?.[1]).toEqual({ path, seen: { size: row.size, modifiedMs: row.modifiedMs } });
+  });
+
   it("makes a note of the typed text", async () => {
     const { store, api } = await setup();
     await store.openFiles(["C:/Downloads/sent.md"]);

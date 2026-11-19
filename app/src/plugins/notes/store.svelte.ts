@@ -825,13 +825,19 @@ export class NotesStore {
     }
   }
 
-  /** The person keeps what was typed: it is written over the file. */
+  /** The person keeps what was typed: it is written over the file, only while it is still the version its row shows
+   *  (a file changed meanwhile is refused and the list read again). */
   async keepMine(path: string): Promise<void> {
     if (this.current === path && this.#editing.path === path) {
       this.#editing.dispatch({ e: "keepMine" });
       return;
     }
-    const result = await this.#client.call("notes.keepMine", { path });
+    const row = this.entries.find((e) => e.path === path);
+    const seen =
+      row === undefined || row.state === "gone"
+        ? null
+        : { size: row.size, modifiedMs: row.modifiedMs };
+    const result = await this.#client.call("notes.keepMine", { path, seen });
     if (!result.ok) this.#fail(result.error);
     await this.refresh();
     if (this.current === path) {

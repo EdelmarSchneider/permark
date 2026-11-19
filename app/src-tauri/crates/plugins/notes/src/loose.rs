@@ -16,7 +16,8 @@ use permark_core::paths::{fold, FileScope};
 use crate::journal::Entry as JournalEntry;
 use crate::names::{edits_stem, first_free, EXTENSION};
 use crate::service::{
-    checked_name, differs_from_file, rename_free, write_like, write_new, Ctx, NotesService, Target,
+    checked_name, differs_from_file, encoded_like, rename_free, write_new, Ctx, NotesService,
+    Target, TEXT_LIMIT,
 };
 use crate::state::{LooseEntry, Stamp};
 use crate::text::{is_blank, stem_from_title, title_of};
@@ -336,11 +337,13 @@ impl NotesService {
         Ok(())
     }
 
-    /// The person keeps what was typed: it is written over the file (or the file is made again when it is gone).
+    /// The person keeps what was typed: it is written over the file (or the file is made again when it is gone), only
+    /// while the file is still the version its row showed: `seen` = the stamp the row had, `None` = shown as gone.
     ///
     /// # Errors
-    /// Not listed | nothing typed is kept | the system refused.
-    pub fn keep_mine(&self, path: &str) -> Result<(), IpcError> {
+    /// Not listed | nothing typed is kept | the file changed since its row was shown (`Conflict`, left as it is) | the
+    /// system refused.
+    pub fn keep_mine(&self, path: &str, seen: Option<Stamp>) -> Result<(), IpcError> {
         let ctx = self.ctx();
         let entry = Self::loose_entry(&ctx, path)?;
         let key = loose_key(&entry.id);
@@ -352,7 +355,32 @@ impl NotesService {
             .scope
             .loose_file(&entry.id)
             .unwrap_or_else(|| PathBuf::from(&entry.path));
-        write_like(&abs, &kept.text).map_err(|e| IpcError::io(path, &e))?;
+        let changed = || {
+            let name = abs
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            IpcError::new(ErrorKind::Conflict).subject(name)
+        };
+        let written = match seen {
+            Some(seen) => {
+                // the bytes first, then the stamp: a write before the stamp is read shows in it, one after it in the hash
+                let old = match fsx::read_bytes(&abs, TEXT_LIMIT) {
+                    Ok(old) => old,
+                    Err(_) if Stamp::of(&abs).is_none() => return Err(changed()),
+                    Err(e) => return Err(IpcError::from(e)),
+                };
+                if Stamp::of(&abs) != Some(seen) {
+                    return Err(changed());
+                }
+                let bytes = encoded_like(Some(&old), &kept.text);
+                fsx::write_atomic_if_unchanged(&abs, &bytes, fsx::hash(&old))
+            }
+            None => fsx::write_atomic_if_absent(&abs, &encoded_like(None, &kept.text)),
+        }
+        .map_err(|e| IpcError::io(path, &e))?;
+        if !written {
+            return Err(changed());
+        }
         ctx.journal.clear(&key);
         let _ = self.scope.set_loose(&entry.id, &abs);
         self.loose_saved(&loose_path(&entry.id, "x"));

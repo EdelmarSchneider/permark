@@ -382,15 +382,29 @@ fn project_of(handle: &AppHandle, window: &Webview) -> Result<Arc<ProjectCore>, 
 
 // ---- Explorer: tree ------------------------------------------------------------------------------------------------------
 
+/// The project the invoking window shows, only while it is still `workspace` (the one the window's Explorer was made
+/// for): the tree calls of the project shown before land on nothing (`Unsupported`, as with no project).
+fn tree_project(
+    handle: &AppHandle,
+    window: &Webview,
+    workspace: WorkspaceId,
+) -> Result<Arc<ProjectCore>, IpcError> {
+    state(handle)
+        .registry
+        .project_shown(window.label(), workspace)
+        .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject("project"))
+}
+
 /// The window's tree: its filter (None: the project default) and the whole list. Later changes arrive as
 /// `tree-changed` events.
 #[tauri::command(async)]
 pub fn tree_open(
     handle: AppHandle,
     window: Webview,
+    workspace: WorkspaceId,
     filter: Option<TreeFilter>,
 ) -> Result<TreeSnapshot, IpcError> {
-    Ok(project_of(&handle, &window)?
+    Ok(tree_project(&handle, &window, workspace)?
         .explorer()
         .open_view(window.label(), filter))
 }
@@ -399,25 +413,36 @@ pub fn tree_open(
 pub fn tree_set_filter(
     handle: AppHandle,
     window: Webview,
+    workspace: WorkspaceId,
     filter: TreeFilter,
 ) -> Result<TreeSnapshot, IpcError> {
-    Ok(project_of(&handle, &window)?
+    Ok(tree_project(&handle, &window, workspace)?
         .explorer()
         .set_filter(window.label(), filter)?)
 }
 
 /// Lists a folder left unopened (large | ignored).
 #[tauri::command(async)]
-pub fn tree_open_folder(handle: AppHandle, window: Webview, path: String) -> Result<(), IpcError> {
-    Ok(project_of(&handle, &window)?
+pub fn tree_open_folder(
+    handle: AppHandle,
+    window: Webview,
+    workspace: WorkspaceId,
+    path: String,
+) -> Result<(), IpcError> {
+    Ok(tree_project(&handle, &window, workspace)?
         .explorer()
         .open_folder(&path)?)
 }
 
 /// The open document stays in the tree even when the filter hides it.
 #[tauri::command(async)]
-pub fn tree_keep(handle: AppHandle, window: Webview, path: Option<String>) -> Result<(), IpcError> {
-    Ok(project_of(&handle, &window)?
+pub fn tree_keep(
+    handle: AppHandle,
+    window: Webview,
+    workspace: WorkspaceId,
+    path: Option<String>,
+) -> Result<(), IpcError> {
+    Ok(tree_project(&handle, &window, workspace)?
         .explorer()
         .keep(window.label(), path.as_deref())?)
 }
@@ -430,9 +455,10 @@ pub fn tree_refresh(handle: AppHandle, window: Webview) -> Result<(), IpcError> 
     Ok(())
 }
 
+/// The window's Explorer goes. The registry already closed the view of a project the window no longer shows.
 #[tauri::command(async)]
-pub fn tree_close(handle: AppHandle, window: Webview) {
-    if let Ok(core) = project_of(&handle, &window) {
+pub fn tree_close(handle: AppHandle, window: Webview, workspace: WorkspaceId) {
+    if let Ok(core) = tree_project(&handle, &window, workspace) {
         core.explorer().close_view(window.label());
     }
 }

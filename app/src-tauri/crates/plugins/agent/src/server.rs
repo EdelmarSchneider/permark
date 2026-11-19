@@ -457,13 +457,15 @@ impl Hub {
 
     /// The first time resolving is asked for and is off: the person is offered it once.
     fn ask(&self, group: Group) {
-        let store = self.tools.store();
-        let mut choice = perms::load(store);
-        if choice.resolve_asked {
+        let mut asking = false;
+        let _ = perms::change(self.tools.store(), |choice| {
+            asking = !choice.resolve_asked;
+            choice.resolve_asked = true;
+            asking
+        });
+        if !asking {
             return;
         }
-        choice.resolve_asked = true;
-        let _ = store.profile_file(perms::PROJECT_FILE).save(&choice);
         self.events
             .emit("ask", serde_json::json!({ "group": group.id() }));
     }

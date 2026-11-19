@@ -33,7 +33,7 @@ async function render(link: LinkUpdate = "never", more: string[] = []): Promise<
   const failures: unknown[] = [];
   const notes: string[] = [];
   const inits: { path: string; name: string }[] = [];
-  const store = new ExplorerStore(api, {
+  const store = new ExplorerStore(api, 1, {
     fail: (e) => failures.push(e),
     note: (t) => notes.push(t),
     view: () => "main",
@@ -140,7 +140,7 @@ describe("the list", () => {
     for (let n = 0; n < 3000; n++)
       api.probe.project.add(`bulk/f${String(n).padStart(4, "0")}.md`, "x");
     await api.openPath(MOCK_FOLDER, "thisTab");
-    const store = new ExplorerStore(api, {
+    const store = new ExplorerStore(api, 1, {
       fail: () => {},
       note: () => {},
       view: () => "main",
@@ -922,6 +922,7 @@ describe("states", () => {
             error: { kind: "command", command: "tree_open", message: "x" },
           }),
       },
+      1,
       {
         fail: () => {},
         note: () => {},

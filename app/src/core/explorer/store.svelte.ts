@@ -19,6 +19,7 @@ import {
   type TreeFilter,
   type TreeNode,
   type Unlisten,
+  type WorkspaceId,
 } from "../../api";
 import { IDENTITY_UNKNOWN } from "../../api/error";
 import { language, t, tn } from "../i18n";
@@ -132,6 +133,9 @@ export function quickNameProblem(name: string): NameProblem | null {
 export class ExplorerStore {
   readonly #api: Api;
   readonly #host: ExplorerHost;
+  /** The workspace this Explorer was made for, fixed for its life: a call still on its way when another folder opens
+   *  in the window must not reach the list of the project shown then (the backend refuses a call naming another). */
+  readonly #workspace: WorkspaceId;
 
   load = $state.raw<Load>({ status: "loading" });
   roots = $state.raw<readonly RootNode[]>([]);
@@ -188,9 +192,10 @@ export class ExplorerStore {
   /** Ends a Refresh no list answered. */
   #refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(api: Api, host: ExplorerHost) {
+  constructor(api: Api, workspace: WorkspaceId, host: ExplorerHost) {
     this.#api = api;
     this.#host = host;
+    this.#workspace = workspace;
   }
 
   // ---- lifecycle -------------------------------------------------------------------------------------------------
@@ -221,7 +226,7 @@ export class ExplorerStore {
     this.#timer = null;
     this.#clearAuto();
     this.#refreshed();
-    void this.#api.treeClose();
+    void this.#api.treeClose(this.#workspace);
   }
 
   /** The list asked for as `ask` is still wanted: the store is open and no newer list was asked for since. */
@@ -244,7 +249,7 @@ export class ExplorerStore {
     if (open.ok && Array.isArray(open.value)) {
       this.expanded = new Set(open.value.filter((v): v is string => typeof v === "string"));
     }
-    const result = await this.#api.treeOpen(filter);
+    const result = await this.#api.treeOpen(this.#workspace, filter);
     if (!this.#wanted(ask)) return;
     if (!result.ok) {
       this.load = { status: "failed", error: result.error };
@@ -375,7 +380,7 @@ export class ExplorerStore {
 
   async setFilter(filter: TreeFilter): Promise<void> {
     if (this.#closed) return;
-    const result = await this.#api.treeSetFilter(filter);
+    const result = await this.#api.treeSetFilter(this.#workspace, filter);
     if (this.#closed) return;
     if (!result.ok) {
       this.#host.fail(result.error);
@@ -407,7 +412,7 @@ export class ExplorerStore {
   /** Back to the project's default filter. */
   async resetFilter(): Promise<void> {
     if (this.#closed) return;
-    const result = await this.#api.treeOpen(null);
+    const result = await this.#api.treeOpen(this.#workspace, null);
     if (this.#closed) return;
     if (!result.ok) {
       this.#host.fail(result.error);
@@ -459,7 +464,7 @@ export class ExplorerStore {
       const node = this.nodes.find((n) => n.path === p);
       if (this.#closed) return;
       if (node?.kind.type === "dir" && node.kind.unlisted !== null) {
-        const result = await this.#api.treeOpenFolder(p);
+        const result = await this.#api.treeOpenFolder(this.#workspace, p);
         if (!result.ok) this.#host.fail(result.error);
       }
     }
@@ -617,7 +622,7 @@ export class ExplorerStore {
 
   async #follow(path: string | null): Promise<void> {
     if (this.#closed) return;
-    const kept = await this.#api.treeKeep(path);
+    const kept = await this.#api.treeKeep(this.#workspace, path);
     if (!kept.ok && !treeGone(kept.error)) this.#host.fail(kept.error);
     if (path !== null) this.reveal(path);
   }

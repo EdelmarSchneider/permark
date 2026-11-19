@@ -302,6 +302,31 @@ fn a_superseded_open_is_dropped_and_its_core_torn_down() {
 }
 
 #[test]
+fn a_call_for_the_project_a_view_showed_before_finds_no_project() {
+    let f = fx();
+    let one = tempfile::tempdir().unwrap();
+    let two = tempfile::tempdir().unwrap();
+    let (_, view) = tab(&f, "main", &project(one.path())).unwrap();
+    let first = f.registry.workspace_of(&view).unwrap().0;
+    let shown = f.registry.project_shown(&view, first).unwrap();
+    assert_eq!(shown.root(), &Root::open(one.path()).unwrap());
+    // another folder opens in the same view: a call still on its way for the first one reaches nothing
+    let Attached::Opened(second) = f
+        .registry
+        .attach(&view, &project(two.path()), None)
+        .unwrap()
+    else {
+        panic!("a new workspace");
+    };
+    assert_ne!(first, second);
+    assert!(f.registry.project_shown(&view, first).is_none());
+    let shown = f.registry.project_shown(&view, second).unwrap();
+    assert_eq!(shown.root(), &Root::open(two.path()).unwrap());
+    // a view that shows no project, or no such view
+    assert!(f.registry.project_shown("nowhere", second).is_none());
+}
+
+#[test]
 fn a_failed_open_keeps_what_was_shown() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();

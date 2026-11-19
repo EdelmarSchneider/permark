@@ -447,12 +447,12 @@ export interface Commands {
   characters_reveal: { args: Record<string, never>; result: null };
   project_session_get: { args: { key: string }; result: JsonValue | null };
   project_session_set: { args: { key: string; value: JsonValue | null }; result: null };
-  tree_open: { args: { filter: TreeFilter | null }; result: TreeSnapshot };
-  tree_set_filter: { args: { filter: TreeFilter }; result: TreeSnapshot };
-  tree_open_folder: { args: { path: string }; result: null };
-  tree_keep: { args: { path: string | null }; result: null };
+  tree_open: { args: { workspace: WorkspaceId; filter: TreeFilter | null }; result: TreeSnapshot };
+  tree_set_filter: { args: { workspace: WorkspaceId; filter: TreeFilter }; result: TreeSnapshot };
+  tree_open_folder: { args: { workspace: WorkspaceId; path: string }; result: null };
+  tree_keep: { args: { workspace: WorkspaceId; path: string | null }; result: null };
   tree_refresh: { args: Record<string, never>; result: null };
-  tree_close: { args: Record<string, never>; result: null };
+  tree_close: { args: { workspace: WorkspaceId }; result: null };
   projects_view: { args: Record<string, never>; result: ProjectsView };
   projects_include: { args: { pick: ProjectPick }; result: IncludeOutcome };
   projects_decline: { args: { pick: ProjectPick }; result: null };
@@ -680,7 +680,12 @@ export interface PluginMethods {
   "notes.removeFile": { args: { path: string }; result: null };
   "notes.locateFile": { args: { path: string; newPath: string }; result: string };
   "notes.reloadFile": { args: { path: string }; result: null };
-  "notes.keepMine": { args: { path: string }; result: null };
+  /** Written only while the file is still the version its row showed (`seen`: its size + modification time; `null`:
+   *  shown as gone); else refused as `conflict`, the file left as it is. */
+  "notes.keepMine": {
+    args: { path: string; seen: { size: number; modifiedMs: number } | null };
+    result: null;
+  };
   "notes.saveAsNote": { args: { path: string }; result: string };
   "notes.suggestName": { args: { path: string; folder: string | null }; result: string };
   "notes.moveToProject": {
@@ -1221,17 +1226,19 @@ export interface Api {
   charactersReveal(): Promise<Result<null>>;
   projectSessionGet(key: string): Promise<Result<JsonValue | null>>;
   projectSessionSet(key: string, value: JsonValue | null): Promise<Result<null>>;
-  /** This window's Explorer list: `null` filter = the project's default. Changes arrive as `tree-changed`. */
-  treeOpen(filter: TreeFilter | null): Promise<Result<TreeSnapshot>>;
-  treeSetFilter(filter: TreeFilter): Promise<Result<TreeSnapshot>>;
+  /** This window's Explorer list: `null` filter = the project's default. Changes arrive as `tree-changed`. Every
+   *  call on the list names the workspace the Explorer was made for: one sent for the project the window showed
+   *  before lands on nothing (`unsupported`), never on the list of the project shown now. */
+  treeOpen(workspace: WorkspaceId, filter: TreeFilter | null): Promise<Result<TreeSnapshot>>;
+  treeSetFilter(workspace: WorkspaceId, filter: TreeFilter): Promise<Result<TreeSnapshot>>;
   /** Lists a folder left unopened (large | ignored). */
-  treeOpenFolder(path: string): Promise<Result<null>>;
+  treeOpenFolder(workspace: WorkspaceId, path: string): Promise<Result<null>>;
   /** The open document stays in the list even when the filter hides it. */
-  treeKeep(path: string | null): Promise<Result<null>>;
+  treeKeep(workspace: WorkspaceId, path: string | null): Promise<Result<null>>;
   /** The person's Refresh: the backend reads the project folder again (the tree, the index, git, every plugin that
    *  keeps a picture of the disk). Answers at once; what differs arrives as `tree-changed`. */
   treeRefresh(): Promise<Result<null>>;
-  treeClose(): Promise<Result<null>>;
+  treeClose(workspace: WorkspaceId): Promise<Result<null>>;
   /** Projects inside this window's folder: Settings > Projects + the strip. Changes arrive as `projects-changed`. */
   projectsView(): Promise<Result<ProjectsView>>;
   /** Includes projects (`all` = every offered one); a folder without `.permark/` is initialized first. */

@@ -1086,15 +1086,16 @@ export function createMockApi(): Api & {
       else session.set(key, value);
       return ok(null);
     },
-    treeOpen: (filter) =>
+    // one window, one tree: the workspace a tree call names is not checked here
+    treeOpen: (_workspace, filter) =>
       Promise.resolve(
         whileOpening("tree_open") ?? { ok: true, value: snapshot(filter ?? DEFAULT_FILTER) },
       ),
-    treeSetFilter: (filter) =>
+    treeSetFilter: (_workspace, filter) =>
       Promise.resolve(whileOpening("tree_set_filter") ?? { ok: true, value: snapshot(filter) }),
     treeOpenFolder: () =>
       Promise.resolve(whileOpening("tree_open_folder") ?? { ok: true, value: null }),
-    treeKeep: (path) => {
+    treeKeep: (_workspace, path) => {
       const no = whileOpening<null>("tree_keep");
       if (no) return Promise.resolve(no);
       // no tree open for this view (not yet | closed): `TreeError::NoView`

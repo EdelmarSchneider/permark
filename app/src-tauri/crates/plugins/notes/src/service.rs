@@ -1071,9 +1071,12 @@ fn set_modified(path: &Path, modified_ms: u64) {
     }
 }
 
+/// The most of a file read as text (the editor's own limit).
+pub(crate) const TEXT_LIMIT: u64 = 6 * 1024 * 1024;
+
 /// The text of the file the way the editor holds it (every line break `\n`, no byte order mark).
 pub(crate) fn editor_text(path: &Path) -> Option<String> {
-    let bytes = fsx::read_bytes(path, 6 * 1024 * 1024).ok()?;
+    let bytes = fsx::read_bytes(path, TEXT_LIMIT).ok()?;
     let decoded = fsx::decode(&bytes)?;
     Some(permark_core::edit::lines::normalized(&decoded.text))
 }
@@ -1089,20 +1092,27 @@ pub(crate) fn differs_from_file(entry: &JournalEntry, path: &Path) -> bool {
 /// Writes `text` (editor form) over the file the way the file is written: its encoding and its line ending. A file that
 /// is not there is written as UTF-8 with `\n`.
 pub(crate) fn write_like(path: &Path, text: &str) -> std::io::Result<()> {
-    let (ending, encoding) = match fsx::read_text(path, 6 * 1024 * 1024) {
-        Ok(decoded) => (
+    let old = fsx::read_bytes(path, TEXT_LIMIT).ok();
+    fsx::write_atomic(path, &encoded_like(old.as_deref(), text))
+}
+
+/// `text` (editor form) as the bytes of a file whose bytes are `old` would hold it: its encoding and its line ending.
+/// No bytes | not text: UTF-8 with `\n`.
+pub(crate) fn encoded_like(old: Option<&[u8]>, text: &str) -> Vec<u8> {
+    let (ending, encoding) = match old.and_then(fsx::decode) {
+        Some(decoded) => (
             permark_core::edit::lines::majority(&permark_core::edit::lines::split(&decoded.text))
                 .to_owned(),
             decoded.encoding,
         ),
-        Err(_) => ("\n".to_owned(), fsx::Encoding::Utf8),
+        None => ("\n".to_owned(), fsx::Encoding::Utf8),
     };
     let body = if ending == "\n" {
         text.to_owned()
     } else {
         text.replace('\n', &ending)
     };
-    fsx::write_atomic(path, &permark_core::edit::lines::encode(&body, encoding))
+    permark_core::edit::lines::encode(&body, encoding)
 }
 
 impl NotesService {

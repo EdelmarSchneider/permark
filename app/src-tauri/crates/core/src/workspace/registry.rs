@@ -1078,6 +1078,16 @@ impl WorkspaceRegistry {
         inner.workspaces.get(&id).map(|e| (id, e.workspace.clone()))
     }
 
+    /// The project a view shows, only while it is still workspace `id`: a call sent for the project the view showed
+    /// before (still on its way when another folder opened in the view) must not act on the one shown now.
+    #[must_use]
+    pub fn project_shown(&self, view: &str, id: WorkspaceId) -> Option<Arc<ProjectCore>> {
+        match self.workspace_of(view)? {
+            (shown, Workspace::Project(core)) if shown == id => Some(core),
+            _ => None,
+        }
+    }
+
     /// Every view label (live tabs + Welcome views).
     #[must_use]
     pub fn views(&self) -> Vec<String> {
