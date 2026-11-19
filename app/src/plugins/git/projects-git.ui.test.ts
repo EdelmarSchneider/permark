@@ -74,7 +74,7 @@ async function openFolder(root: string): Promise<void> {
 }
 
 async function explorer(): Promise<{ store: InstanceType<typeof ExplorerStore> }> {
-  const store = new ExplorerStore(api, {
+  const store = new ExplorerStore(api, 1, {
     fail: () => {},
     note: () => {},
     view: () => "main",

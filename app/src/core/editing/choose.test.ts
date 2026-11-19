@@ -13,7 +13,11 @@ vi.mock("../../api", async () => {
 
 // the document this window shows: the test moves it
 const shown = vi.hoisted(() => {
-  const state = { path: null as string | null, view: null as DocumentView | null };
+  const state = {
+    path: null as string | null,
+    view: null as DocumentView | null,
+    asked: null as number | null,
+  };
   return {
     state,
     documents: {
@@ -29,6 +33,7 @@ const shown = vi.hoisted(() => {
       get savePolicy(): SavePolicy {
         return { kind: "explicit" };
       },
+      askedLine: (): number | null => state.asked,
       show: (path: string) => {
         state.path = path;
       },
@@ -109,6 +114,7 @@ beforeEach(() => {
   editing.release();
   // a fresh window: no mode chosen yet
   editing.chosenMode = "view";
+  shown.state.asked = null;
   show("docs/guide.md");
 });
 afterEach(() => {
@@ -180,6 +186,18 @@ describe("the chosen mode", () => {
     await flush();
     expect(editing.mode).toBe("edit");
     expect(editing.content?.seq).toBe(seq);
+  });
+});
+
+describe("a place asked for the next document", () => {
+  it("the editor that opens on it starts at the line asked (a code reference, a search hit)", async () => {
+    chooseMode("source");
+    await flush();
+    shown.state.asked = 7;
+    switchTo("docs/handbook.md");
+    await flush();
+    expect(editing.path).toBe("docs/handbook.md");
+    expect(editing.content?.line).toBe(7);
   });
 });
 

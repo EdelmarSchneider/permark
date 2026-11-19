@@ -479,6 +479,33 @@ describe("a region", () => {
   });
 });
 
+describe("a view shown from the palette", () => {
+  it("takes the keyboard once it is drawn again, after the palette gave it back (its options, in its own header)", async () => {
+    await show();
+    const { closeView } = await import("./sides");
+    const { ContributionRegistry } = await import("../plugins/registry.svelte");
+    const { registerViewCommands } = await import("./viewsMenu.svelte");
+    const registry = new ContributionRegistry();
+    const off = registerViewCommands(registry);
+    flushSync();
+    closeView(PROBE);
+    flushSync();
+    expect(slot(PROBE)).toBeNull();
+    // what the palette gives the keyboard back to as it closes
+    const before = document.createElement("button");
+    document.body.append(before);
+    before.focus();
+    await registry
+      .of("command")
+      .find((c) => c.id === `view.show.${PROBE}`)
+      ?.run();
+    const options = slot(PROBE)?.querySelector<HTMLElement>(`[data-view-menu="${PROBE}"]`);
+    expect(options).toBeTruthy();
+    expect(document.activeElement).toBe(options);
+    off();
+  });
+});
+
 describe("the window's template", () => {
   it("draws the views' hosts before the frame: their scroll offsets are noted before a region draws a change", () => {
     const app = readFileSync(resolve(process.cwd(), "src/App.svelte"), "utf8");

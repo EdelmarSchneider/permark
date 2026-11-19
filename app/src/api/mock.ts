@@ -525,6 +525,9 @@ export function createMockApi(): Api & {
       for (const handler of appListeners["notes:intent"]) handler(null);
     },
     () => settings.plugins["notes"] !== false,
+    () => {
+      for (const handler of appListeners["notes:shares"]) handler(null);
+    },
   );
   const appListeners: { [E in AppPluginEventName]: Set<(payload: AppPluginEvents[E]) => void> } = {
     "updates:state": new Set(),
@@ -534,6 +537,7 @@ export function createMockApi(): Api & {
     "spelling:download": new Set(),
     "spelling:personal": new Set(),
     "notes:intent": new Set(),
+    "notes:shares": new Set(),
     "local-ai:state": new Set(),
     "local-ai:progress": new Set(),
     "local-ai:move": new Set(),
@@ -1086,15 +1090,16 @@ export function createMockApi(): Api & {
       else session.set(key, value);
       return ok(null);
     },
-    treeOpen: (filter) =>
+    // one window, one tree: the workspace a tree call names is not checked here
+    treeOpen: (_workspace, filter) =>
       Promise.resolve(
         whileOpening("tree_open") ?? { ok: true, value: snapshot(filter ?? DEFAULT_FILTER) },
       ),
-    treeSetFilter: (filter) =>
+    treeSetFilter: (_workspace, filter) =>
       Promise.resolve(whileOpening("tree_set_filter") ?? { ok: true, value: snapshot(filter) }),
     treeOpenFolder: () =>
       Promise.resolve(whileOpening("tree_open_folder") ?? { ok: true, value: null }),
-    treeKeep: (path) => {
+    treeKeep: (_workspace, path) => {
       const no = whileOpening<null>("tree_keep");
       if (no) return Promise.resolve(no);
       // no tree open for this view (not yet | closed): `TreeError::NoView`
@@ -1448,6 +1453,12 @@ export function createMockApi(): Api & {
 }
 
 export const mockApi = createMockApi();
+
+// `dev:mock`: the mock project is a git repository (its status bar shows a branch), so what needs one is offered
+// there too (earlier versions of a document). Tests keep their own mock, with no repository unless they set one.
+if (import.meta.env.MODE === "mock") {
+  mockApi.probe.context.set({ git: { status: "repo", state: "clean" } });
+}
 
 // `dev:mock` opened with `?unshared` shows the notice about sharing an update turned off (once, like the app)
 if (typeof location !== "undefined" && new URLSearchParams(location.search).has("unshared")) {

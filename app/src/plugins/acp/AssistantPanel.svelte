@@ -1,3 +1,8 @@
+<script module lang="ts">
+  /** Quiet time after the last change of an agent's list setting before the agent hears it. */
+  export const OPTION_SETTLE_MS = 400;
+</script>
+
 <script lang="ts">
   // The view "Assistant": the conversation with the project's agent (the person's messages, the agent's reply as
   // plain text while it comes and rendered as a document once whole, one "Thinking…" while it thinks, one line per
@@ -87,6 +92,36 @@
         control.value = option.kind.current;
       else if (option.kind.type === "toggle" && control instanceof HTMLInputElement)
         control.checked = option.kind.on;
+    };
+  }
+
+  /** Arrow keys on a closed list (Windows) change it once per step: the agent hears the value the person stops at,
+   *  after a quiet moment or when the keyboard leaves the list (the panel going too), never each one passed. A refused
+   *  change shows `current()` again: read when refused, so news of the values never makes the attachment anew (its
+   *  teardown sends a waiting step). */
+  function settles(id: string, current: () => string): Attachment<HTMLSelectElement> {
+    return (control) => {
+      let waiting: { timer: ReturnType<typeof setTimeout>; value: string } | null = null;
+      const send = (): void => {
+        if (waiting === null) return;
+        const { timer, value } = waiting;
+        clearTimeout(timer);
+        waiting = null;
+        void acp.setOption(id, value).then((ok) => {
+          if (!ok) control.value = current();
+        });
+      };
+      const changed = (): void => {
+        if (waiting !== null) clearTimeout(waiting.timer);
+        waiting = { timer: setTimeout(send, OPTION_SETTLE_MS), value: control.value };
+      };
+      control.addEventListener("change", changed);
+      control.addEventListener("blur", send);
+      return () => {
+        control.removeEventListener("change", changed);
+        control.removeEventListener("blur", send);
+        send();
+      };
     };
   }
   const canSend = $derived(!acp.busy && acp.draft.trim() !== "");
@@ -362,6 +397,8 @@
   {@const name = configLabel(option)}
   {#if option.kind.type === "select"}
     {@const kind = option.kind}
+    <!-- a string: the same id after news of the values, so the attachment that reads it stays -->
+    {@const id = option.id}
     <label class="setting" title={option.description ?? undefined}>
       <span class="setting-name">{name}</span>
       <!-- a refused change: the control shows what holds again -->
@@ -369,13 +406,8 @@
         class="field-select"
         value={kind.current}
         {@attach holds(option)}
+        {@attach settles(id, () => kind.current)}
         disabled={!acp.canSetOptions}
-        onchange={(event) => {
-          const control = event.currentTarget;
-          void acp.setOption(option.id, control.value).then((ok) => {
-            if (!ok) control.value = kind.current;
-          });
-        }}
       >
         {#each kind.choices as choice (choice.value)}
           <option value={choice.value} title={choice.description ?? undefined}>{choice.name}</option

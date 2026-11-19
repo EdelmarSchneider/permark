@@ -121,6 +121,10 @@
         if (editingNow) editing.showHeading(index);
         return editingNow;
       },
+      showEditorLine: (line) => {
+        if (editingNow) editing.showLine(line);
+        return editingNow;
+      },
       openFolderWith: (folder, document) => {
         void api.openFolderWith(folder, document).then((result) => {
           if (!result.ok) store.notifyFileOpFailed(result.error);

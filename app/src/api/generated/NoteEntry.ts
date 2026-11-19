@@ -42,4 +42,9 @@ state: LooseState | null,
 /**
  * A loose file: text that was typed is kept and not in the file.
  */
-pending: boolean, };
+pending: boolean, 
+/**
+ * A loose file there with typed text kept: the content hash of the bytes this row was worked out from, what Keep
+ * mine may write over (`null`: none).
+ */
+hash: string | null, };

@@ -1104,6 +1104,8 @@ export default {
   "review.versions.list": "Sürümler",
   "review.versions.loading": "Geçmiş okunuyor…",
   "review.versions.more": "Daha fazla göster",
+  "review.versions.added.one": "{n} sürüm daha",
+  "review.versions.added.other": "{n} sürüm daha",
   "review.versions.same": "Şu anki metinle aynı",
   "review.versions.authors": "{author} ve {others}",
   "review.versions.compare": "Karşılaştır",

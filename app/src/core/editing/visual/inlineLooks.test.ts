@@ -155,6 +155,18 @@ describe("links to missing files", () => {
     expect(dom().querySelector('a[href="lost.md"] [title]')).toBeNull();
   });
 
+  it("leave no class behind on a link the editor keeps through a new document (`setDoc`)", async () => {
+    await load("[a](gone.md) here");
+    const link = dom().querySelector('a[href="gone.md"]');
+    expect(link?.classList.contains("is-missing")).toBe(true);
+    // the same text again with missing links not marked now: the editor may keep the link's element
+    marks = false;
+    core.setDoc(core.parse("[a](gone.md) here"));
+    expect(dom().querySelector(".is-missing")).toBeNull();
+    await settle();
+    expect(dom().querySelector(".is-missing")).toBeNull();
+  });
+
   it("follow an edited href and files that appear", async () => {
     await load("[a](gone.md) here");
     const view = core.view;

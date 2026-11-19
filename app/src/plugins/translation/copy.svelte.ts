@@ -76,8 +76,8 @@ export type CopyWindow = {
   workspace(): number | null;
   /** The document it shows (`null`: none). */
   shown(): string | null;
-  /** Opens a document. */
-  open(path: string): void;
+  /** Opens a document; whether the window went there (the person may keep editing the one shown). */
+  open(path: string): Promise<boolean>;
   /** A quiet line that goes by itself. */
   note(text: string): void;
   /** A line (with buttons) that stays until the person dismisses it: the end of a run they may not be watching.
@@ -92,7 +92,7 @@ export type CopyWindow = {
 const WINDOW: CopyWindow = {
   workspace: () => documents.workspaceId,
   shown: () => documents.path,
-  open: (path) => documents.navigate(path, null),
+  open: (path) => documents.navigateTo(path, null),
   note: (text) => void windowStore.notifyNote(text),
   lasting: (text, actions = [], onGone = () => {}) => {
     const id = windowStore.notifyLasting({ text, actions, onGone });
@@ -410,17 +410,24 @@ export class TranslationCopy {
     const said =
       copy.failed > 0 ? `${done} ${tn("translation.copy.failedParts", copy.failed)}` : done;
     if (this.#window.shown() === copy.path && !this.#session.unsaved) {
-      this.#window.open(path);
+      void this.#window.open(path);
       if (copy.failed > 0) this.#window.lasting(said);
       else this.#window.note(said);
       return;
     }
+    this.#offerOpen(copy, path, said);
+  }
+
+  /** The note that stays and offers the new file. Its "Open" went nowhere (the person kept editing the document
+   *  shown, which the move asked about): the note comes back, so the file is still offered. */
+  #offerOpen(copy: Finished, path: string, said: string): void {
     this.#window.lasting(said, [
       {
         label: t("translation.copy.open"),
         // the path is one of the workspace the copy was made in
-        run: () => {
-          if (this.#window.workspace() === copy.workspace) this.#window.open(path);
+        run: async () => {
+          if (this.#window.workspace() !== copy.workspace) return;
+          if (!(await this.#window.open(path))) this.#offerOpen(copy, path, said);
         },
       },
     ]);

@@ -1078,6 +1078,8 @@ export default {
   "review.versions.list": "버전",
   "review.versions.loading": "기록을 읽는 중…",
   "review.versions.more": "더 보기",
+  "review.versions.added.one": "버전 {n}개 더",
+  "review.versions.added.other": "버전 {n}개 더",
   "review.versions.same": "지금과 같은 텍스트",
   "review.versions.authors": "{author} (공동 작성: {others})",
   "review.versions.compare": "비교",

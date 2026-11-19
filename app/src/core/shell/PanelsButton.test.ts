@@ -51,7 +51,7 @@ afterEach(async () => {
   if (component) void unmount(component);
   component = null;
   ui.closePanels();
-  windowStore.dismissKey("view-closed");
+  for (const notice of windowStore.notices) windowStore.dismiss(notice.id);
   for (const remove of removals.splice(0)) remove();
   conditions.set(neutralContext());
   await layout.load(api, false);
@@ -120,6 +120,26 @@ describe("the Panels button", () => {
     expect(menuEl()).toBeNull();
     expect(arrangement.isPresent(TAGS)).toBe(false);
     expect(document.activeElement).toBe(button());
+  });
+
+  it("a click on a view switches it and keeps the menu open for the next one, the keyboard in it", () => {
+    button().click();
+    flushSync();
+    const tags = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find(
+      (el) => el.textContent.trim() === "Tags",
+    );
+    if (tags === undefined) throw new Error("no Tags entry");
+    tags.click();
+    flushSync();
+    expect(arrangement.isPresent(TAGS)).toBe(false);
+    expect(menuEl()).not.toBeNull();
+    expect(ui.panels).toBe(true);
+    expect(tags.getAttribute("aria-checked")).toBe("false");
+    expect(menuEl()?.contains(document.activeElement)).toBe(true);
+    tags.click();
+    flushSync();
+    expect(arrangement.isPresent(TAGS)).toBe(true);
+    expect(tags.getAttribute("aria-checked")).toBe("true");
   });
 
   it("pressed again, it closes the menu", () => {

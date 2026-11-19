@@ -11,7 +11,7 @@ import { t, type MessageKey } from "../../core/i18n";
 import { definePlugin } from "../../core/plugins/registry.svelte";
 import { ui } from "../../core/shell/ui.svelte";
 import { reviewBlocks } from "./blocks";
-import { closesReview } from "./keys";
+import { QUESTION, closesReview } from "./keys";
 import { listen, startMarks } from "./marks";
 import { reviewSections } from "./sections.svelte";
 import { review } from "./store.svelte";
@@ -33,24 +33,36 @@ export default definePlugin({
       when: () => boolean,
       run: () => void,
       keys?: string,
+      labelNow?: () => MessageKey,
     ): (() => void)[] => [
-      cx.contribute({ kind: "command", id, label, requires: NO_REQUIREMENT, when, run }),
+      cx.contribute({
+        kind: "command",
+        id,
+        label,
+        requires: NO_REQUIREMENT,
+        when,
+        run,
+        ...(labelNow === undefined ? {} : { labelNow }),
+      }),
       ...(keys === undefined
         ? []
         : [cx.contribute({ kind: "shortcut", keys, command: id, requires: NO_REQUIREMENT })]),
     ];
     const onEscape = (event: KeyboardEvent): void => {
+      // the bar's question is the innermost thing then: Esc answers it (its own Esc handles a keyboard on it)
+      const question = review.confirming ? document.querySelector(QUESTION) : null;
       const env = {
         reviewing: reviewing(),
         editing: editing.mode !== "view" && editing.path === documents.path,
         modal: ui.modal,
         zoomed: documents.zoomed !== null,
         finding: ui.finding,
-        overlay: event.key === "Escape" && overlayShown(),
+        overlay: event.key === "Escape" && overlayShown(document, question),
       };
       if (!closesReview(event, env)) return;
       event.preventDefault();
-      void review.done();
+      if (review.confirming) review.cancelBringBack();
+      else void review.done();
     };
     window.addEventListener("keydown", onEscape);
     const removals = [
@@ -140,6 +152,8 @@ export default definePlugin({
         withChanges,
         () => void review.revertAll(),
         "Shift+r",
+        // the words of the bar's button: against a version, reverting every change brings that version back
+        () => (review.picked === null ? "review.revertAll" : "review.bringBack"),
       ),
       ...command("review.undo", "review.undo", reviewing, () => void review.undo()),
       // draws nothing in the bar: the list of earlier versions over the window while it is open

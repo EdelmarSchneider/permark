@@ -905,13 +905,17 @@ describe("the earlier versions of a document", () => {
     expect(first.rows).toHaveLength(50);
     expect(first.next).not.toBeNull();
     expect(first.cut).toBe(true);
+    expect(first.note).toBeNull();
     await store.moreVersions();
     const second = listOf(store);
     expect(second.rows).toHaveLength(100);
     expect(second.rows.slice(0, 50)).toEqual(first.rows);
+    // said in the list's status line: a screen reader hears that the rows grew, and by how many
+    expect(second.note).toBe("50 more versions");
     await store.moreVersions();
     const all = listOf(store);
     expect(all.rows).toHaveLength(120);
+    expect(all.note).toBe("20 more versions");
     expect(all.next).toBeNull();
     expect(new Set(all.rows.map((row) => row.commit)).size).toBe(120);
     const times = all.rows.map((row) => row.atMs);

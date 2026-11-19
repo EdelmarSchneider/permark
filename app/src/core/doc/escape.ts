@@ -14,9 +14,11 @@ export function ownedByTarget(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest(OWNS_ESCAPE) !== null;
 }
 
-/** An overlay is shown somewhere in `root` (it takes Escape first, even without the keyboard). */
-export function overlayShown(root: ParentNode = document): boolean {
+/** An overlay is shown somewhere in `root` (it takes Escape first, even without the keyboard); `except`: one the
+ *  caller closes itself, so it is not counted. */
+export function overlayShown(root: ParentNode = document, except: Element | null = null): boolean {
   for (const el of root.querySelectorAll(OPEN_OVERLAY)) {
+    if (el === except) continue;
     if (el instanceof HTMLDialogElement && !el.open) continue;
     if (el.closest("[hidden]") === null) return true;
   }

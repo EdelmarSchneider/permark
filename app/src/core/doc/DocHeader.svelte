@@ -150,8 +150,8 @@
     popup = below(event.currentTarget, entries);
   }
 
-  /** The row's actions that did not fit, first in the "…" menu. */
-  function foldedEntries(button: Element): MenuEntry[] {
+  /** The row's actions that did not fit, first in the "…" menu (`opened`: the document it opens on). */
+  function foldedEntries(button: Element, opened: string): MenuEntry[] {
     if (!folded) return [];
     const entries: MenuEntry[] = [];
     if (compact && role) entries.push({ kind: "heading", label: roleLabel(role) });
@@ -167,7 +167,7 @@
       });
     }
     entries.push(
-      { kind: "item", label: t("header.reveal"), run: () => revealInTree(path) },
+      { kind: "item", label: t("header.reveal"), run: () => revealInTree(opened) },
       {
         kind: "item",
         label: t("header.copyReference"),
@@ -184,11 +184,8 @@
     return entries;
   }
 
-  /** The entries plugins add to the "…" menu for this document, by id (plugins load in no set order). */
-  function pluginEntries(): MenuEntry[] {
-    // the document the menu opens on: an entry picked after the window went to another one still runs for this one,
-    // never for a document its menu was not opened for
-    const opened = path;
+  /** The entries plugins add to the "…" menu for the document `opened`, by id (plugins load in no set order). */
+  function pluginEntries(opened: string): MenuEntry[] {
     return contributions
       .visible("docMenu", conditions.current)
       .filter((entry) => entry.applies?.(opened) ?? true)
@@ -202,10 +199,13 @@
 
   function moreMenu(event: MouseEvent): void {
     if (!(event.currentTarget instanceof Element)) return;
+    // the document the menu opens on: an entry picked after the window went to another one still acts on this one,
+    // never on a document its menu was not opened for
+    const opened = path;
     const entries: MenuEntry[] = [
-      ...foldedEntries(event.currentTarget),
+      ...foldedEntries(event.currentTarget, opened),
       { kind: "item", label: t("cmd.copyDocument"), run: () => void documents.copyDocument() },
-      ...pluginEntries(),
+      ...pluginEntries(opened),
     ];
     if (webPictures.project) {
       const on = webPictures.always;
@@ -222,12 +222,12 @@
         {
           kind: "item",
           label: t("menu.openDefaultApp"),
-          run: () => void documents.openExternal(path, "defaultApp"),
+          run: () => void documents.openExternal(opened, "defaultApp"),
         },
         {
           kind: "item",
           label: t("menu.showInFileManager"),
-          run: () => void documents.openExternal(path, "reveal"),
+          run: () => void documents.openExternal(opened, "reveal"),
         },
       );
     }

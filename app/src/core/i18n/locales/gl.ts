@@ -1095,6 +1095,8 @@ export default {
   "review.versions.list": "Versións",
   "review.versions.loading": "Lendo o historial…",
   "review.versions.more": "Amosar máis",
+  "review.versions.added.one": "{n} versión máis",
+  "review.versions.added.other": "{n} versións máis",
   "review.versions.same": "O mesmo texto que agora",
   "review.versions.authors": "{author} con {others}",
   "review.versions.compare": "Comparar",

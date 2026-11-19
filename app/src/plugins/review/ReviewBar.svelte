@@ -160,10 +160,12 @@
       <span class="why" role="status">{review.basisNote}</span>
     {/if}
     {#if review.confirming}
-      <!-- not a window of its own: the page stays in reach, Tab leaves it; Esc on it is Cancel -->
+      <!-- not a window of its own: the page stays in reach, Tab leaves it; Esc on it (or anywhere nothing nearer
+           takes it) is Cancel -->
       <div
         class="confirm"
         role="alertdialog"
+        data-bring-back
         aria-label={t("review.bringBack")}
         aria-describedby={warningId}
         use:dialogFocus={{

@@ -322,25 +322,70 @@ export function joinAsTab(
   return normalize(next.filter((g) => g.views.length > 0));
 }
 
-/** Show before | after can act: `id` shares its group, and there is room for one more group. */
-export function canSplit(groups: readonly ViewGroup[], id: string): boolean {
-  const group = groups[groupOf(groups, id)];
-  return group !== undefined && group.views.length > 1 && groups.length < MAX_GROUPS;
+/** Whether a view is present (open, with something to show): a group with none is not drawn. */
+export type Present = (id: string) => boolean;
+
+/** Every view counts as present: each arranged group is drawn. */
+const EVERY_VIEW: Present = () => true;
+
+/** The place of a group that is not drawn (none of its views present), other than the group of `id` (-1: none). */
+function closedGroup(groups: readonly ViewGroup[], present: Present, id?: string): number {
+  return groups.findIndex(
+    (g) => (id === undefined || !g.views.includes(id)) && !g.views.some((v) => present(v)),
+  );
 }
 
-/** `id` leaves its tab group for a new group right before | after it; each gets half of the old share. */
+/**
+ * One group fewer: the group at `at` joins the group before it (the first one: the group after) as tabs. Meant for a
+ * group that is not drawn: its share goes and the others fill the region again, so what is on screen keeps its
+ * proportions, and its views find a place again when they open.
+ */
+function foldGroup(groups: readonly ViewGroup[], at: number): readonly ViewGroup[] {
+  const gone = groups[at];
+  const into = at > 0 ? at - 1 : 1;
+  if (gone === undefined || groups[into] === undefined) return groups;
+  return normalize(
+    groups.flatMap((g, i) =>
+      i === at ? [] : i === into ? [{ views: [...g.views, ...gone.views], share: g.share }] : [g],
+    ),
+  );
+}
+
+/** Show before | after can act: `id` shares its group, and there is room for one more group (a group that is not
+ *  drawn makes room: it joins its neighbor). */
+export function canSplit(
+  groups: readonly ViewGroup[],
+  id: string,
+  present: Present = EVERY_VIEW,
+): boolean {
+  const group = groups[groupOf(groups, id)];
+  return (
+    group !== undefined &&
+    group.views.length > 1 &&
+    (groups.length < MAX_GROUPS || closedGroup(groups, present, id) >= 0)
+  );
+}
+
+/**
+ * `id` leaves its tab group for a new group right before | after it; each gets half of the old share. In a full
+ * region a group that is not drawn first joins its neighbor (`foldGroup`): never more than `MAX_GROUPS`.
+ */
 export function splitOut(
   groups: readonly ViewGroup[],
   id: string,
   where: "before" | "after",
+  present: Present = EVERY_VIEW,
 ): readonly ViewGroup[] {
-  const at = groupOf(groups, id);
-  const group = groups[at];
-  if (group === undefined || !canSplit(groups, id)) return groups;
+  if (!canSplit(groups, id, present)) return groups;
+  const roomy =
+    groups.length < MAX_GROUPS ? groups : foldGroup(groups, closedGroup(groups, present, id));
+  const at = groupOf(roomy, id);
+  const group = roomy[at];
+  if (group === undefined) return groups;
   const half = group.share / 2;
   const alone = { views: [id], share: half };
   const rest = { views: group.views.filter((v) => v !== id), share: half };
-  const next = [...groups];
+  const next = [...roomy];
   next.splice(at, 1, ...(where === "before" ? [alone, rest] : [rest, alone]));
   return next;
 }
@@ -419,23 +464,52 @@ export function intoGroup(
   );
 }
 
-/**
- * One more group fits in `region`. For the view `id` (the one that would become that group): also in a full region
- * where it sits alone in a group, which goes with it (its group changes place, no group is added).
- */
-export function canAddGroup(arr: Arrangement, region: Region, id?: string): boolean {
-  const groups = arr[region];
-  if (groups.length < MAX_GROUPS) return true;
+/** `id` sits alone in a group of `groups`: that group goes with it when it moves. */
+function aloneIn(groups: readonly ViewGroup[], id: string | undefined): boolean {
   return id !== undefined && groups[groupOf(groups, id)]?.views.length === 1;
 }
 
 /**
- * `id` becomes a group of its own at the place `at` of `region` (a place of `arr`, before the move): it takes half of
- * the share of the larger group beside it (an empty region: the whole). No room for a group (`canAddGroup`) | a group
- * already at that place: nothing changes.
+ * One more group fits in `region`. For the view `id` (the one that would become that group): also in a full region
+ * where it sits alone in a group, which goes with it (its group changes place, no group is added). A full region
+ * with a group that is not drawn (no view of it `present`) has room too: that group joins its neighbor.
  */
-export function asGroup(arr: Arrangement, id: string, region: Region, at: number): Arrangement {
-  if (!canAddGroup(arr, region, id)) return arr;
+export function canAddGroup(
+  arr: Arrangement,
+  region: Region,
+  id?: string,
+  present: Present = EVERY_VIEW,
+): boolean {
+  const groups = arr[region];
+  if (groups.length < MAX_GROUPS || aloneIn(groups, id)) return true;
+  return closedGroup(groups, present, id) >= 0;
+}
+
+/**
+ * `id` becomes a group of its own at the place `at` of `region` (a place of `arr`, before the move): it takes half of
+ * the share of the larger group beside it (an empty region: the whole). In a full region a group that is not drawn
+ * joins its neighbor first (`foldGroup`). No room for a group (`canAddGroup`) | a group already at that place:
+ * nothing changes.
+ */
+export function asGroup(
+  arr: Arrangement,
+  id: string,
+  region: Region,
+  at: number,
+  present: Present = EVERY_VIEW,
+): Arrangement {
+  if (!canAddGroup(arr, region, id, present)) return arr;
+  const groups = arr[region];
+  const closed =
+    groups.length < MAX_GROUPS || aloneIn(groups, id) ? -1 : closedGroup(groups, present, id);
+  if (closed < 0) return addGroup(arr, id, region, at);
+  // the places after the folded group moved one up
+  const folded = withRegion(arr, region, foldGroup(groups, closed));
+  return addGroup(folded, id, region, at > closed ? at - 1 : at);
+}
+
+/** `asGroup` in a region with room for the group. */
+function addGroup(arr: Arrangement, id: string, region: Region, at: number): Arrangement {
   const { rest, from, gone } = lift(arr, id);
   const own = from === region ? gone : -1;
   if (own >= 0 && (at === own || at === own + 1)) return arr;

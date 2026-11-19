@@ -24,8 +24,8 @@ windows-sys = { workspace = true, features = ["Win32_System_SystemInformation"] 
 windows = { workspace = true, features = ["Win32_Graphics_Dxgi"] }
 
 [features]
-# `pieces::testkit` (scripted model source + run event collector) for the tests of plugins that run a job on the piece
-# runner. Enable from `[dev-dependencies]` only: an app build never carries it.
+# `pieces::testkit` (scripted model source + run event collector) + `engine::FakeEngine` for the tests of plugins that
+# run a job on the piece runner. Enable from `[dev-dependencies]` only: an app build never carries it.
 testkit = []
 
 [dev-dependencies]

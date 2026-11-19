@@ -8,7 +8,15 @@ import type { Segment } from "../../../api/generated/Segment";
 import type { TextEdit } from "../session.svelte";
 import { buildDoc, compose, type Built, type Composed } from "./compose";
 import { createCore, type Core } from "./core";
-import { applyEdits, blockOf, changeable, docRange, scopeIn, selectRange } from "./edits";
+import {
+  applyEdits,
+  blockAtLine,
+  blockOf,
+  changeable,
+  docRange,
+  scopeIn,
+  selectRange,
+} from "./edits";
 import { markAt, marksPlugin, setMarks } from "./marks";
 
 let core: Core;
@@ -617,5 +625,32 @@ describe("a piece after the same text written as prose", () => {
     // the first one is escaped prose, the second one inside the piece's own source
     expect(docText(docRange(doc, now(), wordAt(text, word, 0)))).toBe(word);
     expect(docRange(doc, now(), wordAt(text, word, 1))).toBeNull();
+  });
+});
+
+describe("the caret at a line (an editor opened scrolled down, a place asked)", () => {
+  it("starts at the first text of the block holding the line", async () => {
+    const text = "# One\n\nFirst para.\n\n- item a\n- item b\n\nLast para.\n";
+    await load(text);
+    const composed = compose(core, built, built.doc);
+    const cases: [number, string][] = [
+      [0, "One"],
+      [1, "One"],
+      [3, "First para."],
+      // a line between blocks: the block above it
+      [4, "First para."],
+      [5, "item a"],
+      // a line inside a block: that block, from its start
+      [6, "item a"],
+      [8, "Last para."],
+      [99, "Last para."],
+    ];
+    for (const [line, block] of cases) {
+      core.setDoc(built.doc, blockAtLine(built.doc, composed, line));
+      const selection = core.view.state.selection;
+      expect(selection.empty, `line ${line}`).toBe(true);
+      expect(selection.$from.parent.textContent, `line ${line}`).toBe(block);
+      expect(selection.$from.parentOffset, `line ${line}`).toBe(0);
+    }
   });
 });

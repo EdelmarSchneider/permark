@@ -37,6 +37,17 @@ function isReloadKey(event: Pick<KeyEventLike, "key">): boolean {
   return event.key === "F5";
 }
 
+/** Chords the webview acts on by itself, as `comboFromEvent` writes them: Mod+R | Mod+Shift+R reload the page (the
+ * same loss as F5), Mod+P opens the print dialog over the whole window. None is ever text, also in a field. */
+const WEBVIEW_CHORDS: ReadonlySet<string> = new Set(["Mod+r", "Mod+Shift+r", "Mod+p"]);
+
+/** A key the webview would take for itself when no command runs on it (`isReloadKey` | `WEBVIEW_CHORDS`). */
+function isWebviewKey(event: KeyEventLike, mac: boolean): boolean {
+  if (isReloadKey(event)) return true;
+  const combo = comboFromEvent(event, mac);
+  return combo !== null && WEBVIEW_CHORDS.has(combo);
+}
+
 /** The select-all chord, as `comboFromEvent` writes it. */
 const SELECT_ALL = "Mod+a";
 
@@ -170,9 +181,9 @@ export function isTextTarget(target: EventTarget | null): boolean {
  * folder again once per repeat would queue one walk of the disk after another. */
 const ONCE_PER_PRESS: ReadonlySet<string> = new Set(["explorer.refresh"]);
 
-/** Listens on `target` until the returned function is called. A reload key no command takes is taken all the same,
- * and so is a select-all outside text (a dialog | a box | a question owns the input, the window has no document
- * command): neither is ever left to the webview. */
+/** Listens on `target` until the returned function is called. A reload | print key no command takes is taken all the
+ * same, and so is a select-all outside text (a dialog | a box | a question owns the input, the window has no document
+ * command, quick open cannot run): none is ever left to the webview. */
 export function installKeys(
   target: Pick<Window, "addEventListener" | "removeEventListener">,
   env: (event: KeyboardEvent) => KeyEnv,
@@ -182,7 +193,7 @@ export function installKeys(
     const now = env(event);
     const decision = resolveKey(event, now);
     if (decision.kind !== "run") {
-      if (isReloadKey(event) || isStraySelectAll(event, now.mac)) event.preventDefault();
+      if (isWebviewKey(event, now.mac) || isStraySelectAll(event, now.mac)) event.preventDefault();
       return;
     }
     event.preventDefault();

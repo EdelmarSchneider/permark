@@ -1104,6 +1104,8 @@ export default {
   "review.versions.list": "Versions",
   "review.versions.loading": "S'està llegint l'historial…",
   "review.versions.more": "Mostra'n més",
+  "review.versions.added.one": "{n} versió més",
+  "review.versions.added.other": "{n} versions més",
   "review.versions.same": "El mateix text que ara",
   "review.versions.authors": "{author} amb {others}",
   "review.versions.compare": "Compara",

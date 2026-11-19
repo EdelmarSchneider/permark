@@ -552,7 +552,10 @@ export const inlineSourceView = $view(inlineSourceNode, (ctx): NodeViewConstruct
         // the editor's undo, not the field's own: the field shows the document's source at every step
         (key === "y" || event.shiftKey ? redo : undo)(view.state, (tr) => view.dispatch(tr));
       } else if (out !== null) close(open, out);
-      else return;
+      else if (event.key === "Tab" && !mod && !event.altKey) {
+        // the browser's next focus stop would be a link drawn somewhere else in the page
+        close(open, event.shiftKey ? "before" : "after");
+      } else return;
       event.preventDefault();
       event.stopPropagation();
     };

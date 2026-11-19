@@ -147,7 +147,9 @@
         : undefined}
     {#snippet body()}
       {#if id === FILES}
-        <ExplorerSidebar {store} document={shown?.document ?? null} />
+        {#if project}
+          <ExplorerSidebar {store} workspace={project.id} document={shown?.document ?? null} />
+        {/if}
       {:else if id === SEARCH}
         {#if project}<SearchPanel root={project.root} />{/if}
       {:else if id === OUTLINE}

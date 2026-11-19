@@ -1841,6 +1841,46 @@ fn groups_and_defaults_are_the_persons_choice_in_the_profile() {
 }
 
 #[test]
+fn choices_changed_at_the_same_time_all_reach_the_file() {
+    // each change reads the file and writes it back: two at once must not let the later write put back what the
+    // earlier one changed (a switch just turned off coming back on)
+    let fx = fx();
+    let core = Arc::clone(fx.core());
+    let call = |method: &str, args: Value| {
+        core.rpc().call(
+            "agent",
+            method,
+            &RpcCall {
+                window: "w".to_owned(),
+                args,
+            },
+        )
+    };
+    for round in 0..10 {
+        let on = round % 2 == 0;
+        fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+        std::thread::scope(|s| {
+            s.spawn(|| call("setEnabled", json!({ "enabled": false })).unwrap());
+            for group in Group::ALL {
+                s.spawn(move || {
+                    call("setGroup", json!({ "group": group.id(), "on": on })).unwrap()
+                });
+            }
+        });
+        let choice = perms::load(&fx.core().store());
+        assert!(!choice.enabled, "round {round}: the switch came back on");
+        for group in Group::ALL {
+            assert_eq!(
+                choice.groups.get(group.id()),
+                Some(&on),
+                "round {round}: {}",
+                group.id()
+            );
+        }
+    }
+}
+
+#[test]
 fn the_context_file_exists_only_while_the_context_group_is_on() {
     let fx = fx();
     let file = fx.root.join(".permark/local").join(crate::CONTEXT_FILE);

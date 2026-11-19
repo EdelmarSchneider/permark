@@ -37,6 +37,7 @@ function entry(over: Partial<NoteEntry> & { path: string }): NoteEntry {
     folder: null,
     state: null,
     pending: false,
+    hash: null,
     ...over,
   };
 }

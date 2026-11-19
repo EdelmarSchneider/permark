@@ -1969,6 +1969,51 @@ fn a_filter_command_from_the_repository_config_never_runs() {
     assert!(status.files.iter().all(|f| f.path != ".gitattributes"));
 }
 
+/// What `git clone --no-checkout --filter=blob:none <url>` of `source` leaves at `copy`: the commits and folders of
+/// HEAD's history in a promisor pack, no file content, HEAD's branch, and the source as the remote that promises the
+/// rest.
+fn partial_copy(source: &Repository, copy: &Path, url: &str) {
+    let made = Repository::init(copy).unwrap();
+    let mut pack = source.packbuilder().unwrap();
+    let mut walk = source.revwalk().unwrap();
+    walk.push_head().unwrap();
+    for id in walk {
+        let commit = source.find_commit(id.unwrap()).unwrap();
+        pack.insert_object(commit.id(), None).unwrap();
+        pack.insert_object(commit.tree_id(), None).unwrap();
+        let tree = commit.tree().unwrap();
+        tree.walk(git2::TreeWalkMode::PreOrder, |_, entry| {
+            if entry.kind() == Some(git2::ObjectType::Tree) {
+                pack.insert_object(entry.id(), None).unwrap();
+            }
+            git2::TreeWalkResult::Ok
+        })
+        .unwrap();
+    }
+    let packs = made.path().join("objects").join("pack");
+    pack.write(&packs, 0).unwrap();
+    let name = pack.name().unwrap().unwrap();
+    std::fs::write(packs.join(format!("pack-{name}.promisor")), "").unwrap();
+    let mut config = made.config().unwrap();
+    for (key, value) in [
+        ("core.repositoryformatversion", "1"),
+        ("remote.origin.url", url),
+        ("remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"),
+        ("remote.origin.promisor", "true"),
+        ("remote.origin.partialclonefilter", "blob:none"),
+    ] {
+        config.set_str(key, value).unwrap();
+    }
+    let head = source.head().unwrap();
+    let (branch, tip) = (head.name().unwrap(), head.target().unwrap());
+    let made = Repository::open(copy).unwrap();
+    made.reference(branch, tip, true, "clone").unwrap();
+    let short = branch.trim_start_matches("refs/heads/");
+    made.reference(&format!("refs/remotes/origin/{short}"), tip, true, "clone")
+        .unwrap();
+    made.set_head(branch).unwrap();
+}
+
 /// A partial copy of a repository names a place to fetch from, and a fetch may run a program the repository's config
 /// names: an object that is not on this computer is a miss, and stays one.
 #[test]
@@ -2027,6 +2072,20 @@ fn a_file_that_was_not_downloaded_is_a_miss_and_nothing_is_fetched() {
         "no partial copy: {}",
         String::from_utf8_lossy(&made.stderr)
     );
+    let holds = |copy: &Path| {
+        let copied = Repository::open(copy).unwrap();
+        let objects = copied.odb().unwrap();
+        texts.iter().any(|text| objects.exists(*text))
+    };
+    // some builds of git copy every object from a file URL whatever the filter (seen on the macOS build machines):
+    // the partial copy is then made by hand
+    let copy = if holds(&copy) {
+        let by_hand = fx.root.with_file_name("partial by hand ü");
+        partial_copy(&fx.repo, &by_hand, &url);
+        by_hand
+    } else {
+        copy
+    };
     // the copy's own config allows the transport: a default policy alone would not stop the fetch
     Repository::open(&copy)
         .unwrap()
@@ -2034,18 +2093,7 @@ fn a_file_that_was_not_downloaded_is_a_miss_and_nothing_is_fetched() {
         .unwrap()
         .set_str("protocol.file.allow", "always")
         .unwrap();
-    let downloaded = || {
-        let copied = Repository::open(&copy).unwrap();
-        let objects = copied.odb().unwrap();
-        texts.iter().any(|text| objects.exists(*text))
-    };
-    if cfg!(target_os = "macos") && downloaded() {
-        // the git of the macOS build machines makes a full copy from a file URL: nothing is missing, so there is
-        // nothing a fetch could bring. The switches under test are the same code on every system, and Windows
-        // and Linux run the case.
-        eprintln!("SKIPPED: this git made a full copy, no object is missing");
-        return;
-    }
+    let downloaded = || holds(&copy);
     assert!(!downloaded(), "the copy came with the files");
     each(|name, ops| {
         let loc = location(ops, &copy);

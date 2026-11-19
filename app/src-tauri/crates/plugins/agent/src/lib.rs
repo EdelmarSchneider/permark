@@ -54,7 +54,7 @@ use serde::Deserialize;
 
 use crate::context::WindowContext;
 use crate::live::Live;
-use crate::perms::{Group, ProjectChoice};
+use crate::perms::Group;
 use crate::server::{Hub, Switch};
 use crate::tools::Tools;
 
@@ -254,21 +254,20 @@ fn sync_context_file(hub: &Hub, write: bool) {
 /// folder created again at the path later is not connected); off forgets the folder.
 fn set_enabled(hub: &Hub, enabled: bool) -> Result<(), IpcError> {
     let store = hub.tools.store();
-    let mut choice = perms::load(store);
-    if enabled && !choice.enabled && choice.groups.is_empty() {
-        choice.groups = perms::clean(&perms::defaults(store));
-    }
-    choice.enabled = enabled;
-    choice.folder = if enabled {
+    let folder = if enabled {
         FolderIdentity::of(hub.tools.vault_root().path())
     } else {
         None
     };
-    saved(
-        store
-            .profile_file::<ProjectChoice>(perms::PROJECT_FILE)
-            .save(&choice),
-    )
+    perms::change(store, |choice| {
+        if enabled && !choice.enabled && choice.groups.is_empty() {
+            choice.groups = perms::clean(&perms::defaults(store));
+        }
+        choice.enabled = enabled;
+        choice.folder = folder;
+        true
+    })
+    .map_err(IpcError::from)
 }
 
 impl Plugin for AgentPlugin {
@@ -319,14 +318,10 @@ impl Plugin for AgentPlugin {
             "setGroup",
             typed(move |args: GroupArgs, _| {
                 let group = Group::parse(&args.group).ok_or_else(|| invalid("group"))?;
-                let store = h.tools.store();
-                let mut choice = perms::load(store);
-                choice.groups.insert(group.id().to_owned(), args.on);
-                saved(
-                    store
-                        .profile_file::<ProjectChoice>(perms::PROJECT_FILE)
-                        .save(&choice),
-                )?;
+                perms::change(h.tools.store(), |choice| {
+                    choice.groups.insert(group.id().to_owned(), args.on);
+                    true
+                })?;
                 h.changed();
                 sync_context_file(&h, true);
                 Ok(h.status())

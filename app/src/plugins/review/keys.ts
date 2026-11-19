@@ -3,6 +3,10 @@
 
 import { ownedByTarget } from "../../core/doc/escape";
 
+/** The review bar's "Bring back this version?" question while it is up: Esc wherever the keyboard is answers it
+ *  (Cancel), as it closes the review when no question is up. */
+export const QUESTION = "[data-bring-back]";
+
 export type EscapeEvent = {
   key: string;
   isComposing: boolean;

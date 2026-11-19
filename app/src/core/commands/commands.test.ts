@@ -109,4 +109,19 @@ describe("matching commands", () => {
     // words still match labels; keys that nothing has: nothing
     expect(ids("ctrl+alt+shift+z")).toEqual([]);
   });
+
+  it("a label that follows a state is matched by the words it has now", () => {
+    let picked = false;
+    const shifting = command("review.revertAll", "review.revertAll", {
+      labelNow: () => (picked ? "review.bringBack" : "review.revertAll"),
+    });
+    const list = listCommands([shifting], neutralContext(), KEYMAP, { palette: true });
+    const ids = (q: string): string[] =>
+      matchCommands(list, q, label).map((m) => m.entry.command.id);
+    expect(ids("revert")).toEqual(["review.revertAll"]);
+    expect(ids("bring back")).toEqual([]);
+    picked = true;
+    expect(ids("bring back")).toEqual(["review.revertAll"]);
+    expect(ids("revert")).toEqual([]);
+  });
 });

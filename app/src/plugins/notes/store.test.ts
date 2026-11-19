@@ -91,6 +91,22 @@ describe("the list", () => {
     }
   });
 
+  it("is read again when a project's agent panel shares a note or stops sharing it, on screen or not", async () => {
+    const shown = new Box(false);
+    const { api, store } = await setup(undefined, () => shown.value);
+    const marks = (): string[] =>
+      store.entries.find((e) => e.path === FIRST)?.sharedWith.map((s) => s.label) ?? [];
+    expect(marks()).toEqual([]);
+    await api.pluginCall("agent.shareNote", { name: FIRST });
+    await settle();
+    expect(marks()).toEqual(["permark-docs"]);
+    shown.value = true;
+    await settle();
+    await api.pluginCall("agent.unshareNote", { name: FIRST });
+    await settle();
+    expect(marks()).toEqual([]);
+  });
+
   it("is read when the window attaches: pinned first, then the newest", async () => {
     const { store } = await setup();
     expect(store.list.status).toBe("ready");
@@ -463,6 +479,24 @@ describe("loose files", () => {
     await settle();
     expect(store.entries.some((e) => e.path === path)).toBe(false);
     expect(store.current).toBeNull();
+  });
+
+  it("keeps the typed text only over the version of the file its row shows", async () => {
+    const { store, api } = await setup();
+    await store.openFiles(["C:/Downloads/sent.md"]);
+    const path = store.current ?? "";
+    await api.pluginCall("notes.buffer", { path, baseHash: "h", text: "typed" });
+    // the file is not the one shown: its row's bar answers, not the editor
+    await store.select(FIRST);
+    await store.refresh();
+    const row = store.entries.find((e) => e.path === path);
+    if (row === undefined) throw new Error("no row");
+    const call = vi.spyOn(api, "pluginCall");
+    await store.keepMine(path);
+    const sent = call.mock.calls.find(([method]) => method === "notes.keepMine");
+    // the bytes the row was worked out from, not their size + time: other bytes can keep both
+    expect(row.hash).not.toBeNull();
+    expect(sent?.[1]).toEqual({ path, seen: row.hash });
   });
 
   it("makes a note of the typed text", async () => {

@@ -117,6 +117,19 @@ fn loose_file(dir: &Path, name: &str, text: &str) -> PathBuf {
     path
 }
 
+/// The version of a loose file its row shows: its content hash; `None` when the row says the file is gone (or keeps
+/// nothing typed).
+fn shown(f: &Fx, path: &str) -> Option<String> {
+    let row = f
+        .service
+        .list(1)
+        .entries
+        .into_iter()
+        .find(|e| e.path == path)
+        .unwrap();
+    row.hash
+}
+
 // ---- creating and listing ---------------------------------------------------------------------------------------------
 
 #[test]
@@ -952,11 +965,15 @@ fn loose_file_actions_reload_keep_save_as_note_locate_and_remove() {
     f.service
         .buffer(&path, "h", Some("my text\nline two\n"), 2)
         .unwrap();
-    f.service.keep_mine(&path).unwrap();
+    f.service
+        .keep_mine(&path, shown(&f, &path).as_deref())
+        .unwrap();
     assert_eq!(std::fs::read(&file).unwrap(), b"my text\r\nline two\r\n");
     assert_eq!(f.service.list(1).entries[0].state, Some(LooseState::Clean));
     assert!(
-        f.service.keep_mine(&path).is_err(),
+        f.service
+            .keep_mine(&path, shown(&f, &path).as_deref())
+            .is_err(),
         "nothing typed is kept now"
     );
     // Reload: the typed text is let go
@@ -1003,8 +1020,80 @@ fn keep_mine_makes_a_file_that_is_gone_again() {
     let path = f.service.open_file(&file.display().to_string(), 1).unwrap();
     f.service.buffer(&path, "h", Some("typed"), 2).unwrap();
     std::fs::remove_file(&file).unwrap();
-    f.service.keep_mine(&path).unwrap();
+    f.service
+        .keep_mine(&path, shown(&f, &path).as_deref())
+        .unwrap();
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "typed");
+}
+
+#[test]
+fn keep_mine_writes_only_over_the_version_the_row_showed() {
+    let f = fx();
+    let dir = f.tmp.path().join("d");
+    let file = loose_file(&dir, "x.md", "disk text\n");
+    let path = f.service.open_file(&file.display().to_string(), 1).unwrap();
+    f.service.buffer(&path, "h", Some("typed"), 2).unwrap();
+    let seen = shown(&f, &path);
+    // another program writes the file after the row was shown, before the person answers
+    write(&file, "their newer text, longer\n");
+    let refused = f.service.keep_mine(&path, seen.as_deref()).unwrap_err();
+    assert_eq!(refused.kind, ErrorKind::Conflict);
+    assert_eq!(refused.subject.as_deref(), Some("x.md"));
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        b"their newer text, longer\n",
+        "untouched"
+    );
+    // what was typed is still kept; the version the row shows now can be replaced
+    assert!(f
+        .service
+        .list(1)
+        .entries
+        .iter()
+        .any(|e| e.path == path && e.pending));
+    f.service
+        .keep_mine(&path, shown(&f, &path).as_deref())
+        .unwrap();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "typed");
+}
+
+#[test]
+fn keep_mine_refuses_new_bytes_that_kept_the_size_and_time_the_row_showed() {
+    let f = fx();
+    let dir = f.tmp.path().join("d");
+    let file = loose_file(&dir, "x.md", "disk text\n");
+    let path = f.service.open_file(&file.display().to_string(), 1).unwrap();
+    f.service.buffer(&path, "h", Some("typed"), 2).unwrap();
+    let seen = shown(&f, &path);
+    let before = std::fs::metadata(&file).unwrap().modified().unwrap();
+    // a backup restore | `rsync -t`: other bytes of the same length, the modification time put back
+    write(&file, "sync text\n");
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&file)
+        .unwrap()
+        .set_modified(before)
+        .unwrap();
+    let refused = f.service.keep_mine(&path, seen.as_deref()).unwrap_err();
+    assert_eq!(refused.kind, ErrorKind::Conflict);
+    assert_eq!(std::fs::read(&file).unwrap(), b"sync text\n", "untouched");
+}
+
+#[test]
+fn keep_mine_makes_a_gone_file_again_only_while_it_is_still_gone() {
+    let f = fx();
+    let dir = f.tmp.path().join("d");
+    let file = loose_file(&dir, "x.md", "text");
+    let path = f.service.open_file(&file.display().to_string(), 1).unwrap();
+    f.service.buffer(&path, "h", Some("typed"), 2).unwrap();
+    std::fs::remove_file(&file).unwrap();
+    let seen = shown(&f, &path);
+    assert_eq!(seen, None);
+    // the file is back before the person answers: it is not written over
+    write(&file, "back again");
+    let refused = f.service.keep_mine(&path, seen.as_deref()).unwrap_err();
+    assert_eq!(refused.kind, ErrorKind::Conflict);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "back again");
 }
 
 #[test]
@@ -1519,6 +1608,22 @@ mod plugin {
         fn emit(&self, _event: CoreEvent) {}
     }
 
+    /// The names of the plugin events it heard.
+    #[derive(Default)]
+    struct Heard(std::sync::Mutex<Vec<String>>);
+    impl EventSink for Heard {
+        fn emit(&self, event: CoreEvent) {
+            if let CoreEvent::Plugin { name, .. } = event {
+                self.0.lock().unwrap().push(name);
+            }
+        }
+    }
+    impl Heard {
+        fn take(&self) -> Vec<String> {
+            std::mem::take(&mut *self.0.lock().unwrap())
+        }
+    }
+
     fn call(
         table: &RpcTable,
         method: &str,
@@ -1535,6 +1640,7 @@ mod plugin {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)] // one run: methods, shares and what they tell, a setting, teardown
     fn the_plugin_serves_its_methods_while_it_runs_and_leaves_nothing_behind() {
         let tmp = tempfile::tempdir().unwrap();
         let notes = tmp.path().join("notes");
@@ -1550,13 +1656,14 @@ mod plugin {
             notes_folder: notes.display().to_string(),
             ..AppSettings::default()
         }));
+        let heard = Arc::new(Heard::default());
         let cx = PluginCx::new(
             PluginId::of("notes"),
             CxWorkspace::App,
             store.plugin_dir(&PluginId::of("notes")),
             None,
             Context::welcome(Distribution::Direct),
-            Arc::new(Quiet),
+            Arc::clone(&heard) as Arc<dyn EventSink>,
         )
         .with_store(store)
         .with_app(AppServices::new(
@@ -1594,8 +1701,15 @@ mod plugin {
             .unwrap();
         assert!(api.0.candidates().iter().any(|n| n.id == "a.md"));
         api.0.share(&key, "a.md").unwrap();
+        // the Notes tab hears it: its marks follow without waiting for its next read
+        assert_eq!(heard.take(), ["notes:shares"]);
         assert_eq!(api.0.list(&key).len(), 1);
         assert_eq!(api.0.read(&key, "a.md").unwrap(), "# Hello\nworld");
+        assert!(api.0.share(&key, "gone.md").is_err());
+        api.0.unshare(&key, "a.md");
+        assert_eq!(heard.take(), ["notes:shares"]);
+        api.0.share(&key, "a.md").unwrap();
+        heard.take();
         let list = call(&rpc, "list", json!({})).unwrap();
         let row = list["entries"]
             .as_array()

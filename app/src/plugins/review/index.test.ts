@@ -17,6 +17,7 @@ const { setLeaveGuard } = await import("../../core/editing/guard");
 const { ContributionRegistry, PluginHost, pluginLoaders } =
   await import("../../core/plugins/registry.svelte");
 const { review } = await import("./store.svelte");
+const { commandLabel } = await import("../../core/commands/commands");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 
@@ -87,6 +88,19 @@ describe("the command", () => {
   });
 });
 
+describe("Revert all in the palette", () => {
+  const revertAll = () => registry.of("command").find((c) => c.id === "review.revertAll");
+
+  it("reads as the bar's button does: Bring back this version while a version is picked", () => {
+    const entry = revertAll();
+    if (entry === undefined) throw new Error("no command");
+    expect(commandLabel(entry)).toBe("Revert all");
+    const version = { commit: "a".repeat(40), atMs: 0 };
+    vi.spyOn(review, "picked", "get").mockReturnValue(version);
+    expect(commandLabel(entry)).toBe("Bring back this version");
+  });
+});
+
 describe("the entry of the document's menu", () => {
   it("opens the list of the document shown", async () => {
     await show("README.md");
@@ -106,7 +120,7 @@ describe("the entry of the Explorer menu", () => {
 
   it("on the document shown: its list opens at once", async () => {
     await show(GUIDE);
-    const go = vi.spyOn(documents, "navigate");
+    const go = vi.spyOn(documents, "navigateTo");
     treeEntry()?.run([GUIDE]);
     await settle();
     expect(opened).toEqual([GUIDE]);
@@ -148,8 +162,8 @@ describe("the entry of the Explorer menu", () => {
 
   it("the window went to another file meanwhile: the list asked for is not wanted any more", async () => {
     await show("README.md");
-    // the move to the file never comes (the backend refused it)
-    vi.spyOn(documents, "navigate").mockImplementation(() => undefined);
+    // the move to the file was taken but never comes
+    vi.spyOn(documents, "navigateTo").mockResolvedValue(true);
     treeEntry()?.run([GUIDE]);
     await settle();
     await show("src/main.rs");
@@ -158,9 +172,21 @@ describe("the entry of the Explorer menu", () => {
     expect(opened).toEqual([]);
   });
 
+  it("the window could not go to the file: no list, not at a later visit of the file either", async () => {
+    await show("README.md");
+    // the backend refused the move (the file went meanwhile, say): the window stays where it is
+    vi.spyOn(documents, "navigateTo").mockResolvedValue(false);
+    treeEntry()?.run([GUIDE]);
+    await settle();
+    expect(documents.path).toBe("README.md");
+    await show(GUIDE);
+    await settle();
+    expect(opened).toEqual([]);
+  });
+
   it("switched off while a file is on its way: nothing opens, nothing is left", async () => {
     await show("README.md");
-    vi.spyOn(documents, "navigate").mockImplementation(() => undefined);
+    vi.spyOn(documents, "navigateTo").mockResolvedValue(true);
     treeEntry()?.run([GUIDE]);
     await settle();
     expect(host.disable("review")).toBe(0);

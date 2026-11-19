@@ -1,7 +1,9 @@
 <script lang="ts">
   // A small context menu at the pointer: arrows | Home | End move the focus over the items (a disabled item is reached
-  // and announced, it does nothing), Enter runs, Escape | click outside closes. Entries are data. Taller than the
-  // window: it scrolls inside it, so every entry stays in reach.
+  // and announced, it does nothing), Enter runs, Escape | click outside closes; an entry on | off on its own switches
+  // by a click | Space and the menu stays for the next one. Entries are data; a heading names the group of the
+  // entries under it. Taller than the window: it scrolls inside it, so every entry stays in reach; one that opens
+  // upward is never taller than the room above its control, which stays in sight.
   import Check from "@lucide/svelte/icons/check";
   import { untrack } from "svelte";
   import { t } from "../i18n";
@@ -22,11 +24,51 @@
     start?: number;
     /** Opens upward: `y` is where its bottom goes (a control at the bottom of the window). */
     above?: boolean;
+    /** Told where the menu's left edge went once placed (px from the window's left). */
+    placed?: (left: number) => void;
+    /** A press there is no press outside the menu (besides the menu and `anchor`). */
+    within?: (target: Element) => boolean;
   };
-  let { x, y, entries, close, label, anchor, back, start, above = false }: Props = $props();
+  let {
+    x,
+    y,
+    entries,
+    close,
+    label,
+    anchor,
+    back,
+    start,
+    above = false,
+    placed,
+    within,
+  }: Props = $props();
 
   let menu: HTMLElement | undefined = $state();
   let picked = $state(-1);
+  const uid = $props.id();
+
+  type Loose = Exclude<MenuEntry, { kind: "heading" }>;
+  /** What the menu draws, in order: an entry of its own, or a heading with the entries under it (up to the next
+   *  heading | separator), drawn as one group the heading names. `at`: the place in `entries`. */
+  type Part =
+    | { kind: "one"; entry: Loose; at: number }
+    | { kind: "group"; label: string; at: number; under: { entry: Loose; at: number }[] };
+  const parts = $derived.by((): Part[] => {
+    const out: Part[] = [];
+    let group: Extract<Part, { kind: "group" }> | null = null;
+    for (const [at, entry] of entries.entries()) {
+      if (entry.kind === "heading") {
+        group = { kind: "group", label: entry.label, at, under: [] };
+        out.push(group);
+      } else if (group !== null && entry.kind !== "separator") {
+        group.under.push({ entry, at });
+      } else {
+        group = null;
+        out.push({ kind: "one", entry, at });
+      }
+    }
+    return out;
+  });
 
   const items = $derived(entries.flatMap((e, at) => (e.kind === "item" ? [at] : [])));
   /** Some item has an icon: every item gets the icon column, so the labels line up. */
@@ -49,9 +91,14 @@
         : firstLive,
   );
 
-  function run(at: number, shift = false): void {
+  /** Runs the entry `at`. `stay`: an entry on | off on its own switches and the menu stays for the next one. */
+  function run(at: number, shift = false, stay = false): void {
     const entry = entries[at];
     if (entry?.kind === "item" && entry.disabled === true) return;
+    if (stay && entry?.kind === "item" && entry.checkbox === true) {
+      entry.run(shift);
+      return;
+    }
     close();
     if (entry?.kind === "item") entry.run(shift);
   }
@@ -76,7 +123,7 @@
       focusItem((e.key === "Home" ? items[0] : items[items.length - 1]) ?? active);
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      run(active, e.shiftKey);
+      run(active, e.shiftKey, e.key === " ");
     } else if (e.key === "ArrowRight") {
       const entry = entries[active];
       if (entry?.kind === "item" && entry.opens === true) {
@@ -96,10 +143,14 @@
   $effect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (menu) {
+      // upward from a control at the bottom: no taller than the room above it, so the control stays in sight
+      if (above) menu.style.maxHeight = `${Math.max(0, Math.min(window.innerHeight - 8, y - 4))}px`;
       const box = menu.getBoundingClientRect();
-      menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - box.width - 4))}px`;
+      const left = Math.max(4, Math.min(x, window.innerWidth - box.width - 4));
+      menu.style.left = `${left}px`;
       const top = above ? y - box.height : y;
       menu.style.top = `${Math.max(4, Math.min(top, window.innerHeight - box.height - 4))}px`;
+      untrack(() => placed?.(left));
       // the first item (or `start`) takes the focus; the menu itself only when it has no item
       const first = untrack(() => active);
       const item = menu.querySelector<HTMLElement>(`[data-at="${first}"]`);
@@ -109,6 +160,7 @@
     const onPointer = (e: PointerEvent): void => {
       if (!(e.target instanceof Node) || !menu || menu.contains(e.target)) return;
       if (anchor?.contains(e.target)) return;
+      if (e.target instanceof Element && within?.(e.target) === true) return;
       close();
     };
     window.addEventListener("pointerdown", onPointer, true);
@@ -118,6 +170,63 @@
     };
   });
 </script>
+
+{#snippet one(entry: Loose, at: number)}
+  {#if entry.kind === "separator"}
+    <div class="sep" role="separator"></div>
+  {:else if entry.kind === "note"}
+    <div class="note" role="presentation">{entry.label}</div>
+  {:else}
+    <button
+      type="button"
+      role={entry.checked === undefined
+        ? "menuitem"
+        : entry.checkbox === true
+          ? "menuitemcheckbox"
+          : "menuitemradio"}
+      data-at={at}
+      tabindex={active === at ? 0 : -1}
+      title={entry.why}
+      aria-checked={entry.checked}
+      aria-haspopup={entry.opens === true ? "menu" : undefined}
+      aria-disabled={entry.disabled === true ? "true" : undefined}
+      class={[
+        "item",
+        entry.danger && "danger",
+        entry.disabled && "is-disabled",
+        active === at && "is-active",
+      ]}
+      onpointerenter={() => focusItem(at)}
+      onclick={(e) => run(at, e.shiftKey, true)}
+    >
+      {#if iconic}
+        <span class="icon" aria-hidden="true">
+          {#if entry.icon}
+            {@const Icon = entry.icon}
+            <Icon size={15} strokeWidth={1.8} />
+          {/if}
+        </span>
+      {/if}
+      {#if entry.detail}
+        <span class="two" title={entry.detail}>
+          <span class="label">{entry.label}</span>
+          <span class="detail">{entry.detail}</span>
+        </span>
+      {:else if entry.checked !== undefined}
+        <span class="choice">
+          <span class="check" aria-hidden="true"
+            >{#if entry.checked}<Check size={14} />{/if}</span
+          >
+          <span>{entry.label}</span>
+        </span>
+      {:else}
+        <span class="text">{entry.label}</span>
+      {/if}
+      {#if entry.hint}<kbd>{entry.hint}</kbd>{/if}
+      {#if entry.opens}<span class="opens" aria-hidden="true">▸</span>{/if}
+    </button>
+  {/if}
+{/snippet}
 
 <div
   bind:this={menu}
@@ -129,62 +238,14 @@
   style:top="{y}px"
   {onkeydown}
 >
-  {#each entries as entry, at (at)}
-    {#if entry.kind === "separator"}
-      <div class="sep" role="separator"></div>
-    {:else if entry.kind === "heading"}
-      <div class="menu-label heading" role="presentation">{entry.label}</div>
-    {:else if entry.kind === "note"}
-      <div class="note" role="presentation">{entry.label}</div>
+  {#each parts as part (part.at)}
+    {#if part.kind === "group"}
+      <div role="group" aria-labelledby="{uid}-{part.at}">
+        <div class="menu-label heading" role="presentation" id="{uid}-{part.at}">{part.label}</div>
+        {#each part.under as { entry, at } (at)}{@render one(entry, at)}{/each}
+      </div>
     {:else}
-      <button
-        type="button"
-        role={entry.checked === undefined
-          ? "menuitem"
-          : entry.checkbox === true
-            ? "menuitemcheckbox"
-            : "menuitemradio"}
-        data-at={at}
-        tabindex={active === at ? 0 : -1}
-        title={entry.why}
-        aria-checked={entry.checked}
-        aria-haspopup={entry.opens === true ? "menu" : undefined}
-        aria-disabled={entry.disabled === true ? "true" : undefined}
-        class={[
-          "item",
-          entry.danger && "danger",
-          entry.disabled && "is-disabled",
-          active === at && "is-active",
-        ]}
-        onpointerenter={() => focusItem(at)}
-        onclick={(e) => run(at, e.shiftKey)}
-      >
-        {#if iconic}
-          <span class="icon" aria-hidden="true">
-            {#if entry.icon}
-              {@const Icon = entry.icon}
-              <Icon size={15} strokeWidth={1.8} />
-            {/if}
-          </span>
-        {/if}
-        {#if entry.detail}
-          <span class="two" title={entry.detail}>
-            <span class="label">{entry.label}</span>
-            <span class="detail">{entry.detail}</span>
-          </span>
-        {:else if entry.checked !== undefined}
-          <span class="choice">
-            <span class="check" aria-hidden="true"
-              >{#if entry.checked}<Check size={14} />{/if}</span
-            >
-            <span>{entry.label}</span>
-          </span>
-        {:else}
-          <span class="text">{entry.label}</span>
-        {/if}
-        {#if entry.hint}<kbd>{entry.hint}</kbd>{/if}
-        {#if entry.opens}<span class="opens" aria-hidden="true">▸</span>{/if}
-      </button>
+      {@render one(part.entry, part.at)}
     {/if}
   {/each}
 </div>

@@ -74,6 +74,7 @@
         text: () => made.text(),
         changes: (base) => changedRuns(base, made.text()),
         topLine: () => made.topLine(scroller.getBoundingClientRect().top),
+        showLine: (line) => made.scrollToLine(line),
         selection: () => made.selection(),
         focus: () => made.view.focus(),
         pictures: (files, point) => {

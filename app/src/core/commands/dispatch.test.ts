@@ -295,6 +295,55 @@ describe("the listener", () => {
     expect(after.defaultPrevented).toBe(false);
   });
 
+  it("never leaves the webview's reload and print chords to it: with no command to run the key is taken", () => {
+    document.body.innerHTML = '<p id="words">words</p><input id="field">';
+    const from = (
+      id: string,
+      init: Partial<KeyboardEventInit> & { key: string },
+    ): KeyboardEvent => {
+      const event = press(init);
+      document.getElementById(id)?.dispatchEvent(event);
+      return event;
+    };
+    const open = vi.fn();
+    const held = env([command("search.quickOpen", { run: open, requires: PROJECT })], {
+      "search.quickOpen": "Mod+p",
+    });
+    let now: KeyEnv = held;
+    const stop = installKeys(window, () => now);
+    const reload = { key: "r", code: "KeyR", ctrlKey: true };
+    const hardReload = { key: "R", code: "KeyR", ctrlKey: true, shiftKey: true };
+    const print = { key: "p", code: "KeyP", ctrlKey: true };
+    // quick open cannot run here (no project) | a dialog owns the input | nobody holds the keys
+    for (const state of [
+      { ...held, context: neutralContext() },
+      { ...held, dialog: true },
+      { ...held, overlay: "question" as const },
+      env([], {}),
+    ]) {
+      now = state;
+      for (const init of [reload, hardReload, print]) {
+        // also from a text field: these chords are never text
+        for (const id of ["words", "field"]) {
+          expect(from(id, init).defaultPrevented, `${init.key} ${id}`).toBe(true);
+        }
+      }
+    }
+    expect(open).not.toHaveBeenCalled();
+    // other chords nobody holds stay the webview's
+    now = env([], {});
+    expect(from("words", { key: "q", code: "KeyQ", ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(from("words", { key: "r", code: "KeyR", altKey: true }).defaultPrevented).toBe(false);
+    expect(from("field", { key: "r", code: "KeyR" }).defaultPrevented).toBe(false);
+    // macOS: Cmd, not Control
+    now = { ...env([], {}), mac: true };
+    expect(from("words", { ...reload, ctrlKey: false, metaKey: true }).defaultPrevented).toBe(true);
+    expect(from("words", { ...print, ctrlKey: false, metaKey: true }).defaultPrevented).toBe(true);
+    expect(from("words", print).defaultPrevented).toBe(false);
+    stop();
+    expect(from("words", reload).defaultPrevented).toBe(false);
+  });
+
   it("never leaves select-all to the webview where no text has the keyboard: the key is taken and nothing runs", () => {
     document.body.innerHTML =
       '<p id="words">words</p><button id="button">b</button><input type="checkbox" id="box">' +

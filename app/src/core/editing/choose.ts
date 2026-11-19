@@ -50,7 +50,9 @@ export function openRemembered(): void {
   // the editor is already on this document
   if (editing.path === shown) return;
   if (editBlockedReason() !== null) return;
-  void editing.enter(mode, shown, editKindOf(view), documents.savePolicy, undefined, !inTree());
+  // a place asked for the document (a code reference, a search hit): the editor starts there, not at the page's top
+  const at = documents.askedLine() ?? undefined;
+  void editing.enter(mode, shown, editKindOf(view), documents.savePolicy, at, !inTree());
 }
 
 /** The keyboard is in the Explorer's tree (a click | Enter on a row opened the document): it stays there, as it does

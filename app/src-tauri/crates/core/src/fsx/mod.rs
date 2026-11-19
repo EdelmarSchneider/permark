@@ -409,6 +409,8 @@ pub fn write_atomic_checked(
                 // best effort: a file system without permissions still gets the bytes
                 let _ = std::fs::set_permissions(&tmp, meta.permissions());
             }
+            #[cfg(test)]
+            slip::fire(path);
             retry(&RETRY_DELAYS, || {
                 if !check()? {
                     return Ok(false);
@@ -420,6 +422,47 @@ pub fn write_atomic_checked(
         discard(&tmp);
     }
     result
+}
+
+/// Test seam: another writer's save landing between a write's temp and its check, the window the check exists for.
+/// Windows can hold a rename back from outside (a handle without delete sharing); other systems cannot, so tests of
+/// that window place the save here.
+#[cfg(test)]
+pub(crate) mod slip {
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    type Save = Box<dyn FnOnce() + Send>;
+
+    /// Saves waiting for a write of their file; tests run in parallel, each on files of its own.
+    static SAVES: Mutex<Vec<(PathBuf, Save)>> = Mutex::new(Vec::new());
+
+    /// The same file for both spellings of a path (a temp folder under a linked folder, the `\\?\` form).
+    fn key(path: &Path) -> Option<PathBuf> {
+        std::fs::canonicalize(path).ok()
+    }
+
+    /// Runs `save` once, at the next atomic write of `path` (it must exist), right before that write's check.
+    #[cfg_attr(windows, allow(dead_code))] // Windows tests hold the file from outside instead
+    pub(crate) fn before_check(path: &Path, save: impl FnOnce() + Send + 'static) {
+        if let (Some(key), Ok(mut saves)) = (key(path), SAVES.lock()) {
+            saves.push((key, Box::new(save)));
+        }
+    }
+
+    pub(super) fn fire(path: &Path) {
+        let save = SAVES.lock().ok().and_then(|mut saves| {
+            if saves.is_empty() {
+                return None; // the common case: no path lookup for every write of every test
+            }
+            let key = key(path)?;
+            let at = saves.iter().position(|(file, _)| *file == key)?;
+            Some(saves.swap_remove(at).1)
+        });
+        if let Some(save) = save {
+            save();
+        }
+    }
 }
 
 /// [`write_atomic_checked`] guarded by `seen`: `bytes` replace `path` only while it still holds the bytes hashed `seen`.

@@ -606,6 +606,19 @@ describe("the journal of unsaved text", () => {
   });
 });
 
+describe("a line asked for the document the editor is on", () => {
+  it("goes to the editor on screen (one that cannot: nothing happens)", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    session.showLine(4);
+    const shown: number[] = [];
+    const next = { ...editor, showLine: (line: number) => void shown.push(line) };
+    session.attach(session.content?.seq ?? -1, next);
+    session.showLine(9);
+    expect(shown).toEqual([9]);
+  });
+});
+
 describe("pictures dropped from the system", () => {
   it("go to the editor on screen, at the point of the drop", async () => {
     const { session } = setup();

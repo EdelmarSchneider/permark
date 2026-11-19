@@ -102,6 +102,8 @@ export type Hooks = {
   editorHeadings(): number[] | null;
   /** Scrolls the editor shown instead of the page to its heading `index`; `false`: the page shows. */
   showEditorHeading(index: number): boolean;
+  /** Puts `line` at the top of the editor shown instead of the page, the caret at its start; `false`: the page shows. */
+  showEditorLine(line: number): boolean;
   /** A folder opened as a project in a new tab, showing `document` (a path inside it) when given. */
   openFolderWith(folder: string, document: string | null): void;
 };
@@ -117,6 +119,7 @@ const NO_HOOKS: Hooks = {
   chooseEditor: () => {},
   editorHeadings: () => null,
   showEditorHeading: () => false,
+  showEditorLine: () => false,
   openFolderWith: () => {},
 };
 
@@ -371,6 +374,16 @@ export class DocumentController {
     this.lineRequest = { path, line, seq: ++this.#lineSeq, restore };
   }
 
+  /** The line a place asked for in the shown document (a code reference, a search hit) that its page | viewer has not
+   *  taken yet: an editor opening on the document starts there. `null`: none. */
+  askedLine(): number | null {
+    if (this.#line !== null) return this.#line;
+    const request = this.lineRequest;
+    return request !== null && request.path === this.#shown && !request.restore
+      ? request.line
+      : null;
+  }
+
   /** A text document was read again: tells who listens which lines are different now. */
   #toldText(before: DocumentView | null, now: DocumentView): void {
     if (this.#textUpdaters.size === 0 || before === null || before.path !== now.path) return;
@@ -535,7 +548,8 @@ export class DocumentController {
     this.#line = null;
     if (anchor !== null && this.scrollToAnchor(anchor)) return;
     if (line !== null) {
-      this.scrollToLine(line, true);
+      // an editor opened on the document before the page was drawn: the line is its (the hidden page has no place)
+      if (!this.#hooks.showEditorLine(line)) this.scrollToLine(line, true);
       return;
     }
     const scroller = this.host.scroller;
@@ -814,6 +828,14 @@ export class DocumentController {
    * `line`: where to scroll when there is no heading to name (the start of a document).
    */
   navigate(path: string, anchor: string | null, line: number | null = null): void {
+    void this.navigateTo(path, anchor, line);
+  }
+
+  /**
+   * `navigate`, resolving whether the window goes there: `false` when the person kept editing the document shown or
+   * the backend refused the move, so a caller waiting for the document to show can stop waiting.
+   */
+  navigateTo(path: string, anchor: string | null, line: number | null = null): Promise<boolean> {
     if (path === this.#shown) {
       // still opening: the page holds the previous file, so the place waits for this document's paint
       if (this.state.status === "loading" && this.current === null) {
@@ -822,23 +844,26 @@ export class DocumentController {
           this.#anchor = anchor;
           this.#line = line;
         }
-        return;
+        return Promise.resolve(true);
       }
       if (anchor === null && line !== null) {
-        if (this.view?.body.kind === "markdown") this.scrollToLine(line, true);
-        else this.#askLine(path, line);
+        // an editor shown instead of the page | viewer takes the line
+        if (!this.#hooks.showEditorLine(line)) {
+          if (this.view?.body.kind === "markdown") this.scrollToLine(line, true);
+          else this.#askLine(path, line);
+        }
         this.trail.visit({ path, anchor: null });
       } else this.#sameDocument(anchor ?? "");
-      return;
+      return Promise.resolve(true);
     }
     this.#intent = { path, anchor, line };
-    void this.#show(path);
+    return this.#show(path);
   }
 
+  /** Whether the window goes to `path`: the person did not keep editing the document shown, and the move was taken. */
   async #show(path: string): Promise<boolean> {
     if (!(await confirmLeave({ kind: "document", path }))) return false;
-    await this.#place(path);
-    return true;
+    return this.#place(path);
   }
 
   /** Puts the window on `path`: a single file holds it here, a project's tab is told by the backend (which tells the
@@ -889,7 +914,7 @@ export class DocumentController {
     }
     this.#viaTrail = place.path;
     if (!(await this.#show(place.path))) {
-      // the person stayed (unsaved edits): the trail stays where it was
+      // the window stayed (unsaved edits kept, the move refused): the trail stays where it was
       this.#viaTrail = null;
       if (from >= 0) this.trail.jump(from);
     }

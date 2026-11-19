@@ -59,6 +59,8 @@ type Asked = CopyWindow & {
   folder: number | null;
   showing: string | null;
   opened: string[];
+  /** The window does not go to a document it is asked to open (the person keeps editing the one shown). */
+  refuse: boolean;
   notes: string[];
   stays: Stay[];
   /** The newest line that stays goes (`how`), as the window lets one go: whoever showed it hears how. */
@@ -78,11 +80,15 @@ function windowProbe(): Asked {
     folder: 7,
     showing: GUIDE,
     opened: [],
+    refuse: false,
     notes: [],
     stays: [],
     workspace: () => asked.folder,
     shown: () => asked.showing,
-    open: (path) => asked.opened.push(path),
+    open: (path) => {
+      asked.opened.push(path);
+      return Promise.resolve(!asked.refuse);
+    },
     note: (text) => asked.notes.push(text),
     lasting: (text, actions = [], gone) => {
       const stay: Stay = { text, actions: [...actions] };
@@ -96,11 +102,14 @@ function windowProbe(): Asked {
       const action = stay?.actions.find((button) => button.label === label);
       if (action === undefined) throw new Error(`no button ${label}`);
       leave(stay, "action");
-      action.run();
+      void action.run();
     },
   };
   return asked;
 }
+
+/** Lets an Open pressed in a note learn whether the window went. */
+const settleOpen = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 const GUIDE = "docs/guide.md";
 const DOC = [
@@ -420,6 +429,24 @@ describe("the new file when the run is done", () => {
     expect(asked.stays.map((stay) => stay.text)).toEqual([DONE]);
     asked.press("Open");
     expect(asked.opened).toEqual(["docs/guide.de.md"]);
+  });
+
+  it("Open, then the person keeps editing (the window stays): the note that offers the file comes back", async () => {
+    session.text = THREE;
+    await copy.run();
+    session.unsaved = true;
+    await translated();
+    asked.refuse = true;
+    asked.press("Open");
+    expect(asked.opened).toEqual(["docs/guide.de.md"]);
+    await vi.waitFor(() => expect(asked.stays.map((stay) => stay.text)).toEqual([DONE]));
+    expect(asked.stays[0]?.actions.map((action) => action.label)).toEqual(["Open"]);
+    // saved by now: Open goes there, and the note is gone for good
+    asked.refuse = false;
+    asked.press("Open");
+    await settleOpen();
+    expect(asked.opened).toEqual(["docs/guide.de.md", "docs/guide.de.md"]);
+    expect(asked.stays).toEqual([]);
   });
 
   it("no document on screen by then (the original was closed): not opened either", async () => {

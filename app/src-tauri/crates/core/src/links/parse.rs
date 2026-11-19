@@ -258,10 +258,14 @@ fn scan(body: &str, lines: &Lines) -> Vec<Dest> {
                 }
             }
             NodeValue::HtmlInline(html) => {
-                // placed again: kept only where the bytes are the parser's
-                if let Some(range) =
-                    range.filter(|r| !moved || body.get(r.clone()) == Some(html.as_str()))
-                {
+                // where the parser's bytes stand (a table cell's escaped pipes move it right of the reported place);
+                // else the reported place, kept only when it was not placed again
+                let exact = span.as_ref().and_then(|span| {
+                    shifted(body, span, |r| {
+                        (body.get(r.clone()) == Some(html.as_str())).then_some(r)
+                    })
+                });
+                if let Some(range) = exact.or_else(|| range.filter(|_| !moved)) {
                     html_dests(&body[range.clone()], range.start, &mut dests);
                 }
             }
@@ -400,6 +404,16 @@ fn with_kind(mut dest: Dest, kind: Kind) -> Dest {
 /// counts an escaped pipe `\|` as one character), the same text a few bytes to the right. Places inside a character
 /// are skipped: the shift that lands on the link is found even when an earlier one cut through a multibyte character.
 fn shifted_inline_dest(body: &str, range: &Range<usize>, url: &str) -> Option<Dest> {
+    shifted(body, range, |r| inline_dest(&body[r.clone()], url, r.start))
+}
+
+/// The first of `range` moved 0 to [`SHIFT_LIMIT`] bytes right, on its line and on whole characters, for which
+/// `found` gives a value.
+fn shifted<T>(
+    body: &str,
+    range: &Range<usize>,
+    found: impl Fn(Range<usize>) -> Option<T>,
+) -> Option<T> {
     // from bytes: `range.start` itself can be inside a character when the parser's columns are off
     let line_end = body
         .as_bytes()
@@ -414,8 +428,8 @@ fn shifted_inline_dest(body: &str, range: &Range<usize>, url: &str) -> Option<De
         if !body.is_char_boundary(start) || !body.is_char_boundary(end) {
             continue;
         }
-        if let Some(dest) = inline_dest(&body[start..end], url, start) {
-            return Some(dest);
+        if let Some(value) = found(start..end) {
+            return Some(value);
         }
     }
     None

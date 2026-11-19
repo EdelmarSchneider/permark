@@ -43,6 +43,9 @@ export type DragState =
       readonly target: DragTarget | null;
     } & Press);
 
+/** A view is present now: a group with none is not drawn, so it does not count against the groups a region holds. */
+const present = (id: string): boolean => arrangement.isPresent(id);
+
 /** Things in a handle that take a press for themselves: its buttons (the options button), fields, links. */
 const CONTROLS =
   'button, input, select, textarea, a[href], label, summary, [role="button"], [role="radio"], [contenteditable="true"]';
@@ -186,7 +189,7 @@ class ViewDrag {
   }
 
   #targetAt(id: string, at: Point): DragTarget | null {
-    return dragTarget(at, scene(), id, arrangement.layout);
+    return dragTarget(at, scene(), id, arrangement.layout, present);
   }
 
   #move(event: PointerEvent): void {
@@ -227,7 +230,7 @@ class ViewDrag {
     }
     const layout = arrangement.layout;
     const said = saidFor(layout, press.id, target);
-    placeView(press.id, dropOn(layout, press.id, target));
+    placeView(press.id, dropOn(layout, press.id, target, present));
     viewMenu.moved(press.id, said);
   }
 

@@ -2,12 +2,14 @@
   // The Panels button of the status bar, beside the right panel's toggle and drawn like it: a menu of every view the
   // window offers, under its region, each on | off (`viewsMenu`). The palette's "Panels…" opens the same menu, over
   // this button. When the menu goes, the keyboard is back where it was, else (nothing had it) on this button.
+  // The menu stays open after a pick, over the bottom right where the notices sit: the notices keep to its left
+  // (`ui.panelsRoom`), and a press in them leaves the menu (closing it would move them away under the pointer).
   import PanelsTopLeft from "@lucide/svelte/icons/panels-top-left";
   import { onDestroy, tick } from "svelte";
   import { keyHint } from "../commands/hint";
   import ContextMenu from "../explorer/ContextMenu.svelte";
   import { t } from "../i18n";
-  import { returnFocus } from "./sides";
+  import { inNotices, returnFocus } from "./sides";
   import { ui } from "./ui.svelte";
   import { viewsEntries } from "./viewsMenu.svelte";
 
@@ -49,6 +51,8 @@
     label={t("panel.panels")}
     anchor={button}
     {close}
+    placed={(left) => (ui.panelsRoom = window.innerWidth - left)}
+    within={inNotices}
   />
 {/if}
 

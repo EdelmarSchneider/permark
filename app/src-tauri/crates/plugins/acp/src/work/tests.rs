@@ -741,6 +741,72 @@ fn a_long_list_is_cut_and_counted() {
     assert_eq!(list.files[0].path, "new/0001.md");
 }
 
+/// A copy of long new files: their name by number, the text of each (one run of lines as long as a hunk shows), the
+/// work copy holding the first, and how many such files one list carries.
+fn long_files() -> (Fx, WorkCopy, String, usize) {
+    let big = format!("{}\n", "x".repeat(4000)).repeat(MAX_HUNK_LINES);
+    let f = fx(&[("a.md", b"a\n")]);
+    let mut work = f.build();
+    edit_copy(&work, &long_name(0), big.as_bytes());
+    let fit = MAX_LISTED_BYTES / carried(&work.refresh().unwrap().files[0]);
+    assert!(fit > 1 && fit < MAX_LISTED, "{fit}");
+    (f, work, big, fit)
+}
+
+fn long_name(i: usize) -> String {
+    format!("big/{i:02}.md")
+}
+
+fn listed_paths(list: &ChangeList) -> Vec<String> {
+    list.files.iter().map(|f| f.path.clone()).collect()
+}
+
+fn listed_bytes(list: &ChangeList) -> usize {
+    list.files.iter().map(carried).sum()
+}
+
+/// At most [`MAX_LISTED_BYTES`] of lines are listed: the first files by path, the rest counted; a choice that frees
+/// room lets the next file move up.
+#[test]
+fn a_list_of_long_files_is_cut_by_its_bytes_and_counted() {
+    let (_f, mut work, big, fit) = long_files();
+    for i in 1..fit + 3 {
+        edit_copy(&work, &long_name(i), big.as_bytes());
+    }
+    let list = work.refresh().unwrap();
+    assert_eq!(
+        listed_paths(&list),
+        (0..fit).map(long_name).collect::<Vec<_>>()
+    );
+    assert_eq!(list.more, 3);
+    assert!(listed_bytes(&list) <= MAX_LISTED_BYTES);
+    let list = work.reject(&long_name(0), None).unwrap();
+    assert_eq!(
+        listed_paths(&list),
+        (1..=fit).map(long_name).collect::<Vec<_>>()
+    );
+    assert_eq!(list.more, 2);
+}
+
+/// A file a choice brings back into a full list (Undo) takes it past its bytes: the list is computed whole and the
+/// file past them is counted.
+#[test]
+fn a_file_listed_again_past_the_bytes_of_the_list_is_counted() {
+    let (_f, mut work, big, fit) = long_files();
+    for i in 1..fit {
+        edit_copy(&work, &long_name(i), big.as_bytes());
+    }
+    assert_eq!(work.refresh().unwrap().files.len(), fit);
+    work.accept(&long_name(0), None).unwrap();
+    edit_copy(&work, "big/zz.md", big.as_bytes());
+    let list = work.refresh().unwrap();
+    assert_eq!((list.files.len(), list.more), (fit, 0));
+    let list = work.undo(&long_name(0)).unwrap();
+    assert!(listed_bytes(&list) <= MAX_LISTED_BYTES);
+    assert_eq!(list.files[0].path, long_name(0));
+    assert_eq!((list.files.len(), list.more), (fit, 1));
+}
+
 /// After a choice only that file is looked at again: the rest of the kept list stays as it was computed.
 #[test]
 fn a_choice_updates_only_its_own_file() {

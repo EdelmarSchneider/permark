@@ -39,6 +39,9 @@ pub const MAX_TOTAL_BYTES: u64 = 500 * 1024 * 1024;
 /// Most changed files one list names (the rest are counted): every file an agent deleted, listed with all its lines,
 /// would freeze the window.
 pub const MAX_LISTED: usize = 500;
+/// Most bytes of lines one list carries to the window (the files past it are counted, the first file is always
+/// listed): the per-hunk caps alone still let 500 files of long runs add up to gigabytes.
+pub const MAX_LISTED_BYTES: usize = 8 << 20;
 /// Most lines one side of a hunk carries to the window; a choice still applies the whole hunk.
 pub const MAX_HUNK_LINES: usize = 400;
 /// Most bytes of one line a hunk carries to the window (whole characters): a file of one huge line, listed in full,
@@ -508,6 +511,18 @@ pub(crate) fn start_of(text: &str, max: usize) -> &str {
         end -= 1;
     }
     &text[..end]
+}
+
+/// Bytes of text `view` carries to the window (path, keys, lines, context), the measure of [`MAX_LISTED_BYTES`].
+fn carried(view: &FileChange) -> usize {
+    let hunks = view.hunks.iter().map(|hunk| {
+        let lines = hunk.old_lines.iter().chain(&hunk.new_lines);
+        let context = [&hunk.context_before, &hunk.context_after]
+            .into_iter()
+            .flatten();
+        hunk.key.len() + lines.chain(context).map(String::len).sum::<usize>()
+    });
+    view.path.len() + hunks.sum::<usize>()
 }
 
 /// The key of a hunk: its file, place and the lines of both sides, each part length-prefixed (two hunks of one list
@@ -1031,8 +1046,8 @@ impl WorkCopy {
         }
     }
 
-    /// Computes the change list again (every file of both sides, by path; the first [`MAX_LISTED`] listed, the rest
-    /// counted) and keeps it.
+    /// Computes the change list again (every file of both sides, by path; the first ones listed up to [`MAX_LISTED`]
+    /// files | [`MAX_LISTED_BYTES`], the rest counted) and keeps it.
     ///
     /// # Errors
     /// A file of either side cannot be read; the copy holds far too many files.
@@ -1041,16 +1056,23 @@ impl WorkCopy {
         paths.extend(self.copy_files()?);
         self.reviewed.clear();
         let mut list = ChangeList::default();
+        let mut bytes = 0usize;
         for path in paths {
             let Some(look) = self.look(&path)? else {
                 continue;
             };
             self.review(&path, Some(&look));
-            if list.files.len() < MAX_LISTED {
-                list.files.push(look.view(&path));
-            } else {
-                list.more = list.more.saturating_add(1);
+            // the listed files stay the first ones by path: a choice patches the list in place only then
+            if list.more == 0 && list.files.len() < MAX_LISTED {
+                let view = look.view(&path);
+                let size = carried(&view);
+                if list.files.is_empty() || bytes.saturating_add(size) <= MAX_LISTED_BYTES {
+                    bytes = bytes.saturating_add(size);
+                    list.files.push(view);
+                    continue;
+                }
             }
+            list.more = list.more.saturating_add(1);
         }
         self.listed = Some(list.clone());
         Ok(list)
@@ -1089,7 +1111,13 @@ impl WorkCopy {
             _ => false,
         };
         match (&self.listed, placed) {
-            (Some(list), true) => Ok(list.clone()),
+            // a file that grew can take the list past its bytes: computed whole, the files past them are counted
+            (Some(list), true)
+                if list.files.len() <= 1
+                    || list.files.iter().map(carried).sum::<usize>() <= MAX_LISTED_BYTES =>
+            {
+                Ok(list.clone())
+            }
             _ => self.refresh(),
         }
     }
