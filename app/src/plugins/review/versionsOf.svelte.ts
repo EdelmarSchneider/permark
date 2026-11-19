@@ -19,8 +19,10 @@ export async function versionsOf(path: string): Promise<void> {
   if (documents.path === path) return review.openVersions();
   // asked here, before the move asks: a "keep editing" must leave no list waiting for a later visit of the file
   if (!(await confirmLeave({ kind: "document", path }))) return;
-  asked = { path, from: documents.path };
-  documents.navigate(path, null);
+  const ask: Asked = { path, from: documents.path };
+  asked = ask;
+  // the window did not go (the move refused): a later visit of the file is no ask for its list
+  if (!(await documents.navigateTo(path, null)) && asked === ask) asked = null;
 }
 
 /** Opens the list a file was asked for once the window shows that file, until the returned teardown runs. */

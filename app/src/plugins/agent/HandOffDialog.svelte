@@ -147,7 +147,9 @@
     flex-direction: column;
     gap: var(--sp-2);
     width: min(620px, 100%);
-    max-height: min(640px, 100%);
+    /* of the window, not of the backdrop's row: a percentage there is unknown while the row is sized, and tall
+       content would make the row (and the place of the dialog in it) taller than the window */
+    max-height: min(640px, calc(100vh - 2 * var(--sp-5)));
     overflow: auto;
     padding: var(--sp-4) var(--sp-5);
     border: 1px solid var(--border);

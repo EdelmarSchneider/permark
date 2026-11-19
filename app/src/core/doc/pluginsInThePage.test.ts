@@ -226,6 +226,19 @@ describe("an entry in the document's menu", () => {
     flushSync();
     expect(ran).toEqual(["README.md"]);
   });
+
+  it("the menu's own entries for a file act on the document it was opened on, too", async () => {
+    await show("README.md");
+    await until(() => target.querySelector(".crumb.current")?.textContent === "README.md", "doc");
+    const external = vi.spyOn(documents, "openExternal").mockResolvedValue();
+    const labels = openMenu();
+    await show("docs/guide.md");
+    await until(() => target.querySelector(".crumb.current")?.textContent === "guide.md", "guide");
+    items()[labels.indexOf("Open with default app")]?.click();
+    flushSync();
+    expect(external).toHaveBeenCalledWith("README.md", "defaultApp");
+    external.mockRestore();
+  });
 });
 
 describe("blocks a plugin adds", () => {

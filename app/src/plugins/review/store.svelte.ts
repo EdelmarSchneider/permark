@@ -1016,8 +1016,11 @@ export class ReviewStore {
           ? page.rows
           : [...list.rows, ...page.rows.filter((row) => !listed.has(row.commit))];
       if (rows.length > 0 || page.next === null || read === EMPTY_PAGES) {
+        const added = rows.length - list.rows.length;
         this.versions = {
           ...list,
+          // rows added after the ones shown are said: a screen reader hears nothing of them otherwise
+          ...(after !== null && added > 0 ? { note: tn("review.versions.added", added) } : {}),
           loading: false,
           rows,
           next: page.next,

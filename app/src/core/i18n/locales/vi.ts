@@ -1095,6 +1095,8 @@ export default {
   "review.versions.list": "Phiên bản",
   "review.versions.loading": "Đang đọc lịch sử…",
   "review.versions.more": "Hiện thêm",
+  "review.versions.added.one": "Thêm {n} phiên bản",
+  "review.versions.added.other": "Thêm {n} phiên bản",
   "review.versions.same": "Giống văn bản hiện tại",
   "review.versions.authors": "{author} cùng {others}",
   "review.versions.compare": "So sánh",

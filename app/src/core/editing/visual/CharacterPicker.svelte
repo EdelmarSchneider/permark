@@ -37,21 +37,26 @@
   let { kind, apply, close, popoverKey, actions = [] }: Props = $props();
 
   let query = $state("");
+  let search = $state<HTMLInputElement>();
 
   const shown = $derived(scanGroups(kind, windowStore.characters, query));
 
-  // edits to the groups file show when a picker opens, without a restart
-  onMount(() => windowStore.refreshCharacters());
+  onMount(() => {
+    // the search takes the keyboard from the toolbar button that opened the popup (`autofocus` acts only while the
+    // page body has it, and a click gives it to the button)
+    search?.focus();
+    // edits to the groups file show when a picker opens, without a restart
+    windowStore.refreshCharacters();
+  });
 </script>
 
 <div class="picker">
-  <!-- svelte-ignore a11y_autofocus -->
   <input
+    bind:this={search}
     class="picker__search"
     type="search"
     placeholder={t("picker.search")}
     aria-label={t("picker.search")}
-    autofocus
     value={query}
     onkeydown={popoverKey}
     oninput={(e) => (query = e.currentTarget.value)}

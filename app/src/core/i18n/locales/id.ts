@@ -1104,6 +1104,8 @@ export default {
   "review.versions.list": "Versi",
   "review.versions.loading": "Membaca riwayat…",
   "review.versions.more": "Tampilkan lebih banyak",
+  "review.versions.added.one": "{n} versi lagi",
+  "review.versions.added.other": "{n} versi lagi",
   "review.versions.same": "Teks sama dengan sekarang",
   "review.versions.authors": "{author} bersama {others}",
   "review.versions.compare": "Bandingkan",

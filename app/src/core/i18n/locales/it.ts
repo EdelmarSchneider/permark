@@ -1104,6 +1104,8 @@ export default {
   "review.versions.list": "Versioni",
   "review.versions.loading": "Lettura della cronologia…",
   "review.versions.more": "Mostra di più",
+  "review.versions.added.one": "{n} versione in più",
+  "review.versions.added.other": "{n} versioni in più",
   "review.versions.same": "Stesso testo di adesso",
   "review.versions.authors": "{author} con {others}",
   "review.versions.compare": "Confronta",

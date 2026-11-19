@@ -23,7 +23,7 @@
   } from "../../core/editing/visual/characters";
   import ContextMenu from "../../core/explorer/ContextMenu.svelte";
   import type { MenuEntry } from "../../core/explorer/menu";
-  import { t } from "../../core/i18n";
+  import { t, tn } from "../../core/i18n";
   import { arrangement } from "../../core/shell/arrangement.svelte";
   import { adrift, closeView, focusPage } from "../../core/shell/sides";
   import { windowStore } from "../../core/window.svelte";
@@ -44,6 +44,8 @@
 
   /** How long a cell glows after it put its character in. */
   const FLASH_MS = 400;
+  /** How long the typing in the search pauses before the status line says what it found. */
+  const COUNT_MS = 500;
 
   const sections = $derived(
     sectionsOf(
@@ -71,6 +73,7 @@
   const peek = $derived(hovered ?? focused);
   let flashed = $state<string | null>(null);
   let flashTimer: ReturnType<typeof setTimeout> | null = null;
+  let countTimer: ReturnType<typeof setTimeout> | null = null;
 
   let list = $state<HTMLElement>();
   let search = $state<HTMLInputElement>();
@@ -80,8 +83,24 @@
     windowStore.refreshCharacters();
     return () => {
       if (flashTimer !== null) clearTimeout(flashTimer);
+      if (countTimer !== null) clearTimeout(countTimer);
     };
   });
+
+  /** The search changed: once the typing pauses, the status line says how many characters are listed (none: that
+   *  nothing answers), so a screen reader hears what the list holds without leaving the field. */
+  function searched(): void {
+    if (countTimer !== null) clearTimeout(countTimer);
+    countTimer = setTimeout(() => {
+      countTimer = null;
+      if (!querying) return;
+      // a favorite that answers is listed in its group too: counted once
+      const found = new Set(
+        sections.flatMap((s) => (s.kind === "divider" ? [] : s.entries)).map((e) => e.char),
+      ).size;
+      arrangement.say(found === 0 ? t("picker.empty") : tn("finder.results", found));
+    }, COUNT_MS);
+  }
 
   /** The element with the keyboard went away | moved in a redraw: the stop related to the one wanted takes it (the
    *  same character in its own group, the same header), else the favorites title (the last favorite went), else the
@@ -278,6 +297,7 @@
     if (plain && [...event.key].length === 1 && event.key !== " ") {
       event.preventDefault();
       symbols.query += event.key;
+      searched();
       search?.focus();
       return;
     }
@@ -327,8 +347,10 @@
     if (event.isComposing) return;
     if (event.key === "Escape") {
       event.preventDefault();
-      if (symbols.query !== "") symbols.query = "";
-      else focusPage();
+      if (symbols.query !== "") {
+        symbols.query = "";
+        searched();
+      } else focusPage();
     } else if (event.key === "ArrowDown") {
       event.preventDefault();
       void focusStop(active);
@@ -408,6 +430,7 @@
       placeholder={t("picker.search")}
       aria-label={t("picker.search")}
       bind:value={symbols.query}
+      oninput={searched}
       onkeydown={searchKey}
     />
     <p class="peek head-peek" aria-hidden="true">{@render peekLine()}</p>
@@ -645,6 +668,12 @@
   .head-row:focus-within .star,
   .star[aria-pressed="true"] {
     opacity: 1;
+  }
+  /* a touch screen has no hover to bring it out: it stays in sight there */
+  @media (hover: none) {
+    .star {
+      opacity: 1;
+    }
   }
   .star[aria-pressed="true"] {
     color: var(--accent);

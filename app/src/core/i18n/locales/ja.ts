@@ -1104,6 +1104,8 @@ export default {
   "review.versions.list": "バージョン",
   "review.versions.loading": "履歴を読み込んでいます…",
   "review.versions.more": "もっと見る",
+  "review.versions.added.one": "さらに {n} 件のバージョン",
+  "review.versions.added.other": "さらに {n} 件のバージョン",
   "review.versions.same": "現在と同じテキスト",
   "review.versions.authors": "{author}（{others} と共同）",
   "review.versions.compare": "比較",

@@ -603,6 +603,25 @@ describe("links and navigation", () => {
     expect(fx.doc.state.status).toBe("ready");
   });
 
+  it("another document asked for says whether the window goes there: a refusal of the backend is no", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const refusal: ApiError = {
+      kind: "backend",
+      command: "show_document",
+      error: { kind: "notFound", subject: "docs/gone.md", detail: null },
+    };
+    const show = vi
+      .spyOn(fx.api, "showDocument")
+      .mockResolvedValueOnce({ ok: false, error: refusal });
+    await expect(fx.doc.navigateTo("docs/gone.md", null)).resolves.toBe(false);
+    expect(fx.failures).toEqual([refusal]);
+    show.mockRestore();
+    await expect(fx.doc.navigateTo("docs/guide.md", null)).resolves.toBe(true);
+    // the document shown: the window is there already
+    await expect(fx.doc.navigateTo("README.md", null)).resolves.toBe(true);
+  });
+
   it("an anchor of the same document stays in it", async () => {
     const fx = await setup();
     await open(fx, "README.md");

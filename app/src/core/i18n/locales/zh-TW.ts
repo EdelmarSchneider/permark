@@ -1062,6 +1062,8 @@ export default {
   "review.versions.list": "版本",
   "review.versions.loading": "正在讀取歷程記錄…",
   "review.versions.more": "顯示更多",
+  "review.versions.added.one": "又載入了 {n} 個版本",
+  "review.versions.added.other": "又載入了 {n} 個版本",
   "review.versions.same": "與目前文字相同",
   "review.versions.authors": "{author} 與 {others}",
   "review.versions.compare": "比較",

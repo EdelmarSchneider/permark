@@ -1076,6 +1076,8 @@ const en = {
   "review.versions.list": "Versions",
   "review.versions.loading": "Reading the history…",
   "review.versions.more": "Show more",
+  "review.versions.added.one": "{n} more version",
+  "review.versions.added.other": "{n} more versions",
   "review.versions.same": "Same text as now",
   "review.versions.authors": "{author} with {others}",
   "review.versions.compare": "Compare",

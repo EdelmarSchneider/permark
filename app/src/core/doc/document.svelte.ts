@@ -828,6 +828,14 @@ export class DocumentController {
    * `line`: where to scroll when there is no heading to name (the start of a document).
    */
   navigate(path: string, anchor: string | null, line: number | null = null): void {
+    void this.navigateTo(path, anchor, line);
+  }
+
+  /**
+   * `navigate`, resolving whether the window goes there: `false` when the person kept editing the document shown or
+   * the backend refused the move, so a caller waiting for the document to show can stop waiting.
+   */
+  navigateTo(path: string, anchor: string | null, line: number | null = null): Promise<boolean> {
     if (path === this.#shown) {
       // still opening: the page holds the previous file, so the place waits for this document's paint
       if (this.state.status === "loading" && this.current === null) {
@@ -836,7 +844,7 @@ export class DocumentController {
           this.#anchor = anchor;
           this.#line = line;
         }
-        return;
+        return Promise.resolve(true);
       }
       if (anchor === null && line !== null) {
         // an editor shown instead of the page | viewer takes the line
@@ -846,16 +854,16 @@ export class DocumentController {
         }
         this.trail.visit({ path, anchor: null });
       } else this.#sameDocument(anchor ?? "");
-      return;
+      return Promise.resolve(true);
     }
     this.#intent = { path, anchor, line };
-    void this.#show(path);
+    return this.#show(path);
   }
 
+  /** Whether the window goes to `path`: the person did not keep editing the document shown, and the move was taken. */
   async #show(path: string): Promise<boolean> {
     if (!(await confirmLeave({ kind: "document", path }))) return false;
-    await this.#place(path);
-    return true;
+    return this.#place(path);
   }
 
   /** Puts the window on `path`: a single file holds it here, a project's tab is told by the backend (which tells the
@@ -906,7 +914,7 @@ export class DocumentController {
     }
     this.#viaTrail = place.path;
     if (!(await this.#show(place.path))) {
-      // the person stayed (unsaved edits): the trail stays where it was
+      // the window stayed (unsaved edits kept, the move refused): the trail stays where it was
       this.#viaTrail = null;
       if (from >= 0) this.trail.jump(from);
     }

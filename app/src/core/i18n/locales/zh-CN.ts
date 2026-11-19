@@ -1049,6 +1049,8 @@ export default {
   "review.versions.list": "版本",
   "review.versions.loading": "正在读取历史…",
   "review.versions.more": "显示更多",
+  "review.versions.added.one": "又载入了 {n} 个版本",
+  "review.versions.added.other": "又载入了 {n} 个版本",
   "review.versions.same": "与当前文本相同",
   "review.versions.authors": "{author} 与 {others}",
   "review.versions.compare": "比较",
