@@ -220,7 +220,7 @@ Installers are not code-signed, so your system shows a warning the first time yo
 
 | System | Get it |
 |---|---|
-| Windows | The [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX), which keeps PerMark up to date. Or the `-setup.exe` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest). Version 0.13 is the last one with an `.msi`: if you installed PerMark from an `.msi`, uninstall it and install the `-setup.exe`; your settings and notes stay |
+| Windows | The [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX), which keeps PerMark up to date. Or the `-setup.exe` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest). Version 0.17 is the last one with an `.msi`. A copy installed from an `.msi` moves to the `-setup.exe` at its next update in PerMark: Windows asks to remove the old copy and asks for administrator permission (if you say no, it asks again at the next update). Or uninstall it and install the `-setup.exe`. Your settings and notes stay. If you connected an AI agent, copy its connection lines again from **Settings → Integration → Agent connection**: the program now runs from your user folder |
 | macOS | The universal `.dmg` (Apple silicon and Intel) from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest) |
 | Linux | The `.AppImage`, `.deb` or `.rpm` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest), or the snap (64-bit Intel and AMD): `sudo snap install permark`. To print on your printers from the snap, also install the CUPS snap: `sudo snap install cups` |
 
