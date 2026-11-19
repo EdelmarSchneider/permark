@@ -213,11 +213,13 @@ jobs:
         working-directory: app
         run: npm run notices
 
-      # Builds, signs the updater artifacts and uploads installers + `.sig` files to the release (asset names as before:
-      # tauri-action names them). `latest.json` is written by `publish`.
+      # Builds, signs the updater artifacts and uploads installers + `.sig` files to the release (tauri-action names
+      # them: the CLI's file names, macOS updater bundle `PerMark_<version>_universal.app.tar.gz`). Given `releaseId`, it
+      # leaves the release's name and notes alone. `latest.json` is written once by `publish`: `uploadUpdaterJson` is on
+      # by default and would make each platform job upload its own copy in parallel.
       - name: Build and upload the installers
         if: env.RUN_THIS == 'true'
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Signs the updater artifacts (the matching public key is in tauri.conf.json). The key has no password.
@@ -226,7 +228,7 @@ jobs:
         with:
           projectPath: app
           releaseId: ${{ needs.draft.outputs.id }}
-          includeUpdaterJson: false
+          uploadUpdaterJson: false
           args: ${{ matrix.args }}
 
   # `latest.json` from every `.sig` of the release (all platforms, also after a rebuild of some), then the release goes
