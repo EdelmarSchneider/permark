@@ -1454,6 +1454,12 @@ export function createMockApi(): Api & {
 
 export const mockApi = createMockApi();
 
+// `dev:mock`: the mock project is a git repository (its status bar shows a branch), so what needs one is offered
+// there too (earlier versions of a document). Tests keep their own mock, with no repository unless they set one.
+if (import.meta.env.MODE === "mock") {
+  mockApi.probe.context.set({ git: { status: "repo", state: "clean" } });
+}
+
 // `dev:mock` opened with `?unshared` shows the notice about sharing an update turned off (once, like the app)
 if (typeof location !== "undefined" && new URLSearchParams(location.search).has("unshared")) {
   mockApi.probe.plugins.notes.unshared([

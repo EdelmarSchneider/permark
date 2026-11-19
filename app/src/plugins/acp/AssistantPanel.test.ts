@@ -857,6 +857,27 @@ describe("the agent's settings", () => {
     }
   });
 
+  it("news of the values while a step waits never sends the step early", () => {
+    const set = vi.spyOn(acp, "setOption").mockResolvedValue(true);
+    withOptions("ready");
+    open();
+    const model = control(t("acp.option.model"), HTMLSelectElement);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      model.focus();
+      model.value = "opus";
+      model.dispatchEvent(new Event("change", { bubbles: true }));
+      // the agent tells its values again (an echo, fresh objects) mid-way through the steps
+      acp.take({ type: "options", options: structuredClone([...acp.options]) });
+      flushSync();
+      expect(set).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(OPTION_SETTLE_MS);
+      expect(set.mock.calls).toEqual([["model", "opus"]]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("wait while the agent starts, and never show over the picker", () => {
     withOptions("starting");
     open();

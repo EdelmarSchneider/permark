@@ -2,6 +2,7 @@
 // versions, the journal. The same shapes the real plugin serves; titles are made the simple way (no Markdown parser).
 
 import { IDENTITY_UNKNOWN } from "./error";
+import { mockHash } from "./mockEdit";
 import { MockPluginError } from "./mockOrganizing";
 import type {
   Deleted,
@@ -166,6 +167,7 @@ export function createMockNotes(
     folder: null,
     state: null,
     pending: false,
+    hash: null,
   });
   const looseEntry = (l: MockLoose): NoteEntry => ({
     path: `@file/${l.id}/${l.name}`,
@@ -182,6 +184,10 @@ export function createMockNotes(
     folder: l.folder,
     state: l.state,
     pending: l.state === "unsaved" || journal.has(`@file/${l.id}/${l.name}`),
+    hash:
+      l.state !== "gone" && (l.state === "unsaved" || journal.has(`@file/${l.id}/${l.name}`))
+        ? mockHash(l.text)
+        : null,
   });
   const list = (): NoteList => {
     const all = [...notes.values()].map(noteEntry);

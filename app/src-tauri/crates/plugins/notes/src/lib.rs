@@ -44,7 +44,6 @@ pub use intent::{Intents, NotesIntent};
 pub use loose::{find_renamed, folder_label, new_id, prune as prune_loose, MAX_LISTED};
 pub use names::Moment;
 pub use service::{now_ms, NotesService};
-use state::Stamp;
 pub use types::{
     Deleted, EntryKind, LooseState, MoveUndone, Moved, NoteEntry, NoteList, NotesSummary,
     SharedWith,
@@ -81,11 +80,11 @@ struct PathArgs {
     path: String,
 }
 
-/// Keep mine: the version of the file its row showed (`None`: shown as gone).
+/// Keep mine: the version of the file its row showed, its content hash (`None`: shown as gone).
 #[derive(Deserialize)]
 struct KeepArgs {
     path: String,
-    seen: Option<Stamp>,
+    seen: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -432,7 +431,7 @@ fn register(serve: &mut Serve<'_>, service: &Arc<NotesService>) {
     let s = Arc::clone(service);
     serve(
         "keepMine",
-        typed(move |args: KeepArgs, _| s.keep_mine(&args.path, args.seen)),
+        typed(move |args: KeepArgs, _| s.keep_mine(&args.path, args.seen.as_deref())),
     );
     let s = Arc::clone(service);
     serve(

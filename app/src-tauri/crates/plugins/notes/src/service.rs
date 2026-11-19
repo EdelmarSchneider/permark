@@ -483,6 +483,7 @@ impl NotesService {
                 folder: None,
                 state: None,
                 pending: false,
+                hash: None,
             });
         }
         titles.retain(|name, _| names.contains(name));
@@ -1074,16 +1075,20 @@ fn set_modified(path: &Path, modified_ms: u64) {
 /// The most of a file read as text (the editor's own limit).
 pub(crate) const TEXT_LIMIT: u64 = 6 * 1024 * 1024;
 
-/// The text of the file the way the editor holds it (every line break `\n`, no byte order mark).
-pub(crate) fn editor_text(path: &Path) -> Option<String> {
-    let bytes = fsx::read_bytes(path, TEXT_LIMIT).ok()?;
-    let decoded = fsx::decode(&bytes)?;
+/// The text of file bytes the way the editor holds it (every line break `\n`, no byte order mark).
+fn editor_text_of(bytes: &[u8]) -> Option<String> {
+    let decoded = fsx::decode(bytes)?;
     Some(permark_core::edit::lines::normalized(&decoded.text))
 }
 
 /// Whether the journal entry holds text the file does not: typed and never saved.
 pub(crate) fn differs_from_file(entry: &JournalEntry, path: &Path) -> bool {
-    match editor_text(path) {
+    differs_from_bytes(entry, fsx::read_bytes(path, TEXT_LIMIT).ok().as_deref())
+}
+
+/// Whether the journal entry holds text the file bytes `file` do not (`None`: unreadable | not there).
+pub(crate) fn differs_from_bytes(entry: &JournalEntry, file: Option<&[u8]>) -> bool {
+    match file.and_then(editor_text_of) {
         Some(text) => text != entry.text,
         None => !is_blank(&entry.text),
     }

@@ -494,7 +494,9 @@ describe("loose files", () => {
     const call = vi.spyOn(api, "pluginCall");
     await store.keepMine(path);
     const sent = call.mock.calls.find(([method]) => method === "notes.keepMine");
-    expect(sent?.[1]).toEqual({ path, seen: { size: row.size, modifiedMs: row.modifiedMs } });
+    // the bytes the row was worked out from, not their size + time: other bytes can keep both
+    expect(row.hash).not.toBeNull();
+    expect(sent?.[1]).toEqual({ path, seen: row.hash });
   });
 
   it("makes a note of the typed text", async () => {

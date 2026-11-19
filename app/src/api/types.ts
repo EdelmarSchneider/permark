@@ -680,12 +680,9 @@ export interface PluginMethods {
   "notes.removeFile": { args: { path: string }; result: null };
   "notes.locateFile": { args: { path: string; newPath: string }; result: string };
   "notes.reloadFile": { args: { path: string }; result: null };
-  /** Written only while the file is still the version its row showed (`seen`: its size + modification time; `null`:
-   *  shown as gone); else refused as `conflict`, the file left as it is. */
-  "notes.keepMine": {
-    args: { path: string; seen: { size: number; modifiedMs: number } | null };
-    result: null;
-  };
+  /** Written only while the file still holds the bytes its row showed (`seen`: the row's `hash`; `null`: shown as
+   *  gone); else refused as `conflict`, the file left as it is. */
+  "notes.keepMine": { args: { path: string; seen: string | null }; result: null };
   "notes.saveAsNote": { args: { path: string }; result: string };
   "notes.suggestName": { args: { path: string; folder: string | null }; result: string };
   "notes.moveToProject": {

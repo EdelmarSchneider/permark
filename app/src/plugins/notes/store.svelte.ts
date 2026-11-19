@@ -842,11 +842,8 @@ export class NotesStore {
       this.#editing.dispatch({ e: "keepMine" });
       return;
     }
-    const row = this.entries.find((e) => e.path === path);
-    const seen =
-      row === undefined || row.state === "gone"
-        ? null
-        : { size: row.size, modifiedMs: row.modifiedMs };
+    // no hash (shown as gone, or listed before any text was kept): sent as gone, refused while a file is there
+    const seen = this.entries.find((e) => e.path === path)?.hash ?? null;
     const result = await this.#client.call("notes.keepMine", { path, seen });
     if (!result.ok) this.#fail(result.error);
     await this.refresh();

@@ -88,12 +88,16 @@
   });
 
   /** The search changed: once the typing pauses, the status line says how many characters are listed (none: that
-   *  nothing answers), so a screen reader hears what the list holds without leaving the field. */
+   *  nothing answers), so a screen reader hears what the list holds without leaving the field. Emptied: the line is
+   *  cleared, never left saying what an earlier search found. */
   function searched(): void {
     if (countTimer !== null) clearTimeout(countTimer);
     countTimer = setTimeout(() => {
       countTimer = null;
-      if (!querying) return;
+      if (!querying) {
+        arrangement.say("");
+        return;
+      }
       // a favorite that answers is listed in its group too: counted once
       const found = new Set(
         sections.flatMap((s) => (s.kind === "divider" ? [] : s.entries)).map((e) => e.char),

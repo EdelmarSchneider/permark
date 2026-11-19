@@ -16,7 +16,7 @@ use permark_core::paths::{fold, FileScope};
 use crate::journal::Entry as JournalEntry;
 use crate::names::{edits_stem, first_free, EXTENSION};
 use crate::service::{
-    checked_name, differs_from_file, encoded_like, rename_free, write_new, Ctx, NotesService,
+    checked_name, differs_from_bytes, encoded_like, rename_free, write_new, Ctx, NotesService,
     Target, TEXT_LIMIT,
 };
 use crate::state::{LooseEntry, Stamp};
@@ -146,8 +146,12 @@ impl NotesService {
                     .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
                 let now = Stamp::of(abs);
                 let kept = journal.get(&loose_key(&entry.id));
+                // read once: what "pending" is worked out from is the version Keep mine may replace (`hash`)
+                let bytes = kept
+                    .and(now)
+                    .and_then(|_| fsx::read_bytes(abs, TEXT_LIMIT).ok());
                 let pending = kept.is_some_and(|k| match now {
-                    Some(_) => differs_from_file(k, abs),
+                    Some(_) => differs_from_bytes(k, bytes.as_deref()),
                     None => !is_blank(&k.text),
                 });
                 let state = match now {
@@ -177,6 +181,7 @@ impl NotesService {
                         folder: Some(folder_label(abs, home.as_deref())),
                         state: Some(state),
                         pending,
+                        hash: bytes.as_deref().map(|b| fsx::hash(b).hex()),
                         name,
                     },
                 )
@@ -338,12 +343,13 @@ impl NotesService {
     }
 
     /// The person keeps what was typed: it is written over the file (or the file is made again when it is gone), only
-    /// while the file is still the version its row showed: `seen` = the stamp the row had, `None` = shown as gone.
+    /// while the file still holds the bytes its row showed: `seen` = the row's content hash, `None` = shown as gone. The
+    /// bytes, not size + time: a backup restore | a sync tool can put other bytes there under the same stamp.
     ///
     /// # Errors
     /// Not listed | nothing typed is kept | the file changed since its row was shown (`Conflict`, left as it is) | the
     /// system refused.
-    pub fn keep_mine(&self, path: &str, seen: Option<Stamp>) -> Result<(), IpcError> {
+    pub fn keep_mine(&self, path: &str, seen: Option<&str>) -> Result<(), IpcError> {
         let ctx = self.ctx();
         let entry = Self::loose_entry(&ctx, path)?;
         let key = loose_key(&entry.id);
@@ -363,17 +369,17 @@ impl NotesService {
         };
         let written = match seen {
             Some(seen) => {
-                // the bytes first, then the stamp: a write before the stamp is read shows in it, one after it in the hash
                 let old = match fsx::read_bytes(&abs, TEXT_LIMIT) {
                     Ok(old) => old,
                     Err(_) if Stamp::of(&abs).is_none() => return Err(changed()),
                     Err(e) => return Err(IpcError::from(e)),
                 };
-                if Stamp::of(&abs) != Some(seen) {
+                let base = fsx::hash(&old);
+                if base.hex() != seen {
                     return Err(changed());
                 }
-                let bytes = encoded_like(Some(&old), &kept.text);
-                fsx::write_atomic_if_unchanged(&abs, &bytes, fsx::hash(&old))
+                // a write after this read: the write below finds other bytes and refuses
+                fsx::write_atomic_if_unchanged(&abs, &encoded_like(Some(&old), &kept.text), base)
             }
             None => fsx::write_atomic_if_absent(&abs, &encoded_like(None, &kept.text)),
         }

@@ -59,9 +59,12 @@
   const bottomDrawn = $derived(arrangement.drawn("bottom").length > 0);
   /** The window has a left region: a view to draw there, or the Notes' own list. */
   const leftShown = $derived(hasSidebar(store.view));
-  /** The room the right panel takes on screen (0: none): notices keep clear of it. */
+  /** The room the right panel takes on screen (0: none), or the open Panels menu over it: notices keep clear of both. */
   const rightInset = $derived(
-    rightDrawn && !layout.rightOff && ui.focus !== "on" ? layout.right : 0,
+    Math.max(
+      rightDrawn && !layout.rightOff && ui.focus !== "on" ? layout.right : 0,
+      ui.panels ? ui.panelsRoom : 0,
+    ),
   );
 
   const openingName = $derived.by(() => {

@@ -448,7 +448,8 @@ pub fn tree_keep(
 }
 
 /// The person's "Refresh": the project folder is read again (the tree, and everything else that keeps a picture of the
-/// disk). Returns at once; what differs arrives as `tree-changed` events.
+/// disk). Returns at once; what differs arrives as `tree-changed` events. Not bound to a `workspace` like the other
+/// tree calls: a late one only reads again the project shown now, which changes nothing but its picture of the disk.
 #[tauri::command(async)]
 pub fn tree_refresh(handle: AppHandle, window: Webview) -> Result<(), IpcError> {
     project_of(&handle, &window)?.refresh();

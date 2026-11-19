@@ -98,6 +98,8 @@ class UiStore {
   layoutsDialog = $state.raw<LayoutsDialog>({ status: "closed" });
   /** The Panels menu of the status bar is open. */
   panels = $state(false);
+  /** The room the open Panels menu takes from the window's right edge (px): the notices keep to its left. */
+  panelsRoom = $state(0);
   finding = $state(false);
   /** The window close prompt (this view is the one on screen): the tabs with unsaved edits; `null`: not asking. */
   closePrompt = $state.raw<readonly ClosingTab[] | null>(null);
@@ -233,6 +235,7 @@ class UiStore {
 
   closePanels(): void {
     this.panels = false;
+    this.panelsRoom = 0;
   }
 
   openKeyboard(): void {

@@ -460,10 +460,11 @@ describe("the search", () => {
       type("zzzz");
       vi.advanceTimersByTime(1000);
       expect(arrangement.say).toHaveBeenLastCalledWith("No name matches that search");
-      // the search emptied: nothing to count, nothing said
+      // the search emptied: nothing to count, and the line no longer says what the last search found
       type("");
       vi.advanceTimersByTime(1000);
-      expect(arrangement.say).toHaveBeenCalledTimes(2);
+      expect(arrangement.say).toHaveBeenCalledTimes(3);
+      expect(arrangement.say).toHaveBeenLastCalledWith("");
     } finally {
       vi.useRealTimers();
     }

@@ -97,8 +97,9 @@
 
   /** Arrow keys on a closed list (Windows) change it once per step: the agent hears the value the person stops at,
    *  after a quiet moment or when the keyboard leaves the list (the panel going too), never each one passed. A refused
-   *  change shows `current` again. */
-  function settles(id: string, current: string): Attachment<HTMLSelectElement> {
+   *  change shows `current()` again: read when refused, so news of the values never makes the attachment anew (its
+   *  teardown sends a waiting step). */
+  function settles(id: string, current: () => string): Attachment<HTMLSelectElement> {
     return (control) => {
       let waiting: { timer: ReturnType<typeof setTimeout>; value: string } | null = null;
       const send = (): void => {
@@ -107,7 +108,7 @@
         clearTimeout(timer);
         waiting = null;
         void acp.setOption(id, value).then((ok) => {
-          if (!ok) control.value = current;
+          if (!ok) control.value = current();
         });
       };
       const changed = (): void => {
@@ -396,6 +397,8 @@
   {@const name = configLabel(option)}
   {#if option.kind.type === "select"}
     {@const kind = option.kind}
+    <!-- a string: the same id after news of the values, so the attachment that reads it stays -->
+    {@const id = option.id}
     <label class="setting" title={option.description ?? undefined}>
       <span class="setting-name">{name}</span>
       <!-- a refused change: the control shows what holds again -->
@@ -403,7 +406,7 @@
         class="field-select"
         value={kind.current}
         {@attach holds(option)}
-        {@attach settles(option.id, kind.current)}
+        {@attach settles(id, () => kind.current)}
         disabled={!acp.canSetOptions}
       >
         {#each kind.choices as choice (choice.value)}

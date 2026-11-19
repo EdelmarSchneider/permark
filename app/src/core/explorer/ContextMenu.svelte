@@ -24,8 +24,24 @@
     start?: number;
     /** Opens upward: `y` is where its bottom goes (a control at the bottom of the window). */
     above?: boolean;
+    /** Told where the menu's left edge went once placed (px from the window's left). */
+    placed?: (left: number) => void;
+    /** A press there is no press outside the menu (besides the menu and `anchor`). */
+    within?: (target: Element) => boolean;
   };
-  let { x, y, entries, close, label, anchor, back, start, above = false }: Props = $props();
+  let {
+    x,
+    y,
+    entries,
+    close,
+    label,
+    anchor,
+    back,
+    start,
+    above = false,
+    placed,
+    within,
+  }: Props = $props();
 
   let menu: HTMLElement | undefined = $state();
   let picked = $state(-1);
@@ -130,9 +146,11 @@
       // upward from a control at the bottom: no taller than the room above it, so the control stays in sight
       if (above) menu.style.maxHeight = `${Math.max(0, Math.min(window.innerHeight - 8, y - 4))}px`;
       const box = menu.getBoundingClientRect();
-      menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - box.width - 4))}px`;
+      const left = Math.max(4, Math.min(x, window.innerWidth - box.width - 4));
+      menu.style.left = `${left}px`;
       const top = above ? y - box.height : y;
       menu.style.top = `${Math.max(4, Math.min(top, window.innerHeight - box.height - 4))}px`;
+      untrack(() => placed?.(left));
       // the first item (or `start`) takes the focus; the menu itself only when it has no item
       const first = untrack(() => active);
       const item = menu.querySelector<HTMLElement>(`[data-at="${first}"]`);
@@ -142,6 +160,7 @@
     const onPointer = (e: PointerEvent): void => {
       if (!(e.target instanceof Node) || !menu || menu.contains(e.target)) return;
       if (anchor?.contains(e.target)) return;
+      if (e.target instanceof Element && within?.(e.target) === true) return;
       close();
     };
     window.addEventListener("pointerdown", onPointer, true);
