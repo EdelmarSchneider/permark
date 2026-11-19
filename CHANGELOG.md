@@ -27,6 +27,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - A document saved as HTML now lays out its tables as the reading view does: short columns such as dates and numbers keep their line, long text shares the rest, and a small table keeps its own width. In a narrower window the columns shrink together without breaking a word. <!-- f: export -->
 - A Mermaid diagram with a link (`click … href`) now draws, and links in Mermaid, PlantUML and Graphviz diagrams now work like the other links in the document: a link to a file in your folder opens it, and web and mail links open in your browser. In the diagram beside Source, a click on a link no longer reloads the app. <!-- f: view-mode, edit-mode, source-mode -->
 
+### Security
+- Updated the libraries that check HTTPS certificates for downloads and updates, and other libraries with published security fixes. <!-- f: updates -->
+
 ## [0.17.0] - 2026-11-19
 
 ### Added
