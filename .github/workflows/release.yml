@@ -95,7 +95,7 @@ jobs:
             ### Install
             | Platform | Download |
             | --- | --- |
-            | Windows | the `-setup.exe` installer (recommended). This is the last version with an `.msi`: if you installed PerMark from an `.msi`, uninstall it and install the `-setup.exe`; your settings and notes stay |
+            | Windows | the `-setup.exe` installer. The `.msi` ended with version 0.17. If you installed PerMark from an `.msi`, the next in-app update moves it to the `-setup.exe`: Windows asks to remove the old copy and asks for administrator permission; if you say no, it asks again at the next update (other Windows accounts on the same PC then install the `-setup.exe` themselves). You can also uninstall it and install the `-setup.exe`. Your settings and notes stay. If you connected an AI agent, copy its connection lines again from **Settings → Integration → Agent connection**: the program now runs from your user folder |
             | macOS | the universal `.dmg` (Apple silicon and Intel) |
             | Linux | the `.AppImage`, `.deb` or `.rpm` |
 

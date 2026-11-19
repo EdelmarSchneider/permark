@@ -33,7 +33,7 @@
       <div class="container">
         <div class="legal__body">
           <h1>Privacy policy</h1>
-          <p class="legal__updated">Last updated November 18, 2026. This page covers PerMark, the desktop app, in every build: the versions from GitHub, the Microsoft Store and the snap. It also covers this website.</p>
+          <p class="legal__updated">Last updated November 19, 2026. This page covers PerMark, the desktop app, in every build: the versions from GitHub, the Microsoft Store and the snap. It also covers this website.</p>
 
           <h2>In short</h2>
           <p>PerMark has no account, no telemetry and no tracking. It goes online only to check for its own updates (in the versions you download from GitHub; the Microsoft Store and the snap update PerMark for it), and when you ask: a picture from the web, a spelling dictionary, the optional vocabulary of the Token count plugin, or a local AI model and the engine that runs it. PerMark itself never sends your documents over the internet. An AI agent you connect is a separate program: what it sends online is up to that agent. If you turn on the Assistant plugin (experimental, off until you turn it on), PerMark starts the AI agent you choose on your computer and gives it a copy of your folder, without the files listed in <code>.aiignore</code>. That agent goes online by itself: it sends your messages and what it reads to its own AI service, and an agent that starts with npx or uvx is first downloaded by that tool. <a href="#assistant">More about the Assistant</a>.</p>
@@ -54,7 +54,7 @@
           <p>PerMark sends none of this over the internet.</p>
 
           <h2>Every time PerMark goes online</h2>
-          <p>This is the full list for PerMark 0.17.0 and its Windows installers.</p>
+          <p>This is the full list for PerMark 0.17.0 and its Windows installer.</p>
           <div class="table-wrap">
             <table class="data-table" role="table">
               <caption class="sr-only">Every time PerMark goes online</caption>
@@ -72,7 +72,7 @@
                   <td role="cell" data-label="What">Update check: PerMark reads a small file that names the latest version</td>
                   <td role="cell" data-label="When">A few seconds after PerMark starts, then every 24 hours while it runs. Also when you click <strong>Check now</strong> in <strong>Settings → Integration → Updates</strong></td>
                   <td role="cell" data-label="Where it goes"><code>github.com</code>, the PerMark releases page (GitHub sends the request on to its file host)</td>
-                  <td role="cell" data-label="Which builds">Versions downloaded from GitHub: Windows (setup <code>.exe</code> and <code>.msi</code>), macOS, Linux (<code>.deb</code>, <code>.rpm</code>, AppImage). Not the Microsoft Store, not the snap</td>
+                  <td role="cell" data-label="Which builds">Versions downloaded from GitHub: Windows (<code>-setup.exe</code>, and the <code>.msi</code> of versions up to 0.17), macOS, Linux (<code>.deb</code>, <code>.rpm</code>, AppImage). Not the Microsoft Store, not the snap</td>
                   <td role="cell" data-label="Does it ask you?">No. It runs on its own. To stop it, turn off the <strong>Updates</strong> plugin in <strong>Settings → Plugins</strong>; then PerMark makes no update check at all, automatic or manual</td>
                 </tr>
                 <tr role="row">
@@ -128,7 +128,7 @@
                   <td role="cell" data-label="What">WebView2 installer (the Windows part PerMark uses to show its pages)</td>
                   <td role="cell" data-label="When">Once, while you install PerMark, and only if your computer does not have WebView2</td>
                   <td role="cell" data-label="Where it goes">Microsoft, which provides the WebView2 installer</td>
-                  <td role="cell" data-label="Which builds">Both Windows installers (<code>-setup.exe</code> and <code>.msi</code>). Not the Microsoft Store package, which uses the WebView2 already on your system</td>
+                  <td role="cell" data-label="Which builds">The Windows installer (<code>-setup.exe</code>). Not the Microsoft Store package, which uses the WebView2 already on your system</td>
                   <td role="cell" data-label="Does it ask you?">No. It is part of the installation, not of PerMark itself. Nothing downloads when WebView2 is already there. This follows the documented behavior of Tauri, the framework PerMark is built on; it has not been tested on a computer without WebView2</td>
                 </tr>
               </tbody>

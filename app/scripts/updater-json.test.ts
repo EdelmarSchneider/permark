@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { parseRelease, updaterJson } from "./updater-json.mjs";
 
-// Asset names of the 0.6.1 release (unchanged since 0.6.0; `distribution.md` § Release pipeline), except the macOS
-// updater bundle: tauri-action 1.x puts the version in its name, as in every other installer.
+// Asset names of the 0.6.1 release (unchanged since 0.6.0; `distribution.md` § Release pipeline), minus the `.msi`
+// (no longer built), and with the macOS updater bundle named as tauri-action 1.x names it: with the version, as in
+// every other installer.
 const ASSETS = [
   "latest.json",
   "PerMark-0.6.1-1.x86_64.rpm",
@@ -14,8 +15,6 @@ const ASSETS = [
   "PerMark_0.6.1_universal.dmg",
   "PerMark_0.6.1_x64-setup.exe",
   "PerMark_0.6.1_x64-setup.exe.sig",
-  "PerMark_0.6.1_x64_en-US.msi",
-  "PerMark_0.6.1_x64_en-US.msi.sig",
   "PerMark_0.6.1_universal.app.tar.gz",
   "PerMark_0.6.1_universal.app.tar.gz.sig",
 ];
@@ -39,15 +38,16 @@ function build(
 }
 
 describe("updaterJson", () => {
-  it("writes the 0.6.1 shape: same keys, order, urls and signatures", () => {
+  it("writes the 0.6.1 shape without the .msi: same keys, order, urls and signatures", () => {
     const json = build(ASSETS);
     expect(Object.keys(json)).toEqual(["version", "notes", "pub_date", "platforms"]);
     expect(json.version).toBe("0.6.1");
     expect(json.notes).toBe("**PerMark** notes\n\n### Install");
     expect(json.pub_date).toBe("2026-10-20T19:02:17.540Z");
-    const msi = {
-      signature: "sig of PerMark_0.6.1_x64_en-US.msi.sig",
-      url: `${BASE}PerMark_0.6.1_x64_en-US.msi`,
+    // copies installed from an `.msi` look up `windows-x86_64-msi`, then `windows-x86_64`: both reach the `-setup.exe`
+    const nsis = {
+      signature: "sig of PerMark_0.6.1_x64-setup.exe.sig",
+      url: `${BASE}PerMark_0.6.1_x64-setup.exe`,
     };
     const app = {
       signature: "sig of PerMark_0.6.1_universal.app.tar.gz.sig",
@@ -58,12 +58,8 @@ describe("updaterJson", () => {
       url: `${BASE}PerMark_0.6.1_amd64.AppImage`,
     };
     expect(json.platforms).toEqual({
-      "windows-x86_64": msi,
-      "windows-x86_64-msi": msi,
-      "windows-x86_64-nsis": {
-        signature: "sig of PerMark_0.6.1_x64-setup.exe.sig",
-        url: `${BASE}PerMark_0.6.1_x64-setup.exe`,
-      },
+      "windows-x86_64": nsis,
+      "windows-x86_64-nsis": nsis,
       "darwin-aarch64": app,
       "darwin-x86_64": app,
       "darwin-aarch64-app": app,
@@ -81,7 +77,6 @@ describe("updaterJson", () => {
     });
     expect(Object.keys(json.platforms)).toEqual([
       "windows-x86_64",
-      "windows-x86_64-msi",
       "windows-x86_64-nsis",
       "darwin-aarch64",
       "darwin-x86_64",
@@ -112,7 +107,6 @@ describe("updaterJson", () => {
   });
 
   it.each([
-    ["PerMark_0.6.1_x64_en-US.msi.sig", /Windows MSI: 0 signature/],
     ["PerMark_0.6.1_x64-setup.exe.sig", /Windows NSIS: 0 signature/],
     ["PerMark_0.6.1_universal.app.tar.gz.sig", /macOS universal app: 0 signature/],
     ["PerMark_0.6.1_amd64.AppImage.sig", /Linux AppImage: 0 signature/],
@@ -138,12 +132,18 @@ describe("updaterJson", () => {
     );
   });
 
-  it("refuses two bundles for one rule (e.g. a second MSI language)", () => {
-    const assets = [...ASSETS, "PerMark_0.6.1_x64_pt-BR.msi", "PerMark_0.6.1_x64_pt-BR.msi.sig"];
-    expect(() => build(assets)).toThrow(/Windows MSI: 2 signature/);
+  it("refuses two bundles for one rule (e.g. two Windows installers)", () => {
+    const assets = [
+      ...ASSETS,
+      "PerMark_0.6.1-rc_x64-setup.exe",
+      "PerMark_0.6.1-rc_x64-setup.exe.sig",
+    ];
+    expect(() => build(assets)).toThrow(/Windows NSIS: 2 signature/);
   });
 
   it.each([
+    // the `.msi` is no longer built: one in a release is a stray bundle, not an update
+    "PerMark_0.6.1_x64_en-US.msi.sig",
     "PerMark_0.6.1_aarch64.dmg.sig",
     "PerMark_0.6.1_arm64-setup.exe.sig",
     "PerMark_0.6.1_arm64.deb.sig",

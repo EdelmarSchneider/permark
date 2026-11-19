@@ -8,6 +8,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ### Changed
 - Closing a panel now leaves its own notice with **Undo**, so closing two panels gives you two ways back. The **Panels** menu stays open while you tick several panels, and it groups them by where they sit. <!-- f: side-panels -->
 
+### Removed
+- **The Windows `.msi` installer.** Version 0.17 was the last one with an `.msi`: use the `-setup.exe` or the Microsoft Store. A copy installed from an `.msi` moves to the `-setup.exe` at its next update in PerMark: Windows asks to remove the old copy and asks for administrator permission (if you say no, it asks again at the next update). Your settings and notes stay. If you connected an AI agent, copy its connection lines again from **Settings → Integration → Agent connection**, because the program now runs from your user folder. <!-- f: windows-installer -->
+
 ### Fixed
 - **Keep mine** for a note file now writes only over the version you saw; if the file changed meanwhile, PerMark says so and leaves it alone. <!-- f: notes -->
 - After switching folders, a late answer for the previous folder could reset the Explorer list; it is now ignored. <!-- f: explorer -->
@@ -22,6 +25,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Assistant: moving through the model list with the arrow keys no longer sends a change at every step, and a very long list of changes stops at a safe size. <!-- f: assistant -->
 - Releasing or removing a local model no longer waits forever on a busy model worker. <!-- f: local-ai -->
 - A document saved as HTML now lays out its tables as the reading view does: short columns such as dates and numbers keep their line, long text shares the rest, and a small table keeps its own width. In a narrower window the columns shrink together without breaking a word. <!-- f: export -->
+- A Mermaid diagram with a link (`click … href`) now draws, and links in Mermaid, PlantUML and Graphviz diagrams now work like the other links in the document: a link to a file in your folder opens it, and web and mail links open in your browser. In the diagram beside Source, a click on a link no longer reloads the app. <!-- f: view-mode, edit-mode, source-mode -->
 
 ## [0.17.0] - 2026-11-19
 

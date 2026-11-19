@@ -1,6 +1,7 @@
 // Release `latest.json` (the manifest the in-app updater of every installed copy reads) from the assets of one GitHub
-// release. Same shape, key order and values tauri-action (v0) wrote up to 0.6.1; assembled once, after the three
-// platform jobs uploaded their installers + `.sig` files in parallel (tauri-action's per-job merge races in parallel).
+// release. Same shape, key order and values tauri-action (v0) wrote up to 0.6.1, minus the `.msi` keys (the `.msi` is
+// no longer built); assembled once, after the three platform jobs uploaded their installers + `.sig` files in parallel
+// (tauri-action's per-job merge races in parallel).
 // Strict: every updater `.sig` maps to exactly one rule, every rule has exactly one `.sig` + its installer -> else error
 // (the release then stays a draft, nothing half-published).
 //
@@ -19,17 +20,19 @@ import { fileURLToPath } from "node:url";
 
 /**
  * Updater bundle (by its `.sig` asset name) -> `latest.json` platform keys, in tauri-action's order.
- * Windows: `.msi` = primary key (tauri-action default, `updaterJsonPreferNsis` off). macOS: one universal bundle serves
- * both architectures. Linux: AppImage = primary key.
+ * Windows: the NSIS `-setup.exe` holds every Windows key. Copies installed from an `.msi` look up `windows-x86_64-msi`,
+ * then `windows-x86_64`, so the generic key MUST point at the `-setup.exe`: without it they find no update at all. The
+ * updater picks the installer by the downloaded bytes, and the NSIS installer removes the `.msi` install first.
+ * A stray `.msi.sig` then matches no rule and keeps the release a draft.
+ * macOS: one universal bundle serves both architectures. Linux: AppImage = primary key.
  * @type {readonly Rule[]}
  */
 export const RULES = [
   {
-    name: "Windows MSI",
-    pattern: /_x64_[A-Za-z-]+\.msi\.sig$/,
-    keys: ["windows-x86_64", "windows-x86_64-msi"],
+    name: "Windows NSIS",
+    pattern: /_x64-setup\.exe\.sig$/,
+    keys: ["windows-x86_64", "windows-x86_64-nsis"],
   },
-  { name: "Windows NSIS", pattern: /_x64-setup\.exe\.sig$/, keys: ["windows-x86_64-nsis"] },
   {
     name: "macOS universal app",
     pattern: /_universal\.app\.tar\.gz\.sig$/,
