@@ -14,7 +14,7 @@ use super::*;
 use crate::agents::{platforms, Choice, Launch, Plan, CHOICE_FILE};
 use crate::dto::{AcpReach, AgentNeed, PermissionDiff};
 use crate::testing;
-use permark_core::state::StateFile;
+use permark_core::state::{Loaded, StateFile};
 
 /// Longest wait for something a fake agent does.
 const WAIT: Duration = Duration::from_secs(20);
@@ -127,6 +127,20 @@ struct Peer {
     deaf: Option<mpsc::Receiver<()>>,
     /// Its `session/new` answer offers the modes only as a config option (no `modes`).
     config_modes: bool,
+    story: Arc<Story>,
+}
+
+/// What the fake agent keeps of earlier conversations.
+#[derive(Default)]
+struct Story {
+    /// `initialize` answers `loadSession: false`.
+    no_load: AtomicBool,
+    /// `initialize` offers `sessionCapabilities.resume`.
+    resume: AtomicBool,
+    /// `session/load` | `session/resume` is refused: the agent no longer has the conversation.
+    gone: AtomicBool,
+    /// Messages a `session/load` sends before its answer (the conversation replayed).
+    replay: Mutex<Vec<Value>>,
 }
 
 /// What the fake agent asks of sign-ins.
@@ -259,7 +273,11 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
             continue;
         };
         let id = message["id"].clone();
-        if method == "session/new" && peer.auth.required.load(Ordering::SeqCst) {
+        let opens = matches!(
+            method.as_str(),
+            "session/new" | "session/load" | "session/resume"
+        );
+        if opens && peer.auth.required.load(Ordering::SeqCst) {
             peer.send(&json!({
                 "jsonrpc": "2.0", "id": id,
                 "error": { "code": -32000, "message": "Authentication required" },
@@ -273,7 +291,12 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
                 "agentCapabilities": {
                     "promptCapabilities": { "image": true, "embeddedContext": peer.embedded },
                     "mcpCapabilities": { "http": true, "sse": true },
-                    "loadSession": true,
+                    "loadSession": !peer.story.no_load.load(Ordering::SeqCst),
+                    "sessionCapabilities": if peer.story.resume.load(Ordering::SeqCst) {
+                        json!({ "list": {}, "resume": {}, "close": {} })
+                    } else {
+                        json!({ "list": {} })
+                    },
                 },
                 "agentInfo": { "name": "@agentclientprotocol/claude-agent-acp", "title": "Claude Agent", "version": "0.108.0" },
                 "authMethods": peer.auth.methods.lock().unwrap().clone(),
@@ -282,8 +305,21 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
                 peer.auth.required.store(false, Ordering::SeqCst);
                 json!({})
             }
-            "session/new" => {
+            "session/load" | "session/resume" if peer.story.gone.load(Ordering::SeqCst) => {
+                peer.send(&json!({
+                    "jsonrpc": "2.0", "id": id,
+                    "error": { "code": -32002, "message": "Resource not found: no conversation 44453ef7" },
+                }));
+                continue;
+            }
+            "session/new" | "session/load" | "session/resume" => {
                 peer.cwd = PathBuf::from(message["params"]["cwd"].as_str().unwrap());
+                if method == "session/load" {
+                    let replay = peer.story.replay.lock().unwrap().clone();
+                    for message in &replay {
+                        peer.send(message);
+                    }
+                }
                 if peer.config_modes {
                     json!({ "sessionId": SESSION, "configOptions": [MODEL_OPTION.clone(), mode_option("auto")] })
                 } else {
@@ -349,6 +385,7 @@ struct Fake {
     /// The agents started from now on offer their modes only as a config option.
     config_modes: Arc<AtomicBool>,
     auth: Arc<Auth>,
+    story: Arc<Story>,
 }
 
 impl Fake {
@@ -424,6 +461,7 @@ impl Fake {
                 auth: Arc::clone(&fake.auth),
                 deaf: deaf.then_some(stop_rx),
                 config_modes: fake.config_modes.load(Ordering::SeqCst),
+                story: Arc::clone(&fake.story),
             };
             let turn = Arc::clone(&turn);
             let agent = std::thread::spawn(move || agent_loop(peer, &turn));
@@ -493,6 +531,11 @@ type TurnFn = dyn Fn(&mut Peer, &Value) -> Option<&'static str> + Send + Sync;
 
 type MakeAgents = fn(StateFile<Choice>, &Path) -> Agents;
 
+/// The file of the project's last conversation in the profile `profile`.
+fn saved_file(profile: &Path) -> StateFile<Remembered> {
+    testing::app_store(profile).profile_plugin_file(&crate::ID, SAVED_FILE)
+}
+
 /// Programs found only on the fake `PATH`.
 fn fake_path(file: StateFile<Choice>, bin: &Path) -> Agents {
     Agents::with(Some(file), testing::find_in(bin), platforms())
@@ -542,6 +585,7 @@ impl Fx {
             place: Some(profile.path().join("work")),
             run: Some(profile.path().join("run")),
             copy: Arc::clone(&copy),
+            saved: Some(saved_file(profile.path())),
             events: testing::events(events.clone()),
         });
         Self {
@@ -563,6 +607,14 @@ impl Fx {
                 document: None,
             })
             .unwrap();
+    }
+
+    /// The project's last conversation as kept on disk (`None`: none | forgotten).
+    fn saved(&self) -> Option<Saved> {
+        match saved_file(self.profile.path()).load() {
+            Loaded::Found(file) => file.last,
+            _ => None,
+        }
     }
 
     fn copy_dir(&self) -> PathBuf {
@@ -2565,4 +2617,315 @@ fn the_passage_mime_type_follows_the_file() {
     assert_eq!(passage_mime("data.json"), "text/plain");
     assert_eq!(passage_mime("notes.md.txt"), "text/plain");
     assert_eq!(passage_mime("README"), "text/plain");
+}
+
+/// A conversation as an agent replays it at `session/load`: the person's message (its text, then the attached
+/// passage), a thought, a tool line, the reply, its title; and a question it asks during the replay.
+fn replay_of_one_turn() -> Vec<Value> {
+    let update = |update: Value| {
+        json!({
+            "jsonrpc": "2.0", "method": "session/update",
+            "params": { "sessionId": SESSION, "update": update },
+        })
+    };
+    vec![
+        update(
+            json!({ "sessionUpdate": "user_message_chunk", "content": { "type": "text", "text": "One." } }),
+        ),
+        update(json!({
+            "sessionUpdate": "user_message_chunk",
+            "content": { "type": "resource", "resource": { "uri": "file:///copy/notes.md#L1:1", "text": "Line one." } },
+        })),
+        update(
+            json!({ "sessionUpdate": "agent_thought_chunk", "content": { "type": "text", "text": "hm" } }),
+        ),
+        update(json!({
+            "sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Read notes.md", "kind": "read",
+            "status": "completed",
+        })),
+        update(
+            json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": "ok" } }),
+        ),
+        update(json!({ "sessionUpdate": "session_info_update", "title": "Notes again" })),
+        json!({
+            "jsonrpc": "2.0", "id": 77, "method": "session/request_permission",
+            "params": {
+                "sessionId": SESSION,
+                "toolCall": { "toolCallId": "t2", "title": "Run it", "kind": "execute" },
+                "options": [{ "optionId": "allow-once", "name": "Yes", "kind": "allow_once" }],
+            },
+        }),
+    ]
+}
+
+impl Fx {
+    /// Continues the last conversation; answers what the window was told until the agent is ready again.
+    fn continue_last(&self) -> Vec<Value> {
+        let before = self.events.all().len();
+        self.session.continue_last().unwrap();
+        let list = self.events.wait_for("ready again", WAIT, |list| {
+            list.len() > before
+                && list
+                    .last()
+                    .is_some_and(|e| e["type"] == "status" && e["state"] == "ready")
+        });
+        list[before..].to_vec()
+    }
+
+    /// Ends the conversation (New conversation): its agent stops (the `count`th stop).
+    fn leave(&self, count: usize) {
+        self.session.reset();
+        self.fake.stopped(count);
+    }
+}
+
+fn status(state: &str) -> Value {
+    json!({ "type": "status", "state": state, "error": null })
+}
+
+/// The project's last conversation is kept in the profile (its agent, id, title) and continued with `session/load`:
+/// the agent replays it (the person's messages, its replies, tool lines; never a question to answer again), the
+/// conversation is set to ask again, and no message is sent.
+#[test]
+fn the_last_conversation_is_kept_and_continued_with_its_history() {
+    let fx = Fx::new(|peer, _| {
+        peer.update(&json!({
+            "sessionUpdate": "session_info_update", "title": "Notes", "updatedAt": "2026-11-17T23:32:36.340Z",
+        }));
+        peer.text("ok");
+        Some("end_turn")
+    });
+    assert_eq!(fx.session.status().last, None);
+    fx.ask("One.");
+    fx.events.turn_end();
+    let saved = fx.saved().unwrap();
+    assert_eq!(saved.agent, Choice::Agent("claude-acp".to_owned()));
+    assert_eq!(saved.session_id, SESSION);
+    assert_eq!(saved.title.as_deref(), Some("Notes"));
+    assert!(!saved.had_changes);
+    assert_eq!(saved.way, Some(ContinueWay::Load));
+    assert!(saved_file(fx.profile.path())
+        .path()
+        .starts_with(fx.profile.path()));
+    let last = fx.session.status().last.unwrap();
+    assert_eq!(last.title.as_deref(), Some("Notes"));
+    assert_eq!(last.supports, ContinueWay::Load);
+    assert!(last.at > 0);
+    // after a new conversation, the one just left is offered
+    fx.leave(1);
+    assert_eq!(
+        fx.session.status().last.map(|last| last.supports),
+        Some(ContinueWay::Load)
+    );
+
+    *fx.fake.story.replay.lock().unwrap() = replay_of_one_turn();
+    let told = fx.continue_last();
+    assert_eq!(
+        told,
+        [
+            status("starting"),
+            json!({ "type": "you", "text": "One." }),
+            json!({ "type": "tool", "id": "t1", "title": "Read notes.md", "kind": "read", "status": "completed" }),
+            json!({ "type": "text", "text": "ok" }),
+            json!({ "type": "restored", "replayed": true, "changesLost": false }),
+            status("ready"),
+        ]
+    );
+    assert_eq!(
+        fx.fake.reply_to(&json!(77))["result"],
+        json!({ "outcome": { "outcome": "cancelled" } })
+    );
+    assert_eq!(fx.session.status().state, AcpState::Ready);
+    let methods = fx.fake.methods();
+    assert_eq!(
+        methods[methods.len() - 3..],
+        ["initialize", "session/load", "session/set_mode"]
+    );
+    let load = fx
+        .fake
+        .seen()
+        .into_iter()
+        .find(|m| m["method"] == "session/load")
+        .unwrap();
+    assert_eq!(load["params"]["sessionId"], SESSION);
+    assert_eq!(
+        PathBuf::from(load["params"]["cwd"].as_str().unwrap()),
+        fx.copy_dir()
+    );
+    assert_eq!(load["params"]["mcpServers"], json!([]));
+    assert_eq!(
+        load["params"]["_meta"]["claudeCode"]["options"]["allowDangerouslySkipPermissions"],
+        json!(false)
+    );
+    // a title told during the replay is kept
+    assert_eq!(fx.saved().unwrap().title.as_deref(), Some("Notes again"));
+
+    // the next message goes on in the same conversation
+    fx.ask("Two.");
+    fx.turns_ended(2);
+    let prompt = fx
+        .fake
+        .seen()
+        .into_iter()
+        .rfind(|m| m["method"] == "session/prompt")
+        .unwrap();
+    assert_eq!(prompt["params"]["sessionId"], SESSION);
+    assert_eq!(prompt_text(&prompt), "Two.");
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 2);
+    assert_eq!(fx.fake.count("session/new"), 1);
+}
+
+/// An agent that cannot replay a conversation but can resume one: `session/resume`, and the window is told that
+/// nothing was replayed.
+#[test]
+fn an_agent_without_load_resumes_the_conversation() {
+    let fx = Fx::new(|_, _| Some("end_turn"));
+    fx.fake.story.no_load.store(true, Ordering::SeqCst);
+    fx.fake.story.resume.store(true, Ordering::SeqCst);
+    fx.ask("One.");
+    fx.events.turn_end();
+    let last = fx.session.status().last.unwrap();
+    assert_eq!(last.supports, ContinueWay::Resume);
+    assert_eq!(last.title, None);
+    fx.leave(1);
+    // never sent: a resume replays nothing
+    *fx.fake.story.replay.lock().unwrap() = replay_of_one_turn();
+    assert_eq!(
+        fx.continue_last(),
+        [
+            status("starting"),
+            json!({ "type": "restored", "replayed": false, "changesLost": false }),
+            status("ready"),
+        ]
+    );
+    let methods = fx.fake.methods();
+    assert_eq!(
+        methods[methods.len() - 3..],
+        ["initialize", "session/resume", "session/set_mode"]
+    );
+    assert_eq!(fx.fake.count("session/prompt"), 1);
+}
+
+/// A conversation the agent no longer has: said with the agent's words, forgotten; the next message starts a new
+/// one, which is kept instead.
+#[test]
+fn a_conversation_the_agent_no_longer_has_is_forgotten() {
+    let fx = Fx::new(|peer, _| {
+        peer.text("ok");
+        Some("end_turn")
+    });
+    fx.ask("One.");
+    fx.events.turn_end();
+    fx.leave(1);
+    fx.fake.story.gone.store(true, Ordering::SeqCst);
+    fx.session.continue_last().unwrap();
+    let list = fx.events.wait_for("error", WAIT, |list| {
+        list.iter().any(|e| e["state"] == "error")
+    });
+    let failed = list.iter().find(|e| e["state"] == "error").unwrap();
+    assert_eq!(
+        failed["error"],
+        json!({ "code": "sessionGone", "message": "Resource not found: no conversation 44453ef7" })
+    );
+    fx.fake.stopped(2);
+    assert_eq!(fx.saved(), None);
+    assert_eq!(fx.session.status().last, None);
+    let refused = fx.session.continue_last().unwrap_err();
+    assert_eq!(refused.kind, ErrorKind::NotFound);
+    assert_eq!(refused.detail.as_deref(), Some("noSaved"));
+    fx.ask("Two.");
+    fx.turns_ended(2);
+    assert_eq!(fx.saved().unwrap().session_id, SESSION);
+}
+
+/// An agent that wants a sign-in before it continues a conversation: the sign-in, then the conversation is continued
+/// (no message sent).
+#[test]
+fn continuing_waits_for_a_sign_in_and_goes_on_after_it() {
+    let fx = Fx::new(|_, _| Some("end_turn"));
+    fx.ask("One.");
+    fx.events.turn_end();
+    fx.leave(1);
+    *fx.fake.auth.methods.lock().unwrap() =
+        vec![json!({ "id": "oauth", "name": "Sign in with the browser" })];
+    fx.fake.auth.required.store(true, Ordering::SeqCst);
+    fx.session.continue_last().unwrap();
+    fx.events.wait_for("sign-in", WAIT, |list| {
+        list.iter().any(|e| e["state"] == "needsLogin")
+    });
+    assert_eq!(fx.session.status().state, AcpState::NeedsLogin);
+    fx.session
+        .login(&LoginArgs {
+            method_id: Some("oauth".to_owned()),
+        })
+        .unwrap();
+    fx.events.wait_for("ready", WAIT, |list| {
+        list.last()
+            .is_some_and(|e| e["type"] == "status" && e["state"] == "ready")
+    });
+    let methods = fx.fake.methods();
+    assert_eq!(
+        methods[methods.len() - 5..],
+        [
+            "initialize",
+            "session/load",
+            "authenticate",
+            "session/load",
+            "session/set_mode"
+        ]
+    );
+    assert_eq!(fx.fake.count("session/prompt"), 1);
+    assert_eq!(fx.events.of_type("restored").len(), 1);
+}
+
+/// The last conversation is offered only while its agent is the chosen one and can continue it; a new conversation
+/// takes its place at its first message.
+#[test]
+fn the_last_conversation_is_offered_only_for_its_agent() {
+    let fx = Fx::new(|_, _| Some("end_turn"));
+    let refused = fx.session.continue_last().unwrap_err();
+    assert_eq!(refused.kind, ErrorKind::NotFound);
+    assert_eq!(refused.detail.as_deref(), Some("noSaved"));
+    fx.ask("One.");
+    fx.events.turn_end();
+    fx.session.choose(&choose_agent("codex-acp")).unwrap();
+    assert_eq!(fx.session.status().last, None);
+    let refused = fx.session.continue_last().unwrap_err();
+    assert_eq!(refused.detail.as_deref(), Some("noSaved"));
+    fx.session.choose(&choose_agent("claude-acp")).unwrap();
+    assert!(fx.session.status().last.is_some());
+    // an agent that can neither load nor resume: its conversation replaces the one kept and is never offered
+    fx.fake.story.no_load.store(true, Ordering::SeqCst);
+    fx.ask("Two.");
+    fx.turns_ended(2);
+    assert_eq!(fx.saved().unwrap().way, None);
+    assert_eq!(fx.session.status().last, None);
+}
+
+/// Changes the agent left for the person are noted with the conversation. Continued on the same copy they are still
+/// there; continued on a copy made anew (the plugin stopped meanwhile), the window is told they were not kept, once.
+#[test]
+fn unaccepted_changes_of_a_conversation_continued_on_a_new_copy_are_said_lost() {
+    let fx = Fx::new(|peer, _| {
+        peer.write("notes.md", "Changed by the agent.\n");
+        Some("end_turn")
+    });
+    fx.ask("Edit.");
+    assert_eq!(fx.events.turn_end()["changed"], 1);
+    assert!(fx.saved().unwrap().had_changes);
+    fx.leave(1);
+    let restored = |told: &[Value]| {
+        told.iter()
+            .find(|e| e["type"] == "restored")
+            .map(|e| e["changesLost"].clone())
+    };
+    assert_eq!(restored(&fx.continue_last()), Some(json!(false)));
+    assert!(fx.saved().unwrap().had_changes);
+    // the plugin stopped: the copy went with its changes
+    fx.session.shutdown();
+    fx.copy.lock().unwrap().take().unwrap().remove().unwrap();
+    assert_eq!(restored(&fx.continue_last()), Some(json!(true)));
+    assert!(!fx.saved().unwrap().had_changes);
+    fx.leave(3);
+    assert_eq!(restored(&fx.continue_last()), Some(json!(false)));
 }

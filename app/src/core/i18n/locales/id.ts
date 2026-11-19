@@ -3098,6 +3098,13 @@ export default {
   "acp.hiddenEntries": "Pesan sebelumnya disembunyikan.",
   "acp.details": "Detail",
   "acp.examples": "Contoh:",
+  "acp.continue": "Lanjutkan percakapan terakhir",
+  "acp.restored.notShown": "Pesan sebelumnya tidak ditampilkan. Agen masih mengingatnya.",
+  "acp.restored.changesLost":
+    "Perubahan yang dibuat agen sebelumnya dan belum Anda terima tidak disimpan.",
+  "acp.say.restored": "Percakapan dipulihkan",
+  "acp.fail.sessionGone": "Percakapan terakhir tidak bisa dilanjutkan lagi.",
+  "acp.error.noSaved": "Tidak ada percakapan sebelumnya untuk dilanjutkan.",
   "acp.example.clearer": "Buat paragraf ini lebih jelas.",
   "acp.example.summary": "Tambahkan ringkasan singkat di bagian atas.",
   "acp.example.find": "Halaman mana saja yang membahas topik ini?",

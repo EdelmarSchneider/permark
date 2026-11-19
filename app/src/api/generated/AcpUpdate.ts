@@ -12,7 +12,7 @@ import type { PermissionDiff } from "./PermissionDiff";
 /**
  * Event `acp:update`: what the agent of the project does, as it happens.
  */
-export type AcpUpdate = { "type": "status", state: AcpState, error: AcpError | null, methods?: Array<LoginMethod>, } | { "type": "text", text: string, } | { "type": "thinking", } | { "type": "tool", id: string, title: string, kind: AcpToolKind, status: AcpToolStatus, } | { "type": "permission", requestId: string, title: string, kind: AcpToolKind, 
+export type AcpUpdate = { "type": "status", state: AcpState, error: AcpError | null, methods?: Array<LoginMethod>, } | { "type": "text", text: string, } | { "type": "you", text: string, } | { "type": "restored", replayed: boolean, changesLost: boolean, } | { "type": "thinking", } | { "type": "tool", id: string, title: string, kind: AcpToolKind, status: AcpToolStatus, } | { "type": "permission", requestId: string, title: string, kind: AcpToolKind, 
 /**
  * Where it would act.
  */

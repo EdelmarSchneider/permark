@@ -367,6 +367,8 @@ impl StateData for Choice {
 /// The chosen agent as it would start now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Chosen {
+    /// The choice as kept (what a kept conversation names its agent by).
+    pub choice: Choice,
     /// Registry name; `None`: the person's own command (the window names it in its language).
     pub name: Option<String>,
     pub resolved: Resolved,
@@ -451,14 +453,17 @@ impl Agents {
     /// The chosen agent as it would start now (`None`: nothing chosen).
     #[must_use]
     pub fn chosen(&self) -> Option<Chosen> {
-        match self.choice()? {
-            Choice::Agent(id) => self.listed(&id).map(|listed| Chosen {
+        let choice = self.choice()?;
+        match &choice {
+            Choice::Agent(id) => self.listed(id).map(|listed| Chosen {
                 name: Some(listed.name.clone()),
                 resolved: self.resolve(listed),
+                choice: choice.clone(),
             }),
             Choice::Command(typed) => Some(Chosen {
                 name: None,
-                resolved: self.resolve_typed(&typed),
+                resolved: self.resolve_typed(typed),
+                choice: choice.clone(),
             }),
         }
     }

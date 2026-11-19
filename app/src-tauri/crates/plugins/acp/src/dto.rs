@@ -172,6 +172,9 @@ pub enum AcpErrorCode {
     Exited,
     /// The message could not be handed to the agent.
     SendFailed,
+    /// The last conversation can no longer be continued: the agent no longer has it | no longer offers a way (the
+    /// conversation is forgotten).
+    SessionGone,
 }
 
 /// Why the agent failed | a step did not work.
@@ -226,6 +229,33 @@ pub struct AcpStatus {
     pub needs: Option<AgentNeed>,
     /// Files the work copy left out for their size (over 4 MiB) at its last build | update; `0` before the first.
     pub skipped_files: u32,
+    /// The project's last conversation with the chosen agent, which it can continue (`acp.continue`); `null`: none
+    /// kept, kept with another agent, or one this agent cannot continue.
+    pub last: Option<LastConversation>,
+}
+
+/// How a kept conversation is continued (as the agent offered when it last started).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ContinueWay {
+    /// `session/load`: the agent replays it, the window shows it again.
+    Load,
+    /// `session/resume`: the agent remembers it; the window shows none of it.
+    Resume,
+}
+
+/// The project's last conversation, as the window offers to continue it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LastConversation {
+    /// The agent's title for it (`null`: none told).
+    pub title: Option<String>,
+    /// When it last went on (ms since the Unix epoch).
+    #[ts(type = "number")]
+    pub at: u64,
+    pub supports: ContinueWay,
 }
 
 /// How a sign-in works.
@@ -509,6 +539,12 @@ pub enum AcpUpdate {
     },
     /// A piece of the agent's reply (append).
     Text { text: String },
+    /// A piece of one of the person's earlier messages, replayed while a conversation is continued (append).
+    You { text: String },
+    /// The last conversation was continued (after its replay, before the `ready` status). `replayed` false: the
+    /// agent remembers it but showed none of it; `changesLost`: the copy was made anew, so changes of that
+    /// conversation the person had not accepted are gone.
+    Restored { replayed: bool, changes_lost: bool },
     /// The agent thinks (its thoughts are not shown); once per stretch of thinking.
     Thinking {},
     /// A tool the agent runs (upsert by `id`).

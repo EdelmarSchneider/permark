@@ -679,6 +679,17 @@ impl StateStore {
         self.profile_dir.join("plugins").join(id.as_str())
     }
 
+    /// A typed file in [`StateStore::profile_plugin_dir`]: ALWAYS in the profile, whatever the project holds.
+    #[must_use]
+    pub fn profile_plugin_file<T: StateData>(&self, id: &PluginId, name: &str) -> StateFile<T> {
+        StateFile {
+            path: self.profile_plugin_dir(id).join(name),
+            guard: None,
+            read: AtomicU8::new(unread::NEVER),
+            _data: PhantomData,
+        }
+    }
+
     #[must_use]
     pub fn plugin_file<T: StateData>(&self, id: &PluginId, name: &str) -> StateFile<T> {
         StateFile {

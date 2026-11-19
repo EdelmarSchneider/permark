@@ -6,8 +6,11 @@
 // Gemini CLI asks for a sign-in at its first start: its own method signs in, "Try again" alone stays signed out. The
 // plugin's checks of what it is sent are mirrored (a passage alone is a message, line range, project paths, files
 // taken only as a whole, links never accepted, relative program paths, inside a Snap nothing starts), so the window's
-// words for them are tested against the same refusals. Nothing is written: the real copy, agent, choice file and
-// writes are the plugin's (tested there); the mock only feeds the window's flow.
+// words for them are tested against the same refusals. The project's last conversation is kept (one from an earlier
+// run with Claude to start with; each new conversation takes its place) and continued: replayed by an agent that loads
+// conversations (Claude, Gemini), remembered without a replay by one that only resumes them (Codex). Nothing is
+// written: the real copy, agent, choice file and writes are the plugin's (tested there); the mock only feeds the
+// window's flow.
 
 import type { AcpError } from "./generated/AcpError";
 import type { AcpState } from "./generated/AcpState";
@@ -17,6 +20,7 @@ import type { AcpUpdate } from "./generated/AcpUpdate";
 import type { AgentEntry } from "./generated/AgentEntry";
 import type { AnswerArgs } from "./generated/AnswerArgs";
 import type { ChangeList } from "./generated/ChangeList";
+import type { ContinueWay } from "./generated/ContinueWay";
 import type { FileChange } from "./generated/FileChange";
 import type { LoginArgs } from "./generated/LoginArgs";
 import type { LoginMethod } from "./generated/LoginMethod";
@@ -35,6 +39,7 @@ type AcpMethods = Pick<
   | "acp.prompt"
   | "acp.cancel"
   | "acp.reset"
+  | "acp.continue"
   | "acp.answer"
   | "acp.changes"
   | "acp.accept"
@@ -156,6 +161,47 @@ export const MOCK_LOGIN_METHODS: readonly LoginMethod[] = [
   },
 ];
 
+/** How each agent of the mock list continues a conversation (absent: it cannot). */
+const MOCK_WAYS: Readonly<Record<string, ContinueWay>> = {
+  "claude-acp": "load",
+  gemini: "load",
+  "codex-acp": "resume",
+};
+
+/** The project's last conversation as the mock keeps it: what its agent replays, and whether changes waited. */
+export type MockSaved = {
+  /** The agent's id, or the own command (`command:<text>`). */
+  agent: string;
+  title: string | null;
+  at: number;
+  supports: ContinueWay | null;
+  /** The news a replay sends again (the person's messages, the replies, tool lines). */
+  history: AcpUpdate[];
+  hadChanges: boolean;
+};
+
+/** A conversation with Claude from an earlier run, which left a change the person did not accept. */
+export function mockEarlierConversation(): MockSaved {
+  return {
+    agent: "claude-acp",
+    title: "Clearer first steps in the guide",
+    at: Date.now() - 2 * 60 * 60 * 1000,
+    supports: "load",
+    history: [
+      { type: "you", text: "Make the first steps in the guide clearer." },
+      {
+        type: "tool",
+        id: "earlier-1",
+        title: "Read docs/guide.md",
+        kind: "read",
+        status: "completed",
+      },
+      { type: "text", text: "I split the first steps into two sentences.\n" },
+    ],
+    hadChanges: true,
+  };
+}
+
 /** What a "Try again" without a sign-in answers (the window words the code). */
 export const MOCK_NOT_SIGNED_IN: AcpError = { code: "stillNeedsLogin" };
 
@@ -184,6 +230,8 @@ export type AcpProbe = {
   snap: boolean;
   /** Project paths agents may not see: a passage of one is refused, such an open document is not named. */
   hidden: Set<string>;
+  /** The project's last conversation (`null`: none kept). */
+  saved: MockSaved | null;
   /** Stops the reply timer (tests). */
   stopAll(): void;
 };
@@ -248,6 +296,8 @@ type Step =
   | { kind: "ask"; update: Extract<AcpUpdate, { type: "permission" }> }
   /** The agent wants a sign-in before the reply goes on (`then`: its first steps after it; `why`: a failed one). */
   | { kind: "login"; then: Step[]; why: AcpError | null }
+  /** The continued conversation is ready: its next news is kept again. */
+  | { kind: "resumed" }
   | { kind: "end" };
 
 /** A project path of a file, as the plugin parses it: relative, `/` separated, no `.` | `..` step, not the folder. */
@@ -328,9 +378,16 @@ export function createMockAcp(
     skipped: 0,
     snap: false,
     hidden: new Set(),
+    saved: mockEarlierConversation(),
     stopAll: stopTimer,
   };
-  const news = (update: AcpUpdate): void => emit("acp:update", update);
+  /** The news of the conversation of the running agent is kept for a replay (`false`: none runs | it replays). */
+  let recording = false;
+  const news = (update: AcpUpdate): void => {
+    if (recording && (update.type === "text" || update.type === "tool"))
+      probe.saved?.history.push(update);
+    emit("acp:update", update);
+  };
   const become = (to: AcpState, why: AcpError | null = null): void => {
     state = to;
     error = why;
@@ -367,9 +424,15 @@ export function createMockAcp(
         afterLogin = now.then;
         become("needsLogin", now.why);
         return;
+      case "resumed":
+        stopTimer();
+        recording = true;
+        become("ready");
+        return;
       case "end":
         stopTimer();
         if (probe.changes.length === 0) probe.changes = guideChanges();
+        if (probe.saved !== null) probe.saved.hadChanges = probe.changes.length > 0;
         news({ type: "turnEnd", stopReason: "end_turn", changed: probe.changes.length });
         become("ready");
         return;
@@ -486,6 +549,18 @@ export function createMockAcp(
     return agents().find((a) => a.chosen) ?? null;
   }
 
+  /** How a kept conversation names its agent. */
+  const agentKey = (entry: AgentEntry): string =>
+    entry.how === "custom" ? `command:${entry.command}` : entry.id;
+
+  /** The kept conversation the chosen agent can continue (`null`: none). */
+  function resumable(): MockSaved | null {
+    const agent = chosen();
+    const saved = probe.saved;
+    if (agent === null || saved === null || saved.supports === null) return null;
+    return saved.agent === agentKey(agent) ? saved : null;
+  }
+
   const refuse = (): void => {
     const fail = probe.fail;
     probe.fail = null;
@@ -547,6 +622,7 @@ export function createMockAcp(
       "acp.status": () => {
         probe.calls.push("status");
         const agent = chosen();
+        const saved = resumable();
         return {
           state,
           agent: agent?.command ?? "",
@@ -560,6 +636,10 @@ export function createMockAcp(
               ? { needs: agent.needs }
               : {}),
           skippedFiles: probe.skipped,
+          last:
+            saved === null || saved.supports === null
+              ? null
+              : { title: saved.title, at: saved.at, supports: saved.supports },
         };
       },
       "acp.agents": () => {
@@ -609,6 +689,15 @@ export function createMockAcp(
         // a prompt while a sign-in waits starts a fresh agent, as the plugin does
         if (started && state !== "needsLogin") become("working");
         else {
+          // a new conversation takes the place of the one kept
+          probe.saved = {
+            agent: agentKey(agent),
+            title: args.text.trim() === "" ? null : args.text.trim().slice(0, 60),
+            at: Date.now(),
+            supports: agent.how === "custom" ? null : (MOCK_WAYS[agent.id] ?? null),
+            history: [],
+            hadChanges: false,
+          };
           started = true;
           become("starting");
           const working: Step = {
@@ -619,7 +708,40 @@ export function createMockAcp(
             probe.signedOut.has(agent.id) ? { kind: "login", then: [working], why: null } : working,
           );
         }
+        probe.saved?.history.push({ type: "you", text: args.text });
+        recording = true;
         next = steps;
+        run();
+        return null;
+      },
+      "acp.continue": () => {
+        probe.calls.push("continue");
+        const agent = chosen();
+        if (agent === null) throw new MockPluginError("unavailable", null, "noAgent");
+        const saved = resumable();
+        if (saved === null) throw new MockPluginError("notFound", null, "noSaved");
+        if (state === "starting" || state === "working")
+          throw new MockPluginError("conflict", null, "busy");
+        stopTurn();
+        recording = false;
+        started = true;
+        become("starting");
+        // the copy of this run is still there: only one made anew loses the changes left in the last one
+        const changesLost = saved.hadChanges && probe.changes.length === 0;
+        saved.hadChanges = false;
+        saved.at = Date.now();
+        const replay: Step[] =
+          saved.supports === "load"
+            ? saved.history.map((update): Step => ({ kind: "news", update }))
+            : [];
+        next = [
+          ...replay,
+          {
+            kind: "news",
+            update: { type: "restored", replayed: saved.supports === "load", changesLost },
+          },
+          { kind: "resumed" },
+        ];
         run();
         return null;
       },
@@ -664,6 +786,7 @@ export function createMockAcp(
       "acp.reset": () => {
         probe.calls.push("reset");
         stopTurn();
+        recording = false;
         started = false;
         become("idle");
         return null;

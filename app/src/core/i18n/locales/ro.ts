@@ -3257,6 +3257,13 @@ export default {
   "acp.hiddenEntries": "Mesajele anterioare sunt ascunse.",
   "acp.details": "Detalii",
   "acp.examples": "De exemplu:",
+  "acp.continue": "Continuă ultima conversație",
+  "acp.restored.notShown": "Mesajele anterioare nu sunt afișate. Agentul și le amintește.",
+  "acp.restored.changesLost":
+    "Modificările făcute anterior de agent pe care nu le-ai acceptat nu au fost păstrate.",
+  "acp.say.restored": "Conversație restaurată",
+  "acp.fail.sessionGone": "Ultima conversație nu mai poate fi continuată.",
+  "acp.error.noSaved": "Nu există nicio conversație anterioară de continuat.",
   "acp.example.clearer": "Fă acest paragraf mai clar.",
   "acp.example.summary": "Adaugă un rezumat scurt la început.",
   "acp.example.find": "Ce pagini menționează acest subiect?",

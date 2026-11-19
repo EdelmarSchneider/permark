@@ -3145,6 +3145,14 @@ export default {
   "acp.hiddenEntries": "Frühere Nachrichten sind ausgeblendet.",
   "acp.details": "Details",
   "acp.examples": "Zum Beispiel:",
+  "acp.continue": "Letzte Unterhaltung fortsetzen",
+  "acp.restored.notShown":
+    "Frühere Nachrichten werden nicht angezeigt. Der Agent erinnert sich an sie.",
+  "acp.restored.changesLost":
+    "Änderungen, die der Agent vorher gemacht und die du nicht übernommen hast, wurden nicht behalten.",
+  "acp.say.restored": "Unterhaltung wiederhergestellt",
+  "acp.fail.sessionGone": "Die letzte Unterhaltung kann nicht mehr fortgesetzt werden.",
+  "acp.error.noSaved": "Es gibt keine frühere Unterhaltung zum Fortsetzen.",
   "acp.example.clearer": "Formuliere diesen Absatz klarer.",
   "acp.example.summary": "Füge oben eine kurze Zusammenfassung hinzu.",
   "acp.example.find": "Welche Seiten erwähnen dieses Thema?",

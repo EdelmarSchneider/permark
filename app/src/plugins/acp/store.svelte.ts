@@ -71,6 +71,7 @@ export type ToolState = AcpToolStatus | "stopped";
 
 /** One line of the conversation. */
 export type Entry =
+  /** The person's message (`passage`: attached; `null` also for a message replayed from a continued conversation). */
   | { kind: "you"; id: number; text: string; passage: PromptSelection | null }
   | { kind: "agent"; id: number; text: string }
   | { kind: "tool"; id: number; tool: string; title: string; status: ToolState }
@@ -143,6 +144,14 @@ export class AcpStore {
   choiceRefusal = $state<string | null>(null);
   /** A sign-in is on its way to the backend. */
   signingIn = $state(false);
+
+  /** The project's last conversation can be continued now: the panel is empty, no agent runs, one is kept for the
+   *  chosen agent (`null`: not offered). */
+  readonly resumable = $derived(
+    this.transcript.length === 0 && !this.sending && this.status?.state === "idle"
+      ? (this.status.last ?? null)
+      : null,
+  );
 
   /** A question of the agent waits for the person. */
   readonly asking = $derived(
@@ -256,6 +265,7 @@ export class AcpStore {
           methods: update.methods ?? [],
           needs: this.status?.needs,
           skippedFiles: this.status?.skippedFiles ?? 0,
+          last: this.status?.last ?? null,
         };
         if (update.state !== "starting" && update.state !== "working") {
           this.thinking = false;
@@ -284,6 +294,23 @@ export class AcpStore {
         else this.#push({ kind: "agent", text: update.text });
         return;
       }
+      case "you": {
+        // a continued conversation replayed: the pieces of one message make one line
+        const last = this.transcript.at(-1);
+        if (last?.kind === "you" && last.passage === null)
+          this.transcript = [
+            ...this.transcript.slice(0, -1),
+            { ...last, text: last.text + update.text },
+          ];
+        else this.#push({ kind: "you", text: update.text, passage: null });
+        return;
+      }
+      case "restored":
+        if (!update.replayed) this.#notice(t("acp.restored.notShown"));
+        if (update.changesLost) this.#notice(t("acp.restored.changesLost"));
+        // said once, never line by line while it replays
+        this.#deps.say(t("acp.say.restored"));
+        return;
       case "thinking":
         this.thinking = true;
         return;
@@ -393,6 +420,22 @@ export class AcpStore {
     this.hidden = 0;
     this.thinking = false;
     this.refusal = null;
+  }
+
+  /** Continues the project's last conversation (the agent replays it as news); a refusal is said. */
+  async continueLast(): Promise<void> {
+    if (this.busy) return;
+    this.sending = true;
+    const root = this.#root();
+    try {
+      const result = await this.#client.call("acp.continue", {});
+      if (result.ok || this.#root() !== root) return;
+      this.#notice(errorText(result.error));
+      // gone meanwhile (another window, a new choice): the offer follows what the backend holds
+      void this.#readStatus();
+    } finally {
+      if (this.#root() === root) this.sending = false;
+    }
   }
 
   /** Answers the question `requestId` with `option`. */
@@ -633,6 +676,7 @@ export class AcpStore {
             chosen: answer.chosen,
             needs: answer.needs,
             skippedFiles: answer.skippedFiles,
+            last: answer.last,
           };
   }
 
@@ -1027,6 +1071,8 @@ function failKey(code: AcpErrorCode): MessageKey {
       return "acp.fail.exited";
     case "sendFailed":
       return "acp.fail.sendFailed";
+    case "sessionGone":
+      return "acp.fail.sessionGone";
     default:
       return code satisfies never;
   }
@@ -1080,6 +1126,8 @@ function refusalKey(error: IpcError): MessageKey | null {
       return "acp.error.outdated";
     case "noAgent":
       return "acp.error.noAgent";
+    case "noSaved":
+      return "acp.error.noSaved";
     case "unknownAgent":
       return "acp.error.unknownAgent";
     case "emptyCommand":

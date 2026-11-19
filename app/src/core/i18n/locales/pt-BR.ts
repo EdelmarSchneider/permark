@@ -3091,6 +3091,13 @@ export default {
   "acp.hiddenEntries": "As mensagens anteriores estão ocultas.",
   "acp.details": "Detalhes",
   "acp.examples": "Por exemplo:",
+  "acp.continue": "Continuar a última conversa",
+  "acp.restored.notShown": "As mensagens anteriores não são exibidas. O agente se lembra delas.",
+  "acp.restored.changesLost":
+    "As alterações que o agente fez antes e que você não aceitou não foram mantidas.",
+  "acp.say.restored": "Conversa restaurada",
+  "acp.fail.sessionGone": "A última conversa não pode mais ser continuada.",
+  "acp.error.noSaved": "Não há uma conversa anterior para continuar.",
   "acp.example.clearer": "Deixe este parágrafo mais claro.",
   "acp.example.summary": "Acrescente um resumo curto no início.",
   "acp.example.find": "Quais páginas falam deste assunto?",

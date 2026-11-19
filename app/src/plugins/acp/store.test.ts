@@ -342,7 +342,101 @@ describe("a message and its reply", () => {
       chosen: false,
       methods: [],
       skippedFiles: 0,
+      last: null,
     });
+  });
+});
+
+describe("continuing the last conversation", () => {
+  const ready = (store: AcpStore) => (): boolean => store.status?.state === "ready";
+
+  it("is offered while the panel is empty and no agent runs; the replay fills the conversation, said once", async () => {
+    const { store, acp, say } = await setup();
+    expect(store.resumable).toEqual(
+      expect.objectContaining({ title: "Clearer first steps in the guide", supports: "load" }),
+    );
+    await store.continueLast();
+    await until(ready(store));
+    expect(kinds(store.transcript)).toEqual(["you", "tool", "agent", "notice"]);
+    expect(store.transcript[0]).toEqual(
+      expect.objectContaining({
+        kind: "you",
+        text: "Make the first steps in the guide clearer.",
+        passage: null,
+      }),
+    );
+    // the copy of the earlier run is gone, the change it left with it
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({ kind: "notice", text: t("acp.restored.changesLost") }),
+    );
+    expect(say.mock.calls.filter(([text]) => text === t("acp.say.restored"))).toHaveLength(1);
+    expect(store.resumable).toBeNull();
+    expect(acp.prompts).toEqual([]);
+  });
+
+  it("the pieces of one replayed message make one line", () => {
+    const store = new AcpStore();
+    store.take({ type: "you", text: "Make it " });
+    store.take({ type: "you", text: "shorter." });
+    store.take({ type: "text", text: "Done." });
+    store.take({ type: "you", text: "Thanks." });
+    expect(
+      store.transcript.map((e) => (e.kind === "notice" ? "" : "text" in e ? e.text : "")),
+    ).toEqual(["Make it shorter.", "Done.", "Thanks."]);
+  });
+
+  it("after a new conversation the one just left is offered; on the same copy nothing is said lost", async () => {
+    const { store } = await setup();
+    store.draft = "Shorten the guide";
+    await store.send();
+    await until(() => store.transcript.some((e) => e.kind === "question"));
+    await store.newConversation();
+    await settle();
+    expect(store.resumable).toEqual(
+      expect.objectContaining({ title: "Shorten the guide", supports: "load" }),
+    );
+    await store.continueLast();
+    await until(ready(store));
+    expect(store.transcript[0]).toEqual(
+      expect.objectContaining({ kind: "you", text: "Shorten the guide" }),
+    );
+    expect(store.transcript.some((e) => e.kind === "notice")).toBe(false);
+  });
+
+  it("an agent that only resumes: nothing replayed, the conversation says the agent remembers", async () => {
+    const { store } = await setup({ agent: "codex-acp" });
+    // the conversation kept is another agent's
+    expect(store.resumable).toBeNull();
+    store.draft = "Go";
+    await store.send();
+    await until(() => store.transcript.some((e) => e.kind === "question"));
+    await store.newConversation();
+    await settle();
+    expect(store.resumable?.supports).toBe("resume");
+    await store.continueLast();
+    await until(ready(store));
+    expect(store.transcript).toEqual([
+      expect.objectContaining({ kind: "notice", text: t("acp.restored.notShown") }),
+    ]);
+  });
+
+  it("a refusal is said and the offer follows what the backend holds", async () => {
+    const { store, acp } = await setup();
+    acp.saved = null;
+    await store.continueLast();
+    await settle();
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({ kind: "notice", text: t("acp.error.noSaved") }),
+    );
+    expect(store.status?.last).toBeNull();
+  });
+
+  it("a conversation the agent no longer has is said in words", () => {
+    const store = new AcpStore();
+    store.take({ type: "status", state: "error", error: { code: "sessionGone" } });
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({ kind: "notice", text: t("acp.fail.sessionGone") }),
+    );
   });
 });
 
@@ -715,6 +809,7 @@ describe("words of the panel", () => {
       "protocol",
       "exited",
       "sendFailed",
+      "sessionGone",
     ];
     for (const code of codes) expect(failureText({ code })).not.toBe(`acp.fail.${code}`);
     expect(new Set(codes.map((code) => failureText({ code }))).size).toBe(codes.length);
@@ -751,6 +846,7 @@ describe("words of the panel", () => {
       "noChange",
       "noWorkCopy",
       "noAgent",
+      "noSaved",
       "unknownAgent",
       "emptyCommand",
       "openQuote",

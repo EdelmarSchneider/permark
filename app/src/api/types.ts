@@ -252,10 +252,12 @@ import type { AnswerArgs } from "./generated/AnswerArgs";
 import type { ChangeList } from "./generated/ChangeList";
 import type { ChangesArgs } from "./generated/ChangesArgs";
 import type { ChooseArgs } from "./generated/ChooseArgs";
+import type { ContinueWay } from "./generated/ContinueWay";
 import type { DecideArgs } from "./generated/DecideArgs";
 import type { FileChange } from "./generated/FileChange";
 import type { FileChangeKind } from "./generated/FileChangeKind";
 import type { HunkView } from "./generated/HunkView";
+import type { LastConversation } from "./generated/LastConversation";
 import type { LoginArgs } from "./generated/LoginArgs";
 import type { LoginKind } from "./generated/LoginKind";
 import type { LoginMethod } from "./generated/LoginMethod";
@@ -888,6 +890,10 @@ export interface PluginMethods {
   "acp.cancel": { args: Record<string, never>; result: null };
   /** A new conversation: the agent stops, the next message starts a fresh one; the changes stay. */
   "acp.reset": { args: Record<string, never>; result: null };
+  /** Continues the project's last conversation (`AcpStatus.last`) in a fresh agent: replayed as `acp:update` (`you`,
+   *  `text`, `tool`), then `restored`, then `ready`; no message is sent. Refused `notFound` `noSaved` (none the
+   *  chosen agent can continue), `conflict` `busy`, `unavailable` `noAgent`. */
+  "acp.continue": { args: Record<string, never>; result: null };
   /** Answers one of the agent's questions (`optionId` null: dismissed). */
   "acp.answer": { args: AnswerArgs; result: null };
   /** The files of the work copy that differ from the real ones, as kept since the last turn's end (`refresh`:
@@ -1041,10 +1047,12 @@ export type {
   ChangeList,
   ChangesArgs,
   ChooseArgs,
+  ContinueWay,
   DecideArgs,
   FileChange,
   FileChangeKind,
   HunkView,
+  LastConversation,
   LoginArgs,
   LoginKind,
   LoginMethod,

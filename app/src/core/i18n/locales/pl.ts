@@ -3221,6 +3221,13 @@ export default {
   "acp.hiddenEntries": "Wcześniejsze wiadomości są ukryte.",
   "acp.details": "Szczegóły",
   "acp.examples": "Na przykład:",
+  "acp.continue": "Kontynuuj ostatnią rozmowę",
+  "acp.restored.notShown": "Wcześniejsze wiadomości nie są wyświetlane. Agent je pamięta.",
+  "acp.restored.changesLost":
+    "Zmiany wprowadzone wcześniej przez agenta, których nie zaakceptowano, nie zostały zachowane.",
+  "acp.say.restored": "Przywrócono rozmowę",
+  "acp.fail.sessionGone": "Ostatniej rozmowy nie można już kontynuować.",
+  "acp.error.noSaved": "Nie ma wcześniejszej rozmowy do kontynuowania.",
   "acp.example.clearer": "Napisz ten akapit bardziej przejrzyście.",
   "acp.example.summary": "Dodaj na początku krótkie podsumowanie.",
   "acp.example.find": "Które strony poruszają ten temat?",

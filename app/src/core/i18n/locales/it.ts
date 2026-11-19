@@ -3116,6 +3116,13 @@ export default {
   "acp.hiddenEntries": "I messaggi precedenti sono nascosti.",
   "acp.details": "Dettagli",
   "acp.examples": "Ad esempio:",
+  "acp.continue": "Riprendi l'ultima conversazione",
+  "acp.restored.notShown": "I messaggi precedenti non sono mostrati. L'agente li ricorda.",
+  "acp.restored.changesLost":
+    "Le modifiche fatte prima dall'agente che non avevi accettato non sono state conservate.",
+  "acp.say.restored": "Conversazione ripristinata",
+  "acp.fail.sessionGone": "L'ultima conversazione non può più essere ripresa.",
+  "acp.error.noSaved": "Non c'è nessuna conversazione precedente da riprendere.",
   "acp.example.clearer": "Rendi più chiaro questo paragrafo.",
   "acp.example.summary": "Aggiungi un breve riassunto all'inizio.",
   "acp.example.find": "Quali pagine parlano di questo argomento?",

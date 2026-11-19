@@ -3086,6 +3086,13 @@ export default {
   "acp.hiddenEntries": "Các tin nhắn trước đó đã được ẩn.",
   "acp.details": "Chi tiết",
   "acp.examples": "Ví dụ:",
+  "acp.continue": "Tiếp tục cuộc trò chuyện gần nhất",
+  "acp.restored.notShown": "Các tin nhắn trước đó không được hiển thị. Agent vẫn nhớ chúng.",
+  "acp.restored.changesLost":
+    "Những thay đổi agent đã thực hiện trước đó mà bạn chưa chấp nhận không được giữ lại.",
+  "acp.say.restored": "Đã khôi phục cuộc trò chuyện",
+  "acp.fail.sessionGone": "Không thể tiếp tục cuộc trò chuyện gần nhất nữa.",
+  "acp.error.noSaved": "Không có cuộc trò chuyện nào trước đó để tiếp tục.",
   "acp.example.clearer": "Viết đoạn này rõ ràng hơn.",
   "acp.example.summary": "Thêm một bản tóm tắt ngắn ở đầu.",
   "acp.example.find": "Những trang nào nhắc đến chủ đề này?",

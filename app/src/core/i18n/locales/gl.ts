@@ -3101,6 +3101,13 @@ export default {
   "acp.hiddenEntries": "As mensaxes anteriores están ocultas.",
   "acp.details": "Detalles",
   "acp.examples": "Por exemplo:",
+  "acp.continue": "Continuar a última conversa",
+  "acp.restored.notShown": "As mensaxes anteriores non se mostran. O axente lémbraas.",
+  "acp.restored.changesLost":
+    "Os cambios que o axente fixera antes e que non aceptou non se conservaron.",
+  "acp.say.restored": "Conversa restaurada",
+  "acp.fail.sessionGone": "A última conversa xa non se pode continuar.",
+  "acp.error.noSaved": "Non hai ningunha conversa anterior que continuar.",
   "acp.example.clearer": "Faga este parágrafo máis claro.",
   "acp.example.summary": "Engada un resumo curto ao principio.",
   "acp.example.find": "Que páxinas falan deste tema?",

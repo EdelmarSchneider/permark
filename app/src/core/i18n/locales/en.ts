@@ -3042,6 +3042,13 @@ const en = {
   "acp.hiddenEntries": "Earlier messages are hidden.",
   "acp.details": "Details",
   "acp.examples": "For example:",
+  "acp.continue": "Continue last conversation",
+  "acp.restored.notShown": "Earlier messages are not shown; the agent remembers them.",
+  "acp.restored.changesLost":
+    "Changes the agent made before that you did not accept were not kept.",
+  "acp.say.restored": "Conversation restored",
+  "acp.fail.sessionGone": "The last conversation can no longer be continued.",
+  "acp.error.noSaved": "There is no earlier conversation to continue.",
   "acp.example.clearer": "Make this paragraph clearer.",
   "acp.example.summary": "Add a short summary at the top.",
   "acp.example.find": "Which pages mention this topic?",

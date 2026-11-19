@@ -3116,6 +3116,13 @@ export default {
   "acp.hiddenEntries": "以前のメッセージは非表示になっています。",
   "acp.details": "詳細",
   "acp.examples": "例：",
+  "acp.continue": "前回の会話を続ける",
+  "acp.restored.notShown": "以前のメッセージは表示されませんが、エージェントは覚えています。",
+  "acp.restored.changesLost":
+    "以前にエージェントが行い、承認されていなかった変更は保持されていません。",
+  "acp.say.restored": "会話を復元しました",
+  "acp.fail.sessionGone": "前回の会話はもう続けられません。",
+  "acp.error.noSaved": "続けられる以前の会話はありません。",
   "acp.example.clearer": "この段落をもっとわかりやすくしてください。",
   "acp.example.summary": "冒頭に短い要約を追加してください。",
   "acp.example.find": "このトピックに触れているページはどれですか？",

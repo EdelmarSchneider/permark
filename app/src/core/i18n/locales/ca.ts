@@ -3134,6 +3134,13 @@ export default {
   "acp.hiddenEntries": "Els missatges anteriors estan amagats.",
   "acp.details": "Detalls",
   "acp.examples": "Per exemple:",
+  "acp.continue": "Continua l'última conversa",
+  "acp.restored.notShown": "Els missatges anteriors no es mostren. L'agent els recorda.",
+  "acp.restored.changesLost":
+    "Els canvis que l'agent havia fet abans i que no vau acceptar no s'han conservat.",
+  "acp.say.restored": "Conversa restaurada",
+  "acp.fail.sessionGone": "L'última conversa ja no es pot continuar.",
+  "acp.error.noSaved": "No hi ha cap conversa anterior per continuar.",
   "acp.example.clearer": "Fes més clar aquest paràgraf.",
   "acp.example.summary": "Afegeix un resum breu al principi.",
   "acp.example.find": "Quines pàgines parlen d'aquest tema?",
