@@ -11,9 +11,10 @@ import { TABLE_WRAP } from "./enhance";
 import {
   NATURAL_TABLE,
   SCREEN_TABLE,
-  fitColumns,
   measureColumns,
+  ownWidths,
   screenLayout,
+  showLayout,
   type ColumnSpan,
   type ScreenLimits,
   type TableLayout,
@@ -119,24 +120,7 @@ function unfit(table: HTMLTableElement): void {
 
 function show(table: HTMLTableElement, layout: TableLayout): void {
   unfit(table);
-  switch (layout.kind) {
-    case "auto":
-      break;
-    case "natural":
-      table.parentElement?.classList.add(NATURAL_TABLE);
-      break;
-    case "fill":
-      fitColumns(table, layout.widths, SCREEN_TABLE);
-      break;
-    case "scroll": {
-      fitColumns(table, layout.widths, SCREEN_TABLE);
-      const width = layout.widths.reduce((sum, value) => sum + value, 0);
-      table.style.width = `${Math.ceil(width)}px`;
-      break;
-    }
-    default:
-      layout satisfies never;
-  }
+  showLayout(table, layout, SCREEN_TABLE);
 }
 
 export type FitterOptions = {
@@ -171,11 +155,8 @@ export class TableFitter {
   /** Lays out `table` from its content once it comes near the screen. Returns what forgets it. */
   watch(table: HTMLTableElement): () => void {
     const forget = (): void => this.#forget(table);
-    // the document's own column widths (an HTML table) stay as written
-    const own =
-      !table.classList.contains(SCREEN_TABLE) &&
-      (table.querySelector(":scope > colgroup") !== null || table.style.width !== "");
-    if (own || this.#entries.has(table) || !this.#start() || !this.#view) return forget;
+    if (ownWidths(table) || this.#entries.has(table) || !this.#start() || !this.#view)
+      return forget;
     this.#entries.set(table, {
       measured: null,
       shown: AUTO,

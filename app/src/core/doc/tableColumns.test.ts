@@ -9,8 +9,10 @@ import {
   FIT_TABLE,
   measureColumns,
   NATURAL_TABLE,
+  ownWidths,
   SCREEN_TABLE,
   screenLayout,
+  showLayout,
   type ColumnSpan,
   type TableLayout,
 } from "./tableColumns";
@@ -256,6 +258,82 @@ describe("rules of a table fitted for paper", () => {
     const print = codeOnly(paper).indexOf("@media print");
     expect(print).toBeGreaterThanOrEqual(0);
     expect(codeOnly(paper).indexOf(FIT_TABLE)).toBeGreaterThan(print);
+  });
+
+  it("fit the page even when an HTML page gave a scrolling table its full width inline", () => {
+    expect(declarations(ruleBody(paper, `.md table.${FIT_TABLE}`))).toContain(
+      "width: 100% !important",
+    );
+  });
+});
+
+describe("showLayout", () => {
+  /** A table of two columns inside its wrapper. */
+  function wrapped(): HTMLTableElement {
+    const wrap = document.createElement("div");
+    wrap.className = "table-wrap";
+    wrap.innerHTML = "<table><tr><td>a</td><td>b</td></tr></table>";
+    const table = wrap.querySelector("table");
+    if (!table) throw new Error("no table");
+    return table;
+  }
+  const shares = (table: HTMLTableElement): string[] =>
+    Array.from(table.querySelectorAll(":scope > colgroup > col"), (col) =>
+      col instanceof HTMLElement ? col.style.width : "",
+    );
+
+  it("leaves an auto table as the browser lays it out", () => {
+    const table = wrapped();
+    showLayout(table, { kind: "auto" }, FIT_TABLE);
+    expect(table.outerHTML).toBe("<table><tbody><tr><td>a</td><td>b</td></tr></tbody></table>");
+    expect(table.parentElement?.className).toBe("table-wrap");
+  });
+
+  it("lets a natural table keep its own width through its wrapper", () => {
+    const table = wrapped();
+    showLayout(table, { kind: "natural" }, FIT_TABLE);
+    expect(table.parentElement?.classList.contains(NATURAL_TABLE)).toBe(true);
+    expect(table.querySelector("colgroup")).toBeNull();
+  });
+
+  it("gives a filling table its shares, marked with the kind asked for", () => {
+    const table = wrapped();
+    showLayout(table, { kind: "fill", widths: [100, 300] }, FIT_TABLE);
+    expect(shares(table)).toEqual(["25%", "75%"]);
+    expect(table.classList.contains(FIT_TABLE)).toBe(true);
+    expect(table.classList.contains(SCREEN_TABLE)).toBe(false);
+    expect(table.style.width).toBe("");
+  });
+
+  it("gives a scrolling table its shares and its whole width", () => {
+    const table = wrapped();
+    showLayout(table, { kind: "scroll", widths: [120.2, 480.3] }, SCREEN_TABLE);
+    expect(shares(table)).toHaveLength(2);
+    expect(table.classList.contains(SCREEN_TABLE)).toBe(true);
+    expect(table.style.width).toBe("601px");
+  });
+});
+
+describe("ownWidths", () => {
+  const table = (html: string): HTMLTableElement => {
+    const holder = document.createElement("div");
+    holder.innerHTML = html;
+    const found = holder.querySelector("table");
+    if (!found) throw new Error("no table");
+    return found;
+  };
+
+  it("tells a table whose document sets its widths from one laid out here", () => {
+    expect(ownWidths(table("<table><tr><td>a</td></tr></table>"))).toBe(false);
+    expect(ownWidths(table('<table><colgroup><col style="width: 9em"></colgroup></table>'))).toBe(
+      true,
+    );
+    expect(ownWidths(table('<table style="width: 30em"><tr><td>a</td></tr></table>'))).toBe(true);
+    expect(
+      ownWidths(
+        table(`<table class="${SCREEN_TABLE}" style="width: 900px"><colgroup></colgroup></table>`),
+      ),
+    ).toBe(false);
   });
 });
 
