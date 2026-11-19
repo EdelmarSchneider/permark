@@ -992,6 +992,11 @@ fn a_fresh_engine_starts_no_thread_makes_no_folder_and_asks_nothing() {
     assert_eq!(run.end("m").1, Update::Failed(DownloadError::Offline));
 }
 
+/// Between two units the worker releases the store lock, and a cleanup that comes right then takes it with no wait.
+/// It once answered `Busy` there for a while on macOS: the lock was freed only by closing its file, and a child that
+/// another thread started at that moment held a copy of the handle until it ran its program. The lock is now unlocked
+/// before the close (`shared_write::FileLock`; the handle copy itself:
+/// `a_released_lock_is_free_at_once_while_a_copy_of_its_handle_lives`), so this holds whatever runs beside it.
 #[test]
 fn cleanup_of_another_unit_is_never_busy_while_this_engine_works() {
     let (_tmp, root) = store();

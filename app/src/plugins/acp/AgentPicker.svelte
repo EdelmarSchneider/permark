@@ -10,6 +10,7 @@
   import type { AgentEntry } from "../../api";
   import { t } from "../../core/i18n";
   import Note from "./Note.svelte";
+  import OwnCommandForm from "./OwnCommandForm.svelte";
   import { acp, canStart, entryAbout, entryName, howKey, pickerList, whyNot } from "./store.svelte";
 
   type Props = {
@@ -24,9 +25,7 @@
   let query = $state("");
   /** The own-command form is open. */
   let other = $state(false);
-  let typed = $state("");
   let search = $state<HTMLInputElement>();
-  let field = $state<HTMLInputElement>();
   let otherButton = $state<HTMLButtonElement>();
 
   const agents = $derived(acp.catalog.status === "ready" ? acp.catalog.agents : []);
@@ -54,12 +53,8 @@
     else if (lost()) search?.focus();
   }
 
-  async function openOther(): Promise<void> {
-    typed = agents.find((a) => a.how === "custom")?.command ?? "";
-    other = true;
-    await tick();
-    field?.focus();
-  }
+  /** The own command in use, the form's first text. */
+  const own = $derived(agents.find((a) => a.how === "custom")?.command ?? "");
 
   async function closeOther(): Promise<void> {
     other = false;
@@ -67,12 +62,9 @@
     otherButton?.focus();
   }
 
-  async function useCommand(event: SubmitEvent): Promise<void> {
-    event.preventDefault();
-    if (await acp.choose({ command: typed })) {
-      other = false;
-      onclose();
-    } else if (lost()) field?.focus();
+  function commandKept(): void {
+    other = false;
+    onclose();
   }
 
   function cancel(): void {
@@ -190,36 +182,20 @@
     </details>
 
     {#if other}
-      <form class="other" onsubmit={(event) => void useCommand(event)}>
-        <label for="{uid}-command">{t("acp.pick.command")}</label>
-        <input
-          bind:this={field}
-          bind:value={typed}
-          id="{uid}-command"
-          class="field mono"
-          spellcheck="false"
-          autocomplete="off"
-          placeholder={t("acp.pick.commandPlaceholder")}
-          aria-describedby="{uid}-warning"
+      <div class="other">
+        <OwnCommandForm
+          initial={own}
+          focus
+          oncancel={() => void closeOther()}
+          onsaved={commandKept}
         />
-        <Note tone="warning" id="{uid}-warning">{t("acp.pick.commandWarning")}</Note>
-        <div class="actions">
-          <button type="button" class="btn btn--sm" onclick={() => void closeOther()}
-            >{t("common.cancel")}</button
-          >
-          <button
-            type="submit"
-            class="btn btn--sm btn--primary"
-            disabled={typed.trim() === "" || locked}>{t("acp.pick.useCommand")}</button
-          >
-        </div>
-      </form>
+      </div>
     {:else}
       <button
         bind:this={otherButton}
         type="button"
         class="btn btn--sm btn--ghost other-button"
-        onclick={() => void openOther()}>{t("acp.pick.other")}</button
+        onclick={() => (other = true)}>{t("acp.pick.other")}</button
       >
     {/if}
 
@@ -233,10 +209,11 @@
       placeholder={t("acp.pick.search")}
       aria-label={t("acp.pick.search")}
     />
-    {#if !acp.canChange}
+    <!-- the open form says these beside its own button -->
+    {#if !acp.canChange && !other}
       <Note>{t("acp.error.busy")}</Note>
     {/if}
-    {#if acp.choiceRefusal !== null}
+    {#if acp.choiceRefusal !== null && !other}
       <Note tone="refusal" alert>{acp.choiceRefusal}</Note>
     {/if}
 
@@ -315,9 +292,6 @@
   }
   .field:hover {
     border-color: var(--border-strong);
-  }
-  .mono {
-    font-family: var(--font-code);
   }
   .agents {
     display: flex;
@@ -422,15 +396,7 @@
     gap: var(--sp-1);
   }
   .other {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-1);
     padding: var(--sp-2) 0;
     border-block: 1px solid var(--border);
-  }
-  label {
-    color: var(--muted);
-    font-size: var(--fs-ui-sm);
-    font-weight: 600;
   }
 </style>

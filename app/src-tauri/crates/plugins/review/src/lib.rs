@@ -6,7 +6,6 @@
 #![cfg_attr(test, allow(clippy::assert_is_empty))]
 
 mod diff;
-mod linediff;
 #[cfg(test)]
 mod lines_tests;
 mod service;
@@ -30,7 +29,6 @@ use permark_plugin_unread::UnreadHub;
 use serde::Deserialize;
 
 pub use diff::{changes, content_of, Change, Kind};
-pub use linediff::{hunks, replace, whitespace_only, Hunk, HunkKind};
 pub use service::{Files, HeldFile, Prefs, ReviewService, SeenDoc, SeenFile};
 pub use splice::{edit_for, invert, CannotSplice, Span, Text};
 pub use store::{CopyStore, MAX_COPY_BYTES};

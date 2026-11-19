@@ -3063,6 +3063,11 @@ export default {
   "acp.pick.commandWarning":
     "PerMark avvierà questo programma sul tuo computer, con i tuoi permessi. Usa solo un programma di cui ti fidi.",
   "acp.pick.useCommand": "Usa questo comando",
+  "acp.preview.starts": "Avvia: {program}",
+  "acp.page.inUse": "Agente in uso",
+  "acp.page.none": "Nessun agente scelto per ora",
+  "acp.page.change": "Cambia…",
+  "acp.page.saved": "Salvato. L'Assistente userà questo comando dal tuo prossimo messaggio.",
   "acp.how.native": "Trovato sul tuo computer",
   "acp.how.npx": "Si scarica al primo uso",
   "acp.how.uvx": "Si scarica al primo uso",
@@ -3116,6 +3121,13 @@ export default {
   "acp.hiddenEntries": "I messaggi precedenti sono nascosti.",
   "acp.details": "Dettagli",
   "acp.examples": "Ad esempio:",
+  "acp.continue": "Riprendi l'ultima conversazione",
+  "acp.restored.notShown": "I messaggi precedenti non sono mostrati. L'agente li ricorda.",
+  "acp.restored.changesLost":
+    "Le modifiche della conversazione precedente che non avevi accettato non ci sono più.",
+  "acp.say.restored": "Conversazione ripristinata",
+  "acp.fail.sessionGone": "L'ultima conversazione non può più essere ripresa.",
+  "acp.error.noSaved": "Non c'è nessuna conversazione precedente da riprendere.",
   "acp.example.clearer": "Rendi più chiaro questo paragrafo.",
   "acp.example.summary": "Aggiungi un breve riassunto all'inizio.",
   "acp.example.find": "Quali pagine parlano di questo argomento?",
@@ -3164,6 +3176,8 @@ export default {
   "acp.fail.exited": "Il programma dell'agente si è chiuso inaspettatamente.",
   "acp.fail.sendFailed": "Impossibile consegnare il messaggio all'agente.",
   "acp.error.relativeProgram": "Scrivi il percorso completo del programma, o solo il suo nome.",
+  "acp.error.networkProgram":
+    "PerMark avvia solo programmi di questo computer, non da una cartella di rete.",
   "acp.error.oneChoice": "Scegli un agente o scrivi un comando.",
   "acp.error.denied": "PerMark non scrive in questo file perché gli agenti non possono vederlo.",
   "acp.error.link": "Un collegamento creato dall'agente può essere solo rifiutato.",
@@ -3175,6 +3189,12 @@ export default {
   "acp.error.insideProject":
     "La copia per l'agente non può essere conservata dentro questa cartella.",
   "acp.error.notApplied": "PerMark non è riuscito ad applicare questa modifica.",
+  "acp.options": "Impostazioni dell'agente",
+  "acp.option.model": "Modello",
+  "acp.fail.optionRefused": "L'agente non ha accettato la nuova impostazione.",
+  "acp.error.starting": "L'agente si sta ancora avviando. Riprova tra un momento.",
+  "acp.error.notRunning": "L'agente non è in esecuzione.",
+  "acp.error.settingGone": "L'agente non offre più questa impostazione.",
   "acp.option.allowOnce": "Consenti una volta",
   "acp.option.rejectOnce": "Non consentire",
   "acp.alwaysHidden":

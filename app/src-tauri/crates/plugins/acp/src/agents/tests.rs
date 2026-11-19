@@ -530,6 +530,117 @@ fn an_own_command_with_a_relative_program_path_is_refused() {
     assert!(!profile.path().join(CHOICE_FILE).exists());
 }
 
+/// A program on a share | device path: even a lookup of it would connect to the server (Windows sends the person's
+/// sign-in to whoever answers). Refused by the preview and by a choice before the program is looked up at all.
+#[test]
+fn an_own_command_on_a_network_path_is_refused_before_any_lookup() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let profile = tempfile::tempdir().unwrap();
+    let lookups = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&lookups);
+    let agents = Agents::with(
+        Some(testing::app_store(profile.path()).app_file(CHOICE_FILE)),
+        Arc::new(move |_: &OsStr| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            None
+        }),
+        platforms(),
+    );
+    for typed in [
+        r"\\host\share\a.exe --acp",
+        "//host/share/a",
+        r"\\?\UNC\host\share\a.exe",
+        r#""\\host\share\my agent.exe" --acp"#,
+        r"\\.\pipe\agent",
+        r"/\host\share\a.exe",
+    ] {
+        assert_eq!(
+            agents.preview(typed),
+            ResolvedCommand {
+                program: None,
+                error: Some("networkProgram".to_owned())
+            },
+            "{typed}"
+        );
+        let error = agents.choose(&command(typed)).unwrap_err();
+        assert_eq!(
+            (error.kind, error.detail.as_deref()),
+            (ErrorKind::InvalidData, Some("networkProgram")),
+            "{typed}"
+        );
+    }
+    assert_eq!(lookups.load(Ordering::SeqCst), 0);
+    assert!(!profile.path().join(CHOICE_FILE).exists());
+}
+
+/// The preview of an own command answers what a choice of it would: the same refusal, else the file that would start
+/// (`None`: not found here). It keeps nothing.
+#[test]
+fn an_own_command_preview_answers_what_a_choice_would() {
+    let profile = tempfile::tempdir().unwrap();
+    let chooser = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let own = testing::program(bin.path(), "my-agent");
+    let agents = testing::agents(profile.path(), bin.path());
+    for typed in [
+        "  my-agent --acp \"a b\" ",
+        "missing-agent --acp",
+        "",
+        "   ",
+        r#""" --acp"#,
+        r#""C:\Program Files\node.exe --acp"#,
+        "./agent --acp",
+        "bin/agent",
+    ] {
+        let preview = agents.preview(typed);
+        let choice = testing::agents(chooser.path(), bin.path()).choose(&command(typed));
+        assert_eq!(
+            preview.error,
+            choice.err().and_then(|e| e.detail),
+            "{typed:?}"
+        );
+        if preview.error.is_some() {
+            assert_eq!(preview.program, None, "{typed:?}");
+        }
+    }
+    let found = agents.preview("  my-agent --acp ");
+    same_file(Path::new(&found.program.unwrap()), &own);
+    assert_eq!(
+        agents.preview("missing-agent --acp"),
+        ResolvedCommand {
+            program: None,
+            error: None
+        }
+    );
+    assert!(!profile.path().join(CHOICE_FILE).exists());
+
+    let snap = testing::agents(profile.path(), bin.path()).in_snap(true);
+    assert_eq!(snap.preview("my-agent").error.as_deref(), Some("snap"));
+    let unkept = Agents::with(None, testing::find_in(bin.path()), platforms());
+    assert_eq!(
+        unkept.preview("my-agent").error.as_deref(),
+        Some("noProfile")
+    );
+}
+
+/// An extension the program lookup added from `PATHEXT` (upper case there) shows in lower case; one the person typed
+/// stays as typed.
+#[test]
+fn the_preview_shows_an_added_extension_in_lower_case() {
+    let profile = tempfile::tempdir().unwrap();
+    let file = testing::app_store(profile.path()).app_file(CHOICE_FILE);
+    let found = Path::new("nodejs").join("node.EXE");
+    let answer = found.clone();
+    let agents = Agents::with(
+        Some(file),
+        Arc::new(move |_: &OsStr| Some(answer.clone())),
+        platforms(),
+    );
+    let shown = |typed: &str| PathBuf::from(agents.preview(typed).program.unwrap());
+    assert_eq!(shown("node --acp"), Path::new("nodejs").join("node.exe"));
+    assert_eq!(shown("node.EXE --acp"), found);
+}
+
 /// Inside a strict Snap no program of the computer can start: every agent needs `snap`, nothing can be chosen, and
 /// a choice made before starts nothing.
 #[test]

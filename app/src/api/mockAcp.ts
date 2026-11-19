@@ -6,9 +6,18 @@
 // Gemini CLI asks for a sign-in at its first start: its own method signs in, "Try again" alone stays signed out. The
 // plugin's checks of what it is sent are mirrored (a passage alone is a message, line range, project paths, files
 // taken only as a whole, links never accepted, relative program paths, inside a Snap nothing starts), so the window's
-// words for them are tested against the same refusals. Nothing is written: the real copy, agent, choice file and
-// writes are the plugin's (tested there); the mock only feeds the window's flow.
+// words for them are tested against the same refusals. The project's last conversation is kept (one from an earlier
+// run with Claude to start with; each new conversation takes its place) and continued: replayed by an agent that loads
+// conversations (Claude, Gemini), remembered without a replay by one that only resumes them (Codex). A started agent
+// offers its settings (a model, an effort level, a fast mode, as Claude's adapter does); a change is checked as the
+// plugin checks it, answered by the new values and kept for that agent's next start. A finished reply
+// renders through the mock note view, which draws headings, paragraphs, inline code and links only: lists, fenced code,
+// tables and pictures stay their Markdown text here (check their look against the real renderer). Nothing is
+// written: the real copy, agent, choice file and writes are the plugin's (tested there); the mock only feeds the
+// window's flow.
 
+import type { AcpConfigOption } from "./generated/AcpConfigOption";
+import type { AcpConfigValue } from "./generated/AcpConfigValue";
 import type { AcpError } from "./generated/AcpError";
 import type { AcpState } from "./generated/AcpState";
 import type { AcpToolKind } from "./generated/AcpToolKind";
@@ -17,11 +26,13 @@ import type { AcpUpdate } from "./generated/AcpUpdate";
 import type { AgentEntry } from "./generated/AgentEntry";
 import type { AnswerArgs } from "./generated/AnswerArgs";
 import type { ChangeList } from "./generated/ChangeList";
+import type { ContinueWay } from "./generated/ContinueWay";
 import type { FileChange } from "./generated/FileChange";
 import type { LoginArgs } from "./generated/LoginArgs";
 import type { LoginMethod } from "./generated/LoginMethod";
 import type { PermissionChoice } from "./generated/PermissionChoice";
 import type { PromptArgs } from "./generated/PromptArgs";
+import { mockNoteView } from "./mockDocs";
 import { MockPluginError } from "./mockOrganizing";
 import type { PluginEventName, PluginEvents, PluginMethods } from "./types";
 
@@ -30,15 +41,19 @@ type AcpMethods = Pick<
   | "acp.status"
   | "acp.agents"
   | "acp.choose"
+  | "acp.resolve"
   | "acp.login"
   | "acp.prompt"
   | "acp.cancel"
   | "acp.reset"
+  | "acp.continue"
   | "acp.answer"
+  | "acp.setOption"
   | "acp.changes"
   | "acp.accept"
   | "acp.reject"
   | "acp.undo"
+  | "acp.render"
 >;
 
 /** The person's choice: an agent of the list | an own command. */
@@ -154,6 +169,107 @@ export const MOCK_LOGIN_METHODS: readonly LoginMethod[] = [
   },
 ];
 
+/** How each agent of the mock list continues a conversation (absent: it cannot). */
+const MOCK_WAYS: Readonly<Record<string, ContinueWay>> = {
+  "claude-acp": "load",
+  gemini: "load",
+  "codex-acp": "resume",
+};
+
+/** The project's last conversation as the mock keeps it: what its agent replays, and whether changes waited. */
+export type MockSaved = {
+  /** The agent's id, or the own command (`command:<text>`). */
+  agent: string;
+  title: string | null;
+  at: number;
+  supports: ContinueWay | null;
+  /** The news a replay sends again (the person's messages, the replies, tool lines). */
+  history: AcpUpdate[];
+  hadChanges: boolean;
+};
+
+/** A conversation with Claude from an earlier run, which left a change the person did not accept. */
+export function mockEarlierConversation(): MockSaved {
+  return {
+    agent: "claude-acp",
+    title: "Clearer first steps in the guide",
+    at: Date.now() - 2 * 60 * 60 * 1000,
+    supports: "load",
+    history: [
+      { type: "you", text: "Make the first steps in the guide clearer." },
+      {
+        type: "tool",
+        id: "earlier-1",
+        title: "Read docs/guide.md",
+        kind: "read",
+        status: "completed",
+      },
+      { type: "text", text: "I split the first steps into two sentences.\n" },
+    ],
+    hadChanges: true,
+  };
+}
+
+/** The settings a started agent offers, as Claude's adapter does: the model (default first), the effort, a fast mode. */
+export const MOCK_OPTIONS: readonly AcpConfigOption[] = [
+  {
+    id: "model",
+    name: "Model",
+    description: "AI model to use",
+    category: "model",
+    kind: {
+      type: "select",
+      current: "default",
+      choices: [
+        { value: "default", name: "Default (recommended)", description: "Opus 5.5" },
+        { value: "opus", name: "Opus 5.5", description: "For complex work and everyday tasks" },
+        { value: "sonnet", name: "Sonnet 5", description: "For everyday tasks" },
+        { value: "haiku", name: "Haiku 5", description: "Fastest for quick answers" },
+      ],
+    },
+  },
+  {
+    id: "effort",
+    name: "Effort",
+    description: "Available effort levels for this model",
+    category: "thoughtLevel",
+    kind: {
+      type: "select",
+      current: "default",
+      choices: [
+        { value: "default", name: "Default", description: null },
+        { value: "low", name: "Low", description: null },
+        { value: "medium", name: "Medium", description: null },
+        { value: "high", name: "High", description: null },
+      ],
+    },
+  },
+  {
+    id: "fast",
+    name: "Fast mode",
+    description: "Faster responses on supported models",
+    category: "modelConfig",
+    kind: { type: "toggle", on: false },
+  },
+];
+
+/** `options` with `value` set for option `id` (`null`: the option does not take it). */
+function withValue(
+  options: readonly AcpConfigOption[],
+  id: string,
+  value: AcpConfigValue,
+): AcpConfigOption[] | null {
+  const option = options.find((o) => o.id === id);
+  if (option === undefined) return null;
+  const kind = option.kind;
+  if (kind.type === "select") {
+    if (typeof value !== "string" || !kind.choices.some((c) => c.value === value)) return null;
+    return options.map((o) => (o.id === id ? { ...o, kind: { ...kind, current: value } } : o));
+  }
+  if (typeof value !== "boolean") return null;
+  return options.map((o) => (o.id === id ? { ...o, kind: { type: "toggle", on: value } } : o));
+}
+
 /** What a "Try again" without a sign-in answers (the window words the code). */
 export const MOCK_NOT_SIGNED_IN: AcpError = { code: "stillNeedsLogin" };
 
@@ -182,6 +298,12 @@ export type AcpProbe = {
   snap: boolean;
   /** Project paths agents may not see: a passage of one is refused, such an open document is not named. */
   hidden: Set<string>;
+  /** The project's last conversation (`null`: none kept). */
+  saved: MockSaved | null;
+  /** The settings changes asked for, in order. */
+  optionSets: { id: string; value: AcpConfigValue }[];
+  /** The agent refuses the next settings change (with these words). */
+  refuseOption: string | null;
   /** Stops the reply timer (tests). */
   stopAll(): void;
 };
@@ -223,6 +345,17 @@ function guideChanges(): FileChange[] {
   ];
 }
 
+/** The end of a reply in pieces: what a finished message renders (a heading, a list, code, a table, links, a code
+ *  reference, a picture on the web). */
+const SUMMARY: readonly string[] = [
+  "## What changed\n\n",
+  "- the first steps, now two sentences\n- a new row for `Ctrl+E`\n\n",
+  `See ${GUIDE}:3, the [guide](${GUIDE}) and [CommonMark](https://commonmark.org).\n\n`,
+  "```sh\nnpm run check-links -- --all-files-in-the-project-including-drafts\n```\n\n",
+  "| Shortcut | Action |\n|---|---|\n| Ctrl+E | Edit |\n\n",
+  "![Link map](https://example.com/link-map.png)\n",
+];
+
 const OPTIONS: PermissionChoice[] = [
   { id: "allow-once", name: "Yes", kind: "allow_once" },
   { id: "allow-always", name: "Yes, and don't ask again", kind: "allow_always" },
@@ -235,6 +368,10 @@ type Step =
   | { kind: "ask"; update: Extract<AcpUpdate, { type: "permission" }> }
   /** The agent wants a sign-in before the reply goes on (`then`: its first steps after it; `why`: a failed one). */
   | { kind: "login"; then: Step[]; why: AcpError | null }
+  /** The continued conversation is ready: its next news is kept again. */
+  | { kind: "resumed" }
+  /** The started agent tells its settings (the person's picks for it applied). */
+  | { kind: "options" }
   | { kind: "end" };
 
 /** A project path of a file, as the plugin parses it: relative, `/` separated, no `.` | `..` step, not the folder. */
@@ -251,6 +388,11 @@ function projectFile(path: string): void {
 /** Longest passage a prompt attaches, in UTF-8 bytes (the plugin's `MAX_PASSAGE_BYTES`). */
 const MAX_PASSAGE_BYTES = 256 * 1024;
 
+/** Longest message the plugin renders, in UTF-8 bytes (its `MAX_REPLY_BYTES`). */
+const MAX_REPLY_BYTES = 256 * 1024;
+/** The document a message is rendered as (the plugin's `REPLY_DOC`). */
+const REPLY_DOC = "assistant.md";
+
 /** Refuses a prompt the plugin would refuse before anything starts. */
 function check(args: PromptArgs): void {
   if (args.text.trim() === "" && args.selection === undefined)
@@ -266,13 +408,41 @@ function check(args: PromptArgs): void {
   if (args.document !== undefined) projectFile(args.document);
 }
 
-/** The command's program (its first word; double quotes group) is a path with a folder that is not absolute. */
-function relativeProgram(command: string): boolean {
-  const program = command.startsWith('"')
+/** The command's program: its first word (double quotes group). */
+function programOf(command: string): string {
+  return command.startsWith('"')
     ? command.slice(1, command.indexOf('"', 1))
     : (command.split(/\s+/)[0] ?? "");
-  const absolute = /^([A-Za-z]:[\\/]|[\\/])/.test(program);
-  return /[\\/]/.test(program) && !absolute;
+}
+
+const isAbsolute = (program: string): boolean => /^([A-Za-z]:[\\/]|[\\/])/.test(program);
+
+/** Why the plugin refuses an own command (trimmed), by its detail; `null`: it would be kept. */
+function commandRefusal(command: string): string | null {
+  if (command === "") return "emptyCommand";
+  // double quotes group a word: one left open is refused, as the plugin does
+  if (command.split('"').length % 2 === 0) return "openQuote";
+  const program = programOf(command);
+  if (program === "") return "emptyCommand";
+  // two separators first: a share | device path, never looked up (a lookup alone would reach the server)
+  if (/^[\\/]{2}/.test(program)) return "networkProgram";
+  // a path with a folder that is not absolute would name a file under the folder the agent starts in
+  if (/[\\/]/.test(program) && !isAbsolute(program)) return "relativeProgram";
+  return null;
+}
+
+/** The programs the mock computer finds by their bare name (as `PATH` would). */
+const MOCK_PROGRAMS: Readonly<Record<string, string>> = {
+  npx: "C:\\Program Files\\nodejs\\npx.cmd",
+  node: "C:\\Program Files\\nodejs\\node.exe",
+  uvx: "C:\\Users\\you\\.local\\bin\\uvx.exe",
+  "my-agent": "C:\\Users\\you\\.local\\bin\\my-agent.exe",
+};
+
+/** The full path of the program a kept own command would start; `null`: not found on the mock computer. */
+function programFound(command: string): string | null {
+  const program = programOf(command);
+  return isAbsolute(program) ? program : (MOCK_PROGRAMS[program] ?? null);
 }
 
 export function createMockAcp(
@@ -310,12 +480,27 @@ export function createMockAcp(
     skipped: 0,
     snap: false,
     hidden: new Set(),
+    saved: mockEarlierConversation(),
+    optionSets: [],
+    refuseOption: null,
     stopAll: stopTimer,
   };
-  const news = (update: AcpUpdate): void => emit("acp:update", update);
+  /** The running agent's settings (empty: none runs | it has not told them yet). */
+  let options: readonly AcpConfigOption[] = [];
+  /** The person's picks, by agent. */
+  const picks = new Map<string, Map<string, AcpConfigValue>>();
+  /** The news of the conversation of the running agent is kept for a replay (`false`: none runs | it replays). */
+  let recording = false;
+  const news = (update: AcpUpdate): void => {
+    if (recording && (update.type === "text" || update.type === "tool"))
+      probe.saved?.history.push(update);
+    emit("acp:update", update);
+  };
   const become = (to: AcpState, why: AcpError | null = null): void => {
     state = to;
     error = why;
+    // no agent, no settings (the window drops them with the status, as the plugin's news says)
+    if (to === "idle" || to === "error") options = [];
     if (to !== "needsLogin") afterLogin = null;
     news(
       to === "needsLogin"
@@ -349,9 +534,24 @@ export function createMockAcp(
         afterLogin = now.then;
         become("needsLogin", now.why);
         return;
+      case "resumed":
+        stopTimer();
+        recording = true;
+        become("ready");
+        return;
+      case "options": {
+        const agent = chosen();
+        let told: readonly AcpConfigOption[] = MOCK_OPTIONS;
+        for (const [id, value] of (agent === null ? undefined : picks.get(agentKey(agent))) ?? [])
+          told = withValue(told, id, value) ?? told;
+        options = told;
+        news({ type: "options", options: structuredClone([...told]) });
+        return;
+      }
       case "end":
         stopTimer();
         if (probe.changes.length === 0) probe.changes = guideChanges();
+        if (probe.saved !== null) probe.saved.hadChanges = probe.changes.length > 0;
         news({ type: "turnEnd", stopReason: "end_turn", changed: probe.changes.length });
         become("ready");
         return;
@@ -423,10 +623,11 @@ export function createMockAcp(
         update: {
           type: "text",
           text: allowed
-            ? "All links work. The changes wait for you below."
-            : "I did not run the check. The changes wait for you below.",
+            ? "All links work. The changes wait for you below.\n\n"
+            : "I did not run the check. The changes wait for you below.\n\n",
         },
       },
+      ...SUMMARY.map((chunk): Step => ({ kind: "news", update: { type: "text", text: chunk } })),
       { kind: "end" },
     ];
   }
@@ -465,6 +666,18 @@ export function createMockAcp(
   /** The chosen entry of the list (`null`: none chosen). */
   function chosen(): AgentEntry | null {
     return agents().find((a) => a.chosen) ?? null;
+  }
+
+  /** How a kept conversation names its agent. */
+  const agentKey = (entry: AgentEntry): string =>
+    entry.how === "custom" ? `command:${entry.command}` : entry.id;
+
+  /** The kept conversation the chosen agent can continue (`null`: none). */
+  function resumable(): MockSaved | null {
+    const agent = chosen();
+    const saved = probe.saved;
+    if (agent === null || saved === null || saved.supports === null) return null;
+    return saved.agent === agentKey(agent) ? saved : null;
   }
 
   const refuse = (): void => {
@@ -528,6 +741,7 @@ export function createMockAcp(
       "acp.status": () => {
         probe.calls.push("status");
         const agent = chosen();
+        const saved = resumable();
         return {
           state,
           agent: agent?.command ?? "",
@@ -541,6 +755,11 @@ export function createMockAcp(
               ? { needs: agent.needs }
               : {}),
           skippedFiles: probe.skipped,
+          last:
+            saved === null || saved.supports === null
+              ? null
+              : { title: saved.title, at: saved.at, supports: saved.supports },
+          options: [...options],
         };
       },
       "acp.agents": () => {
@@ -558,12 +777,8 @@ export function createMockAcp(
             throw new MockPluginError("invalidData", args.agent, "unknownAgent");
           probe.choice = { agent: args.agent };
         } else if (args.agent === undefined && command !== undefined) {
-          if (command === "") throw new MockPluginError("invalidData", null, "emptyCommand");
-          // double quotes group a word: one left open is refused, as the plugin does
-          if (command.split('"').length % 2 === 0)
-            throw new MockPluginError("invalidData", null, "openQuote");
-          if (relativeProgram(command))
-            throw new MockPluginError("invalidData", null, "relativeProgram");
+          const refusal = commandRefusal(command);
+          if (refusal !== null) throw new MockPluginError("invalidData", null, refusal);
           probe.choice = { command };
         } else throw new MockPluginError("invalidData", null, "oneChoice");
         // as the plugin does: the agent stops, the next message starts the chosen one
@@ -571,6 +786,11 @@ export function createMockAcp(
         started = false;
         become("idle");
         return agents();
+      },
+      "acp.resolve": (args) => {
+        const command = args.command.trim();
+        const error = probe.snap ? "snap" : commandRefusal(command);
+        return { program: error === null ? programFound(command) : null, error };
       },
       "acp.prompt": (sent) => {
         probe.calls.push("prompt");
@@ -590,8 +810,18 @@ export function createMockAcp(
         // a prompt while a sign-in waits starts a fresh agent, as the plugin does
         if (started && state !== "needsLogin") become("working");
         else {
+          // a new conversation takes the place of the one kept
+          probe.saved = {
+            agent: agentKey(agent),
+            title: args.text.trim() === "" ? null : args.text.trim().slice(0, 60),
+            at: Date.now(),
+            supports: agent.how === "custom" ? null : (MOCK_WAYS[agent.id] ?? null),
+            history: [],
+            hadChanges: false,
+          };
           started = true;
           become("starting");
+          steps.unshift({ kind: "options" });
           const working: Step = {
             kind: "news",
             update: { type: "status", state: "working", error: null },
@@ -600,7 +830,41 @@ export function createMockAcp(
             probe.signedOut.has(agent.id) ? { kind: "login", then: [working], why: null } : working,
           );
         }
+        probe.saved?.history.push({ type: "you", text: args.text });
+        recording = true;
         next = steps;
+        run();
+        return null;
+      },
+      "acp.continue": () => {
+        probe.calls.push("continue");
+        const agent = chosen();
+        if (agent === null) throw new MockPluginError("unavailable", null, "noAgent");
+        const saved = resumable();
+        if (saved === null) throw new MockPluginError("notFound", null, "noSaved");
+        if (state === "starting" || state === "working")
+          throw new MockPluginError("conflict", null, "busy");
+        stopTurn();
+        recording = false;
+        started = true;
+        become("starting");
+        // the copy of this run is still there: only one made anew loses the changes left in the last one
+        const changesLost = saved.hadChanges && probe.changes.length === 0;
+        saved.hadChanges = false;
+        saved.at = Date.now();
+        const replay: Step[] =
+          saved.supports === "load"
+            ? saved.history.map((update): Step => ({ kind: "news", update }))
+            : [];
+        next = [
+          { kind: "options" },
+          ...replay,
+          {
+            kind: "news",
+            update: { type: "restored", replayed: saved.supports === "load", changesLost },
+          },
+          { kind: "resumed" },
+        ];
         run();
         return null;
       },
@@ -645,6 +909,7 @@ export function createMockAcp(
       "acp.reset": () => {
         probe.calls.push("reset");
         stopTurn();
+        recording = false;
         started = false;
         become("idle");
         return null;
@@ -666,6 +931,34 @@ export function createMockAcp(
         run();
         return null;
       },
+      "acp.setOption": (args) => {
+        probe.calls.push("setOption");
+        if (state === "starting") throw new MockPluginError("conflict", null, "starting");
+        if (state !== "ready" && state !== "working")
+          throw new MockPluginError("unavailable", null, "notRunning");
+        if (!options.some((o) => o.id === args.id))
+          throw new MockPluginError("notFound", args.id, "unknownSetting");
+        const next = withValue(options, args.id, args.value);
+        if (next === null) throw new MockPluginError("invalidData", args.id, "notOffered");
+        probe.optionSets.push({ ...args });
+        const refusal = probe.refuseOption;
+        if (refusal !== null) {
+          probe.refuseOption = null;
+          // told again as they are (fresh, as from the backend), then why
+          news({ type: "options", options: structuredClone([...options]) });
+          news({ type: "status", state, error: { code: "optionRefused", message: refusal } });
+          return null;
+        }
+        options = next;
+        const agent = chosen();
+        if (agent !== null) {
+          const mine = picks.get(agentKey(agent)) ?? new Map<string, AcpConfigValue>();
+          mine.set(args.id, args.value);
+          picks.set(agentKey(agent), mine);
+        }
+        news({ type: "options", options: structuredClone(next) });
+        return null;
+      },
       "acp.changes": () => {
         probe.calls.push("changes");
         return listed();
@@ -681,6 +974,14 @@ export function createMockAcp(
       "acp.undo": ({ path }) => {
         probe.calls.push("undo");
         return undo(path);
+      },
+      "acp.render": ({ text }) => {
+        probe.calls.push("render");
+        if (new TextEncoder().encode(text).length > MAX_REPLY_BYTES)
+          throw new MockPluginError("tooLarge", null, "replyTooLarge");
+        // no renderer here: a heading | a paragraph per run of lines, inline code and links as elements
+        const body = mockNoteView(REPLY_DOC, text, { inline: true }).body;
+        return { blocks: body.kind === "markdown" ? body.blocks : [] };
       },
     },
   };

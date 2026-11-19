@@ -4,7 +4,8 @@
 // refusals in words, and the passage attached from the open document (frozen while the panel has the keyboard); the
 // choice of the agent (none at first: the picker; a choice read back by name; refusals) and a sign-in the agent asks
 // for (Try again alone stays signed out, the agent's own method signs in and the reply goes on); another project
-// shown meanwhile (its news and late answers never reach it), the announcements, Undo after a decision, the caps.
+// shown meanwhile (its news and late answers never reach it), the announcements, Undo after a decision, the caps; the
+// agent's settings (its model, effort, a fast mode): shown while it runs, changed through the plugin, refusals in words.
 import "../../core/testing/media";
 import { flushSync, tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -27,6 +28,7 @@ import { Box } from "../../core/testing/box.svelte";
 import {
   AcpStore,
   canStart,
+  configLabel,
   entryAbout,
   entryName,
   errorText,
@@ -36,6 +38,7 @@ import {
   PANEL_MARK,
   passageLabel,
   pickerList,
+  previewText,
   firstPlace,
   MAX_ENTRIES,
   PANEL,
@@ -152,6 +155,18 @@ describe("a message and its reply", () => {
     });
     expect(store.changes[0]?.hunks).toHaveLength(2);
     expect(store.busy).toBe(false);
+  });
+
+  it("a finished message renders through the plugin as document blocks; one past the cap stays plain", async () => {
+    const { store, acp } = await setup();
+    const blocks = await store.render(
+      "## Done\n\nSee `docs/guide.md:3` and [the guide](docs/guide.md).",
+    );
+    expect(acp.calls).toContain("render");
+    expect(blocks?.map((b) => b.kind)).toEqual(["h2", "p"]);
+    expect(blocks?.[1]?.html).toContain('<a href="docs/guide.md">the guide</a>');
+    expect(blocks?.[1]?.html).toContain("<code>docs/guide.md:3</code>");
+    expect(await store.render("x".repeat(256 * 1024 + 1))).toBeNull();
   });
 
   it("a hunk accepted leaves the other, moved by the lines it added; a file rejected leaves nothing", async () => {
@@ -330,7 +345,108 @@ describe("a message and its reply", () => {
       chosen: false,
       methods: [],
       skippedFiles: 0,
+      last: null,
+      options: [],
     });
+  });
+});
+
+describe("continuing the last conversation", () => {
+  const ready = (store: AcpStore) => (): boolean => store.status?.state === "ready";
+
+  it("is offered while the panel is empty and no agent runs; the replay fills the conversation, said once", async () => {
+    const { store, acp, say } = await setup();
+    expect(store.resumable).toEqual(
+      expect.objectContaining({ title: "Clearer first steps in the guide", supports: "load" }),
+    );
+    await store.continueLast();
+    await until(ready(store));
+    expect(kinds(store.transcript)).toEqual(["you", "tool", "agent", "notice"]);
+    expect(store.transcript[0]).toEqual(
+      expect.objectContaining({
+        kind: "you",
+        text: "Make the first steps in the guide clearer.",
+        passage: null,
+      }),
+    );
+    // the copy of the earlier run is gone, the change it left with it
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({ kind: "notice", text: t("acp.restored.changesLost") }),
+    );
+    expect(say.mock.calls.filter(([text]) => text === t("acp.say.restored"))).toHaveLength(1);
+    expect(store.resumable).toBeNull();
+    expect(acp.prompts).toEqual([]);
+  });
+
+  it("the pieces of one replayed message make one line", () => {
+    const store = new AcpStore();
+    store.take({ type: "you", text: "Make it " });
+    store.take({ type: "you", text: "shorter." });
+    store.take({ type: "text", text: "Done." });
+    store.take({ type: "you", text: "Thanks." });
+    expect(
+      store.transcript.map((e) => (e.kind === "notice" ? "" : "text" in e ? e.text : "")),
+    ).toEqual(["Make it shorter.", "Done.", "Thanks."]);
+  });
+
+  it("after a new conversation the one just left is offered; on the same copy nothing is said lost", async () => {
+    const { store } = await setup();
+    store.draft = "Shorten the guide";
+    await store.send();
+    await until(() => store.transcript.some((e) => e.kind === "question"));
+    await store.newConversation();
+    await settle();
+    expect(store.resumable).toEqual(
+      expect.objectContaining({ title: "Shorten the guide", supports: "load" }),
+    );
+    await store.continueLast();
+    await until(ready(store));
+    expect(store.transcript[0]).toEqual(
+      expect.objectContaining({ kind: "you", text: "Shorten the guide" }),
+    );
+    expect(store.transcript.some((e) => e.kind === "notice")).toBe(false);
+  });
+
+  it("an agent that only resumes: nothing replayed, the conversation says the agent remembers", async () => {
+    const { store } = await setup({ agent: "codex-acp" });
+    // the conversation kept is another agent's
+    expect(store.resumable).toBeNull();
+    store.draft = "Go";
+    await store.send();
+    await until(() => store.transcript.some((e) => e.kind === "question"));
+    await store.newConversation();
+    await settle();
+    expect(store.resumable?.supports).toBe("resume");
+    await store.continueLast();
+    await until(ready(store));
+    expect(store.transcript).toEqual([
+      expect.objectContaining({ kind: "notice", text: t("acp.restored.notShown") }),
+    ]);
+  });
+
+  it("a refusal is said and the offer follows what the backend holds", async () => {
+    const { store, acp } = await setup();
+    acp.saved = null;
+    await store.continueLast();
+    await settle();
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({ kind: "notice", text: t("acp.error.noSaved") }),
+    );
+    expect(store.status?.last).toBeNull();
+  });
+
+  it("a conversation the agent no longer has is said in words and no longer offered", async () => {
+    const { store } = await setup();
+    expect(store.status?.last).not.toBeNull();
+    store.take({ type: "status", state: "error", error: { code: "sessionGone" } });
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({ kind: "notice", text: t("acp.fail.sessionGone") }),
+    );
+    expect(store.status?.last).toBeNull();
+    // any other failure leaves the offer to the backend's next answer
+    const other = await setup();
+    other.store.take({ type: "status", state: "error", error: { code: "exited" } });
+    expect(other.store.status?.last).not.toBeNull();
   });
 });
 
@@ -407,6 +523,37 @@ describe("the choice of the agent", () => {
     expect(await store.choose({ agent: "gone-agent" })).toBe(false);
     expect(store.choiceRefusal).toBe(t("acp.error.unknownAgent"));
     expect(store.status?.chosen).toBe(false);
+  });
+
+  it("an own command is previewed before it is kept: the program that would start, or why not, in words", async () => {
+    const { store, acp } = await setup(null);
+    const said = async (command: string) => {
+      const resolved = await store.resolve(command);
+      return resolved === null ? "failed" : previewText(resolved);
+    };
+    expect(await said('  "C:\\my tools\\my-agent.cmd" --acp ')).toBe(
+      t("acp.preview.starts", { program: "C:\\my tools\\my-agent.cmd" }),
+    );
+    expect(await said("npx -y my-agent")).toBe(
+      t("acp.preview.starts", { program: "C:\\Program Files\\nodejs\\npx.cmd" }),
+    );
+    expect(await said("missing-agent --acp")).toBe(t("acp.why.notFound"));
+    expect(await said("tools/agent --acp")).toBe(t("acp.error.relativeProgram"));
+    expect(await said("\\\\host\\share\\agent.exe --acp")).toBe(t("acp.error.networkProgram"));
+    expect(await said('"my agent --acp')).toBe(t("acp.error.openQuote"));
+    expect(await said('"" --acp')).toBe(t("acp.error.emptyCommand"));
+    expect(acp.choice).toBeNull();
+    acp.snap = true;
+    expect(await said("my-agent")).toBe(t("acp.snap"));
+  });
+
+  it("a preview answered for another project is dropped", async () => {
+    const { store, client, root } = await setup();
+    const held = hold(client, "acp.resolve");
+    const asked = store.resolve("my-agent");
+    root.value = "C:/elsewhere";
+    held.answer({ ok: true, value: { program: "C:\\x\\my-agent.exe", error: null } });
+    expect(await asked).toBeNull();
   });
 
   it("How to install opens the agent's website through the app's link opening", async () => {
@@ -703,6 +850,8 @@ describe("words of the panel", () => {
       "protocol",
       "exited",
       "sendFailed",
+      "sessionGone",
+      "optionRefused",
     ];
     for (const code of codes) expect(failureText({ code })).not.toBe(`acp.fail.${code}`);
     expect(new Set(codes.map((code) => failureText({ code }))).size).toBe(codes.length);
@@ -739,9 +888,11 @@ describe("words of the panel", () => {
       "noChange",
       "noWorkCopy",
       "noAgent",
+      "noSaved",
       "unknownAgent",
       "emptyCommand",
       "openQuote",
+      "networkProgram",
       "relativeProgram",
       "oneChoice",
       "noProfile",
@@ -761,6 +912,10 @@ describe("words of the panel", () => {
       "projectsNotReady",
       "noText",
       "edits",
+      "starting",
+      "notRunning",
+      "unknownSetting",
+      "notOffered",
     ];
     for (const detail of details) {
       const error = backend("conflict", detail);
@@ -945,6 +1100,107 @@ describe("the conversation as the person follows it", () => {
   });
 });
 
+describe("the agent's settings", () => {
+  it("show once the agent runs; a change reaches it and comes back; a new conversation empties them", async () => {
+    const { store, acp, client, root } = await setup();
+    expect(store.options).toEqual([]);
+    expect(store.canSetOptions).toBe(false);
+    store.draft = "Hello";
+    await store.send();
+    await until(() => store.status?.state === "ready" || store.asking);
+    expect(store.options.map((o) => o.id)).toEqual(["model", "effort", "fast"]);
+    expect(store.canSetOptions).toBe(true);
+    expect(await store.setOption("model", "opus")).toBe(true);
+    expect(await store.setOption("fast", true)).toBe(true);
+    expect(acp.optionSets).toEqual([
+      { id: "model", value: "opus" },
+      { id: "fast", value: true },
+    ]);
+    const model = store.options.find((o) => o.id === "model");
+    expect(model?.kind.type === "select" && model.kind.current).toBe("opus");
+    const fast = store.options.find((o) => o.id === "fast");
+    expect(fast?.kind).toEqual({ type: "toggle", on: true });
+    // a window that reads the status later shows them too
+    const later = new AcpStore(client, () => root.value, {
+      say: vi.fn(),
+      notices: { notifyKeyed: vi.fn() },
+    });
+    stops.push(later.start());
+    await settle();
+    expect(later.options).toEqual(store.options);
+    await store.newConversation();
+    await settle();
+    expect(store.options).toEqual([]);
+    // the next start brings the picks back
+    store.draft = "Again";
+    await store.send();
+    await until(() => store.options.length > 0);
+    const again = store.options.find((o) => o.id === "model");
+    expect(again?.kind.type === "select" && again.kind.current).toBe("opus");
+  });
+
+  it("a change refused before it reaches the agent is said in words; the agent's own refusal with its words", async () => {
+    const { store, acp } = await setup();
+    expect(await store.setOption("model", "opus")).toBe(false);
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({ kind: "notice", text: t("acp.error.notRunning") }),
+    );
+    store.draft = "Hello";
+    await store.send();
+    await until(() => store.options.length > 0 && store.canSetOptions);
+    expect(await store.setOption("model", "gpt")).toBe(false);
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({ kind: "notice", text: t("acp.error.settingGone") }),
+    );
+    acp.refuseOption = "Not on your plan";
+    const before = store.options;
+    expect(await store.setOption("model", "haiku")).toBe(true);
+    expect(store.options).toEqual(before);
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({
+        kind: "notice",
+        text: t("acp.fail.said", {
+          reason: t("acp.fail.optionRefused"),
+          message: "Not on your plan",
+        }),
+      }),
+    );
+  });
+
+  it("are dropped when the agent stops | fails, and replaced whole by the agent's news", () => {
+    const store = new AcpStore();
+    store.take({ type: "status", state: "ready", error: null });
+    const options = [
+      {
+        id: "effort",
+        name: "Effort",
+        description: null,
+        category: "thoughtLevel" as const,
+        kind: { type: "toggle" as const, on: true },
+      },
+    ];
+    store.take({ type: "options", options });
+    expect(store.options).toEqual(options);
+    store.take({ type: "status", state: "error", error: { code: "exited" } });
+    expect(store.options).toEqual([]);
+    store.take({ type: "options", options });
+    store.take({ type: "status", state: "working", error: null });
+    expect(store.options).toEqual(options);
+    store.take({ type: "status", state: "idle", error: null });
+    expect(store.options).toEqual([]);
+  });
+
+  it("the model is labelled in the window's words, any other setting by the agent's name for it", () => {
+    const kind = { type: "toggle" as const, on: false };
+    expect(
+      configLabel({ id: "m", name: "Modelo", description: null, category: "model", kind }),
+    ).toBe(t("acp.option.model"));
+    expect(
+      configLabel({ id: "e", name: "Effort", description: null, category: "thoughtLevel", kind }),
+    ).toBe("Effort");
+  });
+});
+
 describe("another project shown meanwhile", () => {
   it("its agent's news never reach this one; the conversation starts afresh", async () => {
     const { store, root, acp } = await setup();
@@ -996,6 +1252,16 @@ describe("another project shown meanwhile", () => {
     agents.answer({ ok: true, value: [] });
     await loading;
     expect(store.catalog.status).not.toBe("ready");
+  });
+
+  it("a message rendered for the project before is dropped", async () => {
+    const { store, root, client } = await setup();
+    const render = hold(client, "acp.render");
+    const rendering = store.render("# Late");
+    root.value = "F:/elsewhere";
+    flushSync();
+    render.answer({ ok: true, value: { blocks: [] } });
+    expect(await rendering).toBeNull();
   });
 
   it("a list that cannot be read says why and reads again on Try again", async () => {
@@ -1090,6 +1356,16 @@ describe("the mock follows the plugin's checks", () => {
     );
   });
 
+  it("a message to render is capped in bytes as the plugin caps it", async () => {
+    const { api } = await setup();
+    const render = (text: string) => api.pluginCall("acp.render", { text });
+    const refused = await render("é".repeat(128 * 1024 + 1));
+    expect(!refused.ok && refused.error.kind === "backend" && refused.error.error).toEqual(
+      expect.objectContaining({ kind: "tooLarge", detail: "replyTooLarge" }),
+    );
+    expect((await render("x".repeat(256 * 1024))).ok).toBe(true);
+  });
+
   it("a file taken only as a whole refuses part of its hunks; a link is never accepted", async () => {
     const { api, acp } = await setup();
     acp.changes = [
@@ -1136,6 +1412,31 @@ describe("the mock follows the plugin's checks", () => {
     expect(!own.ok && own.error.kind === "backend" && own.error.error.detail).toBe(
       "relativeProgram",
     );
+  });
+
+  it("a preview refuses exactly what a choice refuses, and keeps nothing", async () => {
+    const { api, acp } = await setup(null);
+    for (const command of [
+      "",
+      "  ",
+      '"" --acp',
+      '"my agent',
+      "./agent",
+      "bin\\agent.exe",
+      "\\\\host\\share\\agent.exe",
+      "//host/share/agent",
+      '"\\\\?\\UNC\\host\\share\\my agent.exe" --acp',
+      "my-agent",
+    ]) {
+      const preview = await api.pluginCall("acp.resolve", { command });
+      if (!preview.ok) throw new Error("no preview");
+      expect(acp.choice, command).toBeNull();
+      const choice = await api.pluginCall("acp.choose", { command });
+      const refusal =
+        !choice.ok && choice.error.kind === "backend" ? choice.error.error.detail : null;
+      expect(preview.value.error, command).toBe(refusal);
+      acp.choice = null;
+    }
   });
 });
 

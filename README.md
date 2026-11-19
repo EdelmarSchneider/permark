@@ -470,6 +470,8 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 **PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
 
+- **0.17.0:** the Assistant shows replies as formatted text, continues your last conversation (also after a restart), lets
+  you choose the agent's model and reasoning level in the panel, and has its own settings page.
 - **0.16.0:** the experimental **Assistant**, off until you turn it on: an AI agent you choose works on a copy of your folder,
   and its edits reach your files only when you accept them, with Undo; in all 20 interface languages.
 - **0.15.0:** a **Panels** menu in the status bar to show or hide every panel from one place, with **Show** entries in the

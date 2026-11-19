@@ -27,6 +27,10 @@ const { conditions } = await import("./conditions/context.svelte");
 const { host } = await import("./plugins/instance.svelte");
 
 const mock = api as unknown as ReturnType<typeof import("../api/mock").createMockApi>;
+/** Session writes of the stores on screen (recent searches, scroll places, offers): each a moment after its change. */
+const sessionWrites = vi.spyOn(mock, "projectSessionSet");
+/** Longer than the slowest of those moments (a scroll place: 800 ms). */
+const QUIET_MS = 1000;
 const OTHER = "C:/Users/demo/plain folder";
 const THIRD = "C:/Users/demo/third";
 
@@ -66,17 +70,20 @@ afterEach(() => {
   for (const n of store.notices) store.dismiss(n.id);
 });
 
-/** Every plugin that is on loaded, then no plugin call for 300 ms (modules and panels load lazily: in a first run of
- *  the window a plugin may start late, while another folder already opens). */
+/** Every plugin that is on loaded, then no plugin call and no session write for `QUIET_MS` (modules and panels load
+ *  lazily: in a first run of the window a plugin may start late, while another folder already opens). A session write
+ *  still due from opening the folder would land while the next folder opens and count as a refused call that the
+ *  switch never made; a loaded runner got there with a quiet time of 300 ms. */
 async function settled(): Promise<void> {
   await until(
     () => conditions.current.plugins.every((id) => host.state(id) !== "loading"),
     "the plugins loaded",
   );
+  const calls = () => mock.probe.plugins.calls.length + sessionWrites.mock.calls.length;
   let seen = -1;
-  while (seen !== mock.probe.plugins.calls.length) {
-    seen = mock.probe.plugins.calls.length;
-    await new Promise((r) => setTimeout(r, 300));
+  while (seen !== calls()) {
+    seen = calls();
+    await new Promise((r) => setTimeout(r, QUIET_MS));
   }
 }
 

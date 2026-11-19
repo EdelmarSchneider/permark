@@ -3091,6 +3091,12 @@ export default {
   "acp.pick.commandWarning":
     "PerMark startet dieses Programm auf deinem Computer mit deinen Berechtigungen. Nur ein Programm verwenden, dem du vertraust.",
   "acp.pick.useCommand": "Diesen Befehl verwenden",
+  "acp.preview.starts": "Startet: {program}",
+  "acp.page.inUse": "Verwendeter Agent",
+  "acp.page.none": "Noch kein Agent gewählt",
+  "acp.page.change": "Wechseln…",
+  "acp.page.saved":
+    "Gespeichert. Der Assistent verwendet diesen Befehl ab deiner nächsten Nachricht.",
   "acp.how.native": "Auf deinem Computer gefunden",
   "acp.how.npx": "Wird bei der ersten Nutzung heruntergeladen",
   "acp.how.uvx": "Wird bei der ersten Nutzung heruntergeladen",
@@ -3145,6 +3151,14 @@ export default {
   "acp.hiddenEntries": "Frühere Nachrichten sind ausgeblendet.",
   "acp.details": "Details",
   "acp.examples": "Zum Beispiel:",
+  "acp.continue": "Letzte Unterhaltung fortsetzen",
+  "acp.restored.notShown":
+    "Frühere Nachrichten werden nicht angezeigt. Der Agent erinnert sich an sie.",
+  "acp.restored.changesLost":
+    "Änderungen aus dem früheren Gespräch, die du nicht übernommen hast, sind nicht mehr da.",
+  "acp.say.restored": "Unterhaltung wiederhergestellt",
+  "acp.fail.sessionGone": "Die letzte Unterhaltung kann nicht mehr fortgesetzt werden.",
+  "acp.error.noSaved": "Es gibt keine frühere Unterhaltung zum Fortsetzen.",
   "acp.example.clearer": "Formuliere diesen Absatz klarer.",
   "acp.example.summary": "Füge oben eine kurze Zusammenfassung hinzu.",
   "acp.example.find": "Welche Seiten erwähnen dieses Thema?",
@@ -3193,6 +3207,8 @@ export default {
   "acp.fail.sendFailed": "Die Nachricht konnte nicht an den Agenten übergeben werden.",
   "acp.error.relativeProgram":
     "Den vollständigen Pfad des Programms angeben oder nur seinen Namen.",
+  "acp.error.networkProgram":
+    "PerMark startet nur Programme auf diesem Computer, nicht aus einem Netzwerkordner.",
   "acp.error.oneChoice": "Einen Agenten wählen oder einen Befehl eingeben.",
   "acp.error.denied": "PerMark schreibt nicht in diese Datei, weil Agenten sie nicht sehen dürfen.",
   "acp.error.link": "Ein vom Agenten erstellter Link kann nur abgelehnt werden.",
@@ -3203,6 +3219,12 @@ export default {
     "Die Passage stammt aus einer Datei, die Agenten nicht sehen dürfen.",
   "acp.error.insideProject": "Die Kopie für den Agenten kann nicht in diesem Ordner liegen.",
   "acp.error.notApplied": "PerMark konnte diese Änderung nicht anwenden.",
+  "acp.options": "Agent-Einstellungen",
+  "acp.option.model": "Modell",
+  "acp.fail.optionRefused": "Der Agent hat die neue Einstellung nicht angenommen.",
+  "acp.error.starting": "Der Agent startet noch. Versuche es gleich noch einmal.",
+  "acp.error.notRunning": "Der Agent läuft nicht.",
+  "acp.error.settingGone": "Der Agent bietet diese Einstellung nicht mehr an.",
   "acp.option.allowOnce": "Einmal erlauben",
   "acp.option.rejectOnce": "Nicht erlauben",
   "acp.alwaysHidden":

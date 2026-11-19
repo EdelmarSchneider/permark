@@ -9,9 +9,9 @@ use std::time::UNIX_EPOCH;
 use permark_core::fsx;
 use permark_core::organizing::{TagsApi, UnreadApi};
 use permark_core::paths::VaultPath;
+use permark_core::projects::agent_view::Guard;
 use serde_json::{json, Map, Value};
 
-use crate::guard::Guard;
 use crate::structure;
 use crate::tools::{Tools, MAX_READ_BYTES, READY_WAIT};
 use crate::ToolError;

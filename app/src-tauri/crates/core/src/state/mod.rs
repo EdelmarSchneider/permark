@@ -397,10 +397,10 @@ impl<T: StateData> StateFile<T> {
         None
     }
 
-    /// Atomic write of `{ version, data }`.
+    /// Atomic write of `{ version, data }`; saves of one file in this process take turns (`shared_write::save_turn`).
     ///
     /// # Errors
-    /// Encode failure, IO failure, `.permark/` folder replaced by a link.
+    /// Encode failure, IO failure, `.permark/` folder replaced by a link, the saves before this one taking too long.
     pub fn save(&self, data: &T) -> Result<(), StateError> {
         let read = self.read.load(Ordering::SeqCst);
         if !unread::may_write(&self.path, read) {
@@ -411,6 +411,8 @@ impl<T: StateData> StateFile<T> {
             private::prepare(&guard.permark, &guard.state, dir)
                 .map_err(|e| StateError::io(&self.path, e))?;
         }
+        let _turn =
+            shared_write::save_turn(&self.path).map_err(|e| StateError::io(&self.path, e))?;
         if !(read == unread::NEVER && unread::is_stamped(&self.path)) {
             return write_atomic(&self.path, &bytes).map_err(|e| StateError::io(&self.path, e));
         }
@@ -675,6 +677,17 @@ impl StateStore {
     #[must_use]
     pub fn profile_plugin_dir(&self, id: &PluginId) -> PathBuf {
         self.profile_dir.join("plugins").join(id.as_str())
+    }
+
+    /// A typed file in [`StateStore::profile_plugin_dir`]: ALWAYS in the profile, whatever the project holds.
+    #[must_use]
+    pub fn profile_plugin_file<T: StateData>(&self, id: &PluginId, name: &str) -> StateFile<T> {
+        StateFile {
+            path: self.profile_plugin_dir(id).join(name),
+            guard: None,
+            read: AtomicU8::new(unread::NEVER),
+            _data: PhantomData,
+        }
     }
 
     #[must_use]

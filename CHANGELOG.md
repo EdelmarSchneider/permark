@@ -5,6 +5,18 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-19
+
+### Added
+- **Assistant: replies as formatted text.** Once an answer is complete, the Assistant shows it like a document: headings, lists, highlighted code, tables and math. Links to web pages open in your browser when you click them, links and `file:line` references to files in your folder open that file at the line, and pictures from the web are never loaded. <!-- f: assistant -->
+- **Assistant: continue the last conversation.** When the agent you use supports it, the empty panel offers **Continue last conversation**, also after you restart PerMark; the earlier messages come back and the agent remembers them. <!-- f: assistant -->
+- **Assistant: choose the model and reasoning level.** The panel shows the model, the reasoning level and the other model settings that your agent offers, such as Effort for Claude, including None when the agent has it. A change applies at once, and PerMark remembers your picks for each agent. The agent's permission mode is never offered there, so it keeps asking before it acts. <!-- f: assistant -->
+- **Assistant settings page.** **Settings → Assistant** shows the agent in use, lets you change it, and lets you type your own command with a preview of the program it would start. A program on a network folder is refused. <!-- f: assistant -->
+
+### Fixed
+- When several folders were renamed or moved at once, a project inside the open folder could be re-attached to a different folder that only had the same name. PerMark now checks that it is really the same folder first. <!-- f: projects -->
+- On Windows, PerMark's own state files could fail to save when several saves of the same file happened at the same moment; they now take turns. <!-- f: settings -->
+
 ## [0.16.0] - 2026-11-18
 
 ### Added

@@ -3,10 +3,9 @@
 
 use std::fmt::Write as _;
 
+use permark_core::projects::agent_view::Guard;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-
-use crate::guard::Guard;
 
 /// Longest selection shared (characters).
 pub const MAX_SELECTION_CHARS: usize = 2000;

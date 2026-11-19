@@ -3080,6 +3080,12 @@ export default {
   "acp.pick.commandWarning":
     "El PerMark iniciarà aquest programa al vostre ordinador, amb els vostres permisos. Feu servir només un programa en què confieu.",
   "acp.pick.useCommand": "Fes servir aquesta ordre",
+  "acp.preview.starts": "S'inicia: {program}",
+  "acp.page.inUse": "Agent en ús",
+  "acp.page.none": "Encara no heu triat cap agent",
+  "acp.page.change": "Canvia…",
+  "acp.page.saved":
+    "Desat. L'Assistent farà servir aquesta ordre a partir del vostre missatge següent.",
   "acp.how.native": "Trobat al vostre ordinador",
   "acp.how.npx": "Es baixa en el primer ús",
   "acp.how.uvx": "Es baixa en el primer ús",
@@ -3134,6 +3140,13 @@ export default {
   "acp.hiddenEntries": "Els missatges anteriors estan amagats.",
   "acp.details": "Detalls",
   "acp.examples": "Per exemple:",
+  "acp.continue": "Continua l'última conversa",
+  "acp.restored.notShown": "Els missatges anteriors no es mostren. L'agent els recorda.",
+  "acp.restored.changesLost":
+    "Els canvis de la conversa anterior que no vau acceptar ja no hi són.",
+  "acp.say.restored": "Conversa restaurada",
+  "acp.fail.sessionGone": "L'última conversa ja no es pot continuar.",
+  "acp.error.noSaved": "No hi ha cap conversa anterior per continuar.",
   "acp.example.clearer": "Fes més clar aquest paràgraf.",
   "acp.example.summary": "Afegeix un resum breu al principi.",
   "acp.example.find": "Quines pàgines parlen d'aquest tema?",
@@ -3182,6 +3195,8 @@ export default {
   "acp.fail.exited": "El programa de l'agent s'ha tancat inesperadament.",
   "acp.fail.sendFailed": "No s'ha pogut lliurar el missatge a l'agent.",
   "acp.error.relativeProgram": "Escriviu el camí complet del programa, o només el seu nom.",
+  "acp.error.networkProgram":
+    "El PerMark només inicia programes d'aquest ordinador, no des d'una carpeta de xarxa.",
   "acp.error.oneChoice": "Trieu un agent o escriviu una ordre.",
   "acp.error.denied": "El PerMark no escriu en aquest fitxer perquè els agents no el poden veure.",
   "acp.error.link": "Un enllaç creat per l'agent només es pot rebutjar.",
@@ -3191,6 +3206,12 @@ export default {
   "acp.error.hiddenFromAgents": "El fragment prové d'un fitxer que els agents no poden veure.",
   "acp.error.insideProject": "La còpia per a l'agent no es pot desar dins d'aquesta carpeta.",
   "acp.error.notApplied": "El PerMark no ha pogut aplicar aquest canvi.",
+  "acp.options": "Configuració de l'agent",
+  "acp.option.model": "Model",
+  "acp.fail.optionRefused": "L'agent no ha acceptat la nova configuració.",
+  "acp.error.starting": "L'agent encara s'està iniciant. Torneu-ho a provar d'aquí a un moment.",
+  "acp.error.notRunning": "L'agent no s'està executant.",
+  "acp.error.settingGone": "L'agent ja no ofereix aquesta configuració.",
   "acp.option.allowOnce": "Permet una vegada",
   "acp.option.rejectOnce": "No ho permetis",
   "acp.alwaysHidden":

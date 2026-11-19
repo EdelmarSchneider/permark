@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { parseRelease, updaterJson } from "./updater-json.mjs";
 
-// Asset names of the 0.6.1 release (unchanged since 0.6.0; `distribution.md` § Release pipeline).
+// Asset names of the 0.6.1 release (unchanged since 0.6.0; `distribution.md` § Release pipeline), except the macOS
+// updater bundle: tauri-action 1.x puts the version in its name, as in every other installer.
 const ASSETS = [
   "latest.json",
   "PerMark-0.6.1-1.x86_64.rpm",
@@ -15,8 +16,8 @@ const ASSETS = [
   "PerMark_0.6.1_x64-setup.exe.sig",
   "PerMark_0.6.1_x64_en-US.msi",
   "PerMark_0.6.1_x64_en-US.msi.sig",
-  "PerMark_universal.app.tar.gz",
-  "PerMark_universal.app.tar.gz.sig",
+  "PerMark_0.6.1_universal.app.tar.gz",
+  "PerMark_0.6.1_universal.app.tar.gz.sig",
 ];
 
 const BASE = "https://github.com/EdelmarSchneider/permark/releases/download/v0.6.1/";
@@ -49,8 +50,8 @@ describe("updaterJson", () => {
       url: `${BASE}PerMark_0.6.1_x64_en-US.msi`,
     };
     const app = {
-      signature: "sig of PerMark_universal.app.tar.gz.sig",
-      url: `${BASE}PerMark_universal.app.tar.gz`,
+      signature: "sig of PerMark_0.6.1_universal.app.tar.gz.sig",
+      url: `${BASE}PerMark_0.6.1_universal.app.tar.gz`,
     };
     const appImage = {
       signature: "sig of PerMark_0.6.1_amd64.AppImage.sig",
@@ -113,12 +114,22 @@ describe("updaterJson", () => {
   it.each([
     ["PerMark_0.6.1_x64_en-US.msi.sig", /Windows MSI: 0 signature/],
     ["PerMark_0.6.1_x64-setup.exe.sig", /Windows NSIS: 0 signature/],
-    ["PerMark_universal.app.tar.gz.sig", /macOS universal app: 0 signature/],
+    ["PerMark_0.6.1_universal.app.tar.gz.sig", /macOS universal app: 0 signature/],
     ["PerMark_0.6.1_amd64.AppImage.sig", /Linux AppImage: 0 signature/],
     ["PerMark_0.6.1_amd64.deb.sig", /Linux deb: 0 signature/],
     ["PerMark-0.6.1-1.x86_64.rpm.sig", /Linux rpm: 0 signature/],
   ])("refuses a release without %s (a platform job failed or was skipped)", (missing, error) => {
     expect(() => build(ASSETS.filter((name) => name !== missing))).toThrow(error);
+  });
+
+  it("still reads a macOS updater bundle without the version (releases built before tauri-action 1.x)", () => {
+    const assets = ASSETS.map((name) =>
+      name.replace("PerMark_0.6.1_universal.app", "PerMark_universal.app"),
+    );
+    expect(build(assets).platforms["darwin-aarch64"]).toEqual({
+      signature: "sig of PerMark_universal.app.tar.gz.sig",
+      url: `${BASE}PerMark_universal.app.tar.gz`,
+    });
   });
 
   it("refuses a signature without its installer", () => {
@@ -136,7 +147,7 @@ describe("updaterJson", () => {
     "PerMark_0.6.1_aarch64.dmg.sig",
     "PerMark_0.6.1_arm64-setup.exe.sig",
     "PerMark_0.6.1_arm64.deb.sig",
-    "PerMark_aarch64.app.tar.gz.sig",
+    "PerMark_0.6.1_aarch64.app.tar.gz.sig",
   ])("refuses an updater signature no rule knows: %s", (unknown) => {
     expect(() => build([...ASSETS, unknown])).toThrow(/matches 0 updater rules/);
   });

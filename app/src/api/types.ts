@@ -235,6 +235,11 @@ import type { NoteList } from "./generated/NoteList";
 import type { NotesIntent } from "./generated/NotesIntent";
 import type { NotesSummary } from "./generated/NotesSummary";
 import type { Version } from "./generated/Version";
+import type { AcpConfigCategory } from "./generated/AcpConfigCategory";
+import type { AcpConfigChoice } from "./generated/AcpConfigChoice";
+import type { AcpConfigKind } from "./generated/AcpConfigKind";
+import type { AcpConfigOption } from "./generated/AcpConfigOption";
+import type { AcpConfigValue } from "./generated/AcpConfigValue";
 import type { AcpError } from "./generated/AcpError";
 import type { AcpErrorCode } from "./generated/AcpErrorCode";
 import type { AcpOptionKind } from "./generated/AcpOptionKind";
@@ -252,10 +257,12 @@ import type { AnswerArgs } from "./generated/AnswerArgs";
 import type { ChangeList } from "./generated/ChangeList";
 import type { ChangesArgs } from "./generated/ChangesArgs";
 import type { ChooseArgs } from "./generated/ChooseArgs";
+import type { ContinueWay } from "./generated/ContinueWay";
 import type { DecideArgs } from "./generated/DecideArgs";
 import type { FileChange } from "./generated/FileChange";
 import type { FileChangeKind } from "./generated/FileChangeKind";
 import type { HunkView } from "./generated/HunkView";
+import type { LastConversation } from "./generated/LastConversation";
 import type { LoginArgs } from "./generated/LoginArgs";
 import type { LoginKind } from "./generated/LoginKind";
 import type { LoginMethod } from "./generated/LoginMethod";
@@ -263,6 +270,11 @@ import type { PermissionChoice } from "./generated/PermissionChoice";
 import type { PermissionDiff } from "./generated/PermissionDiff";
 import type { PromptArgs } from "./generated/PromptArgs";
 import type { PromptSelection } from "./generated/PromptSelection";
+import type { RenderArgs } from "./generated/RenderArgs";
+import type { RenderedReply } from "./generated/RenderedReply";
+import type { SetOptionArgs } from "./generated/SetOptionArgs";
+import type { ResolveArgs } from "./generated/ResolveArgs";
+import type { ResolvedCommand } from "./generated/ResolvedCommand";
 import type { UndoArgs } from "./generated/UndoArgs";
 
 export type {
@@ -876,6 +888,9 @@ export interface PluginMethods {
    *  Refused while the agent starts | works (`conflict` `busy`), `invalidData` `unknownAgent` | `emptyCommand` |
    *  `oneChoice`, `unavailable` `noProfile`. */
   "acp.choose": { args: ChooseArgs; result: AgentEntry[] };
+  /** What `acp.choose` would make of an own command, nothing kept: the full path of the program that would start
+   *  (`null`: refused | not found here) and the refusal's detail `choose` would answer (`null`: it would be kept). */
+  "acp.resolve": { args: ResolveArgs; result: ResolvedCommand };
   /** Signs in while the agent waits for it (`needsLogin`): an `agent` method signs in through the agent, none | any
    *  other tries again. Refused `notFound` `noLogin` | `invalidData` `unknownMethod`. */
   "acp.login": { args: LoginArgs; result: null };
@@ -886,8 +901,16 @@ export interface PluginMethods {
   "acp.cancel": { args: Record<string, never>; result: null };
   /** A new conversation: the agent stops, the next message starts a fresh one; the changes stay. */
   "acp.reset": { args: Record<string, never>; result: null };
+  /** Continues the project's last conversation (`AcpStatus.last`) in a fresh agent: replayed as `acp:update` (`you`,
+   *  `text`, `tool`), then `restored`, then `ready`; no message is sent. Refused `notFound` `noSaved` (none the
+   *  chosen agent can continue), `conflict` `busy`, `unavailable` `noAgent`. */
+  "acp.continue": { args: Record<string, never>; result: null };
   /** Answers one of the agent's questions (`optionId` null: dismissed). */
   "acp.answer": { args: AnswerArgs; result: null };
+  /** Changes one of the running agent's settings (`AcpStatus.options`): answers at once, the new values come as
+   *  `acp:update` `options` (a refusal of the agent: `status` with `optionRefused`). Refused `conflict` `starting`,
+   *  `unavailable` `notRunning`, `notFound` `unknownSetting`, `invalidData` `notOffered`. */
+  "acp.setOption": { args: SetOptionArgs; result: null };
   /** The files of the work copy that differ from the real ones, as kept since the last turn's end (`refresh`:
    *  computed again); at most 500 (`more`: the rest). Empty while there is no copy. */
   "acp.changes": { args: ChangesArgs; result: ChangeList };
@@ -901,6 +924,9 @@ export interface PluginMethods {
   /** Takes back the last accept | reject of `path` once (lost when the plugin stops); answers the updated list.
    *  Refused `notFound` `noUndo`, `conflict` `changed` (the file changed since) | `unsaved`. */
   "acp.undo": { args: UndoArgs; result: ChangeList };
+  /** An agent's whole message as sanitized document blocks (rendered as `assistant.md` at the project root; paths into
+   *  the work copy written as project paths). Refused `tooLarge` `replyTooLarge` (past 256 KiB). */
+  "acp.render": { args: RenderArgs; result: RenderedReply };
 }
 
 /** What the converter reads: a file of the workspace, or a text from the page. */
@@ -1019,6 +1045,11 @@ export type {
 };
 export type { UnreadList };
 export type {
+  AcpConfigCategory,
+  AcpConfigChoice,
+  AcpConfigKind,
+  AcpConfigOption,
+  AcpConfigValue,
   AcpError,
   AcpErrorCode,
   AcpOptionKind,
@@ -1036,10 +1067,12 @@ export type {
   ChangeList,
   ChangesArgs,
   ChooseArgs,
+  ContinueWay,
   DecideArgs,
   FileChange,
   FileChangeKind,
   HunkView,
+  LastConversation,
   LoginArgs,
   LoginKind,
   LoginMethod,
@@ -1047,6 +1080,11 @@ export type {
   PermissionDiff,
   PromptArgs,
   PromptSelection,
+  RenderArgs,
+  RenderedReply,
+  ResolveArgs,
+  ResolvedCommand,
+  SetOptionArgs,
   UndoArgs,
 };
 export type {

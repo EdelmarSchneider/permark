@@ -194,6 +194,9 @@ fn a_profile_plugin_folder_never_lives_in_the_project() {
         .join("acp");
     assert_eq!(dir, expected);
     assert!(!dir.starts_with(f.project.path()));
+    let file = s.profile_plugin_file::<Sample>(&acp, "session.json");
+    file.save(&sample(1)).unwrap();
+    assert_eq!(file.path(), dir.join("session.json"));
     fs::create_dir_all(dir.join("work")).unwrap();
     remove_plugin_data_everywhere(&f.dirs, &acp, &[]).unwrap();
     assert!(!dir.exists());
@@ -986,7 +989,9 @@ fn a_handle_that_read_the_file_still_saves_after_another_one_fails() {
     assert_eq!(healthy.load(), Loaded::Found(data));
 }
 
-/// P3: on a file no load ever failed on, fresh handles (several threads at once) save as before.
+/// P3: on a file no load ever failed on, fresh handles (several threads at once) save as before. Windows refuses a
+/// rename over a file another rename is replacing right then (access denied); saves of one file in this process take
+/// turns, so many savers at once never run out of retries (they did under a loaded runner with 4 savers).
 #[test]
 fn fresh_handles_on_a_file_that_never_failed_save_as_before() {
     let f = fx();
@@ -994,10 +999,10 @@ fn fresh_handles_on_a_file_that_never_failed_save_as_before() {
     fs::create_dir_all(first.path().parent().unwrap()).unwrap();
     let store = f.store();
     std::thread::scope(|scope| {
-        for n in 0..4u32 {
+        for n in 0..8u32 {
             let store = &store;
             scope.spawn(move || {
-                for _ in 0..10 {
+                for _ in 0..40 {
                     store.file::<Sample>("x.json").save(&sample(n)).unwrap();
                 }
             });

@@ -1,5 +1,6 @@
 //! What the window and the plugin exchange: the agent's state and news, prompts, answers, the copy's changes.
 
+use permark_core::format::Block;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -171,6 +172,11 @@ pub enum AcpErrorCode {
     Exited,
     /// The message could not be handed to the agent.
     SendFailed,
+    /// The last conversation can no longer be continued: the agent no longer has it | no longer offers a way (the
+    /// conversation is forgotten).
+    SessionGone,
+    /// The agent did not take the person's change of one of its settings (the setting stays as it was).
+    OptionRefused,
 }
 
 /// Why the agent failed | a step did not work.
@@ -225,6 +231,110 @@ pub struct AcpStatus {
     pub needs: Option<AgentNeed>,
     /// Files the work copy left out for their size (over 4 MiB) at its last build | update; `0` before the first.
     pub skipped_files: u32,
+    /// The project's last conversation with the chosen agent, which it can continue (`acp.continue`); `null`: none
+    /// kept, kept with another agent, or one this agent cannot continue.
+    pub last: Option<LastConversation>,
+    /// The running agent's settings the person may change (`acp.setOption`), as last told (`options` news); empty
+    /// while no session is open.
+    pub options: Vec<AcpConfigOption>,
+}
+
+/// What an agent setting the window shows is about (the protocol's categories; any other is never shown).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum AcpConfigCategory {
+    /// Which model answers.
+    Model,
+    /// A setting of the model (e.g. a fast mode).
+    ModelConfig,
+    /// How much the model reasons before it answers.
+    ThoughtLevel,
+}
+
+/// One value of a choice setting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AcpConfigChoice {
+    pub value: String,
+    /// Label from the agent.
+    pub name: String,
+    pub description: Option<String>,
+}
+
+/// How an agent setting is changed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(export)]
+pub enum AcpConfigKind {
+    /// One of `choices` (the agent's groups flattened, in its order).
+    Select {
+        current: String,
+        choices: Vec<AcpConfigChoice>,
+    },
+    /// On | off.
+    Toggle { on: bool },
+}
+
+/// One agent setting the person may change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AcpConfigOption {
+    pub id: String,
+    /// Label from the agent.
+    pub name: String,
+    pub description: Option<String>,
+    pub category: AcpConfigCategory,
+    pub kind: AcpConfigKind,
+}
+
+/// A value for an agent setting: a choice's `value` | a toggle's state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export)]
+pub enum AcpConfigValue {
+    On(bool),
+    Value(String),
+}
+
+/// Arguments of `acp.setOption`.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export)]
+pub struct SetOptionArgs {
+    /// `AcpConfigOption.id`.
+    pub id: String,
+    pub value: AcpConfigValue,
+}
+
+/// How a kept conversation is continued (as the agent offered when it last started).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ContinueWay {
+    /// `session/load`: the agent replays it, the window shows it again.
+    Load,
+    /// `session/resume`: the agent remembers it; the window shows none of it.
+    Resume,
+}
+
+/// The project's last conversation, as the window offers to continue it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LastConversation {
+    /// The agent's title for it (`null`: none told).
+    pub title: Option<String>,
+    /// When it last went on (ms since the Unix epoch).
+    #[ts(type = "number")]
+    pub at: u64,
+    pub supports: ContinueWay,
 }
 
 /// How a sign-in works.
@@ -324,6 +434,26 @@ pub struct ChooseArgs {
     pub command: Option<String>,
 }
 
+/// Arguments of `acp.resolve`: an own command as typed so far.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export)]
+pub struct ResolveArgs {
+    pub command: String,
+}
+
+/// What `acp.choose` would make of an own command, nothing kept: the program it would start | why it would refuse.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ResolvedCommand {
+    /// Full path of the program that would start (`null`: refused, or not found on this computer).
+    pub program: Option<String>,
+    /// The refusal `acp.choose` would answer, by its detail (`emptyCommand` | `openQuote` | `networkProgram` |
+    /// `relativeProgram` | `snap` | `noProfile`); `null`: the command would be kept.
+    pub error: Option<String>,
+}
+
 /// Arguments of `acp.login`: `methodId` of an `agent` method -> the agent signs in, then the prompt goes on; any
 /// other method | none -> tries again (the person signed in outside the app).
 #[derive(Debug, Clone, Default, Deserialize, TS)]
@@ -363,6 +493,24 @@ pub struct PromptArgs {
     #[serde(default)]
     #[ts(optional)]
     pub document: Option<String>,
+}
+
+/// Arguments of `acp.render`.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export)]
+pub struct RenderArgs {
+    /// The agent's whole message (Markdown); at most 256 KiB (longer: refused, `replyTooLarge`).
+    pub text: String,
+}
+
+/// An agent's message rendered as a document of the project is: sanitized blocks, paths into the copy written as
+/// project paths.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RenderedReply {
+    pub blocks: Vec<Block>,
 }
 
 /// Arguments of `acp.answer`.
@@ -490,6 +638,12 @@ pub enum AcpUpdate {
     },
     /// A piece of the agent's reply (append).
     Text { text: String },
+    /// A piece of one of the person's earlier messages, replayed while a conversation is continued (append).
+    You { text: String },
+    /// The last conversation was continued (after its replay, before the `ready` status). `replayed` false: the
+    /// agent remembers it but showed none of it; `changesLost`: the copy was made anew, so changes of that
+    /// conversation the person had not accepted are gone.
+    Restored { replayed: bool, changes_lost: bool },
     /// The agent thinks (its thoughts are not shown); once per stretch of thinking.
     Thinking {},
     /// A tool the agent runs (upsert by `id`).
@@ -522,6 +676,10 @@ pub enum AcpUpdate {
     /// The question was answered | dropped (Stop, the agent withdrew it, the turn ended, new conversation): its card
     /// goes.
     PermissionDone { request_id: String },
+    /// The agent's settings the person may change, whole, with their current values: told when they change (the
+    /// agent's answer to a change, its own news, a fresh agent); a refused change tells them again as they are. A
+    /// status `idle` | `error` empties them too (no agent, no settings).
+    Options { options: Vec<AcpConfigOption> },
     /// The prompt ended; `changed`: files whose copy now differs from the real file (`0` when Stop ended a start | a
     /// sign-in: the prompt never reached the agent).
     TurnEnd {

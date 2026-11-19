@@ -247,8 +247,8 @@ pub fn spawn_piped(program: &Path, args: &[&OsStr], cwd: &Path) -> io::Result<Pi
 /// cannot pass safely is refused).
 ///
 /// # Errors
-/// The program cannot be started (`NotFound`: missing; `InvalidInput`: a relative program | an argument a script
-/// cannot receive safely).
+/// The program cannot be started (`NotFound`: missing; `InvalidInput`: a relative program | one on a network path
+/// ([`is_network_path`]) | an argument a script cannot receive safely).
 pub fn spawn_person_command(
     program: &Path,
     args: &[&OsStr],
@@ -260,6 +260,12 @@ pub fn spawn_person_command(
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "relative program path",
+        ));
+    }
+    if is_network_path(program.as_os_str()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "network program path",
         ));
     }
     let mut command = Command::new(program);
@@ -344,8 +350,9 @@ fn piped(mut command: Command) -> io::Result<Piped> {
 const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
 
 /// The program file a name stands for. An absolute path (`C:\tools\x.cmd`, `/usr/bin/x`) is that file when it
-/// exists; a relative one (`./x`, `bin/x`) is never resolved ([`is_relative_path`]); a bare name is searched in the
-/// absolute folders of `PATH`, in order (never the current folder, never a relative entry), then in [`tool_folders`].
+/// exists; a relative one (`./x`, `bin/x`) | a network one (`\\server\share\x`: [`is_network_path`]) is never
+/// resolved, nothing on disk looked at; a bare name is searched in the absolute folders of `PATH`, in order (never the
+/// current folder, never a relative | network entry), then in [`tool_folders`].
 /// Windows: a bare name without an extension takes each `PATHEXT` extension in turn, as the command line does (`npx`
 /// -> `npx.cmd`; the standard library would add only `.exe`). Unix: a regular file with an execute bit.
 #[must_use]
@@ -376,6 +383,16 @@ pub fn is_relative_path(name: &OsStr) -> bool {
     has_folder(given) && !given.is_absolute()
 }
 
+/// A name that starts with two separators (`\` | `/`, any mix): Windows reads it as a share | device path
+/// (`\\server\share\x`, `//server/share/x`, `\\?\UNC\...`, `\\.\...`), and even a metadata lookup there connects to
+/// the server and offers it the person's sign-in. Never looked up, never searched as a `PATH` folder, never started.
+/// Text only, the same on every OS (POSIX leaves a leading `//` to the system as well).
+#[must_use]
+pub fn is_network_path(name: &OsStr) -> bool {
+    let bytes = name.as_encoded_bytes();
+    bytes.len() >= 2 && bytes[..2].iter().all(|b| matches!(b, b'\\' | b'/'))
+}
+
 fn has_folder(given: &Path) -> bool {
     given.has_root() || given.parent().is_some_and(|p| !p.as_os_str().is_empty())
 }
@@ -385,7 +402,7 @@ fn find_program(
     folders: impl Iterator<Item = PathBuf>,
     pathext: Option<&OsStr>,
 ) -> Option<PathBuf> {
-    if name.is_empty() {
+    if name.is_empty() || is_network_path(name) {
         return None;
     }
     let given = Path::new(name);
@@ -395,7 +412,7 @@ fn find_program(
     let names = candidates(name, pathext);
     folders
         // an empty | relative entry would mean a folder under the current one: never searched
-        .filter(|dir| dir.is_absolute())
+        .filter(|dir| dir.is_absolute() && !is_network_path(dir.as_os_str()))
         .flat_map(|dir| names.iter().map(move |n| dir.join(n)))
         .find(|candidate| runnable(candidate))
 }
@@ -721,6 +738,68 @@ mod tests {
             panic!("started");
         };
         assert_eq!(refused.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    /// Two separators first: a share | device path on Windows, on every OS refused by text alone (no lookup, no
+    /// start); one separator | a drive | a bare name is no network path.
+    #[test]
+    fn network_paths_are_refused_by_their_text() {
+        let cwd = tempfile::tempdir().unwrap();
+        for name in [
+            r"\\host\share\a.exe",
+            "//host/share/a",
+            r"\\?\UNC\host\share\a.exe",
+            r"\\.\pipe\agent",
+            r"\/host\share\a",
+            r"/\host\share\a",
+        ] {
+            let name = OsStr::new(name);
+            assert!(is_network_path(name), "{name:?}");
+            assert_eq!(resolve_program(name), None, "{name:?}");
+            assert_eq!(
+                resolve_program_in(OsStr::new("a"), name, None),
+                None,
+                "{name:?}"
+            );
+            let Err(refused) = spawn_person_command(Path::new(name), &[], cwd.path(), &[]) else {
+                panic!("started {name:?}");
+            };
+            assert_eq!(refused.kind(), io::ErrorKind::InvalidInput, "{name:?}");
+        }
+        for name in [
+            "npx",
+            r"C:\tools\a.exe",
+            "/usr/bin/a",
+            r"\a.exe",
+            "./a",
+            "/",
+            "",
+        ] {
+            assert!(!is_network_path(OsStr::new(name)), "{name:?}");
+        }
+    }
+
+    /// A program on a share (the loopback admin share stands for a server): not found by its share path nor through
+    /// a `PATH` folder on the share, though the file is there; the same folder by its drive path is searched.
+    #[cfg(windows)]
+    #[test]
+    fn a_program_on_a_share_is_never_looked_up() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("agent.exe"), "x").unwrap();
+        let Some(shared) = crate::paths::via_admin_share(dir.path()) else {
+            eprintln!("skipped: no loopback admin share here");
+            return;
+        };
+        assert!(shared.join("agent.exe").is_file());
+        assert_eq!(resolve_program(shared.join("agent.exe").as_os_str()), None);
+        assert_eq!(
+            resolve_program_in(OsStr::new("agent.exe"), shared.as_os_str(), None),
+            None
+        );
+        assert_eq!(
+            resolve_program_in(OsStr::new("agent.exe"), dir.path().as_os_str(), None),
+            Some(dir.path().join("agent.exe"))
+        );
     }
 
     /// The usual folders of people's own tools: only those that exist; nvm's newest Node.

@@ -18,7 +18,7 @@ mod budget_tests;
 pub mod cli;
 pub mod context;
 pub mod format;
-pub mod guard;
+mod guard;
 pub mod handoff;
 pub mod live;
 pub mod map;

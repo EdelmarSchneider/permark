@@ -10,6 +10,7 @@ use permark_core::notes::{ProjectKey, SharedNotesApi};
 use permark_core::organizing::{CommentFilter, CommentsApi, TagsApi, UnreadApi};
 use permark_core::paths::Vault;
 use permark_core::plugins::ProjectServices;
+use permark_core::projects::agent_view::Guard;
 use permark_core::search::SearchFilter;
 use permark_core::settings::ProjectConfig;
 use permark_core::state::StateStore;
@@ -18,7 +19,6 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
 use crate::context::WindowContext;
-use crate::guard::Guard;
 use crate::live::Live;
 use crate::perms::{self, Access, Group};
 use crate::structure;
@@ -266,7 +266,7 @@ impl Tools {
         Ok(Arc::new(match self.services.projects() {
             Some(projects) => {
                 let map = projects.agent_map(wait).ok_or(ToolError::Busy)?;
-                guard.with_projects(map, group)
+                guard.with_projects(map, group.map(Group::id))
             }
             None => guard,
         }))
@@ -505,9 +505,11 @@ impl Tools {
                     "snippet": snippet.trim(),
                 });
                 // the size of reading this section next (`read at=<heading path>`)
-                let size = guard.text(&hit.path).ok().and_then(|(path, text)| {
-                    structure::section_size(&formats, &path, &text, &hit.heading_path, hit.line)
-                });
+                let size = crate::guard::text(guard, &hit.path)
+                    .ok()
+                    .and_then(|(path, text)| {
+                        structure::section_size(&formats, &path, &text, &hit.heading_path, hit.line)
+                    });
                 if let (Some(size), Some(map)) = (size, item.as_object_mut()) {
                     map.insert("size_tok".to_owned(), json!(size));
                 }
@@ -712,7 +714,7 @@ impl Tools {
 
     fn outline(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
         let OutlineArgs { path, links } = args(raw)?;
-        let (path, text) = guard.text(&path)?;
+        let (path, text) = crate::guard::text(guard, &path)?;
         // the person's tokenizer, when the token count plugin is on: the project's own choice over the app's
         let api = self.services.app_services.get::<TokenCounterApi>();
         let config = api
@@ -790,7 +792,7 @@ impl Tools {
 
     fn read(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
         let ReadArgs { path, at } = args(raw)?;
-        let (path, text) = guard.text(&path)?;
+        let (path, text) = crate::guard::text(guard, &path)?;
         structure::read(&self.services.formats(), &path, &text, at.as_deref())
     }
 
@@ -800,14 +802,13 @@ impl Tools {
             line,
             heading,
         } = args(raw)?;
-        let (path, _) = guard.file(&path)?;
+        let (path, _) = crate::guard::file(guard, &path)?;
         let heading = heading
             .map(|h| h.trim().to_owned())
             .filter(|h| !h.is_empty());
         // a heading wins over a line when the document has it; the window gets a line either way
         let found = heading.as_deref().and_then(|h| {
-            guard
-                .text(&path)
+            crate::guard::text(guard, &path)
                 .ok()
                 .and_then(|(_, text)| structure::heading_line(&path, &text, h))
         });

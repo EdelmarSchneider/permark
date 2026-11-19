@@ -6,6 +6,7 @@
 //! as the app's own; every file created is told to the project's tree at once.
 
 mod assets;
+pub mod linediff;
 pub mod lines;
 
 #[cfg(test)]
