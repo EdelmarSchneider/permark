@@ -5,7 +5,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.17.0] - 2026-11-18
+## [0.17.0] - 2026-11-19
 
 ### Added
 - **Assistant: replies as formatted text.** Once an answer is complete, the Assistant shows it like a document: headings, lists, highlighted code, tables and math. Links to web pages open in your browser when you click them, links and `file:line` references to files in your folder open that file at the line, and pictures from the web are never loaded. <!-- f: assistant -->
