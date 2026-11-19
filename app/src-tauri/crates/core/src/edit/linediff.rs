@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use permark_core::edit::LineEdit;
+use super::LineEdit;
 
 /// Differences past which Myers' trace (a quarter of D² numbers) is not kept: 2 000 take about 16 MiB.
 pub const MAX_D: usize = 2000;
@@ -275,6 +275,7 @@ fn anchors(a: &[u32], b: &[u32]) -> Vec<(usize, usize)> {
 }
 
 #[cfg(test)]
+#[allow(clippy::assert_is_empty)] // `assert!(x.is_empty())` reads best for "no difference"
 mod tests {
     use super::*;
 

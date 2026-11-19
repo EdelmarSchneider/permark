@@ -194,6 +194,9 @@ fn a_profile_plugin_folder_never_lives_in_the_project() {
         .join("acp");
     assert_eq!(dir, expected);
     assert!(!dir.starts_with(f.project.path()));
+    let file = s.profile_plugin_file::<Sample>(&acp, "session.json");
+    file.save(&sample(1)).unwrap();
+    assert_eq!(file.path(), dir.join("session.json"));
     fs::create_dir_all(dir.join("work")).unwrap();
     remove_plugin_data_everywhere(&f.dirs, &acp, &[]).unwrap();
     assert!(!dir.exists());

@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
+use super::agent_view::{AI_IGNORE, MAX_IGNORE_BYTES};
 use super::card::{self, Card, CardChange, CardDto, CardPlace};
 use super::fsm::{
     self, AgentChoice, Candidate, Event, Found, Inputs, Membership, MissingReason, NotMoved,
@@ -38,9 +39,6 @@ use crate::tree::{Explorer, MemberRule, MemberSet};
 use crate::watch::{ChangeKind, FsBatch, OwnWrites, WatchHub};
 use crate::{ErrorKind, IpcError};
 
-/// The agent's ignore file (gitignore syntax), as the agent plugin reads it.
-const AI_IGNORE: &str = ".aiignore";
-const MAX_AI_IGNORE: u64 = 1024 * 1024;
 /// Levels above the opened folder searched for a record listing it.
 const MAX_ANCESTORS: usize = 32;
 /// How long closing waits for the worker before leaving it to end on its own.
@@ -202,7 +200,7 @@ fn load_member(dirs: &AppDirs, abs: &Path) -> MemberRes {
     let config = Root::open(abs)
         .map(|root| ProjectConfig::load(&root))
         .unwrap_or_default();
-    let aiignore = crate::fsx::read_bytes(&abs.join(AI_IGNORE), MAX_AI_IGNORE)
+    let aiignore = crate::fsx::read_bytes(&abs.join(AI_IGNORE), MAX_IGNORE_BYTES)
         .map(|b| {
             String::from_utf8_lossy(&b)
                 .lines()

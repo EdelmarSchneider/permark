@@ -2,6 +2,7 @@
 import type { AcpError } from "./AcpError";
 import type { AcpState } from "./AcpState";
 import type { AgentNeed } from "./AgentNeed";
+import type { LastConversation } from "./LastConversation";
 import type { LoginMethod } from "./LoginMethod";
 
 /**
@@ -36,4 +37,9 @@ needs?: AgentNeed,
 /**
  * Files the work copy left out for their size (over 4 MiB) at its last build | update; `0` before the first.
  */
-skippedFiles: number, };
+skippedFiles: number, 
+/**
+ * The project's last conversation with the chosen agent, which it can continue (`acp.continue`); `null`: none
+ * kept, kept with another agent, or one this agent cannot continue.
+ */
+last: LastConversation | null, };

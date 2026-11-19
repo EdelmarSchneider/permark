@@ -3121,6 +3121,12 @@ export default {
   "acp.pick.commandWarning":
     "PerMark démarrera ce programme sur votre ordinateur, avec vos droits. N'utilisez qu'un programme de confiance.",
   "acp.pick.useCommand": "Utiliser cette commande",
+  "acp.preview.starts": "Lance : {program}",
+  "acp.page.inUse": "Agent utilisé",
+  "acp.page.none": "Aucun agent choisi pour l'instant",
+  "acp.page.change": "Changer…",
+  "acp.page.saved":
+    "Enregistré. L'Assistant utilisera cette commande à partir de votre prochain message.",
   "acp.how.native": "Trouvé sur votre ordinateur",
   "acp.how.npx": "Téléchargé à la première utilisation",
   "acp.how.uvx": "Téléchargé à la première utilisation",
@@ -3175,6 +3181,13 @@ export default {
   "acp.hiddenEntries": "Les messages précédents sont masqués.",
   "acp.details": "Détails",
   "acp.examples": "Par exemple :",
+  "acp.continue": "Reprendre la dernière conversation",
+  "acp.restored.notShown": "Les messages précédents ne sont pas affichés. L'agent s'en souvient.",
+  "acp.restored.changesLost":
+    "Les modifications de la conversation précédente que vous n'aviez pas acceptées ne sont plus là.",
+  "acp.say.restored": "Conversation restaurée",
+  "acp.fail.sessionGone": "La dernière conversation ne peut plus être reprise.",
+  "acp.error.noSaved": "Il n'y a aucune conversation précédente à reprendre.",
   "acp.example.clearer": "Rendez ce paragraphe plus clair.",
   "acp.example.summary": "Ajoutez un court résumé au début.",
   "acp.example.find": "Quelles pages parlent de ce sujet ?",
@@ -3221,6 +3234,8 @@ export default {
   "acp.fail.exited": "Le programme de l'agent s'est fermé de manière inattendue.",
   "acp.fail.sendFailed": "Impossible de transmettre le message à l'agent.",
   "acp.error.relativeProgram": "Écrivez le chemin complet du programme, ou seulement son nom.",
+  "acp.error.networkProgram":
+    "PerMark ne lance que des programmes de cet ordinateur, pas depuis un dossier réseau.",
   "acp.error.oneChoice": "Choisissez un agent ou saisissez une commande.",
   "acp.error.denied":
     "PerMark n'écrit pas dans ce fichier, car les agents n'ont pas le droit de le voir.",

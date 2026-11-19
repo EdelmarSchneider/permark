@@ -3063,6 +3063,11 @@ export default {
   "acp.pick.commandWarning":
     "PerMark はこのプログラムを、あなたの権限でこのコンピューター上で起動します。信頼できるプログラムだけを使ってください。",
   "acp.pick.useCommand": "このコマンドを使用",
+  "acp.preview.starts": "起動するプログラム：{program}",
+  "acp.page.inUse": "使用中のエージェント",
+  "acp.page.none": "エージェントはまだ選択されていません",
+  "acp.page.change": "変更…",
+  "acp.page.saved": "保存しました。次のメッセージから、アシスタントはこのコマンドを使います。",
   "acp.how.native": "このコンピューターで検出",
   "acp.how.npx": "初回使用時にダウンロード",
   "acp.how.uvx": "初回使用時にダウンロード",
@@ -3116,6 +3121,12 @@ export default {
   "acp.hiddenEntries": "以前のメッセージは非表示になっています。",
   "acp.details": "詳細",
   "acp.examples": "例：",
+  "acp.continue": "前回の会話を続ける",
+  "acp.restored.notShown": "以前のメッセージは表示されませんが、エージェントは覚えています。",
+  "acp.restored.changesLost": "以前の会話で承認しなかった変更は、もう残っていません。",
+  "acp.say.restored": "会話を復元しました",
+  "acp.fail.sessionGone": "前回の会話はもう続けられません。",
+  "acp.error.noSaved": "続けられる以前の会話はありません。",
   "acp.example.clearer": "この段落をもっとわかりやすくしてください。",
   "acp.example.summary": "冒頭に短い要約を追加してください。",
   "acp.example.find": "このトピックに触れているページはどれですか？",
@@ -3163,6 +3174,8 @@ export default {
   "acp.fail.exited": "エージェントのプログラムが予期せず終了しました。",
   "acp.fail.sendFailed": "メッセージをエージェントに渡せませんでした。",
   "acp.error.relativeProgram": "プログラムのフルパスか、名前だけを書いてください。",
+  "acp.error.networkProgram":
+    "PerMark はこのコンピューター上のプログラムだけを起動します。ネットワーク フォルダーからは起動しません。",
   "acp.error.oneChoice": "エージェントを 1 つ選ぶか、コマンドを 1 つ入力してください。",
   "acp.error.denied":
     "エージェントに見せてはいけないファイルなので、PerMark はこのファイルに書き込みません。",

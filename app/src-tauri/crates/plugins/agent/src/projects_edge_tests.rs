@@ -296,12 +296,16 @@ fn a_map_not_ready_hides_everything() {
         &root, "a.md", "# a
 ",
     );
-    let guard = crate::guard::Guard::new(&Root::open(&root).unwrap(), &[]).with_projects(
-        Arc::new(permark_core::projects::ProjectMap::default()),
-        None,
-    );
+    let guard = permark_core::projects::agent_view::Guard::new(&Root::open(&root).unwrap(), &[])
+        .with_projects(
+            Arc::new(permark_core::projects::ProjectMap::default()),
+            None,
+        );
     assert!(guard.hidden("a.md", false));
-    assert!(matches!(guard.file("a.md"), Err(ToolError::NotFound(_))));
+    assert!(matches!(
+        crate::guard::file(&guard, "a.md"),
+        Err(ToolError::NotFound(_))
+    ));
     assert_eq!(
         crate::render::error("read", &ToolError::Busy),
         "ERR busy: PerMark still reading this folder -> retry in a few seconds"

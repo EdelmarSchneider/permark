@@ -3500,8 +3500,6 @@ dependencies = [
  "agent-client-protocol-schema",
  "ignore",
  "permark-core",
- "permark-plugin-agent",
- "permark-plugin-review",
  "serde",
  "serde_json",
  "tempfile",

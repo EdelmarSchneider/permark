@@ -16,17 +16,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use permark_core::document::Documents;
+use permark_core::edit::linediff::{hunks, replace, Hunk};
 use permark_core::edit::{lines, LineEdit};
 use permark_core::fsx::{self, ContentHash, Decoded, FsxError};
 use permark_core::paths::{self, Root, Vault, VaultPath};
 use permark_core::plugins::ProjectServices;
+use permark_core::projects::agent_view::{Guard, AI_IGNORE, PRIVATE_FOLDERS};
 use permark_core::projects::Projects;
 use permark_core::settings::ProjectConfig;
 use permark_core::tree::Explorer;
 use permark_core::watch::OwnWrites;
 use permark_core::{ErrorKind, IpcError};
-use permark_plugin_agent::guard::Guard;
-use permark_plugin_review::{hunks, replace, Hunk};
 
 use crate::dto::{ChangeList, FileChange, FileChangeKind, HunkView};
 
@@ -49,10 +49,8 @@ const MAX_UNDO_BYTES: usize = 64 * 1024 * 1024;
 /// Longest wait for the projects inside the folder: their rules hide paths, so no copy is made without them.
 const RULES_WAIT: Duration = Duration::from_secs(5);
 
-/// The project's own machinery (any depth): never copied, never offered back (a hook planted in `.git` would run).
-const PRIVATE_FOLDERS: [&str; 2] = [".git", ".permark"];
 /// Files naming what agents may not see (any depth): their lines would tell the agent the hidden names.
-const PRIVATE_FILES: [&str; 1] = [".aiignore"];
+const PRIVATE_FILES: [&str; 1] = [AI_IGNORE];
 /// Folders agents read as their own settings (permissions, tools, servers, hooks), any depth.
 const AGENT_FOLDERS: [&str; 10] = [
     ".codex",
@@ -102,7 +100,8 @@ fn named(segment: &str, names: &[&str]) -> bool {
     names.iter().any(|name| lower == name.to_lowercase())
 }
 
-/// A folder whose whole content stays out of the copy.
+/// A folder whose whole content stays out of the copy: the project's machinery (never offered back either: a hook
+/// planted in `.git` would run) and agent folders.
 fn kept_out_folder(name: &str) -> bool {
     named(name, &PRIVATE_FOLDERS) || named(name, &AGENT_FOLDERS)
 }
@@ -1459,4 +1458,4 @@ impl WorkCopy {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

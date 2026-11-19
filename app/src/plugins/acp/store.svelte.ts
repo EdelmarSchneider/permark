@@ -20,16 +20,20 @@ import type {
   AcpUpdate,
   AgentEntry,
   ApiError,
+  Block,
   ChangeList,
   ChooseArgs,
   FileChange,
   IpcError,
+  LinkTarget,
   LoginMethod,
   PermissionChoice,
   PermissionDiff,
   PromptArgs,
   PromptSelection,
+  ResolvedCommand,
 } from "../../api";
+import { anchorLine } from "../../core/doc/codeRefs";
 import { documents } from "../../core/doc/document.svelte";
 import { pageSelection } from "../../core/doc/selection";
 import { editing, type TextRange } from "../../core/editing/session.svelte";
@@ -49,8 +53,12 @@ import { windowStore, type NoticeAction } from "../../core/window.svelte";
 
 /** The id of the Assistant panel. */
 export const PANEL = "acp.panel";
+/** The id of the Assistant's settings page. */
+export const ACP_PAGE = "acp.page";
 /** The attribute on the panel's element: a selection | the keyboard inside it never changes the passage. */
 export const PANEL_MARK = "data-acp-panel";
+/** The one notice a link of a message that leads nowhere gives (a second click replaces it). */
+const LINK_NOTICE = "acp.link";
 /** The conversation keeps this many lines; older ones go (a long session never grows the window without end). */
 export const MAX_ENTRIES = 500;
 /** The agent's error output shown under Details: its newest characters, at most this many. */
@@ -70,6 +78,7 @@ export type ToolState = AcpToolStatus | "stopped";
 
 /** One line of the conversation. */
 export type Entry =
+  /** The person's message (`passage`: attached; `null` also for a message replayed from a continued conversation). */
   | { kind: "you"; id: number; text: string; passage: PromptSelection | null }
   | { kind: "agent"; id: number; text: string }
   | { kind: "tool"; id: number; tool: string; title: string; status: ToolState }
@@ -142,6 +151,14 @@ export class AcpStore {
   choiceRefusal = $state<string | null>(null);
   /** A sign-in is on its way to the backend. */
   signingIn = $state(false);
+
+  /** The project's last conversation can be continued now: the panel is empty, no agent runs, one is kept for the
+   *  chosen agent (`null`: not offered). */
+  readonly resumable = $derived(
+    this.transcript.length === 0 && !this.sending && this.status?.state === "idle"
+      ? (this.status.last ?? null)
+      : null,
+  );
 
   /** A question of the agent waits for the person. */
   readonly asking = $derived(
@@ -255,6 +272,8 @@ export class AcpStore {
           methods: update.methods ?? [],
           needs: this.status?.needs,
           skippedFiles: this.status?.skippedFiles ?? 0,
+          // a conversation its agent no longer has is forgotten by the backend too: never offered meanwhile
+          last: update.error?.code === "sessionGone" ? null : (this.status?.last ?? null),
         };
         if (update.state !== "starting" && update.state !== "working") {
           this.thinking = false;
@@ -283,6 +302,23 @@ export class AcpStore {
         else this.#push({ kind: "agent", text: update.text });
         return;
       }
+      case "you": {
+        // a continued conversation replayed: the pieces of one message make one line
+        const last = this.transcript.at(-1);
+        if (last?.kind === "you" && last.passage === null)
+          this.transcript = [
+            ...this.transcript.slice(0, -1),
+            { ...last, text: last.text + update.text },
+          ];
+        else this.#push({ kind: "you", text: update.text, passage: null });
+        return;
+      }
+      case "restored":
+        if (!update.replayed) this.#notice(t("acp.restored.notShown"));
+        if (update.changesLost) this.#notice(t("acp.restored.changesLost"));
+        // said once, never line by line while it replays
+        this.#deps.say(t("acp.say.restored"));
+        return;
       case "thinking":
         this.thinking = true;
         return;
@@ -392,6 +428,22 @@ export class AcpStore {
     this.hidden = 0;
     this.thinking = false;
     this.refusal = null;
+  }
+
+  /** Continues the project's last conversation (the agent replays it as news); a refusal is said. */
+  async continueLast(): Promise<void> {
+    if (this.busy) return;
+    this.sending = true;
+    const root = this.#root();
+    try {
+      const result = await this.#client.call("acp.continue", {});
+      if (result.ok || this.#root() !== root) return;
+      this.#notice(errorText(result.error));
+      // gone meanwhile (another window, a new choice): the offer follows what the backend holds
+      void this.#readStatus();
+    } finally {
+      if (this.#root() === root) this.sending = false;
+    }
   }
 
   /** Answers the question `requestId` with `option`. */
@@ -544,6 +596,22 @@ export class AcpStore {
     }
   }
 
+  /** The blocks of an agent's whole message, sanitized as a document's (`null`: not rendered: too long, a failure,
+   *  another project shown meanwhile; the plain text stays). */
+  async render(text: string): Promise<readonly Block[] | null> {
+    const root = this.#root();
+    const result = await this.#client.call("acp.render", { text });
+    return result.ok && this.#root() === root ? result.value.blocks : null;
+  }
+
+  /** What a choice of the own command `command` would start, nothing kept (`null`: the call failed | another project
+   *  shows now). */
+  async resolve(command: string): Promise<ResolvedCommand | null> {
+    const root = this.#root();
+    const result = await this.#client.call("acp.resolve", { command });
+    return result.ok && this.#root() === root ? result.value : null;
+  }
+
   /** A website in the person's browser (how to install an agent | what it needs). */
   openWebsite(url: string): void {
     void documents.openWeb(url);
@@ -552,6 +620,37 @@ export class AcpStore {
   /** Opens a file of the project at a line (the real file, as it is now). */
   openAt(path: string, line: number | null): void {
     documents.navigate(path, null, line);
+  }
+
+  /** Follows a link of a message as the reading view follows a document's: a file opens at the line its anchor names
+   *  (`#L3`) | at its heading, a web address in the browser; a missing file | a place outside the project is said.
+   *  A folder | a place in the message itself: nothing here. */
+  openLink(target: LinkTarget): void {
+    switch (target.type) {
+      case "doc": {
+        const line = target.anchor === null ? null : anchorLine(target.anchor);
+        if (target.anchor === null || line !== null) this.openAt(target.path, line);
+        else documents.navigate(target.path, target.anchor);
+        break;
+      }
+      case "asset":
+        this.openAt(target.path, null);
+        break;
+      case "web":
+        this.openWebsite(target.url);
+        break;
+      case "missing":
+        this.#deps.notices.notifyKeyed(LINK_NOTICE, t("link.missing", { path: target.path }));
+        break;
+      case "outside":
+        this.#deps.notices.notifyKeyed(LINK_NOTICE, t("link.outside"));
+        break;
+      case "anchor":
+      case "folder":
+        break;
+      default:
+        target satisfies never;
+    }
   }
 
   /** Puts `text` on the clipboard; false when the system refused. */
@@ -624,6 +723,7 @@ export class AcpStore {
             chosen: answer.chosen,
             needs: answer.needs,
             skippedFiles: answer.skippedFiles,
+            last: answer.last,
           };
   }
 
@@ -1018,6 +1118,8 @@ function failKey(code: AcpErrorCode): MessageKey {
       return "acp.fail.exited";
     case "sendFailed":
       return "acp.fail.sendFailed";
+    case "sessionGone":
+      return "acp.fail.sessionGone";
     default:
       return code satisfies never;
   }
@@ -1044,7 +1146,26 @@ export function errorText(error: ApiError): string {
 }
 
 function refusalKey(error: IpcError): MessageKey | null {
-  switch (error.detail) {
+  const key = detailKey(error.detail);
+  if (key !== null) return key;
+  return error.kind === "invalidPath" || error.kind === "pathEscape" ? "acp.error.path" : null;
+}
+
+/** The line under an own command before it is kept: the program it would start, else why it would not (`null`: a
+ *  refusal without words of its own). */
+export function previewText(resolved: ResolvedCommand): string | null {
+  if (resolved.error !== null) {
+    const key = detailKey(resolved.error);
+    return key === null ? null : t(key);
+  }
+  return resolved.program === null
+    ? t("acp.why.notFound")
+    : t("acp.preview.starts", { program: resolved.program });
+}
+
+/** The words of a refusal of the plugin, by its detail. */
+function detailKey(detail: string | null): MessageKey | null {
+  switch (detail) {
     case "busy":
       return "acp.error.busy";
     case "emptyPrompt":
@@ -1071,12 +1192,16 @@ function refusalKey(error: IpcError): MessageKey | null {
       return "acp.error.outdated";
     case "noAgent":
       return "acp.error.noAgent";
+    case "noSaved":
+      return "acp.error.noSaved";
     case "unknownAgent":
       return "acp.error.unknownAgent";
     case "emptyCommand":
       return "acp.error.emptyCommand";
     case "openQuote":
       return "acp.error.openQuote";
+    case "networkProgram":
+      return "acp.error.networkProgram";
     case "relativeProgram":
       return "acp.error.relativeProgram";
     case "oneChoice":
@@ -1111,7 +1236,7 @@ function refusalKey(error: IpcError): MessageKey | null {
     case "edits":
       return "acp.error.notApplied";
     default:
-      return error.kind === "invalidPath" || error.kind === "pathEscape" ? "acp.error.path" : null;
+      return null;
   }
 }
 

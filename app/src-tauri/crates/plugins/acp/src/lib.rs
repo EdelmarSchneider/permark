@@ -5,17 +5,23 @@
 //! never chooses the program the app starts.
 //!
 //! RPC (project scope): `status {}` -> [`AcpStatus`]; `agents {}` -> [`AgentEntry`]`[]`; `choose` [`ChooseArgs`] ->
-//! [`AgentEntry`]`[]`; `prompt` [`PromptArgs`] -> `null` (the reply comes as events); `login` [`LoginArgs`] -> `null`;
-//! `cancel {}` | `reset {}` -> `null`; `answer` [`AnswerArgs`] -> `null`; `changes` [`ChangesArgs`] -> the kept
+//! [`AgentEntry`]`[]`; `resolve` [`ResolveArgs`] -> [`ResolvedCommand`] (what `choose` would make of an own command,
+//! nothing kept); `prompt` [`PromptArgs`] -> `null` (the reply comes as events); `login` [`LoginArgs`] -> `null`;
+//! `cancel {}` | `reset {}` -> `null`; `continue {}` -> `null` (the project's last conversation continued, kept in the
+//! profile: [`session::Saved`]); `answer` [`AnswerArgs`] -> `null`; `changes` [`ChangesArgs`] -> the kept
 //! [`ChangeList`] (computed at each turn's end | when asked to refresh; empty while no copy exists); `accept | reject`
-//! [`DecideArgs`] (hunk keys; `null`: the whole file) | `undo` [`UndoArgs`] -> the updated [`ChangeList`]. Event
+//! [`DecideArgs`] (hunk keys; `null`: the whole file) | `undo` [`UndoArgs`] -> the updated [`ChangeList`]; `render`
+//! [`RenderArgs`] -> [`RenderedReply`] (an agent's finished message as document blocks, [`reply`]). Event
 //! `acp:update` -> [`AcpUpdate`].
 //!
-//! Off | project closed: the agent stops, then the copy is deleted (pending changes with it).
+//! Off | project closed: the agent stops, then the copy is deleted (pending changes with it). The project's last
+//! conversation stays in the plugin's profile folder (its agent, id, title: no text of it) so it can be continued
+//! later; "Remove data" sweeps it with the rest.
 
 pub mod agents;
 pub mod client;
 pub mod dto;
+pub mod reply;
 pub mod session;
 #[cfg(test)]
 mod testing;
@@ -28,7 +34,7 @@ use std::sync::{Arc, Mutex};
 use permark_core::conditions::Requirement;
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
-    PluginScope, RpcRegistration, Running,
+    PluginScope, ProjectServices, RpcRegistration, Running,
 };
 use permark_core::{ErrorKind, IpcError};
 
@@ -38,10 +44,11 @@ pub use agents::{person_launch, Agents, Choice, Plan, CHOICE_FILE};
 pub use dto::{
     AcpError, AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason, AcpToolKind,
     AcpToolStatus, AcpUpdate, AgentEntry, AgentHow, AgentNeed, AnswerArgs, ChangeList, ChangesArgs,
-    ChooseArgs, DecideArgs, FileChange, FileChangeKind, HunkView, LoginArgs, LoginKind,
-    LoginMethod, PermissionChoice, PromptArgs, PromptSelection, UndoArgs,
+    ChooseArgs, ContinueWay, DecideArgs, FileChange, FileChangeKind, HunkView, LastConversation,
+    LoginArgs, LoginKind, LoginMethod, PermissionChoice, PromptArgs, PromptSelection, RenderArgs,
+    RenderedReply, ResolveArgs, ResolvedCommand, UndoArgs,
 };
-pub use session::{Host, Session};
+pub use session::{Host, Remembered, Saved, Session, SAVED_FILE};
 pub use work::{copy_dir, Project, WorkCopy};
 
 const ID: PluginId = PluginId::of("acp");
@@ -122,20 +129,47 @@ fn on_copy(
     choose(copy)
 }
 
+/// The list after a choice, its count noted with the kept conversation.
+fn left(session: &Session, list: Result<ChangeList, IpcError>) -> Result<ChangeList, IpcError> {
+    list.inspect(|list| session.changes_left(list.count()))
+}
+
 fn decide(copy: &SharedCopy, args: &DecideArgs, choose: Decision) -> Result<ChangeList, IpcError> {
     on_copy(copy, &args.path, |copy| {
         choose(copy, &args.path, args.hunks.as_deref())
     })
 }
 
-fn register(cx: &PluginCx, copy: &SharedCopy, session: &Session) -> Vec<RpcRegistration> {
+fn register(
+    cx: &PluginCx,
+    copy: &SharedCopy,
+    session: &Session,
+    services: ProjectServices,
+    copy_names: Vec<PathBuf>,
+) -> Vec<RpcRegistration> {
     let mut rpc = Vec::new();
+    rpc.extend(cx.rpc(
+        "render",
+        typed(move |args: RenderArgs, _| {
+            reply::render(
+                &args.text,
+                &services.formats(),
+                services.documents.scope(),
+                &copy_names,
+            )
+        }),
+    ));
     let s = session.clone();
     rpc.extend(cx.rpc("status", typed(move |_: NoArgs, _| Ok(s.status()))));
     let s = session.clone();
     rpc.extend(cx.rpc("agents", typed(move |_: NoArgs, _| Ok(s.agents()))));
     let s = session.clone();
     rpc.extend(cx.rpc("choose", typed(move |args: ChooseArgs, _| s.choose(&args))));
+    let s = session.clone();
+    rpc.extend(cx.rpc(
+        "resolve",
+        typed(move |args: ResolveArgs, _| Ok(s.resolve(&args))),
+    ));
     let s = session.clone();
     rpc.extend(cx.rpc("prompt", typed(move |args: PromptArgs, _| s.prompt(args))));
     let s = session.clone();
@@ -157,6 +191,8 @@ fn register(cx: &PluginCx, copy: &SharedCopy, session: &Session) -> Vec<RpcRegis
         }),
     ));
     let s = session.clone();
+    rpc.extend(cx.rpc("continue", typed(move |_: NoArgs, _| s.continue_last())));
+    let s = session.clone();
     rpc.extend(cx.rpc("answer", typed(move |args: AnswerArgs, _| s.answer(&args))));
     let c = Arc::clone(copy);
     rpc.extend(cx.rpc(
@@ -167,20 +203,23 @@ fn register(cx: &PluginCx, copy: &SharedCopy, session: &Session) -> Vec<RpcRegis
             None => Ok(ChangeList::default()),
         }),
     ));
-    let c = Arc::clone(copy);
+    // what is left for the person goes with the kept conversation: continued on a copy made anew, it is said lost
+    let (c, s) = (Arc::clone(copy), session.clone());
     rpc.extend(cx.rpc(
         "accept",
-        typed(move |args: DecideArgs, _| decide(&c, &args, WorkCopy::accept)),
+        typed(move |args: DecideArgs, _| left(&s, decide(&c, &args, WorkCopy::accept))),
     ));
-    let c = Arc::clone(copy);
+    let (c, s) = (Arc::clone(copy), session.clone());
     rpc.extend(cx.rpc(
         "reject",
-        typed(move |args: DecideArgs, _| decide(&c, &args, WorkCopy::reject)),
+        typed(move |args: DecideArgs, _| left(&s, decide(&c, &args, WorkCopy::reject))),
     ));
-    let c = Arc::clone(copy);
+    let (c, s) = (Arc::clone(copy), session.clone());
     rpc.extend(cx.rpc(
         "undo",
-        typed(move |args: UndoArgs, _| on_copy(&c, &args.path, |copy| copy.undo(&args.path))),
+        typed(move |args: UndoArgs, _| {
+            left(&s, on_copy(&c, &args.path, |copy| copy.undo(&args.path)))
+        }),
     ));
     rpc
 }
@@ -205,6 +244,10 @@ impl Plugin for Acp {
         let choice = cx
             .store()
             .map(|store| store.app_file::<Choice>(CHOICE_FILE));
+        // the profile, never the project's state folder: it names the agent the app would start
+        let saved = cx
+            .store()
+            .map(|store| store.profile_plugin_file::<Remembered>(&cx.id, SAVED_FILE));
         let session = Session::new(Host {
             agents: Agents::new(choice),
             launch: person_launch(),
@@ -212,10 +255,17 @@ impl Plugin for Acp {
             place: place.clone(),
             run: run.clone(),
             copy: Arc::clone(&copy),
+            saved,
             events: cx.events().clone(),
         });
         Ok(Box::new(Started {
-            _rpc: register(cx, &copy, &session),
+            _rpc: register(
+                cx,
+                &copy,
+                &session,
+                services.clone(),
+                session.copy_names().to_vec(),
+            ),
             session,
             place,
             run,
@@ -258,7 +308,8 @@ mod tests {
         assert!(plugin().start(&cx).is_err());
     }
 
-    /// Turning the plugin off removes its work and start folders: the copy and anything an earlier run left there.
+    /// Turning the plugin off removes its work and start folders: the copy and anything an earlier run left there. The
+    /// project's last conversation stays beside them, to be continued later.
     #[test]
     fn stopping_leaves_nothing() {
         let place = tempfile::tempdir().unwrap();
@@ -268,6 +319,8 @@ mod tests {
         std::fs::write(work.join("old-copy").join("a.md"), "a").unwrap();
         std::fs::create_dir_all(&run).unwrap();
         std::fs::write(run.join(".npmrc"), "x").unwrap();
+        let kept = place.path().join(SAVED_FILE);
+        std::fs::write(&kept, "{}").unwrap();
         let project = tempfile::tempdir().unwrap();
         let (vault, documents) = testing::open(project.path());
         let copy: SharedCopy = Arc::new(Mutex::new(None));
@@ -280,6 +333,7 @@ mod tests {
             place: Some(work.clone()),
             run: Some(run.clone()),
             copy: Arc::clone(&copy),
+            saved: None,
             events: testing::events(Arc::new(NoEvents)),
         });
         let started = Started {
@@ -292,6 +346,6 @@ mod tests {
         drop(started);
         assert!(!work.exists());
         assert!(!run.exists());
-        assert!(place.path().exists());
+        assert!(kept.is_file());
     }
 }

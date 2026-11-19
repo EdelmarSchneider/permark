@@ -24,7 +24,7 @@ use permark_core::{ErrorKind, IpcError};
 use serde::{Deserialize, Serialize};
 
 use crate::client::AgentPipes;
-use crate::dto::{AgentEntry, AgentHow, AgentNeed, ChooseArgs};
+use crate::dto::{AgentEntry, AgentHow, AgentNeed, ChooseArgs, ResolvedCommand};
 
 /// The registry snapshot.
 const SNAPSHOT: &str = include_str!("../agents/registry.json");
@@ -342,6 +342,19 @@ fn resolve_command(typed: &str, find: &FindFn) -> Resolved {
     }
 }
 
+/// The program found for the own command `typed`, as the preview shows it: an extension the lookup added (Windows
+/// `PATHEXT` lists them upper case: `node` -> `node.EXE`) in lower case, as file names usually are.
+fn shown_program(typed: &str, mut found: PathBuf) -> String {
+    let typed_ext =
+        command_program(typed).is_some_and(|program| Path::new(&program).extension().is_some());
+    if !typed_ext {
+        if let Some(ext) = found.extension().map(OsStr::to_ascii_lowercase) {
+            found.set_extension(ext);
+        }
+    }
+    found.to_string_lossy().into_owned()
+}
+
 /// Inside a Snap: nothing starts (`needs`: `snap`), the command as it would run elsewhere.
 fn in_snap(mut resolved: Resolved) -> Resolved {
     if resolved.how != AgentHow::Custom {
@@ -367,6 +380,8 @@ impl StateData for Choice {
 /// The chosen agent as it would start now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Chosen {
+    /// The choice as kept (what a kept conversation names its agent by).
+    pub choice: Choice,
     /// Registry name; `None`: the person's own command (the window names it in its language).
     pub name: Option<String>,
     pub resolved: Resolved,
@@ -451,14 +466,17 @@ impl Agents {
     /// The chosen agent as it would start now (`None`: nothing chosen).
     #[must_use]
     pub fn chosen(&self) -> Option<Chosen> {
-        match self.choice()? {
-            Choice::Agent(id) => self.listed(&id).map(|listed| Chosen {
+        let choice = self.choice()?;
+        match &choice {
+            Choice::Agent(id) => self.listed(id).map(|listed| Chosen {
                 name: Some(listed.name.clone()),
                 resolved: self.resolve(listed),
+                choice: choice.clone(),
             }),
             Choice::Command(typed) => Some(Chosen {
                 name: None,
-                resolved: self.resolve_typed(&typed),
+                resolved: self.resolve_typed(typed),
+                choice: choice.clone(),
             }),
         }
     }
@@ -504,10 +522,46 @@ impl Agents {
     ///
     /// # Errors
     /// `InvalidData`: `unknownAgent` (not in this computer's list) | `emptyCommand` (no program) | `openQuote` (a
-    /// quote of the command left open) | `relativeProgram` (a program path that is not absolute: it would name a
-    /// file under the folder the agent starts in) | `oneChoice` (none or both given); `Unavailable` (`snap`: inside a
-    /// Snap nothing can start | `noProfile`); IO.
+    /// quote of the command left open) | `networkProgram` (a program on a share | device path: never looked up, a
+    /// lookup alone would connect to the server) | `relativeProgram` (a program path that is not absolute: it would
+    /// name a file under the folder the agent starts in) | `oneChoice` (none or both given); `Unavailable` (`snap`:
+    /// inside a Snap nothing can start | `noProfile`); IO.
     pub fn choose(&self, args: &ChooseArgs) -> Result<(), IpcError> {
+        let (choice, file) = self.checked(args)?;
+        file.update(|_| Some(choice.clone()))?;
+        Ok(())
+    }
+
+    /// What [`Agents::choose`] would make of an own command, nothing kept: the full path of the program that would
+    /// start (`None`: refused | not found) or the refusal's detail. Looks the program up on `PATH`, never runs it.
+    #[must_use]
+    pub fn preview(&self, typed: &str) -> ResolvedCommand {
+        let args = ChooseArgs {
+            agent: None,
+            command: Some(typed.to_owned()),
+        };
+        match self.checked(&args) {
+            Ok((Choice::Command(kept), _)) => ResolvedCommand {
+                program: self
+                    .resolve_typed(&kept)
+                    .plan
+                    .map(|plan| shown_program(&kept, plan.program)),
+                error: None,
+            },
+            Ok((Choice::Agent(_), _)) => ResolvedCommand {
+                program: None,
+                error: None,
+            },
+            Err(refused) => ResolvedCommand {
+                program: None,
+                error: refused.detail,
+            },
+        }
+    }
+
+    /// The choice `args` asks for and the file that keeps it, every refusal of [`Agents::choose`] checked (one place:
+    /// a preview never says yes to what a choice refuses).
+    fn checked(&self, args: &ChooseArgs) -> Result<(Choice, &StateFile<Choice>), IpcError> {
         if self.snap {
             return Err(IpcError::new(ErrorKind::Unavailable).detail("snap"));
         }
@@ -527,6 +581,14 @@ impl Agents {
                 Some(words) if words.first().is_none_or(String::is_empty) => {
                     return Err(refused("emptyCommand"));
                 }
+                // before the preview's lookup: a lookup alone would connect to the server
+                Some(words)
+                    if words
+                        .first()
+                        .is_some_and(|program| process::is_network_path(OsStr::new(program))) =>
+                {
+                    return Err(refused("networkProgram"));
+                }
                 Some(words)
                     if words
                         .first()
@@ -542,8 +604,7 @@ impl Agents {
             .file
             .as_ref()
             .ok_or_else(|| IpcError::new(ErrorKind::Unavailable).detail("noProfile"))?;
-        file.update(|_| Some(choice.clone()))?;
-        Ok(())
+        Ok((choice, file))
     }
 }
 

@@ -1,14 +1,17 @@
 <script lang="ts">
   // The view "Assistant": the conversation with the project's agent (the person's messages, the agent's reply as
-  // plain text while it comes, one "Thinking…" while it thinks, one line per tool, cards for what the agent asks to do
-  // outside its copy), then the files its copy changed, hunk by hunk, each one accepted into the real file or rejected
+  // plain text while it comes and rendered as a document once whole, one "Thinking…" while it thinks, one line per
+  // tool, cards for what the agent asks to do outside its copy), then the files its copy changed, hunk by hunk, each
+  // one accepted into the real file or rejected
   // (Open shows the real file at that line); a bar above the message box leads to them; and the message box with the
   // passage attached from the open document, whose Send turns into Stop while the agent works. The list follows the
   // conversation's end only while the person is there; changes arriving never move it. A question | a sign-in the
   // agent waits for is brought into view and takes the keyboard (never from someone typing; a question's card, never
   // one of its answers). Escape in the message box stops the agent at work. No agent chosen yet | the person
-  // changing it: the picker stands in for the conversation.
+  // changing it: the picker stands in for the conversation. Empty and idle, it offers to continue the project's last
+  // conversation (the agent replays it as lines of the conversation).
   import MessageSquarePlus from "@lucide/svelte/icons/message-square-plus";
+  import MessageSquareReply from "@lucide/svelte/icons/message-square-reply";
   import Quote from "@lucide/svelte/icons/quote";
   import SendHorizontal from "@lucide/svelte/icons/send-horizontal";
   import Square from "@lucide/svelte/icons/square";
@@ -24,6 +27,7 @@
   import DiffBox from "./DiffBox.svelte";
   import HunkCard from "./HunkCard.svelte";
   import LoginCard from "./LoginCard.svelte";
+  import MarkdownReply from "./MarkdownReply.svelte";
   import Note from "./Note.svelte";
   import {
     acp,
@@ -204,6 +208,12 @@
 
   function answer(requestId: string, option: PermissionChoice): void {
     void acp.answer(requestId, option);
+    void moveOn();
+  }
+
+  /** Continues the last conversation; the button goes with the empty panel, so the keyboard goes to the message box. */
+  function continueLast(): void {
+    void acp.continueLast();
     void moveOn();
   }
 
@@ -409,6 +419,17 @@
             {#if acp.passage === null}
               <p>{t("acp.emptyPassage")}</p>
             {/if}
+            {#if acp.resumable !== null}
+              <button type="button" class="continue" disabled={acp.busy} onclick={continueLast}>
+                <MessageSquareReply size={14} aria-hidden="true" />
+                <span class="continue-text">
+                  <span class="continue-label">{t("acp.continue")}</span>
+                  {#if acp.resumable.title !== null}
+                    <span class="continue-title">{acp.resumable.title}</span>
+                  {/if}
+                </span>
+              </button>
+            {/if}
             <p class="examples-title">{t("acp.examples")}</p>
             <ul class="examples">
               {#each EXAMPLES as key (key)}
@@ -425,7 +446,7 @@
           <Note>{t("acp.hiddenEntries")}</Note>
         {/if}
         <ol class="transcript">
-          {#each acp.transcript as entry (entry.id)}
+          {#each acp.transcript as entry, at (entry.id)}
             {#if entry.kind === "you"}
               <li class="you">
                 <span class="who">{t("acp.you")}</span>
@@ -439,7 +460,12 @@
               </li>
             {:else if entry.kind === "agent"}
               <li class="agent-text">
-                <p class="text">{entry.text}</p>
+                <!-- whole once another line follows it or the turn ended -->
+                <MarkdownReply
+                  text={entry.text}
+                  final={at < acp.transcript.length - 1 || !working}
+                  last={at === acp.transcript.length - 1}
+                />
               </li>
             {:else if entry.kind === "tool"}
               <li class="tool">
@@ -800,6 +826,48 @@
   }
   .examples-title {
     font-weight: 600;
+  }
+  .continue {
+    display: flex;
+    gap: var(--sp-2);
+    align-items: flex-start;
+    width: 100%;
+    margin: 0 0 var(--sp-3);
+    padding: var(--sp-2);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-control);
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-ui-sm);
+    text-align: start;
+    cursor: pointer;
+  }
+  .continue:hover:not(:disabled) {
+    background: var(--hover);
+  }
+  .continue:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+  .continue :global(svg) {
+    flex: none;
+    margin-top: 2px;
+    color: var(--accent);
+  }
+  .continue-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .continue-label {
+    font-weight: 600;
+  }
+  .continue-title {
+    overflow: hidden;
+    color: var(--muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .examples {
     display: flex;

@@ -1,6 +1,7 @@
 //! Projects inside an opened folder (`projects.md`): marker discovery, the root record, membership, owner
 //! resolution, rule combination along the chain, identity cards. Tauri-free.
 
+pub mod agent_view;
 pub mod card;
 pub mod fsm;
 #[cfg(test)]

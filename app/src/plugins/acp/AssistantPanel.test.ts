@@ -59,6 +59,7 @@ function firstRun(): void {
     error: null,
     methods: [],
     skippedFiles: 0,
+    last: null,
   };
   acp.catalog = { status: "ready", agents: MOCK_AGENTS.map((a) => ({ ...a, chosen: false })) };
 }
@@ -66,6 +67,8 @@ function firstRun(): void {
 beforeEach(() => {
   vi.spyOn(acp, "refreshChanges").mockResolvedValue();
   vi.spyOn(acp, "loadAgents").mockResolvedValue();
+  // a whole message stays plain text unless a test renders it
+  vi.spyOn(acp, "render").mockResolvedValue(null);
   acp.clear();
   acp.status = {
     state: "ready",
@@ -75,6 +78,7 @@ beforeEach(() => {
     error: null,
     methods: [],
     skippedFiles: 0,
+    last: null,
   };
   root = document.createElement("div");
   document.body.append(root);
@@ -97,12 +101,44 @@ describe("the Assistant panel", () => {
     expect(root.querySelector("[data-view-header]")).not.toBeNull();
   });
 
-  it("shows the agent's text as plain text", () => {
+  it("shows the agent's text as plain text while it comes", () => {
+    acp.take({ type: "status", state: "working", error: null });
     acp.take({ type: "text", text: "<b>bold</b> <img src=x onerror=alert(1)>" });
     open();
     const reply = root.querySelector(".agent-text .text");
     expect(reply?.textContent).toBe("<b>bold</b> <img src=x onerror=alert(1)>");
     expect(reply?.querySelector("b, img")).toBeNull();
+  });
+
+  it("renders a message once another line follows it or the turn ended", async () => {
+    const render = vi.spyOn(acp, "render").mockImplementation((text) =>
+      Promise.resolve([
+        {
+          id: "b0",
+          kind: "p",
+          lineStart: 1,
+          lineEnd: 1,
+          html: `<p data-b="b0"><em>${text}</em></p>`,
+        },
+      ]),
+    );
+    acp.take({ type: "status", state: "working", error: null });
+    acp.take({ type: "text", text: "first" });
+    open();
+    await settle();
+    expect(render).not.toHaveBeenCalled();
+    acp.take({ type: "tool", id: "t1", title: "Read a.md", kind: "read", status: "pending" });
+    acp.take({ type: "text", text: "second" });
+    await settle();
+    expect(render.mock.calls).toEqual([["first"]]);
+    expect(root.querySelector(".agent-text .md-body em")?.textContent).toBe("first");
+    acp.take({ type: "status", state: "ready", error: null });
+    await settle();
+    expect(render.mock.calls).toEqual([["first"], ["second"]]);
+    expect([...root.querySelectorAll(".agent-text em")].map((e) => e.textContent)).toEqual([
+      "first",
+      "second",
+    ]);
   });
 
   it("a question answers with the option the person picks, then says what was answered", () => {
@@ -389,6 +425,40 @@ describe("the Assistant panel", () => {
     flushSync();
     expect(box().value).toBe(t("acp.example.summary"));
     expect(document.activeElement).toBe(box());
+  });
+
+  it("empty and idle, a button above the examples continues the last conversation, named by its title", async () => {
+    const resume = vi.spyOn(acp, "continueLast").mockResolvedValue();
+    const last = { title: "Notes", at: 1, supports: "load" as const };
+    if (acp.status === null) throw new Error("no status");
+    const idle = { ...acp.status, state: "idle" as const, last };
+    acp.status = idle;
+    open();
+    const button = root.querySelector<HTMLButtonElement>("button.continue");
+    if (button === null) throw new Error("no continue button");
+    expect(button.textContent).toContain(t("acp.continue"));
+    expect(button.textContent).toContain("Notes");
+    // before the example requests
+    const examples = root.querySelector(".examples");
+    expect(
+      examples !== null &&
+        button.compareDocumentPosition(examples) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    button.click();
+    await settle();
+    expect(resume).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(box());
+    // no title told: the words alone; a conversation on screen | an agent running: no offer
+    acp.status = { ...idle, last: { ...last, title: null } };
+    flushSync();
+    expect(root.querySelector("button.continue")?.textContent?.trim()).toBe(t("acp.continue"));
+    acp.status = { ...idle, state: "ready" };
+    flushSync();
+    expect(root.querySelector("button.continue")).toBeNull();
+    acp.status = idle;
+    acp.take({ type: "text", text: "Hello." });
+    flushSync();
+    expect(root.querySelector("button.continue")).toBeNull();
   });
 
   it("a failure's own output waits under Details; unfinished tools say Stopped; a new agent draws a line", () => {
@@ -772,6 +842,7 @@ describe("the choice of the agent", () => {
       error: null,
       methods: [...MOCK_LOGIN_METHODS],
       skippedFiles: 0,
+      last: null,
     };
     open();
     expect(root.querySelector(".agent")?.textContent).toContain(t("acp.ownCommand"));
@@ -914,6 +985,7 @@ describe("the choice of the agent", () => {
         error: null,
         methods: [],
         skippedFiles: 0,
+        last: null,
       };
       acp.picking = false;
       return true;

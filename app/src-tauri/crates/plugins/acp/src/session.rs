@@ -18,56 +18,67 @@
 //!   agents may not see is refused; such an open document is not named.
 //! - Stop: before the prompt is on its way it is never sent (the turn ends `cancelled`); after, `session/cancel`; a
 //!   question asked after Stop is answered `cancelled` at once. Stop during a start stops the agent.
-//! - news (`session/update`) -> `acp:update` events: reply text, "thinking", tool lines. Anything else the agent
-//!   tells (modes, commands, usage, account status) is dropped unread.
+//! - news (`session/update`) -> `acp:update` events: reply text, "thinking", tool lines; a title is kept with the
+//!   conversation. Anything else the agent tells (modes, commands, usage, account status) is dropped unread.
 //! - permission questions ([`permission`]): plainly work on the copy's files -> allowed once by rule; anything else
 //!   is a card the person answers, told while the question is held under the session's lock (whatever answers it
 //!   takes that lock: its card always comes before its end). Every question gets exactly one answer: the person's,
 //!   `cancelled` (Stop, the turn ended, the agent left), or `-32800` when the agent withdrew it (`$/cancel_request`).
 //!   A card's id names the agent's run too: a fresh agent numbers its questions from the start again.
 //! - errors reach the window as codes ([`AcpErrorCode`]) with the agent's own words: its refusal, its last stderr.
-//! - states: Idle -> Starting -> Working <-> Ready; Starting | Working -> `NeedsLogin` -> Starting (login); failed start
-//!   | agent gone -> Error (the next prompt starts a fresh one); "new conversation" | a new choice -> Idle (the copy
-//!   and its pending changes stay). Each run carries the generation it was started for and does nothing once a newer
-//!   one replaced it.
+//! - continue ([`resume`]): the project's last conversation in a fresh agent: `session/load` (the agent replays it
+//!   as news: the person's messages, its replies, tool lines; no question of the replay reaches the person) else
+//!   `session/resume`, in the copy's folder, then the asking mode again; it ends `Ready` with no prompt sent.
+//! - states: Idle -> Starting -> Working <-> Ready; Starting (continue) -> Ready; Starting | Working -> `NeedsLogin`
+//!   -> Starting (login); failed start | agent gone -> Error (the next prompt starts a fresh one); "new conversation" |
+//!   a new choice -> Idle (the copy and its pending changes stay). Each run carries the generation it was started for
+//!   and does nothing once a newer one replaced it.
 
 mod login;
 mod permission;
+mod resume;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use agent_client_protocol_schema::v1::{
     AuthCapabilities, AuthenticateRequest, CancelNotification, CancelRequestNotification,
     ClientCapabilities, ContentBlock, EmbeddedResource, EmbeddedResourceResource,
-    Error as RpcError, Implementation, InitializeRequest, InitializeResponse, NewSessionRequest,
-    NewSessionResponse, PermissionOptionId, PermissionOptionKind, PromptRequest, RequestId,
-    RequestPermissionOutcome, RequestPermissionResponse, ResourceLink, SelectedPermissionOutcome,
-    SessionConfigId, SessionConfigKind, SessionConfigOptionCategory, SessionConfigSelectOptions,
-    SessionId, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
-    SetSessionModeRequest, StopReason, TextContent, TextResourceContents, ToolCallStatus, ToolKind,
-    AGENT_METHOD_NAMES, CLIENT_METHOD_NAMES, PROTOCOL_LEVEL_METHOD_NAMES,
+    Error as RpcError, Implementation, InitializeRequest, InitializeResponse, LoadSessionRequest,
+    LoadSessionResponse, NewSessionRequest, NewSessionResponse, PermissionOptionId,
+    PermissionOptionKind, PromptRequest, RequestId, RequestPermissionOutcome,
+    RequestPermissionResponse, ResourceLink, ResumeSessionRequest, ResumeSessionResponse,
+    SelectedPermissionOutcome, SessionConfigId, SessionConfigKind, SessionConfigOption,
+    SessionConfigOptionCategory, SessionConfigSelectOptions, SessionId, SessionModeState,
+    SessionNotification, SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest,
+    StopReason, TextContent, TextResourceContents, ToolCallStatus, ToolKind, AGENT_METHOD_NAMES,
+    CLIENT_METHOD_NAMES, PROTOCOL_LEVEL_METHOD_NAMES,
 };
+use agent_client_protocol_schema::MaybeUndefined;
 use agent_client_protocol_schema::ProtocolVersion;
-use permark_core::paths::{Root, Vault, VaultPath};
+use permark_core::paths::{self, Root, Vault, VaultPath};
 use permark_core::plugins::PluginEvents;
+use permark_core::state::StateFile;
 use permark_core::{ErrorKind, IpcError};
 use serde_json::Value;
 
-use crate::agents::{Agents, Plan};
+use crate::agents::{Agents, Choice, Plan};
 use crate::client::{lock, AgentPipes, CallError, Connection, Inbox};
 use crate::dto::{
     AcpError, AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason, AcpToolKind,
-    AcpToolStatus, AcpUpdate, AgentEntry, AnswerArgs, ChooseArgs, LoginArgs, LoginKind,
-    LoginMethod, PermissionChoice, PromptArgs, PromptSelection,
+    AcpToolStatus, AcpUpdate, AgentEntry, AnswerArgs, ChooseArgs, ContinueWay, LoginArgs,
+    LoginKind, LoginMethod, PermissionChoice, PromptArgs, PromptSelection, ResolveArgs,
+    ResolvedCommand,
 };
+use crate::reply;
 use crate::work::{copy_dir, kept_out, start_of, Project, WorkCopy};
 use crate::SharedCopy;
 use login::login_methods;
 use permission::{allow_once, detail, diff, plain_work, reach, summary, Question, ToolLine};
+pub use resume::{Remembered, Saved, SAVED_FILE};
 
 /// Longest wait for each step of the start (the first `npx` run downloads the adapter).
 const SETUP_WAIT: Duration = Duration::from_secs(180);
@@ -95,6 +106,9 @@ pub struct Host {
     /// (`None`: no profile, nothing starts).
     pub run: Option<PathBuf>,
     pub copy: SharedCopy,
+    /// The project's last conversation, in the plugin's profile folder for the project ([`resume`]; `None`: no
+    /// profile, nothing is kept).
+    pub saved: Option<StateFile<Remembered>>,
     pub events: PluginEvents,
 }
 
@@ -110,6 +124,8 @@ struct Core {
     /// Files the copy left out for their size at its last build | update (read by the status without the copy's lock,
     /// which a build | an update holds for long).
     skipped: AtomicU32,
+    /// The places the copy is named by ([`reply::copy_spellings`]): never shown in the person's replayed words.
+    copy_names: Vec<PathBuf>,
 }
 
 #[derive(Default)]
@@ -128,6 +144,17 @@ struct Inner {
     /// The current prompt is on its way to the agent (queued under this lock: a Stop either finds it unsent and it
     /// never goes, or comes after it).
     sent: bool,
+    /// What the agent's news is now.
+    telling: Telling,
+}
+
+/// What the agent's news is: told as it happens | a conversation replayed by `session/load` (the person's messages
+/// are shown again, thoughts are not).
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum Telling {
+    #[default]
+    Live,
+    Replayed,
 }
 
 impl Inner {
@@ -220,12 +247,12 @@ struct Live {
     embedded: bool,
 }
 
-/// An agent waiting for the person to sign in, with the prompt that goes on afterwards.
+/// An agent waiting for the person to sign in, with what goes on afterwards.
 struct Login {
     agent: Arc<Agent>,
-    /// The session the prompt was refused in (`None`: `session/new` was refused).
+    /// The session the prompt was refused in (`None`: opening the session was refused).
     session: Option<SessionId>,
-    args: PromptArgs,
+    then: Then,
     methods: Arc<[LoginMethod]>,
     embedded: bool,
     /// Why the last sign-in did not work.
@@ -240,9 +267,19 @@ struct Agent {
     dir: PathBuf,
     /// The copy as a folder of its own: the boundary of "work on the copy's files".
     copy: Vault,
+    /// The person's choice it was started for.
+    choice: Choice,
+    /// The copy was made for this start (changes an earlier run left in it are gone).
+    fresh: bool,
+    /// How it offers to continue a conversation (set by `initialize`).
+    way: OnceLock<Option<ContinueWay>>,
 }
 
 impl Agent {
+    fn way(&self) -> Option<ContinueWay> {
+        self.way.get().copied().flatten()
+    }
+
     /// Closes its stdin (never waits on a write the agent does not read), then ends it (grace, then its whole process
     /// tree killed); every call waiting on it answers `Closed`.
     fn stop(&self) {
@@ -315,6 +352,15 @@ enum Run {
     Turn(Live),
 }
 
+/// What a start goes on with once its session is open.
+#[derive(Clone)]
+enum Then {
+    /// A new conversation takes this prompt.
+    Prompt(PromptArgs),
+    /// The kept conversation is continued; no prompt is sent.
+    Continue(Saved),
+}
+
 /// What a start opened.
 enum Opened {
     Live(Live),
@@ -368,19 +414,30 @@ impl Step {
 impl Session {
     #[must_use]
     pub fn new(host: Host) -> Self {
+        let copy_names = reply::copy_spellings(host.place.as_deref(), host.project.root());
         Self {
             core: Arc::new(Core {
                 host,
                 inner: Mutex::new(Inner::default()),
                 skipped: AtomicU32::new(0),
+                copy_names,
             }),
         }
     }
 
+    /// The places the copy is named by ([`reply::copy_spellings`]).
+    #[must_use]
+    pub fn copy_names(&self) -> &[PathBuf] {
+        &self.core.copy_names
+    }
+
     #[must_use]
     pub fn status(&self) -> AcpStatus {
-        // read before the lock: a file and `PATH` lookups
+        // read before the lock: files and `PATH` lookups
         let chosen = self.core.host.agents.chosen();
+        let last = chosen
+            .as_ref()
+            .and_then(|c| self.core.saved()?.offer(&c.choice));
         let inner = lock(&self.core.inner);
         AcpStatus {
             state: inner.state.name(),
@@ -396,6 +453,7 @@ impl Session {
                 .as_ref()
                 .map_or_else(|| self.core.host.agents.blocked(), |c| c.resolved.needs),
             skipped_files: self.core.skipped.load(Ordering::Relaxed),
+            last,
         }
     }
 
@@ -403,6 +461,12 @@ impl Session {
     #[must_use]
     pub fn agents(&self) -> Vec<AgentEntry> {
         self.core.host.agents.list()
+    }
+
+    /// What a choice of the own command `args` would do, nothing kept and nothing stopped ([`Agents::preview`]).
+    #[must_use]
+    pub fn resolve(&self, args: &ResolveArgs) -> ResolvedCommand {
+        self.core.host.agents.preview(&args.command)
     }
 
     /// Keeps the person's choice and stops the agent (the copy and its pending changes stay): the next prompt starts
@@ -462,20 +526,81 @@ impl Session {
             stop_aside(&agent);
         }
         self.core.emit(update);
+        self.run_aside(
+            "acp-prompt",
+            generation,
+            AcpErrorCode::SendFailed,
+            move |core| match run {
+                Run::Start => core.start(generation, &Then::Prompt(args), false),
+                Run::Turn(live) => core.turn(generation, &live, &args),
+            },
+        )
+    }
+
+    /// Continues the project's last conversation in a fresh agent (one running stops first): the agent replays it |
+    /// remembers it, it is set to ask again, no prompt is sent. Answers at once; the outcome comes as events.
+    ///
+    /// # Errors
+    /// `Unavailable` (`noAgent`): no agent chosen; `NotFound` (`noSaved`): no conversation kept that the chosen agent
+    /// can continue; `Conflict` (`busy`): the agent starts | works.
+    pub fn continue_last(&self) -> Result<(), IpcError> {
+        let chosen = self
+            .core
+            .host
+            .agents
+            .chosen()
+            .ok_or_else(|| IpcError::new(ErrorKind::Unavailable).detail("noAgent"))?;
+        let saved = self
+            .core
+            .saved()
+            .filter(|saved| saved.offer(&chosen.choice).is_some())
+            .ok_or_else(|| IpcError::new(ErrorKind::NotFound).detail("noSaved"))?;
+        let mut inner = lock(&self.core.inner);
+        if matches!(inner.state, State::Starting(_) | State::Working(_)) {
+            return Err(IpcError::new(ErrorKind::Conflict).detail("busy"));
+        }
+        let left = inner.state.agent();
+        inner.generation += 1;
+        inner.state = State::Starting(None);
+        inner.begin_prompt();
+        let generation = inner.generation;
+        let update = inner.state.update();
+        drop(inner);
+        if let Some(agent) = left {
+            stop_aside(&agent);
+        }
+        self.core.emit(update);
+        self.run_aside(
+            "acp-continue",
+            generation,
+            AcpErrorCode::StartFailed,
+            move |core| core.start(generation, &Then::Continue(saved), false),
+        )
+    }
+
+    /// Runs `job` for `generation` on a thread of its own (the RPC thread never waits on the agent); a thread that
+    /// cannot start fails the run with `failure`.
+    fn run_aside(
+        &self,
+        name: &str,
+        generation: u64,
+        failure: AcpErrorCode,
+        job: impl FnOnce(&Arc<Core>) + Send + 'static,
+    ) -> Result<(), IpcError> {
         let core = Arc::clone(&self.core);
-        let spawned =
-            std::thread::Builder::new()
-                .name("acp-prompt".into())
-                .spawn(move || match run {
-                    Run::Start => core.start(generation, &args, false),
-                    Run::Turn(live) => core.turn(generation, &live, &args),
-                });
+        let spawned = std::thread::Builder::new()
+            .name(name.into())
+            .spawn(move || job(&core));
         if let Err(error) = spawned {
-            self.core
-                .fail(generation, AcpError::new(AcpErrorCode::SendFailed));
+            self.core.fail(generation, AcpError::new(failure));
             return Err(IpcError::io("acp", &error));
         }
         Ok(())
+    }
+
+    /// The copy now holds `changed` files waiting for the person (after an accept | reject | undo).
+    pub fn changes_left(&self, changed: u32) {
+        self.core.changes_left(changed);
     }
 
     /// Stop. During a prompt: a prompt not yet on its way is never sent, one on its way is cancelled
@@ -559,19 +684,15 @@ impl Session {
             stop_aside(&agent);
         }
         self.core.emit(update);
-        let core = Arc::clone(&self.core);
-        let spawned = std::thread::Builder::new()
-            .name("acp-login".into())
-            .spawn(move || match method {
+        self.run_aside(
+            "acp-login",
+            generation,
+            AcpErrorCode::LoginFailed,
+            move |core| match method {
                 Some(method) => core.sign_in(generation, login, method),
-                None => core.start(generation, &login.args, true),
-            });
-        if let Err(error) = spawned {
-            self.core
-                .fail(generation, AcpError::new(AcpErrorCode::LoginFailed));
-            return Err(IpcError::io("acp", &error));
-        }
-        Ok(())
+                None => core.start(generation, &login.then, true),
+            },
+        )
     }
 
     /// New conversation: the agent stops; the next prompt starts a fresh one (the copy and its changes stay).
@@ -897,17 +1018,17 @@ impl Core {
         }
     }
 
-    /// The start run: copy, program, session; then the first prompt. `again`: started after a sign-in outside the
-    /// app (an agent still asking for one says so).
-    fn start(self: &Arc<Self>, generation: u64, args: &PromptArgs, again: bool) {
-        match self.open(generation) {
-            Ok(Some(Opened::Live(live))) => self.work(generation, &live, args),
+    /// The start run: copy, program, session; then the first prompt | the conversation continued. `again`: started
+    /// after a sign-in outside the app (an agent still asking for one says so).
+    fn start(self: &Arc<Self>, generation: u64, then: &Then, again: bool) {
+        match self.open(generation, then) {
+            Ok(Some(Opened::Live(live))) => self.go_on(generation, &live, then),
             Ok(Some(Opened::Login(agent, methods, embedded))) => self.need_login(
                 generation,
                 Login {
                     agent,
                     session: None,
-                    args: args.clone(),
+                    then: then.clone(),
                     methods,
                     embedded,
                     error: again.then(|| AcpError::new(AcpErrorCode::StillNeedsLogin)),
@@ -917,6 +1038,34 @@ impl Core {
             Ok(None) => {}
             Err(error) => self.fail(generation, error),
         }
+    }
+
+    /// The session of `generation` is open: the prompt | the conversation continued.
+    fn go_on(&self, generation: u64, live: &Live, then: &Then) {
+        match then {
+            Then::Prompt(args) => self.work(generation, live, args),
+            Then::Continue(_) => self.restored(generation, live),
+        }
+    }
+
+    /// The conversation of `generation` was continued: `restored` told (whether it was replayed, whether changes the
+    /// person had not accepted are gone with an earlier copy), then `Ready`; no prompt is sent.
+    fn restored(&self, generation: u64, live: &Live) {
+        let agent = &live.agent;
+        let changes_lost = agent.fresh && self.saved().is_some_and(|saved| saved.had_changes);
+        let moved = self.with_current(generation, |inner| {
+            inner.state = State::Ready(live.clone());
+            inner.state.update()
+        });
+        let Some(update) = moved else {
+            return agent.stop();
+        };
+        self.continued(agent, &live.session);
+        self.emit(AcpUpdate::Restored {
+            replayed: agent.way() == Some(ContinueWay::Load),
+            changes_lost,
+        });
+        self.emit(update);
     }
 
     /// The started agent of `generation` takes the prompt: `Working`, then the turn.
@@ -951,13 +1100,13 @@ impl Core {
         }
     }
 
-    /// The sign-in run with an agent method: the agent signs in, then the waiting prompt goes on (in a new session
-    /// when `session/new` was the refused step).
+    /// The sign-in run with an agent method: the agent signs in, then what waited goes on (in a session opened now
+    /// when opening it was the refused step).
     fn sign_in(self: &Arc<Self>, generation: u64, login: Login, method: String) {
         let Login {
             agent,
             session,
-            args,
+            then,
             methods,
             embedded,
             ..
@@ -965,7 +1114,7 @@ impl Core {
         let again = |error: AcpError| Login {
             agent: Arc::clone(&agent),
             session: session.clone(),
-            args: args.clone(),
+            then: then.clone(),
             methods: Arc::clone(&methods),
             embedded,
             error: Some(error),
@@ -985,7 +1134,7 @@ impl Core {
         }
         let session = match &session {
             Some(session) => session.clone(),
-            None => match open_session(&agent.connection, &agent.dir) {
+            None => match self.open_in(generation, &agent, &then) {
                 Ok(session) => session,
                 Err(Opening::Login) => {
                     let why = AcpError::new(AcpErrorCode::StillNeedsLogin);
@@ -1000,11 +1149,76 @@ impl Core {
             methods: Arc::clone(&methods),
             embedded,
         };
-        self.work(generation, &live, &args);
+        self.go_on(generation, &live, &then);
     }
 
-    /// The copy's folder, made when absent, cleared of agent settings (`None`: replaced meanwhile).
-    fn ensure_copy(&self, generation: u64) -> Result<Option<PathBuf>, AcpError> {
+    /// Opens the session `then` needs in `agent`: a new one (kept as the project's last conversation) | the kept one
+    /// continued.
+    fn open_in(&self, generation: u64, agent: &Agent, then: &Then) -> Result<SessionId, Opening> {
+        match then {
+            Then::Prompt(_) => {
+                let session = open_session(&agent.connection, &agent.dir)?;
+                self.remember(agent, &session);
+                Ok(session)
+            }
+            Then::Continue(saved) => self.reopen(generation, agent, saved),
+        }
+    }
+
+    /// `session/load` (the agent replays the conversation as news before it answers) | `session/resume`, as the
+    /// agent offers, in the copy's folder the conversation was opened in; then the asking mode again. A refusal: the
+    /// agent no longer has it, so it is forgotten.
+    fn reopen(&self, generation: u64, agent: &Agent, saved: &Saved) -> Result<SessionId, Opening> {
+        let session = SessionId::new(saved.session_id.clone());
+        let connection = &agent.connection;
+        let opened: Result<SessionSetup, CallError> = match agent.way() {
+            Some(ContinueWay::Load) => {
+                self.with_current(generation, |inner| inner.telling = Telling::Replayed);
+                let loaded = connection.call::<_, LoadSessionResponse>(
+                    AGENT_METHOD_NAMES.session_load,
+                    LoadSessionRequest::new(session.clone(), &agent.dir)
+                        .meta(never_skip_questions()),
+                    Some(SETUP_WAIT),
+                );
+                self.with_current(generation, |inner| inner.telling = Telling::Live);
+                loaded.map(|done| (done.modes, done.config_options))
+            }
+            Some(ContinueWay::Resume) => connection
+                .call::<_, ResumeSessionResponse>(
+                    AGENT_METHOD_NAMES.session_resume,
+                    ResumeSessionRequest::new(session.clone(), &agent.dir)
+                        .meta(never_skip_questions()),
+                    Some(SETUP_WAIT),
+                )
+                .map(|done| (done.modes, done.config_options)),
+            None => {
+                self.forget(&session);
+                return Err(Opening::Failed(AcpError::new(AcpErrorCode::SessionGone)));
+            }
+        };
+        match opened {
+            Ok((modes, options)) => {
+                set_ask_mode(connection, &session, modes.as_ref(), options.as_deref())?;
+                Ok(session)
+            }
+            Err(error) if error.needs_login() => Err(Opening::Login),
+            Err(CallError::Refused { message, .. }) => {
+                self.forget(&session);
+                Err(Opening::Failed(AcpError {
+                    message: said(&message),
+                    ..AcpError::new(AcpErrorCode::SessionGone)
+                }))
+            }
+            Err(error) => Err(Opening::Failed(call_failed(
+                connection,
+                Step::Session,
+                error,
+            ))),
+        }
+    }
+
+    /// The copy's folder, made when absent (`true`: made now), cleared of agent settings (`None`: replaced meanwhile).
+    fn ensure_copy(&self, generation: u64) -> Result<Option<(PathBuf, bool)>, AcpError> {
         // held while the copy is made: a plugin stop waits for it, then finds it (or nothing) to remove
         let mut copy = lock(&self.host.copy);
         if let Some(existing) = copy.as_ref() {
@@ -1012,14 +1226,17 @@ impl Core {
             existing
                 .purge()
                 .map_err(|_| AcpError::new(AcpErrorCode::CopyFailed))?;
-            return Ok(Some(existing.dir().to_path_buf()));
+            return Ok(Some((existing.dir().to_path_buf(), false)));
         }
         let place = self
             .host
             .place
             .as_ref()
             .ok_or_else(|| AcpError::new(AcpErrorCode::NoProfile))?;
+        // the real spelling (links, 8.3 names): the agent's cwd, and so every place it names, matches the copy's
+        // canonical root without a second lookup (which only runs on the same volume)
         let dir = copy_dir(place, self.host.project.root());
+        let dir = paths::canonicalize_lenient(&dir).unwrap_or(dir);
         let built = WorkCopy::build(self.host.project.clone(), dir).map_err(|e| copy_error(&e))?;
         if !self.is_current(generation) {
             let _ = built.remove();
@@ -1028,7 +1245,7 @@ impl Core {
         self.count_skipped(&built);
         let dir = built.dir().to_path_buf();
         *copy = Some(built);
-        Ok(Some(dir))
+        Ok(Some((dir, true)))
     }
 
     /// The agent's start folder, empty: anything an earlier run left there would be read as a runner's settings.
@@ -1042,20 +1259,25 @@ impl Core {
         Ok(run.clone())
     }
 
-    /// Reads the person's choice, makes the copy, starts the program, opens the session (`None`: replaced meanwhile).
-    fn open(self: &Arc<Self>, generation: u64) -> Result<Option<Opened>, AcpError> {
+    /// Reads the person's choice, makes the copy, starts the program, opens the session `then` needs (`None`:
+    /// replaced meanwhile).
+    fn open(self: &Arc<Self>, generation: u64, then: &Then) -> Result<Option<Opened>, AcpError> {
         let chosen = self
             .host
             .agents
             .chosen()
             .ok_or_else(|| AcpError::new(AcpErrorCode::NoAgent))?;
+        // another agent was chosen since: it never continues a conversation of the one before
+        if matches!(then, Then::Continue(saved) if !saved.started_by(&chosen.choice)) {
+            return Err(AcpError::new(AcpErrorCode::SessionGone));
+        }
         // nothing to start it with: the status's `needs` says what
         let plan = chosen
             .resolved
             .plan
             .clone()
             .ok_or_else(|| AcpError::new(AcpErrorCode::NotFound))?;
-        let Some(dir) = self.ensure_copy(generation)? else {
+        let Some((dir, fresh)) = self.ensure_copy(generation)? else {
             return Ok(None);
         };
         let copy = Root::open(&dir)
@@ -1082,6 +1304,9 @@ impl Core {
             stop: Mutex::new(Some(stop)),
             dir,
             copy,
+            choice: chosen.choice,
+            fresh,
+            way: OnceLock::new(),
         });
         let kept = self.with_current(generation, |inner| {
             inner.state = State::Starting(Some(Arc::clone(&agent)));
@@ -1090,9 +1315,10 @@ impl Core {
             agent.stop();
             return Ok(None);
         }
-        let (methods, embedded) = initialize(&agent.connection, &plan)?;
+        let (methods, embedded, way) = initialize(&agent.connection, &plan)?;
+        let _ = agent.way.set(way);
         let methods: Arc<[LoginMethod]> = methods.into();
-        match open_session(&agent.connection, &agent.dir) {
+        match self.open_in(generation, &agent, then) {
             Ok(session) => Ok(Some(Opened::Live(Live {
                 agent,
                 session,
@@ -1156,7 +1382,7 @@ impl Core {
                 Login {
                     agent: Arc::clone(&live.agent),
                     session: Some(live.session.clone()),
-                    args: args.clone(),
+                    then: Then::Prompt(args.clone()),
                     methods: Arc::clone(&live.methods),
                     embedded: live.embedded,
                     error: None,
@@ -1206,6 +1432,14 @@ impl Core {
             .map_or(0, |list| list.count())
     }
 
+    /// Files left for the person in the copy as last listed (`0`: no copy | it cannot be read).
+    fn left_in_copy(&self) -> u32 {
+        lock(&self.host.copy)
+            .as_mut()
+            .and_then(|copy| copy.changes().ok())
+            .map_or(0, |list| list.count())
+    }
+
     /// The turn of `generation` ended: `Ready` again (questions still open answered `cancelled`), `turnEnd` told.
     fn end_turn(&self, generation: u64, stop_reason: AcpStopReason, error: Option<AcpError>) {
         let changed = self.changed();
@@ -1214,13 +1448,15 @@ impl Core {
                 return None;
             };
             let connection = Arc::clone(&live.agent.connection);
+            let session = live.session.clone();
             inner.state = State::Ready(live.clone());
-            Some((connection, inner.take_asks()))
+            Some((connection, session, inner.take_asks()))
         });
-        let Some(Some((connection, asks))) = taken else {
+        let Some(Some((connection, session, asks))) = taken else {
             return;
         };
         self.close_asks(&connection, asks);
+        self.turn_kept(&session, changed);
         self.emit(AcpUpdate::TurnEnd {
             stop_reason,
             changed,
@@ -1305,8 +1541,11 @@ fn empty_folder(dir: &Path) -> std::io::Result<()> {
 }
 
 /// `initialize`: answers the agent's sign-in methods (a terminal method's line: `plan`'s variables + command, then the
-/// method's own) and whether it takes embedded resources in prompts.
-fn initialize(connection: &Connection, plan: &Plan) -> Result<(Vec<LoginMethod>, bool), AcpError> {
+/// method's own), whether it takes embedded resources in prompts and how it can continue a conversation.
+fn initialize(
+    connection: &Connection,
+    plan: &Plan,
+) -> Result<(Vec<LoginMethod>, bool, Option<ContinueWay>), AcpError> {
     // terminal sign-in: the person runs the shown line in a terminal; the app itself never opens one
     let caps = ClientCapabilities::new().auth(AuthCapabilities::new().terminal(true));
     let hello = InitializeRequest::new(ProtocolVersion::V1)
@@ -1321,7 +1560,11 @@ fn initialize(connection: &Connection, plan: &Plan) -> Result<(Vec<LoginMethod>,
         return Err(AcpError::new(AcpErrorCode::ProtocolVersion));
     }
     let embedded = init.agent_capabilities.prompt_capabilities.embedded_context;
-    Ok((login_methods(raw.get("authMethods"), plan), embedded))
+    Ok((
+        login_methods(raw.get("authMethods"), plan),
+        embedded,
+        resume::way_of(&init.agent_capabilities),
+    ))
 }
 
 /// `session/new` -> the asking mode when offered and not on ([`ask_mode`]).
@@ -1341,21 +1584,41 @@ fn open_session(connection: &Connection, dir: &Path) -> Result<SessionId, Openin
             )))
         }
     };
-    let set: Result<Value, CallError> = match ask_mode(&new) {
+    set_ask_mode(
+        connection,
+        &new.session_id,
+        new.modes.as_ref(),
+        new.config_options.as_deref(),
+    )?;
+    Ok(new.session_id)
+}
+
+/// The modes and config options a session was opened | continued with.
+type SessionSetup = (Option<SessionModeState>, Option<Vec<SessionConfigOption>>);
+
+/// Sets `session` to the asking mode when offered and not on ([`ask_mode`]): every open | continue, since a
+/// conversation continued may come back in whatever mode its agent keeps.
+fn set_ask_mode(
+    connection: &Connection,
+    session: &SessionId,
+    modes: Option<&SessionModeState>,
+    options: Option<&[SessionConfigOption]>,
+) -> Result<(), Opening> {
+    let set: Result<Value, CallError> = match ask_mode(modes, options) {
         Some(AskMode::Mode) => connection.call(
             AGENT_METHOD_NAMES.session_set_mode,
-            SetSessionModeRequest::new(new.session_id.clone(), ASK_MODE),
+            SetSessionModeRequest::new(session.clone(), ASK_MODE),
             Some(SETUP_WAIT),
         ),
         Some(AskMode::Option(config)) => connection.call(
             AGENT_METHOD_NAMES.session_set_config_option,
-            SetSessionConfigOptionRequest::new(new.session_id.clone(), config, ASK_MODE),
+            SetSessionConfigOptionRequest::new(session.clone(), config, ASK_MODE),
             Some(SETUP_WAIT),
         ),
         None => Ok(Value::Null),
     };
-    set.map_err(|e| Opening::Failed(call_failed(connection, Step::Session, e)))?;
-    Ok(new.session_id)
+    set.map(|_| ())
+        .map_err(|e| Opening::Failed(call_failed(connection, Step::Session, e)))
 }
 
 /// How a session is set to the asking mode.
@@ -1366,15 +1629,19 @@ enum AskMode {
     Option(SessionConfigId),
 }
 
-/// How to set `new` to the asking mode (`None`: not offered | on already): the session modes when they offer it,
-/// else a config option of category `mode` that offers it (agents move from modes to config options).
-fn ask_mode(new: &NewSessionResponse) -> Option<AskMode> {
-    if let Some(modes) = &new.modes {
+/// How to set a session with `modes` | `options` to the asking mode (`None`: not offered | on already): the session
+/// modes when they offer it, else a config option of category `mode` that offers it (agents move from modes to
+/// config options).
+fn ask_mode(
+    modes: Option<&SessionModeState>,
+    options: Option<&[SessionConfigOption]>,
+) -> Option<AskMode> {
+    if let Some(modes) = modes {
         if modes.available_modes.iter().any(|m| &*m.id.0 == ASK_MODE) {
             return (&*modes.current_mode_id.0 != ASK_MODE).then_some(AskMode::Mode);
         }
     }
-    new.config_options.iter().flatten().find_map(|option| {
+    options.into_iter().flatten().find_map(|option| {
         let SessionConfigKind::Select(select) = &option.kind else {
             return None;
         };
@@ -1396,7 +1663,7 @@ fn ask_mode(new: &NewSessionResponse) -> Option<AskMode> {
     })
 }
 
-/// `_meta` of `session/new`: Claude's adapter offers (and a settings file | a subagent header may pick) a mode that
+/// `_meta` of `session/new` | `load` | `resume`: Claude's adapter offers (and a settings file | a subagent header may pick) a mode that
 /// runs every tool without asking unless the client opts out; other agents ignore the key.
 fn never_skip_questions() -> serde_json::Map<String, Value> {
     let mut meta = serde_json::Map::new();
@@ -1414,9 +1681,11 @@ struct Listener {
 }
 
 impl Inner {
-    /// Updates for one piece of the agent's news.
-    fn news(&mut self, update: SessionUpdate) -> Vec<AcpUpdate> {
+    /// Updates for one piece of the agent's news; `copy`: the places the copy is named by.
+    fn news(&mut self, update: SessionUpdate, copy: &[PathBuf]) -> Vec<AcpUpdate> {
         match update {
+            // a replayed thought is no thinking now
+            SessionUpdate::AgentThoughtChunk(_) if self.telling == Telling::Replayed => Vec::new(),
             SessionUpdate::AgentThoughtChunk(_) => {
                 if std::mem::replace(&mut self.thinking, true) {
                     Vec::new()
@@ -1428,6 +1697,17 @@ impl Inner {
                 self.thinking = false;
                 match chunk.content {
                     ContentBlock::Text(text) => vec![AcpUpdate::Text { text: text.text }],
+                    _ => Vec::new(),
+                }
+            }
+            // the person's earlier messages, shown again: their words only (attachments come back as other blocks, or
+            // flattened into the text by Claude's adapter)
+            SessionUpdate::UserMessageChunk(chunk) if self.telling == Telling::Replayed => {
+                match chunk.content {
+                    ContentBlock::Text(text) => reply::replayed_words(&text.text, copy)
+                        .map(|text| AcpUpdate::You { text })
+                        .into_iter()
+                        .collect(),
                     _ => Vec::new(),
                 }
             }
@@ -1453,7 +1733,7 @@ impl Inner {
                     vec![after]
                 }
             }
-            // modes, commands, usage, plans, titles: not shown
+            // modes, commands, usage, plans, titles (kept by the listener): not shown
             _ => Vec::new(),
         }
     }
@@ -1491,10 +1771,23 @@ impl Inbox for Listener {
         let Some(Ok(note)) = params.map(serde_json::from_value::<SessionNotification>) else {
             return;
         };
-        let updates = self
-            .core
-            .with_current(self.generation, |inner| inner.news(note.update));
-        for update in updates.into_iter().flatten() {
+        let title = match &note.update {
+            SessionUpdate::SessionInfoUpdate(info) => match &info.title {
+                MaybeUndefined::Value(title) => Some(Some(title.clone())),
+                MaybeUndefined::Null => Some(None),
+                MaybeUndefined::Undefined => None,
+            },
+            _ => None,
+        };
+        let Some(updates) = self.core.with_current(self.generation, |inner| {
+            inner.news(note.update, &self.core.copy_names)
+        }) else {
+            return;
+        };
+        if let Some(title) = title {
+            self.core.retitle(&note.session_id, title.as_deref());
+        }
+        for update in updates {
             self.core.emit(update);
         }
     }

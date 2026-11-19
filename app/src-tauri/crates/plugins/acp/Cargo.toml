@@ -8,12 +8,8 @@ repository.workspace = true
 authors.workspace = true
 publish = false
 
-# Depends on `permark-core` + two plugin crates for their pure code only (no manifest dependency): `agent` (what an
-# agent may see of the project) and `review` (line differences).
 [dependencies]
 permark-core.workspace = true
-permark-plugin-agent.workspace = true
-permark-plugin-review.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ts-rs.workspace = true
