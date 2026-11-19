@@ -3155,6 +3155,8 @@ export default {
   "acp.fail.exited": "Program agen tertutup secara tidak terduga.",
   "acp.fail.sendFailed": "Pesan tidak dapat diserahkan kepada agen.",
   "acp.error.relativeProgram": "Tulis jalur lengkap program, atau hanya namanya.",
+  "acp.error.networkProgram":
+    "PerMark hanya menjalankan program di komputer ini, bukan dari folder jaringan.",
   "acp.error.oneChoice": "Pilih satu agen atau ketik satu perintah.",
   "acp.error.denied": "PerMark tidak menulis ke file ini karena agen tidak boleh melihatnya.",
   "acp.error.link": "Tautan yang dibuat oleh agen hanya dapat ditolak.",

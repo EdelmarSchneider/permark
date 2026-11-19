@@ -3143,6 +3143,8 @@ export default {
   "acp.fail.exited": "Chương trình của agent đã đóng bất ngờ.",
   "acp.fail.sendFailed": "Không thể chuyển tin nhắn cho agent.",
   "acp.error.relativeProgram": "Hãy viết đường dẫn đầy đủ của chương trình, hoặc chỉ tên của nó.",
+  "acp.error.networkProgram":
+    "PerMark chỉ chạy các chương trình trên máy tính này, không chạy từ thư mục mạng.",
   "acp.error.oneChoice": "Hãy chọn một agent hoặc nhập một lệnh.",
   "acp.error.denied": "PerMark không ghi vào tệp này vì agent không được phép thấy tệp này.",
   "acp.error.link": "Liên kết do agent tạo chỉ có thể bị từ chối.",

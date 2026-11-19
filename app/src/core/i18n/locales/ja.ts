@@ -3174,6 +3174,8 @@ export default {
   "acp.fail.exited": "エージェントのプログラムが予期せず終了しました。",
   "acp.fail.sendFailed": "メッセージをエージェントに渡せませんでした。",
   "acp.error.relativeProgram": "プログラムのフルパスか、名前だけを書いてください。",
+  "acp.error.networkProgram":
+    "PerMark はこのコンピューター上のプログラムだけを起動します。ネットワーク フォルダーからは起動しません。",
   "acp.error.oneChoice": "エージェントを 1 つ選ぶか、コマンドを 1 つ入力してください。",
   "acp.error.denied":
     "エージェントに見せてはいけないファイルなので、PerMark はこのファイルに書き込みません。",

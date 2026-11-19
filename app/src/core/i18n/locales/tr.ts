@@ -3161,6 +3161,8 @@ export default {
   "acp.fail.exited": "Ajanın programı beklenmedik şekilde kapandı.",
   "acp.fail.sendFailed": "Mesaj ajana iletilemedi.",
   "acp.error.relativeProgram": "Programın tam yolunu veya yalnızca adını yazın.",
+  "acp.error.networkProgram":
+    "PerMark yalnızca bu bilgisayardaki programları başlatır, ağ klasöründen başlatmaz.",
   "acp.error.oneChoice": "Bir ajan seçin veya bir komut yazın.",
   "acp.error.denied": "Ajanlar bu dosyayı göremeyeceği için PerMark bu dosyaya yazmaz.",
   "acp.error.link": "Ajanın oluşturduğu bir bağlantı yalnızca reddedilebilir.",

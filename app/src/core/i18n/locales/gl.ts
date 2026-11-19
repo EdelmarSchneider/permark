@@ -3158,6 +3158,8 @@ export default {
   "acp.fail.exited": "O programa do axente pechouse de forma inesperada.",
   "acp.fail.sendFailed": "Non foi posíbel entregarlle a mensaxe ao axente.",
   "acp.error.relativeProgram": "Escriba a ruta completa do programa, ou só o seu nome.",
+  "acp.error.networkProgram":
+    "PerMark só inicia programas deste ordenador, non desde un cartafol de rede.",
   "acp.error.oneChoice": "Escolla un axente ou escriba unha orde.",
   "acp.error.denied": "PerMark non escribe neste ficheiro porque os axentes non poden velo.",
   "acp.error.link": "Unha ligazón creada polo axente só se pode rexeitar.",

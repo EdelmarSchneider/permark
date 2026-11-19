@@ -536,6 +536,7 @@ describe("the choice of the agent", () => {
     );
     expect(await said("missing-agent --acp")).toBe(t("acp.why.notFound"));
     expect(await said("tools/agent --acp")).toBe(t("acp.error.relativeProgram"));
+    expect(await said("\\\\host\\share\\agent.exe --acp")).toBe(t("acp.error.networkProgram"));
     expect(await said('"my agent --acp')).toBe(t("acp.error.openQuote"));
     expect(await said('"" --acp')).toBe(t("acp.error.emptyCommand"));
     expect(acp.choice).toBeNull();
@@ -887,6 +888,7 @@ describe("words of the panel", () => {
       "unknownAgent",
       "emptyCommand",
       "openQuote",
+      "networkProgram",
       "relativeProgram",
       "oneChoice",
       "noProfile",
@@ -1312,6 +1314,9 @@ describe("the mock follows the plugin's checks", () => {
       '"my agent',
       "./agent",
       "bin\\agent.exe",
+      "\\\\host\\share\\agent.exe",
+      "//host/share/agent",
+      '"\\\\?\\UNC\\host\\share\\my agent.exe" --acp',
       "my-agent",
     ]) {
       const preview = await api.pluginCall("acp.resolve", { command });

@@ -2992,6 +2992,7 @@ export default {
   "acp.fail.exited": "智能体的程序意外关闭。",
   "acp.fail.sendFailed": "无法将消息交给智能体。",
   "acp.error.relativeProgram": "请写出程序的完整路径，或只写程序名。",
+  "acp.error.networkProgram": "PerMark 只启动这台电脑上的程序，不从网络文件夹启动。",
   "acp.error.oneChoice": "请只选择一个智能体或只输入一条命令。",
   "acp.error.denied": "PerMark 不会写入此文件，因为此文件不允许智能体查看。",
   "acp.error.link": "智能体创建的链接只能拒绝。",

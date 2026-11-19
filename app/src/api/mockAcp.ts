@@ -353,6 +353,8 @@ function commandRefusal(command: string): string | null {
   if (command.split('"').length % 2 === 0) return "openQuote";
   const program = programOf(command);
   if (program === "") return "emptyCommand";
+  // two separators first: a share | device path, never looked up (a lookup alone would reach the server)
+  if (/^[\\/]{2}/.test(program)) return "networkProgram";
   // a path with a folder that is not absolute would name a file under the folder the agent starts in
   if (/[\\/]/.test(program) && !isAbsolute(program)) return "relativeProgram";
   return null;

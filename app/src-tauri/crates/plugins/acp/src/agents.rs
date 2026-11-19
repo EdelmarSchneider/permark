@@ -522,9 +522,10 @@ impl Agents {
     ///
     /// # Errors
     /// `InvalidData`: `unknownAgent` (not in this computer's list) | `emptyCommand` (no program) | `openQuote` (a
-    /// quote of the command left open) | `relativeProgram` (a program path that is not absolute: it would name a
-    /// file under the folder the agent starts in) | `oneChoice` (none or both given); `Unavailable` (`snap`: inside a
-    /// Snap nothing can start | `noProfile`); IO.
+    /// quote of the command left open) | `networkProgram` (a program on a share | device path: never looked up, a
+    /// lookup alone would connect to the server) | `relativeProgram` (a program path that is not absolute: it would
+    /// name a file under the folder the agent starts in) | `oneChoice` (none or both given); `Unavailable` (`snap`:
+    /// inside a Snap nothing can start | `noProfile`); IO.
     pub fn choose(&self, args: &ChooseArgs) -> Result<(), IpcError> {
         let (choice, file) = self.checked(args)?;
         file.update(|_| Some(choice.clone()))?;
@@ -579,6 +580,14 @@ impl Agents {
                 None => return Err(refused("openQuote")),
                 Some(words) if words.first().is_none_or(String::is_empty) => {
                     return Err(refused("emptyCommand"));
+                }
+                // before the preview's lookup: a lookup alone would connect to the server
+                Some(words)
+                    if words
+                        .first()
+                        .is_some_and(|program| process::is_network_path(OsStr::new(program))) =>
+                {
+                    return Err(refused("networkProgram"));
                 }
                 Some(words)
                     if words

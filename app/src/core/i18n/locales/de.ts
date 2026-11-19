@@ -3207,6 +3207,8 @@ export default {
   "acp.fail.sendFailed": "Die Nachricht konnte nicht an den Agenten übergeben werden.",
   "acp.error.relativeProgram":
     "Den vollständigen Pfad des Programms angeben oder nur seinen Namen.",
+  "acp.error.networkProgram":
+    "PerMark startet nur Programme auf diesem Computer, nicht aus einem Netzwerkordner.",
   "acp.error.oneChoice": "Einen Agenten wählen oder einen Befehl eingeben.",
   "acp.error.denied": "PerMark schreibt nicht in diese Datei, weil Agenten sie nicht sehen dürfen.",
   "acp.error.link": "Ein vom Agenten erstellter Link kann nur abgelehnt werden.",

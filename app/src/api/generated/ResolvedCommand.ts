@@ -9,7 +9,7 @@ export type ResolvedCommand = {
  */
 program: string | null, 
 /**
- * The refusal `acp.choose` would answer, by its detail (`emptyCommand` | `openQuote` | `relativeProgram` | `snap`
- * | `noProfile`); `null`: the command would be kept.
+ * The refusal `acp.choose` would answer, by its detail (`emptyCommand` | `openQuote` | `networkProgram` |
+ * `relativeProgram` | `snap` | `noProfile`); `null`: the command would be kept.
  */
 error: string | null, };

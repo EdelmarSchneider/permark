@@ -1200,6 +1200,8 @@ function detailKey(detail: string | null): MessageKey | null {
       return "acp.error.emptyCommand";
     case "openQuote":
       return "acp.error.openQuote";
+    case "networkProgram":
+      return "acp.error.networkProgram";
     case "relativeProgram":
       return "acp.error.relativeProgram";
     case "oneChoice":

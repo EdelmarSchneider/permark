@@ -3234,6 +3234,8 @@ export default {
   "acp.fail.exited": "Le programme de l'agent s'est fermé de manière inattendue.",
   "acp.fail.sendFailed": "Impossible de transmettre le message à l'agent.",
   "acp.error.relativeProgram": "Écrivez le chemin complet du programme, ou seulement son nom.",
+  "acp.error.networkProgram":
+    "PerMark ne lance que des programmes de cet ordinateur, pas depuis un dossier réseau.",
   "acp.error.oneChoice": "Choisissez un agent ou saisissez une commande.",
   "acp.error.denied":
     "PerMark n'écrit pas dans ce fichier, car les agents n'ont pas le droit de le voir.",

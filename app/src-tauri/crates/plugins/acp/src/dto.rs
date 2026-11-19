@@ -370,8 +370,8 @@ pub struct ResolveArgs {
 pub struct ResolvedCommand {
     /// Full path of the program that would start (`null`: refused, or not found on this computer).
     pub program: Option<String>,
-    /// The refusal `acp.choose` would answer, by its detail (`emptyCommand` | `openQuote` | `relativeProgram` | `snap`
-    /// | `noProfile`); `null`: the command would be kept.
+    /// The refusal `acp.choose` would answer, by its detail (`emptyCommand` | `openQuote` | `networkProgram` |
+    /// `relativeProgram` | `snap` | `noProfile`); `null`: the command would be kept.
     pub error: Option<String>,
 }
 

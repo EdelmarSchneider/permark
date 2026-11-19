@@ -3195,6 +3195,8 @@ export default {
   "acp.fail.exited": "El programa de l'agent s'ha tancat inesperadament.",
   "acp.fail.sendFailed": "No s'ha pogut lliurar el missatge a l'agent.",
   "acp.error.relativeProgram": "Escriviu el camí complet del programa, o només el seu nom.",
+  "acp.error.networkProgram":
+    "El PerMark només inicia programes d'aquest ordinador, no des d'una carpeta de xarxa.",
   "acp.error.oneChoice": "Trieu un agent o escriviu una ordre.",
   "acp.error.denied": "El PerMark no escriu en aquest fitxer perquè els agents no el poden veure.",
   "acp.error.link": "Un enllaç creat per l'agent només es pot rebutjar.",

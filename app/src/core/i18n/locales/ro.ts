@@ -3317,6 +3317,8 @@ export default {
   "acp.fail.exited": "Programul agentului s-a închis neașteptat.",
   "acp.fail.sendFailed": "Mesajul nu a putut fi transmis agentului.",
   "acp.error.relativeProgram": "Scrie calea completă a programului sau doar numele lui.",
+  "acp.error.networkProgram":
+    "PerMark pornește doar programe de pe acest computer, nu dintr-un folder din rețea.",
   "acp.error.oneChoice": "Alege un singur agent sau scrie o singură comandă.",
   "acp.error.denied": "PerMark nu scrie în acest fișier, pentru că agenții nu au voie să-l vadă.",
   "acp.error.link": "Un link creat de agent poate fi doar respins.",

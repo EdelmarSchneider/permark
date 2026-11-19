@@ -3100,6 +3100,8 @@ const en = {
   "acp.fail.exited": "The agent's program closed unexpectedly.",
   "acp.fail.sendFailed": "The message could not be handed to the agent.",
   "acp.error.relativeProgram": "Write the program's full path, or only its name.",
+  "acp.error.networkProgram":
+    "PerMark only starts programs on this computer, not from a network folder.",
   "acp.error.oneChoice": "Choose one agent or type one command.",
   "acp.error.denied": "PerMark does not write to this file because agents may not see it.",
   "acp.error.link": "A link made by the agent can only be rejected.",

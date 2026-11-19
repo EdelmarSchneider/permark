@@ -3097,6 +3097,8 @@ export default {
   "acp.fail.exited": "에이전트의 프로그램이 예기치 않게 종료되었습니다.",
   "acp.fail.sendFailed": "메시지를 에이전트에 전달할 수 없습니다.",
   "acp.error.relativeProgram": "프로그램의 전체 경로나 이름만 입력하세요.",
+  "acp.error.networkProgram":
+    "PerMark는 이 컴퓨터에 있는 프로그램만 실행하며, 네트워크 폴더에서는 실행하지 않습니다.",
   "acp.error.oneChoice": "에이전트 하나를 선택하거나 명령 하나를 입력하세요.",
   "acp.error.denied": "에이전트가 볼 수 없는 파일이므로 PerMark는 이 파일에 쓰지 않습니다.",
   "acp.error.link": "에이전트가 만든 링크는 거부만 할 수 있습니다.",

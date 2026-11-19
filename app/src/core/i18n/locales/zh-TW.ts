@@ -3013,6 +3013,7 @@ export default {
   "acp.fail.exited": "代理程式的程式意外關閉。",
   "acp.fail.sendFailed": "無法將訊息交給代理程式。",
   "acp.error.relativeProgram": "請寫出程式的完整路徑，或只寫程式名稱。",
+  "acp.error.networkProgram": "PerMark 只會啟動這部電腦上的程式，不會從網路資料夾啟動。",
   "acp.error.oneChoice": "請只選擇一個代理程式，或只輸入一個命令。",
   "acp.error.denied": "PerMark 不會寫入此檔案，因為代理程式不得檢視它。",
   "acp.error.link": "代理程式建立的連結只能拒絕。",

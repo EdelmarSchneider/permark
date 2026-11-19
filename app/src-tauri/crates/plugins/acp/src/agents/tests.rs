@@ -530,6 +530,49 @@ fn an_own_command_with_a_relative_program_path_is_refused() {
     assert!(!profile.path().join(CHOICE_FILE).exists());
 }
 
+/// A program on a share | device path: even a lookup of it would connect to the server (Windows sends the person's
+/// sign-in to whoever answers). Refused by the preview and by a choice before the program is looked up at all.
+#[test]
+fn an_own_command_on_a_network_path_is_refused_before_any_lookup() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let profile = tempfile::tempdir().unwrap();
+    let lookups = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&lookups);
+    let agents = Agents::with(
+        Some(testing::app_store(profile.path()).app_file(CHOICE_FILE)),
+        Arc::new(move |_: &OsStr| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            None
+        }),
+        platforms(),
+    );
+    for typed in [
+        r"\\host\share\a.exe --acp",
+        "//host/share/a",
+        r"\\?\UNC\host\share\a.exe",
+        r#""\\host\share\my agent.exe" --acp"#,
+        r"\\.\pipe\agent",
+        r"/\host\share\a.exe",
+    ] {
+        assert_eq!(
+            agents.preview(typed),
+            ResolvedCommand {
+                program: None,
+                error: Some("networkProgram".to_owned())
+            },
+            "{typed}"
+        );
+        let error = agents.choose(&command(typed)).unwrap_err();
+        assert_eq!(
+            (error.kind, error.detail.as_deref()),
+            (ErrorKind::InvalidData, Some("networkProgram")),
+            "{typed}"
+        );
+    }
+    assert_eq!(lookups.load(Ordering::SeqCst), 0);
+    assert!(!profile.path().join(CHOICE_FILE).exists());
+}
+
 /// The preview of an own command answers what a choice of it would: the same refusal, else the file that would start
 /// (`None`: not found here). It keeps nothing.
 #[test]
