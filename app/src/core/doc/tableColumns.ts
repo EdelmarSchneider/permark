@@ -145,6 +145,42 @@ export function measureColumns(table: HTMLTableElement): ColumnSpan[] | null {
   return first.map((_, at) => ({ min: min[at] ?? 0, max: max[at] ?? 0 }));
 }
 
+/** The document sets the table's column widths itself (an HTML table): they stay as written. */
+export function ownWidths(table: HTMLTableElement): boolean {
+  return (
+    !table.classList.contains(SCREEN_TABLE) &&
+    (table.querySelector(":scope > colgroup") !== null || table.style.width !== "")
+  );
+}
+
+/**
+ * Writes `layout` into `table`, which carries no earlier layout; its widths are marked with `kind`. The live app
+ * marks them `SCREEN_TABLE` (fixed layout, refitted on resize); an exported HTML page marks them `FIT_TABLE`: with no
+ * script to refit, the browser's own layout keeps the shares while a narrower window still finds room for every word.
+ */
+export function showLayout(
+  table: HTMLTableElement,
+  layout: TableLayout,
+  kind: typeof FIT_TABLE | typeof SCREEN_TABLE,
+): void {
+  switch (layout.kind) {
+    case "auto":
+      break;
+    case "natural":
+      table.parentElement?.classList.add(NATURAL_TABLE);
+      break;
+    case "fill":
+      fitColumns(table, layout.widths, kind);
+      break;
+    case "scroll":
+      fitColumns(table, layout.widths, kind);
+      table.style.width = `${Math.ceil(total(layout.widths))}px`;
+      break;
+    default:
+      layout satisfies never;
+  }
+}
+
 /** Gives `table` the widths as shares of its own width (so it fills its room whatever its scale), marked with
  *  `kind` (`FIT_TABLE` for paper, `SCREEN_TABLE` for the screen). */
 export function fitColumns(

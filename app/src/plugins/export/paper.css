@@ -123,6 +123,8 @@ body {
      sets (`tableColumns.ts`); the reading view's cell floor would push it past the page again */
   .md table.pm-fit-table {
     table-layout: fixed;
+    /* an HTML page's table that scrolls on screen carries its full width inline; paper cannot scroll */
+    width: 100% !important;
   }
   .md .pm-fit-table th,
   .md .pm-fit-table td {

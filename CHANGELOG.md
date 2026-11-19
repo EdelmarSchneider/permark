@@ -21,6 +21,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - The Notes list shows at once which notes are shared after you change it in the agent panel, and **Undo** after disconnecting an agent keeps the agent menu open. <!-- f: notes, agent-connection -->
 - Assistant: moving through the model list with the arrow keys no longer sends a change at every step, and a very long list of changes stops at a safe size. <!-- f: assistant -->
 - Releasing or removing a local model no longer waits forever on a busy model worker. <!-- f: local-ai -->
+- A document saved as HTML now lays out its tables as the reading view does: short columns such as dates and numbers keep their line, long text shares the rest, and a small table keeps its own width. In a narrower window the columns shrink together without breaking a word. <!-- f: export -->
 
 ## [0.17.0] - 2026-11-19
 

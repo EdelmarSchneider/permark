@@ -7,12 +7,22 @@ import type { Api, ApiError } from "../../api";
 import type { PageBox } from "../../api/generated/PageBox";
 import { conditions } from "../../core/conditions/context.svelte";
 import { Decorator, type EmbedLookup } from "../../core/doc/decorate";
-import { enhanceBlock, type EnhanceEnv } from "../../core/doc/enhance";
+import { enhanceBlock, TABLE_WRAP, type EnhanceEnv } from "../../core/doc/enhance";
 import { webPictures } from "../../core/doc/webPictures.svelte";
 import { contributions } from "../../core/plugins/instance.svelte";
 import { fetchDataUri } from "./assets";
 import { exportCss } from "./look";
-import { columnWidths, fitColumns, FIT_TABLE, measureColumns } from "../../core/doc/tableColumns";
+import {
+  columnWidths,
+  fitColumns,
+  FIT_TABLE,
+  measureColumns,
+  ownWidths,
+  screenLayout,
+  showLayout,
+  type TableLayout,
+} from "../../core/doc/tableColumns";
+import { screenProbe, type TableProbe } from "../../core/doc/tableFitter";
 
 export type ExportTarget = "paper" | "html";
 
@@ -49,6 +59,8 @@ export type ExportOptions = {
   signal?: AbortSignal;
   /** Longest wait for embeds to finish drawing; a diagram not drawn by then shows the error. */
   settleMs?: number;
+  /** How an HTML page's tables are measured; absent: the reading view's own measure (tests give theirs). */
+  tableProbe?: TableProbe;
 };
 
 export type ExportOutcome =
@@ -243,6 +255,7 @@ export async function buildExport(
     );
     signal?.throwIfAborted();
     if (paper) fitTables(light.body);
+    else layOutTables(light.body, options.tableProbe ?? screenProbe);
 
     const page = light.body.cloneNode(true);
     if (!(page instanceof HTMLElement)) return cancelled;
@@ -291,6 +304,24 @@ function fitTables(root: HTMLElement): void {
     const widths = columns && columnWidths(columns, wrap.clientWidth);
     if (widths) fitColumns(table, widths, FIT_TABLE);
   }
+}
+
+/**
+ * The HTML page has no script to measure its tables: each one gets the layout the reading view gives it at the
+ * reading width (`screenLayout`), the page's widest column. Its widths stay shares under the browser's own layout
+ * (`FIT_TABLE`), so a narrower window shrinks them without breaking a word.
+ */
+function layOutTables(root: HTMLElement, probe: TableProbe): void {
+  const plans: [HTMLTableElement, TableLayout][] = [];
+  for (const wrap of root.querySelectorAll<HTMLElement>(`.${TABLE_WRAP}`)) {
+    const table = wrap.firstElementChild;
+    if (!(table instanceof HTMLTableElement) || ownWidths(table)) continue;
+    const room = probe.room(table);
+    const measured = room > 0 ? probe.measure(table) : null;
+    if (measured) plans.push([table, screenLayout(measured.columns, room, measured.limits)]);
+  }
+  // every table measured before any width is written: the page is laid out once, not again per table
+  for (const [table, layout] of plans) showLayout(table, layout, FIT_TABLE);
 }
 
 /** Puts each dark drawing after its light one; the page's styles show one by the reader's preference. */
