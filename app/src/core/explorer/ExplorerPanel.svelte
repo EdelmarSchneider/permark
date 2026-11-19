@@ -16,6 +16,7 @@
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import type { ProjectRow, TreeNode } from "../../api";
+  import { comboFromEvent } from "../commands/combo";
   import { keyHint } from "../commands/hint";
   import { conditions } from "../conditions/context.svelte";
   import { t, tn } from "../i18n";
@@ -591,7 +592,8 @@
   function onkeydown(e: KeyboardEvent): void {
     // typing in the name field is the field's business; dead keys and IME never fire shortcuts
     if (e.isComposing || e.target instanceof HTMLInputElement) return;
-    const modifier = e.ctrlKey || e.metaKey;
+    // as the window's commands read a chord: the physical letter on a layout that is not Latin (Cyrillic, Greek)
+    const combo = comboFromEvent(e, conditions.current.platform === "mac");
     let handled = true;
     switch (e.key) {
       case "ArrowDown":
@@ -632,19 +634,11 @@
         if (store.drag.status === "dragging") store.cancelDrag();
         else handled = false;
         break;
-      case "z":
-      case "Z":
-        if (modifier && !e.shiftKey) void store.undo();
-        else handled = false;
-        break;
-      case "a":
-      case "A":
-        // taken also when the list is empty: left alone, the key would select the document | the whole window
-        if (modifier && !e.shiftKey && !e.altKey) store.selectAll();
-        else handled = false;
-        break;
       default:
-        handled = false;
+        if (combo === "Mod+z") void store.undo();
+        // taken also when the list is empty: left alone, the key would select the document | the whole window
+        else if (combo === "Mod+a") store.selectAll();
+        else handled = false;
     }
     if (handled) e.preventDefault();
   }

@@ -22,6 +22,8 @@ type Fx = {
   folders: { folder: string; document: string | null }[];
   /** The person's editor (setting): set by a test. */
   editor: { set: boolean };
+  /** Lines handed to the editor shown instead of the page (`null`: the page shows). */
+  editorLines: number[] | null;
   /** What the window does with `window-changed`: the document follows. */
   follow: () => Promise<void>;
 };
@@ -45,6 +47,7 @@ async function setup(path: string = MOCK_FOLDER): Promise<Fx> {
     folders: [],
     pageNote: null,
     editor: { set: false },
+    editorLines: null,
     follow: () => tick(),
   };
   doc.bind({
@@ -65,6 +68,11 @@ async function setup(path: string = MOCK_FOLDER): Promise<Fx> {
     chooseEditor: () => (fx.chose += 1),
     editorHeadings: () => null,
     showEditorHeading: () => false,
+    showEditorLine: (line) => {
+      if (fx.editorLines === null) return false;
+      fx.editorLines.push(line);
+      return true;
+    },
     openFolderWith: (folder, document) => fx.folders.push({ folder, document }),
   });
   doc.setWorkspace(workspace);
@@ -835,6 +843,54 @@ describe("code references", () => {
     fx.doc.navigate("notes/todo.txt", null, 3);
     expect(fx.doc.lineRequest?.line).toBe(3);
     expect(fx.doc.lineRequest?.seq).not.toBe(first?.seq);
+  });
+});
+
+describe("a line asked while an editor shows the document instead of the page", () => {
+  it("goes to the editor, for Markdown and for other text; the hidden page is left alone", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    fx.editorLines = [];
+    const scroll = vi.spyOn(fx.doc, "scrollToLine");
+    fx.doc.navigate("README.md", null, 7);
+    expect(fx.editorLines).toEqual([7]);
+    expect(scroll).not.toHaveBeenCalled();
+    await open(fx, "notes/todo.txt");
+    const before = fx.doc.lineRequest;
+    fx.doc.navigate("notes/todo.txt", null, 3);
+    expect(fx.editorLines).toEqual([7, 3]);
+    expect(fx.doc.lineRequest).toBe(before);
+  });
+
+  it("a place asked for the next document waits for the editor that opens on it, then reaches it", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    try {
+      fx.doc.navigate("docs/guide.md", null, 5);
+      await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/guide.md"));
+      // the editor opens before the page is painted: it starts at the line
+      expect(fx.doc.askedLine()).toBe(5);
+      fx.editorLines = [];
+      const scroll = vi.spyOn(fx.doc, "scrollToLine");
+      fx.doc.paint(() => undefined);
+      await vi.waitFor(() => expect(fx.editorLines).toEqual([5]));
+      expect(scroll).not.toHaveBeenCalled();
+      expect(fx.doc.askedLine()).toBeNull();
+      // a text document: the line its viewer is told
+      fx.doc.navigate("notes/todo.txt", null, 2);
+      await vi.waitFor(() => expect(fx.doc.view?.path).toBe("notes/todo.txt"));
+      expect(fx.doc.askedLine()).toBe(2);
+    } finally {
+      scroller.remove();
+    }
+  });
+
+  it("no place asked: none to start at", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    expect(fx.doc.askedLine()).toBeNull();
   });
 });
 

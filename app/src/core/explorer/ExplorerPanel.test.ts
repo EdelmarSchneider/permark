@@ -375,7 +375,8 @@ describe("keyboard", () => {
     expect(api.probe.project.files.has("pkg.json")).toBe(true);
   });
 
-  it("Cmd+Z works as well, and plain z does not undo", async () => {
+  it("Cmd+Z works on macOS as well, and plain z does not undo", async () => {
+    conditions.set({ ...neutralContext(), platform: "mac" });
     const { root, store, api } = await render();
     await api.newEntry("", "scratch", "file");
     await tick();
@@ -423,11 +424,13 @@ describe("keyboard", () => {
       expect(drawn.getAttribute("aria-selected"), drawn.dataset["path"]).toBe("true");
     }
     expect(store.focus).toBe("docs/guide.md");
-    // Cmd+A too (Caps Lock on)
+    // Cmd+A too on macOS (Caps Lock on)
+    conditions.set({ ...neutralContext(), platform: "mac" });
     store.select("README.md", "single");
     expect(key(root, "A", { metaKey: true }).defaultPrevented).toBe(true);
     expect([...store.selection]).toEqual(listed());
     // other chords with A, and the plain letter, are not select-all
+    conditions.set(neutralContext());
     store.select("README.md", "single");
     for (const init of [{ ctrlKey: true, shiftKey: true }, { ctrlKey: true, altKey: true }, {}]) {
       expect(key(root, "a", init).defaultPrevented).toBe(false);
@@ -457,6 +460,34 @@ describe("keyboard", () => {
     expect(key(root, "a", { ctrlKey: true }).defaultPrevented).toBe(true);
     expect(store.selection.size).toBe(0);
     expect(pageSelectAll).not.toHaveBeenCalled();
+  });
+
+  it("Ctrl+A and Ctrl+Z work on a layout whose letters are not Latin (the physical key counts)", async () => {
+    const { root, store, api } = await render();
+    const listed = (): string[] =>
+      store.rows.flatMap((r) => (r.type === "node" ? [r.node.path] : []));
+    store.select("README.md", "single");
+    // Russian layout: the A key types "ф", the Z key "я"
+    expect(key(root, "ф", { ctrlKey: true, code: "KeyA" }).defaultPrevented).toBe(true);
+    expect([...store.selection]).toEqual(listed());
+    expect(key(root, "ф", { code: "KeyA" }).defaultPrevented).toBe(false);
+    await api.newEntry("", "scratch", "file");
+    await tick();
+    expect(store.nodes.map((n) => n.path)).toContain("scratch.md");
+    key(root, "я", { ctrlKey: true, code: "KeyZ" });
+    await vi.waitFor(() => expect(store.nodes.map((n) => n.path)).not.toContain("scratch.md"));
+  });
+
+  it("Cmd+A and Cmd+Z on macOS", async () => {
+    conditions.set({ ...neutralContext(), platform: "mac" });
+    const { root, store, api } = await render();
+    store.select("README.md", "single");
+    expect(key(root, "a", { metaKey: true, code: "KeyA" }).defaultPrevented).toBe(true);
+    expect(store.selection.size).toBeGreaterThan(1);
+    await api.newEntry("", "scratch", "file");
+    await tick();
+    key(root, "z", { metaKey: true, code: "KeyZ" });
+    await vi.waitFor(() => expect(store.nodes.map((n) => n.path)).not.toContain("scratch.md"));
   });
 
   it("shortcuts do not fire while composing or typing in the field", async () => {

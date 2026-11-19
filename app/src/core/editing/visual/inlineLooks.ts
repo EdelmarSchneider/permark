@@ -409,6 +409,15 @@ function markElement(view: EditorView, pos: number, tag: string): Element | null
   return element !== null && element !== view.dom && view.dom.contains(element) ? element : null;
 }
 
+/** The editor's own elements that carry a look's class already. A new state (`setDoc`) starts this plugin's view over,
+ *  while ProseMirror keeps the elements of an equal document, class and all. */
+function classed(view: EditorView): Map<Element, string> {
+  const found = new Map<Element, string>();
+  for (const element of view.dom.querySelectorAll(`a.${MISSING}`)) found.set(element, MISSING);
+  for (const element of view.dom.querySelectorAll(`code.${CODE_REF}`)) found.set(element, CODE_REF);
+  return found;
+}
+
 /** Puts View's class on the links and inline code the looks mark; takes it off the ones no longer marked. */
 function markClasses(view: EditorView, before: Map<Element, string>): Map<Element, string> {
   const now = new Map<Element, string>();
@@ -518,7 +527,7 @@ export function inlineLooks(host: () => LooksHost): Plugin<Looks> {
       /** Counts the changes of the project's files: what was asked before the last one may be out of date. */
       let era = 0;
       let gone = false;
-      let classes = markClasses(view, new Map());
+      let classes = markClasses(view, classed(view));
       const asking = { links: new Set<string>(), refs: new Set<string>() };
       /** Answers that came during a composition: delivered when it ends. */
       const waiting: Meta[] = [];

@@ -5,6 +5,7 @@ export {
   createCore,
   LOCKED,
   relook,
+  startOf,
   type BlockName,
   type CodeLabel,
   type Core,
@@ -13,7 +14,15 @@ export {
   type LooksHost,
 } from "./core";
 export { LookBook, lockedLooks, type LockedRender } from "./lockedRender";
-export { applyEdits, blockOf, changeable, docRange, scopeIn, selectRange } from "./edits";
+export {
+  applyEdits,
+  blockAtLine,
+  blockOf,
+  changeable,
+  docRange,
+  scopeIn,
+  selectRange,
+} from "./edits";
 export { markAt, marksPlugin, setMarks } from "./marks";
 export { editFinder } from "./find";
 export { emptyHint } from "./placeholder";

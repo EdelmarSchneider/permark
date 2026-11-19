@@ -102,6 +102,8 @@ export type Hooks = {
   editorHeadings(): number[] | null;
   /** Scrolls the editor shown instead of the page to its heading `index`; `false`: the page shows. */
   showEditorHeading(index: number): boolean;
+  /** Puts `line` at the top of the editor shown instead of the page, the caret at its start; `false`: the page shows. */
+  showEditorLine(line: number): boolean;
   /** A folder opened as a project in a new tab, showing `document` (a path inside it) when given. */
   openFolderWith(folder: string, document: string | null): void;
 };
@@ -117,6 +119,7 @@ const NO_HOOKS: Hooks = {
   chooseEditor: () => {},
   editorHeadings: () => null,
   showEditorHeading: () => false,
+  showEditorLine: () => false,
   openFolderWith: () => {},
 };
 
@@ -371,6 +374,16 @@ export class DocumentController {
     this.lineRequest = { path, line, seq: ++this.#lineSeq, restore };
   }
 
+  /** The line a place asked for in the shown document (a code reference, a search hit) that its page | viewer has not
+   *  taken yet: an editor opening on the document starts there. `null`: none. */
+  askedLine(): number | null {
+    if (this.#line !== null) return this.#line;
+    const request = this.lineRequest;
+    return request !== null && request.path === this.#shown && !request.restore
+      ? request.line
+      : null;
+  }
+
   /** A text document was read again: tells who listens which lines are different now. */
   #toldText(before: DocumentView | null, now: DocumentView): void {
     if (this.#textUpdaters.size === 0 || before === null || before.path !== now.path) return;
@@ -535,7 +548,8 @@ export class DocumentController {
     this.#line = null;
     if (anchor !== null && this.scrollToAnchor(anchor)) return;
     if (line !== null) {
-      this.scrollToLine(line, true);
+      // an editor opened on the document before the page was drawn: the line is its (the hidden page has no place)
+      if (!this.#hooks.showEditorLine(line)) this.scrollToLine(line, true);
       return;
     }
     const scroller = this.host.scroller;
@@ -825,8 +839,11 @@ export class DocumentController {
         return;
       }
       if (anchor === null && line !== null) {
-        if (this.view?.body.kind === "markdown") this.scrollToLine(line, true);
-        else this.#askLine(path, line);
+        // an editor shown instead of the page | viewer takes the line
+        if (!this.#hooks.showEditorLine(line)) {
+          if (this.view?.body.kind === "markdown") this.scrollToLine(line, true);
+          else this.#askLine(path, line);
+        }
         this.trail.visit({ path, anchor: null });
       } else this.#sameDocument(anchor ?? "");
       return;

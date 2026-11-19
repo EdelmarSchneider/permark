@@ -24,6 +24,17 @@ export function blockOf(composed: Composed, from: number, to: number): number | 
   return index < 0 ? null : index;
 }
 
+/** Document position of the top-level node holding `line` of the composed text: the last one starting at | above it
+ *  (0: none does, the start). */
+export function blockAtLine(doc: PMNode, composed: Composed, line: number): number {
+  let found = 0;
+  doc.forEach((node, offset) => {
+    const at = composed.lines.get(node);
+    if (at !== undefined && at <= line) found = offset;
+  });
+  return found;
+}
+
 /** A top-level node an edit may remake: its document index, the node and its range in the composed text. */
 type EditableBlock = { index: number; node: PMNode; range: TextRange };
 

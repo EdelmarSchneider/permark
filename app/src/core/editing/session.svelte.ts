@@ -51,6 +51,8 @@ export type ActiveEditor = {
   changes(base: string): number;
   /** Line (1-based) at the top of the pane. */
   topLine(): number;
+  /** Puts `line` (Edit: its block) at the top of the pane, the caret at its start; the keyboard stays where it is. */
+  showLine?(line: number): void;
   /** The selected text ("" when none). */
   selection(): string;
   focus(): void;
@@ -539,6 +541,11 @@ export class EditingSession {
   /** Scrolls the editor on screen to its heading `index` (one that cannot: nothing happens). */
   showHeading(index: number): void {
     this.#editor?.showHeading?.(index);
+  }
+
+  /** Puts `line` at the top of the editor on screen, the caret at its start (one that cannot: nothing happens). */
+  showLine(line: number): void {
+    this.#editor?.showLine?.(line);
   }
 
   /** The editor's text changed (checked shortly after, against the base). */
