@@ -1480,10 +1480,35 @@ fn the_candidate_filter_matches_plain_ascii_links_in_any_case() {
     assert!(!mentions("[p](docs/other.md)", planner.needles()));
 }
 
-/// Another program holds `path` without delete sharing (a rename over it waits), writes `text` through its handle as
-/// soon as the temp of an atomic write of `path` shows up, and lets go a moment later.
+/// Another program saves `text` to `path` after an atomic write of `path` made its temp and before that write replaces
+/// the file. Windows: the program holds `path` without delete sharing (a rename over it waits), writes through its
+/// handle as soon as the temp shows up, and lets go a moment later. Elsewhere nothing outside holds a rename back: the
+/// write's own seam saves at that point. The returned call waits until the save landed.
 #[cfg(windows)]
-fn slip_in_save(path: &Path, text: &'static str) -> std::thread::JoinHandle<()> {
+fn slip_in_save(path: &Path, text: &'static str) -> impl FnOnce() {
+    let writer = hold_and_save(path, text);
+    move || writer.join().unwrap()
+}
+
+#[cfg(not(windows))]
+fn slip_in_save(path: &Path, text: &'static str) -> impl FnOnce() {
+    let saved = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let landed = Arc::clone(&saved);
+    let target = path.to_path_buf();
+    crate::fsx::slip::before_check(path, move || {
+        fs::write(&target, text).unwrap();
+        landed.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    move || {
+        assert!(
+            saved.load(std::sync::atomic::Ordering::SeqCst),
+            "the save landed"
+        )
+    }
+}
+
+#[cfg(windows)]
+fn hold_and_save(path: &Path, text: &'static str) -> std::thread::JoinHandle<()> {
     use std::io::Write as _;
     use std::os::windows::fs::OpenOptionsExt;
     const SHARE_READ_WRITE: u32 = 0x1 | 0x2;
@@ -1514,7 +1539,6 @@ fn slip_in_save(path: &Path, text: &'static str) -> std::thread::JoinHandle<()> 
     })
 }
 
-#[cfg(windows)]
 #[test]
 fn a_link_rewrite_never_replaces_a_save_that_slips_in_before_its_write() {
     let f = fx(&[
@@ -1523,9 +1547,9 @@ fn a_link_rewrite_never_replaces_a_save_that_slips_in_before_its_write() {
         ("b.md", ""),
     ]);
     let plan = f.ops.plan_move(&[spec("b.md", "moved.md")], true).unwrap();
-    let writer = slip_in_save(&f.dir.path().join("a.md"), "their save\n");
+    let landed = slip_in_save(&f.dir.path().join("a.md"), "their save\n");
     let outcome = f.ops.apply_move(plan.plan_id, true).unwrap();
-    writer.join().unwrap();
+    landed();
     assert_eq!(read(&f, "a.md"), "their save\n");
     assert_eq!(
         outcome.skipped,
@@ -1537,14 +1561,13 @@ fn a_link_rewrite_never_replaces_a_save_that_slips_in_before_its_write() {
     assert_eq!(read(&f, "c.md"), "[b](moved.md)\n");
 }
 
-#[cfg(windows)]
 #[test]
 fn an_undo_never_replaces_a_save_that_slips_in_before_its_write() {
     let f = fx(&[("a.md", "[b](b.md)\n"), ("b.md", "")]);
     mv(&f, &[("b.md", "c.md")]);
-    let writer = slip_in_save(&f.dir.path().join("a.md"), "their save\n");
+    let landed = slip_in_save(&f.dir.path().join("a.md"), "their save\n");
     let outcome = f.ops.undo().unwrap().unwrap();
-    writer.join().unwrap();
+    landed();
     assert_eq!(read(&f, "a.md"), "their save\n");
     assert!(
         outcome

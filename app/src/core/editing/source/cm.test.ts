@@ -3,7 +3,7 @@
 // scrolls (the editor is as tall as its text inside the page's scroller); its headings for the outline.
 
 import "../visual/jsdomShims";
-import { ensureSyntaxTree } from "@codemirror/language";
+import { ensureSyntaxTree, forceParsing } from "@codemirror/language";
 import { EditorSelection, EditorState, StateEffect } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -159,8 +159,10 @@ describe("Source headings for the outline", () => {
   it("heading tops are measured from the page's top edge; a heading is brought just below it", () => {
     parent = document.createElement("div");
     document.body.append(parent);
+    // longer than what the editor parses when it starts (the rest is parsed in the background, and a slow machine
+    // stops the first parse earlier): the measure needs the whole tree, as it has once the parse caught up
     const lines = Array.from({ length: 300 }, (_, i) =>
-      i % 50 === 0 ? `# Part ${i}` : `line ${i}`,
+      i % 50 === 0 ? `# Part ${i}` : `line ${i} of the notes`,
     );
     const view = createSource({
       parent,
@@ -171,6 +173,7 @@ describe("Source headings for the outline", () => {
     });
     made = view;
     const cm = view.view;
+    expect(forceParsing(cm, cm.state.doc.length, 10_000)).toBe(true);
     const starts = [0, 50, 100, 150, 200, 250].map((n) => cm.state.doc.line(n + 1).from);
     // the page scrolled 1400 px: the whole editor moved up with it
     cm.scrollDOM.getBoundingClientRect = () => rectAt(-1400);
@@ -186,11 +189,14 @@ describe("Source headings for the outline", () => {
     const page = document.createElement("div");
     page.getBoundingClientRect = () => rectAt(50);
     page.scrollTop = 0;
+    // read before the jump, as the jump does: the editor's own scroll after it measures again, and the estimated
+    // heights of lines never drawn can move by a rounding step
+    const brought = at(starts[3] ?? -1) - 50 - 12;
     view.showHeading(3, page);
-    expect(page.scrollTop).toBe(at(starts[3] ?? -1) - 50 - 12);
+    expect(page.scrollTop).toBe(brought);
     // no such heading: nothing moves
     view.showHeading(9, page);
-    expect(page.scrollTop).toBe(at(starts[3] ?? -1) - 50 - 12);
+    expect(page.scrollTop).toBe(brought);
   });
 });
 
