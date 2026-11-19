@@ -1,5 +1,6 @@
 //! Linked worktrees of a project's repository, found by reading files (no git, no backend): they become extra roots of
-//! the project before it is built. `<common>/worktrees/<name>/gitdir` names each linked working tree.
+//! the project before it is built. `<common>/worktrees/<name>/gitdir` names each linked working tree, which names
+//! that admin folder back in its `.git` file.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -7,6 +8,8 @@ use crate::ops::too_broad;
 
 /// Most worktrees offered.
 const MAX_WORKTREES: usize = 32;
+/// Most admin folders (`<common>/worktrees/*`) looked at: each costs a few reads, and the folder may hold any number.
+const MAX_SCANNED: usize = 256;
 /// Most folders walked up looking for `.git`.
 const MAX_LEVELS: usize = 40;
 
@@ -84,6 +87,35 @@ pub(crate) fn common_dir(git_dir: &Path) -> PathBuf {
     permark_core::paths::canonicalize(&found).unwrap_or(found)
 }
 
+/// The working tree the admin folder `admin` (`<common>/worktrees/<name>`) stands for, when that tree names it back.
+/// `admin/gitdir` holds `<tree>/.git` (relative: to `admin`, as `git worktree add --relative-paths` writes it), and
+/// that `.git` is a file whose `gitdir:` leads to the same admin folder (git's own rule). Both files are content of
+/// the folder: a planted `gitdir` | a tree that belongs to another admin folder -> `None`.
+fn named_back(admin: &Path) -> Option<PathBuf> {
+    let line = PathBuf::from(read_line(&admin.join("gitdir"))?);
+    let dot_git = if line.is_absolute() {
+        line
+    } else {
+        admin.join(line)
+    };
+    let tree = dot_git.parent()?.to_path_buf();
+    let (back, true) = git_entry(&tree)? else {
+        return None;
+    };
+    same_folder(&back, admin).then_some(tree)
+}
+
+/// Whether `a` and `b` are the same existing folder (links resolved, case as on disk).
+fn same_folder(a: &Path, b: &Path) -> bool {
+    match (
+        permark_core::paths::canonicalize(a),
+        permark_core::paths::canonicalize(b),
+    ) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
 /// The other working trees of the repository the project folder `root` belongs to.
 #[must_use]
 pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
@@ -96,6 +128,10 @@ pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
         return Vec::new();
     };
     if too_broad(&workdir, &root, home) {
+        return Vec::new();
+    }
+    // the project's own `.git` file is content too: one its admin folder does not name back leads nowhere
+    if linked && !named_back(&git_dir).is_some_and(|tree| same_folder(&tree, &workdir)) {
         return Vec::new();
     }
     let prefix = root
@@ -113,13 +149,15 @@ pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
             found.push(Linked { name, folder });
         }
     };
-    // the main working tree, when the project sits in a linked one
+    // the main working tree, when the project sits in a linked one: its `.git` is the common folder itself
     if linked && common.file_name().is_some_and(|n| n == ".git") {
         if let Some(main) = common.parent() {
-            let name = main
-                .file_name()
-                .map_or_else(|| "main".to_owned(), |n| n.to_string_lossy().into_owned());
-            add(name, main.to_path_buf());
+            if git_entry(main).is_some_and(|(git, linked)| !linked && same_folder(&git, &common)) {
+                let name = main
+                    .file_name()
+                    .map_or_else(|| "main".to_owned(), |n| n.to_string_lossy().into_owned());
+                add(name, main.to_path_buf());
+            }
         }
     }
     let Ok(entries) = std::fs::read_dir(common.join("worktrees")) else {
@@ -127,12 +165,10 @@ pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
     };
     let mut names: Vec<(String, PathBuf)> = entries
         .filter_map(Result::ok)
+        .take(MAX_SCANNED)
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let line = read_line(&entry.path().join("gitdir"))?;
-            // the file names the `.git` file inside the working tree
-            let tree = PathBuf::from(line).parent()?.to_path_buf();
-            Some((name, tree))
+            Some((name, named_back(&entry.path())?))
         })
         .collect();
     names.sort();
@@ -221,6 +257,93 @@ mod tests {
         let found = linked_worktrees(&wt_a, None);
         let names: Vec<&str> = found.iter().map(|l| l.name.as_str()).collect();
         assert_eq!(names, ["main", "b"], "{found:?}");
+    }
+
+    /// As `git worktree add --relative-paths` writes them: the admin folder's `gitdir` relative to the admin folder,
+    /// the tree's `.git` relative to the tree.
+    #[test]
+    fn relative_links_are_read_against_the_folder_that_holds_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("repo");
+        let admin = main.join(".git").join("worktrees").join("rel");
+        std::fs::create_dir_all(&admin).unwrap();
+        let tree = dir.path().join("wt rel");
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::write(admin.join("gitdir"), "../../../../wt rel/.git\n").unwrap();
+        std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+        std::fs::write(tree.join(".git"), "gitdir: ../repo/.git/worktrees/rel\n").unwrap();
+        let found = linked_worktrees(&main, None);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].name, "rel");
+        assert_eq!(
+            permark_core::paths::canonicalize(&found[0].folder).unwrap(),
+            permark_core::paths::canonicalize(&tree).unwrap()
+        );
+        // and from inside the linked tree: the main one
+        let names: Vec<String> = linked_worktrees(&tree, None)
+            .into_iter()
+            .map(|l| l.name)
+            .collect();
+        assert_eq!(names, ["repo"]);
+    }
+
+    /// A `gitdir` file is content of the folder: it attaches a tree only when that tree names the same admin folder
+    /// back (git's own rule).
+    #[test]
+    fn a_tree_that_does_not_name_its_admin_folder_back_is_not_attached() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("repo");
+        std::fs::create_dir_all(main.join(".git")).unwrap();
+        make_worktree(&main.join(".git"), "real", &dir.path().join("real"));
+        let plant = |name: &str, target: &Path| {
+            let admin = main.join(".git").join("worktrees").join(name);
+            std::fs::create_dir_all(&admin).unwrap();
+            std::fs::write(
+                admin.join("gitdir"),
+                format!("{}\n", target.join(".git").display()),
+            )
+            .unwrap();
+        };
+        // a folder outside with no `.git`, one with its own repository, one that belongs to another admin folder
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        plant("planted", &outside);
+        let other_repo = dir.path().join("other repo");
+        std::fs::create_dir_all(other_repo.join(".git")).unwrap();
+        plant("main tree", &other_repo);
+        plant("borrowed", &dir.path().join("real"));
+        let names: Vec<String> = linked_worktrees(&main, None)
+            .into_iter()
+            .map(|l| l.name)
+            .collect();
+        assert_eq!(names, ["real"]);
+    }
+
+    /// The project's own `.git` file is content too: one that names another repository's git folder (no admin folder
+    /// naming the project back) attaches nothing of that repository.
+    #[test]
+    fn a_project_whose_git_file_is_not_named_back_gets_no_worktrees() {
+        let dir = tempfile::tempdir().unwrap();
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(elsewhere.join(".git")).unwrap();
+        make_worktree(&elsewhere.join(".git"), "w", &dir.path().join("w"));
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        for target in [
+            elsewhere.join(".git"),
+            elsewhere.join(".git").join("worktrees").join("w"),
+        ] {
+            std::fs::write(
+                project.join(".git"),
+                format!("gitdir: {}\n", target.display()),
+            )
+            .unwrap();
+            assert!(
+                linked_worktrees(&project, None).is_empty(),
+                "{}",
+                target.display()
+            );
+        }
     }
 
     #[test]

@@ -409,6 +409,7 @@ mod tests {
             os(r"back\\slash"),
             os(r#"alias.hold=!echo started > "C:/x ü/m.txt"; sleep 30"#),
             os("ü 日本"),
+            os(r"core.hooksPath=C:\Program Files\PerMark\permark.exe\no-hooks"),
         ];
         let refs: Vec<&OsStr> = args.iter().map(OsString::as_os_str).collect();
         let line = command_line(OsStr::new(r"C:\Program Files\Git\cmd\git.exe"), &refs).unwrap();
@@ -423,6 +424,7 @@ mod tests {
             r"back\\slash",
             r#""alias.hold=!echo started > \"C:/x ü/m.txt\"; sleep 30""#,
             r#""ü 日本""#,
+            r#""core.hooksPath=C:\Program Files\PerMark\permark.exe\no-hooks""#,
         ]
         .join(" ");
         assert_eq!(text(&line), expected);

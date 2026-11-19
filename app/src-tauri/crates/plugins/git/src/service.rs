@@ -267,9 +267,12 @@ pub(crate) struct Visiting {
 }
 
 impl Visiting {
+    /// `stored` comes from a state file of the folder: kept only as a full commit id (lowercase, as git prints it).
     pub(crate) fn new(stored: Option<String>) -> Self {
         Self {
-            stored,
+            stored: stored
+                .and_then(|oid| CommitId::parse(&oid))
+                .map(|commit| commit.as_str().to_owned()),
             session: Session::Unset,
             last_head: None,
         }
@@ -536,13 +539,16 @@ impl RepoReader for Reader {
     }
 
     fn commits_between(&self, old: &str, new: &str) -> Option<u32> {
+        // a caller's text (a stored HEAD) reaches git only as full commit ids
+        let (old, new) = (CommitId::parse(old)?, CommitId::parse(new)?);
         let guard = self
             .shared
             .repo
             .read()
             .unwrap_or_else(PoisonError::into_inner);
         let repo = guard.as_ref()?;
-        repo.backend.commit_count(&repo.main, old, new)
+        repo.backend
+            .commit_count(&repo.main, old.as_str(), new.as_str())
     }
 }
 

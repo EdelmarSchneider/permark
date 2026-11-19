@@ -1969,6 +1969,138 @@ fn a_filter_command_from_the_repository_config_never_runs() {
     assert!(status.files.iter().all(|f| f.path != ".gitattributes"));
 }
 
+/// Two commits (`b.md` changed in the second), then `a.md` written again with the same bytes after the index was
+/// written: its record in the index is stale, so a `diff` against the first commit refreshes the index. Returns the
+/// first commit.
+fn stale_index_after_two_commits(fx: &Fixture) -> String {
+    fx.write("a.md", "a\n");
+    fx.write("b.md", "b\n");
+    let first = fx.commit("first");
+    fx.write("b.md", "b changed\n");
+    fx.commit("second");
+    std::thread::sleep(Duration::from_millis(1100));
+    fx.write("a.md", "a\n");
+    first
+}
+
+#[test]
+fn a_file_written_again_with_the_same_bytes_is_no_change_against_an_older_commit() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        let first = stale_index_after_two_commits(&fx);
+        let loc = location(ops, &fx.root);
+        let status = ops.status(&loc, &Baseline::Commit(first)).unwrap();
+        assert_eq!(
+            letters(&status),
+            vec![("b.md".to_owned(), Letter::Modified, false)],
+            "{name}"
+        );
+        let head = ops.status(&loc, &Baseline::Head).unwrap();
+        assert!(letters(&head).is_empty(), "{name}: {:?}", head.files);
+    });
+}
+
+/// A folder that came with its `.git/` decides the hooks there, and a `diff` that refreshes the index writes it,
+/// which starts `post-index-change`. Neither a hook file nor a hook the config names (git 2.54+, which
+/// `core.hooksPath` does not reach) ever runs.
+#[test]
+fn no_hook_of_the_repository_ever_runs() {
+    let Some(git) = SystemGit::find() else {
+        eprintln!("SKIPPED: no git executable on PATH");
+        return;
+    };
+    let fx = Fixture::new();
+    let first = stale_index_after_two_commits(&fx);
+    let file_marker = fx.dir.path().join("file hook ran.txt");
+    let config_marker = fx.dir.path().join("config hook ran.txt");
+    let unix_text = |path: &Path| path.to_string_lossy().replace('\\', "/");
+    let script = format!("#!/bin/sh\necho ran >> \"{}\"\n", unix_text(&file_marker));
+    let mut hook_files = vec![fx.root.join(".git").join("hooks").join("post-index-change")];
+    // where a null-device spelling would lead git on Windows: folders of the working tree (`NUL` only through `\\?\`)
+    #[cfg(windows)]
+    {
+        let verbatim = PathBuf::from(format!(r"\\?\{}", fx.root.display()));
+        hook_files.push(verbatim.join("NUL").join("post-index-change"));
+        hook_files.push(verbatim.join("dev").join("null").join("post-index-change"));
+        std::fs::write(
+            fx.root.join(".git").join("info").join("exclude"),
+            "/NUL/\n/dev/\n",
+        )
+        .unwrap();
+    }
+    for hook in &hook_files {
+        std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
+        std::fs::write(hook, &script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+    let mut config = fx.repo.config().unwrap();
+    config
+        .set_str("hook.marker.event", "post-index-change")
+        .unwrap();
+    config
+        .set_str(
+            "hook.marker.command",
+            &format!("echo ran >> \"{}\"", unix_text(&config_marker)),
+        )
+        .unwrap();
+    let at = location(&git, &fx.root);
+    let status = git.status(&at, &Baseline::Commit(first)).unwrap();
+    assert_eq!(
+        letters(&status),
+        vec![("b.md".to_owned(), Letter::Modified, false)]
+    );
+    git.status(&at, &Baseline::Head).unwrap();
+    assert!(!file_marker.exists(), "a hook file ran");
+    assert!(!config_marker.exists(), "a hook the config names ran");
+}
+
+#[test]
+fn a_hook_name_that_cannot_be_switched_off_stops_the_call() {
+    let Some(git) = SystemGit::find() else {
+        eprintln!("SKIPPED: no git executable on PATH");
+        return;
+    };
+    let fx = Fixture::new();
+    let first = stale_index_after_two_commits(&fx);
+    let at = location(&git, &fx.root);
+    assert!(git.status(&at, &Baseline::Commit(first.clone())).is_ok());
+    // `-c hook.a=b.enabled=false` would set `hook.a` to `b.enabled=false`
+    let mut config = fx.repo.config().unwrap();
+    config
+        .set_str("hook.a=b.event", "post-index-change")
+        .unwrap();
+    assert!(git.status(&at, &Baseline::Commit(first)).is_err());
+    assert!(git.status(&at, &Baseline::Head).is_err());
+}
+
+#[test]
+fn every_hook_a_config_names_is_listed_and_odd_names_refuse() {
+    let out = b"system\0hook.lint.command\nrun\0global\0hook.lint.event\npre-commit\0local\0hook.A.b c.event\npost-index-change\0worktree\0hook..command\necho\0command\0hook.x.command\0local\0filter.f.clean\ncat";
+    assert_eq!(
+        system::config_hooks(out),
+        Some(vec![
+            "lint".to_owned(),
+            "A.b c".to_owned(),
+            String::new(),
+            "x".to_owned()
+        ])
+    );
+    assert_eq!(system::config_hooks(b""), Some(Vec::new()));
+    for odd in [
+        b"local\0hook.a=b.command\nrun".as_slice(),
+        b"local\0hook.a\x1bb.command\nrun",
+        b"local\0hook.\xff.command\nrun",
+    ] {
+        assert_eq!(system::config_hooks(odd), None, "{odd:?}");
+    }
+    // the filter list is unchanged by hook keys
+    assert_eq!(system::repo_filter_drivers(out), ["f"]);
+}
+
 /// What `git clone --no-checkout --filter=blob:none <url>` of `source` leaves at `copy`: the commits and folders of
 /// HEAD's history in a promisor pack, no file content, HEAD's branch, and the source as the remote that promises the
 /// rest.
@@ -2483,6 +2615,61 @@ fn since_the_last_visit_and_the_choice_of_baseline_are_remembered() {
     assert_eq!(lost.service.snapshot().unwrap().baseline.oid, None);
 }
 
+/// The stored visit is a file of the folder: only a full commit id is ever compared with (any case, read as git
+/// prints it); a short id, a revision expression or an option never reaches git.
+#[test]
+fn a_stored_visit_is_used_only_when_it_is_a_full_commit_id() {
+    each(|name, _| {
+        let ops: Arc<dyn GitOps> = if name == "system" {
+            Arc::new(SystemGit::find().unwrap())
+        } else {
+            Arc::new(BuiltinGit)
+        };
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        let first = fx.commit("first");
+        fx.write("a.md", "a changed\n");
+        fx.commit("second");
+        let store_dir = tempfile::tempdir().unwrap();
+        let store = permark_core::state::StateStore::for_project(
+            &AppDirs::under(store_dir.path()),
+            &Root::open(&fx.root).unwrap(),
+        );
+        let id = PluginId::of("git");
+        let measured_from = |stored: &str| {
+            store
+                .plugin_file::<Visit>(&id, "visit.json")
+                .save(&Visit {
+                    head: Some(stored.to_owned()),
+                })
+                .unwrap();
+            let running = start_with(
+                &fx.root,
+                &ops,
+                Vec::new(),
+                None,
+                Some(store.plugin_file(&id, "visit.json")),
+            );
+            wait_until("a snapshot", || running.service.snapshot().is_some());
+            running.service.snapshot().unwrap().baseline.oid.clone()
+        };
+        assert_eq!(
+            measured_from(&first).as_deref(),
+            Some(first.as_str()),
+            "{name}"
+        );
+        assert_eq!(
+            measured_from(&first.to_uppercase()).as_deref(),
+            Some(first.as_str()),
+            "{name}"
+        );
+        let parent = format!("{first}^");
+        for crafted in [&first[..7], &first[..39], "HEAD~1", "--output=x", &parent] {
+            assert_eq!(measured_from(crafted), None, "{name}: {crafted:?}");
+        }
+    });
+}
+
 #[test]
 fn a_session_that_starts_before_the_first_commit_measures_against_head() {
     let ops: Arc<dyn GitOps> = Arc::new(BuiltinGit);
@@ -2637,6 +2824,57 @@ fn linked_worktrees_are_found_listed_and_given_their_own_letters() {
         assert_eq!(reader.blob_at_head("missing.md"), None);
         the_reader_answers_at_a_commit(name, reader.as_ref(), &wt_dir, first);
     });
+}
+
+/// `git worktree add` as the person runs it: absolute links, and relative ones (`--relative-paths`, git 2.48+: each
+/// link relative to the folder that holds it).
+#[test]
+fn worktrees_made_by_git_are_found_with_absolute_and_relative_links() {
+    let Some(exe) = find_git() else {
+        eprintln!("SKIPPED: no git executable on PATH");
+        return;
+    };
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let git = |args: &[&OsStr]| {
+        let out = system::run(&exe, &fx.root, args, system::TIMEOUT, 1 << 20).unwrap();
+        assert_eq!(out.code, Some(0), "{}", out.stderr);
+        out.stdout
+    };
+    let names = || -> Vec<String> {
+        linked_worktrees(&fx.root, None)
+            .into_iter()
+            .map(|l| l.name)
+            .collect()
+    };
+    let absolute = fx.dir.path().join("wt-abs-ü");
+    git(&[
+        OsStr::new("worktree"),
+        OsStr::new("add"),
+        OsStr::new("-b"),
+        OsStr::new("abs"),
+        absolute.as_os_str(),
+    ]);
+    assert_eq!(names(), ["wt-abs-ü"]);
+    let version = system::version_of(&git(&[OsStr::new("--version")]));
+    if version.is_none_or(|v| v < (2, 48)) {
+        eprintln!("SKIPPED: git {version:?} writes no relative worktree links");
+        return;
+    }
+    let relative = fx.dir.path().join("wt-rel");
+    git(&[
+        OsStr::new("worktree"),
+        OsStr::new("add"),
+        OsStr::new("--relative-paths"),
+        OsStr::new("-b"),
+        OsStr::new("rel"),
+        relative.as_os_str(),
+    ]);
+    assert_eq!(names(), ["wt-abs-ü", "wt-rel"]);
+    let found = linked_worktrees(&fx.root, None);
+    let canonical = |p: &Path| permark_core::paths::canonicalize(p).unwrap();
+    assert_eq!(canonical(&found[1].folder), canonical(&relative));
 }
 
 // ---- the plugin in a project -----------------------------------------------------------------------------------------
