@@ -17,7 +17,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis", "deb", "rpm", "appimage", "app", "dmg"],
     "createUpdaterArtifacts": true,
     "category": "Productivity",
     "shortDescription": "A unified document workspace: read, write and organize Markdown and the files around it. Free and open source.",

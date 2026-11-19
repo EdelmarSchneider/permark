@@ -167,6 +167,21 @@ fn the_store_overlay_removes_the_updater() {
 }
 
 #[test]
+fn every_bundle_is_named_and_none_is_an_msi() {
+    // the release's updater manifest has no `.msi` rule, so an `.msi` bundle would keep the release a draft; the
+    // bundler keeps the targets of the platform it runs on, so one list in the base config serves all three jobs
+    let config = json(CONFIG);
+    assert_eq!(
+        config["bundle"]["targets"],
+        serde_json::json!(["nsis", "deb", "rpm", "appimage", "app", "dmg"])
+    );
+    // an overlay replaces the list: Windows (`.msi`) would come back through a platform file
+    for overlay in [MACOS, LINUX, STORE_OVERLAY] {
+        assert!(json(overlay)["bundle"]["targets"].is_null());
+    }
+}
+
+#[test]
 fn windows_registers_through_the_hooks_never_through_tauri_associations() {
     let config = json(CONFIG);
     // Tauri's NSIS association writes the extension's default value (a takeover): only the platform overlays have them
