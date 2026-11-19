@@ -9,7 +9,8 @@
   // agent waits for is brought into view and takes the keyboard (never from someone typing; a question's card, never
   // one of its answers). Escape in the message box stops the agent at work. No agent chosen yet | the person
   // changing it: the picker stands in for the conversation. Empty and idle, it offers to continue the project's last
-  // conversation (the agent replays it as lines of the conversation).
+  // conversation (the agent replays it as lines of the conversation). Under the agent's name, its settings the person
+  // may change while it runs (its model, reasoning level, model settings), each a labelled control.
   import MessageSquarePlus from "@lucide/svelte/icons/message-square-plus";
   import MessageSquareReply from "@lucide/svelte/icons/message-square-reply";
   import Quote from "@lucide/svelte/icons/quote";
@@ -18,7 +19,14 @@
   import Wrench from "@lucide/svelte/icons/wrench";
   import X from "@lucide/svelte/icons/x";
   import { onMount, tick, type Snippet } from "svelte";
-  import type { AcpState, FileChange, FileChangeKind, PermissionChoice } from "../../api";
+  import type { Attachment } from "svelte/attachments";
+  import type {
+    AcpConfigOption,
+    AcpState,
+    FileChange,
+    FileChangeKind,
+    PermissionChoice,
+  } from "../../api";
   import { runRows } from "../../core/editing/diffRows";
   import { t, tn, type MessageKey } from "../../core/i18n";
   import { arrangement } from "../../core/shell/arrangement.svelte";
@@ -31,6 +39,7 @@
   import Note from "./Note.svelte";
   import {
     acp,
+    configLabel,
     firstPlace,
     optionLabel,
     PANEL,
@@ -67,6 +76,19 @@
     acp.status?.chosen === true ? (acp.status.agentName ?? t("acp.ownCommand")) : null,
   );
   const working = $derived(now === "starting" || now === "working");
+  /** The agent's settings show under its name (never over the picker). */
+  const settings = $derived(acp.showsPicker ? [] : acp.options);
+
+  /** Shows in a setting's control what the agent last told, each time it tells it: a refused change comes back as the
+   *  value shown before, which a plain `value` | `checked` never writes again. */
+  function holds(option: AcpConfigOption): Attachment<HTMLSelectElement | HTMLInputElement> {
+    return (control) => {
+      if (option.kind.type === "select" && control instanceof HTMLSelectElement)
+        control.value = option.kind.current;
+      else if (option.kind.type === "toggle" && control instanceof HTMLInputElement)
+        control.checked = option.kind.on;
+    };
+  }
   const canSend = $derived(!acp.busy && acp.draft.trim() !== "");
   /** What the status line says: a question waiting outranks "Working…". */
   const said = $derived(acp.asking ? t("acp.state.waiting") : t(stateKey(now)));
@@ -336,6 +358,52 @@
   }
 </script>
 
+{#snippet setting(option: AcpConfigOption)}
+  {@const name = configLabel(option)}
+  {#if option.kind.type === "select"}
+    {@const kind = option.kind}
+    <label class="setting" title={option.description ?? undefined}>
+      <span class="setting-name">{name}</span>
+      <!-- a refused change: the control shows what holds again -->
+      <select
+        class="field-select"
+        value={kind.current}
+        {@attach holds(option)}
+        disabled={!acp.canSetOptions}
+        onchange={(event) => {
+          const control = event.currentTarget;
+          void acp.setOption(option.id, control.value).then((ok) => {
+            if (!ok) control.value = kind.current;
+          });
+        }}
+      >
+        {#each kind.choices as choice (choice.value)}
+          <option value={choice.value} title={choice.description ?? undefined}>{choice.name}</option
+          >
+        {/each}
+      </select>
+    </label>
+  {:else}
+    {@const on = option.kind.on}
+    <label class="setting" title={option.description ?? undefined}>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={on}
+        {@attach holds(option)}
+        disabled={!acp.canSetOptions}
+        onchange={(event) => {
+          const control = event.currentTarget;
+          void acp.setOption(option.id, control.checked).then((ok) => {
+            if (!ok) control.checked = on;
+          });
+        }}
+      />
+      <span class="setting-name">{name}</span>
+    </label>
+  {/if}
+{/snippet}
+
 {#snippet details(text: string | null)}
   {#if text !== null}
     <details class="details">
@@ -396,6 +464,13 @@
         {/if}
       {/if}
     </p>
+    {#if settings.length > 0}
+      <div class="settings" role="group" aria-label={t("acp.options")}>
+        {#each settings as option (option.id)}
+          {@render setting(option)}
+        {/each}
+      </div>
+    {/if}
   </header>
 
   <!-- focusable: a long reply of plain text scrolls with the keyboard too (the picker is a named section of its own,
@@ -782,6 +857,39 @@
   .change:disabled {
     color: var(--faint);
     cursor: default;
+  }
+  /* one row that wraps in a narrow panel: each control keeps its label beside it */
+  .settings {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-1) var(--sp-3);
+    min-width: 0;
+    padding-top: var(--sp-1);
+    color: var(--muted);
+    font-size: var(--fs-ui-sm);
+  }
+  .setting {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    min-width: 0;
+    max-width: 100%;
+  }
+  .setting-name {
+    flex: none;
+  }
+  .setting select {
+    min-width: 0;
+    max-width: 100%;
+    height: var(--icon-btn-sm);
+    padding: 0 var(--sp-1);
+    font-size: var(--fs-ui-sm);
+    text-overflow: ellipsis;
+  }
+  .setting select:disabled,
+  .setting input:disabled + .setting-name {
+    opacity: 0.6;
   }
   .icon {
     flex: none;

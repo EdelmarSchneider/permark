@@ -3166,6 +3166,12 @@ export default {
   "acp.error.hiddenFromAgents": "Bagian teks ini berasal dari file yang tidak boleh dilihat agen.",
   "acp.error.insideProject": "Salinan untuk agen tidak dapat disimpan di dalam folder ini.",
   "acp.error.notApplied": "PerMark tidak dapat menerapkan perubahan ini.",
+  "acp.options": "Pengaturan agen",
+  "acp.option.model": "Model",
+  "acp.fail.optionRefused": "Agen tidak menerima pengaturan baru.",
+  "acp.error.starting": "Agen masih dimulai. Coba lagi sebentar lagi.",
+  "acp.error.notRunning": "Agen tidak sedang berjalan.",
+  "acp.error.settingGone": "Agen tidak lagi menawarkan pengaturan ini.",
   "acp.option.allowOnce": "Izinkan sekali",
   "acp.option.rejectOnce": "Jangan izinkan",
   "acp.alwaysHidden":

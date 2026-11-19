@@ -3329,6 +3329,12 @@ export default {
     "Pasajul provine dintr-un fișier pe care agenții nu au voie să-l vadă.",
   "acp.error.insideProject": "Copia pentru agent nu poate fi păstrată în acest dosar.",
   "acp.error.notApplied": "PerMark nu a putut aplica această modificare.",
+  "acp.options": "Setările agentului",
+  "acp.option.model": "Model",
+  "acp.fail.optionRefused": "Agentul nu a acceptat noua setare.",
+  "acp.error.starting": "Agentul încă pornește. Încearcă din nou peste câteva momente.",
+  "acp.error.notRunning": "Agentul nu rulează.",
+  "acp.error.settingGone": "Agentul nu mai oferă această setare.",
   "acp.option.allowOnce": "Permite o dată",
   "acp.option.rejectOnce": "Nu permite",
   "acp.alwaysHidden":

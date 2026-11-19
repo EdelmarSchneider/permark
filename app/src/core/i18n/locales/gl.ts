@@ -3169,6 +3169,12 @@ export default {
   "acp.error.hiddenFromAgents": "A pasaxe vén dun ficheiro que os axentes non poden ver.",
   "acp.error.insideProject": "A copia para o axente non pode gardarse dentro deste cartafol.",
   "acp.error.notApplied": "PerMark non puido aplicar este cambio.",
+  "acp.options": "Axustes do axente",
+  "acp.option.model": "Modelo",
+  "acp.fail.optionRefused": "O axente non aceptou o novo axuste.",
+  "acp.error.starting": "O axente aínda se está iniciando. Ténteo de novo nun momento.",
+  "acp.error.notRunning": "O axente non se está executando.",
+  "acp.error.settingGone": "O axente xa non ofrece este axuste.",
   "acp.option.allowOnce": "Permitir unha vez",
   "acp.option.rejectOnce": "Non permitir",
   "acp.alwaysHidden":

@@ -3001,6 +3001,12 @@ export default {
   "acp.error.hiddenFromAgents": "这段文字来自不允许智能体查看的文件。",
   "acp.error.insideProject": "智能体的副本不能存放在此文件夹内。",
   "acp.error.notApplied": "PerMark 无法应用此更改。",
+  "acp.options": "智能体设置",
+  "acp.option.model": "模型",
+  "acp.fail.optionRefused": "智能体没有接受新的设置。",
+  "acp.error.starting": "智能体仍在启动。请稍后再试。",
+  "acp.error.notRunning": "智能体未在运行。",
+  "acp.error.settingGone": "智能体已不再提供此设置。",
   "acp.option.allowOnce": "允许一次",
   "acp.option.rejectOnce": "不允许",
   "acp.alwaysHidden":

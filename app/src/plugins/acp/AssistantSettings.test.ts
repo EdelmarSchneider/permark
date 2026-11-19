@@ -66,6 +66,7 @@ function ownCommand(command: string): void {
     methods: [],
     skippedFiles: 0,
     last: null,
+    options: [],
   };
   acp.catalog = {
     status: "ready",
@@ -105,6 +106,7 @@ beforeEach(() => {
     methods: [],
     skippedFiles: 0,
     last: null,
+    options: [],
   };
   acp.catalog = { status: "ready", agents: MOCK_AGENTS.map((a) => ({ ...a, chosen: false })) };
   root = document.createElement("div");

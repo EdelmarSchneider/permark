@@ -9,11 +9,12 @@ use std::time::{Duration, Instant};
 use permark_core::events::{CoreEvent, EventSink};
 use serde_json::{json, Value};
 
+use super::options::{agent_key, Picks, OPTIONS_FILE};
 use super::permission::inside;
 use super::resume::{fingerprint, MAX_SESSION_ID_BYTES, MAX_TITLE_CHARS};
 use super::*;
 use crate::agents::{platforms, Choice, Launch, Plan, CHOICE_FILE};
-use crate::dto::{AcpReach, AgentNeed, PermissionDiff};
+use crate::dto::{AcpConfigValue, AcpReach, AgentNeed, PermissionDiff, SetOptionArgs};
 use crate::testing;
 use permark_core::state::{Loaded, StateFile};
 
@@ -144,6 +145,31 @@ struct Story {
     replay: Mutex<Vec<Value>>,
     /// `session/new` answers this id (`None`: [`SESSION`]).
     new_id: Mutex<Option<String>>,
+    /// Config options its sessions offer beside the modes (`None`: none); `session/set_config_option` of one of them
+    /// changes its `currentValue` and answers the whole list.
+    options: Mutex<Option<Vec<Value>>>,
+    /// `session/set_config_option` of one of `options` is refused.
+    refuse_options: AtomicBool,
+}
+
+impl Story {
+    /// `session/set_config_option` with `params`: the answer's result | the error it refuses with.
+    fn set_option(&self, params: &Value) -> Result<Value, Value> {
+        let mut offered = self.options.lock().unwrap();
+        let Some(options) = offered.as_mut().filter(|_| params["configId"] != "mode") else {
+            let value = params["value"].as_str().unwrap_or_default();
+            return Ok(json!({ "configOptions": [MODEL_OPTION.clone(), mode_option(value)] }));
+        };
+        if self.refuse_options.load(Ordering::SeqCst) {
+            return Err(json!({ "code": -32602, "message": "Model not available on your plan" }));
+        }
+        for option in options.iter_mut() {
+            if option["id"] == params["configId"] {
+                option["currentValue"] = params["value"].clone();
+            }
+        }
+        Ok(json!({ "configOptions": options.clone() }))
+    }
 }
 
 /// What the fake agent asks of sign-ins.
@@ -327,7 +353,7 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
                     Some(id) if method == "session/new" => id,
                     _ => SESSION.to_owned(),
                 };
-                if peer.config_modes {
+                let mut opened = if peer.config_modes {
                     json!({ "sessionId": id, "configOptions": [MODEL_OPTION.clone(), mode_option("auto")] })
                 } else {
                     json!({
@@ -341,12 +367,19 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
                             ],
                         },
                     })
+                };
+                if let Some(options) = peer.story.options.lock().unwrap().clone() {
+                    opened["configOptions"] = json!(options);
                 }
+                opened
             }
-            "session/set_config_option" => {
-                let value = message["params"]["value"].as_str().unwrap_or_default();
-                json!({ "configOptions": [MODEL_OPTION.clone(), mode_option(value)] })
-            }
+            "session/set_config_option" => match peer.story.set_option(&message["params"]) {
+                Ok(result) => result,
+                Err(refusal) => {
+                    peer.send(&json!({ "jsonrpc": "2.0", "id": id, "error": refusal }));
+                    continue;
+                }
+            },
             "session/set_mode" => {
                 peer.send(&json!({ "jsonrpc": "2.0", "id": id, "result": {} }));
                 if let Some(stopped) = peer.deaf.take() {
@@ -593,6 +626,7 @@ impl Fx {
             run: Some(profile.path().join("run")),
             copy: Arc::clone(&copy),
             saved: Some(saved_file(profile.path())),
+            picks: Some(picks_file(profile.path())),
             events: testing::events(events.clone()),
         });
         Self {
@@ -3046,4 +3080,358 @@ fn unaccepted_changes_of_a_conversation_continued_on_a_new_copy_are_said_lost() 
     assert!(!fx.saved().unwrap().had_changes);
     fx.leave(3);
     assert_eq!(restored(&fx.continue_last()), Some(json!(false)));
+}
+
+/// Config options as Claude's adapter offers them beside its modes (the model's values in groups, as an agent may
+/// send them), a toggle, and options of an own category | none.
+fn claude_options() -> Vec<Value> {
+    vec![
+        mode_option("auto"),
+        json!({
+            "id": "model", "name": "Model", "description": "AI model to use", "category": "model", "type": "select",
+            "currentValue": "default",
+            "options": [
+                { "group": "latest", "name": "Latest", "options": [
+                    { "value": "default", "name": "Default (recommended)", "description": "Opus 5.5" },
+                    { "value": "opus", "name": "Opus 5.5" },
+                ] },
+                { "group": "older", "name": "Older", "options": [
+                    { "value": "haiku", "name": "Haiku", "description": "Fastest" },
+                ] },
+            ],
+        }),
+        json!({
+            "id": "effort", "name": "Effort", "category": "thought_level", "type": "select", "currentValue": "high",
+            "options": [{ "value": "low", "name": "Low" }, { "value": "high", "name": "High" }],
+        }),
+        json!({ "id": "fast", "name": "Fast mode", "category": "model_config", "type": "boolean", "currentValue": false }),
+        json!({
+            "id": "theme", "name": "Theme", "category": "_ui", "type": "select", "currentValue": "a",
+            "options": [{ "value": "a", "name": "A" }],
+        }),
+        json!({ "id": "plain", "name": "Plain", "type": "boolean", "currentValue": true }),
+    ]
+}
+
+/// The window's form of [`claude_options`] with model `model` and fast mode `fast`.
+fn shown_options(model: &str, fast: bool) -> Value {
+    json!([
+        {
+            "id": "model", "name": "Model", "description": "AI model to use", "category": "model",
+            "kind": { "type": "select", "current": model, "choices": [
+                { "value": "default", "name": "Default (recommended)", "description": "Opus 5.5" },
+                { "value": "opus", "name": "Opus 5.5", "description": null },
+                { "value": "haiku", "name": "Haiku", "description": "Fastest" },
+            ] },
+        },
+        {
+            "id": "effort", "name": "Effort", "description": null, "category": "thoughtLevel",
+            "kind": { "type": "select", "current": "high", "choices": [
+                { "value": "low", "name": "Low", "description": null },
+                { "value": "high", "name": "High", "description": null },
+            ] },
+        },
+        {
+            "id": "fast", "name": "Fast mode", "description": null, "category": "modelConfig",
+            "kind": { "type": "toggle", "on": fast },
+        },
+    ])
+}
+
+/// The file of the person's picks of agent settings in the profile `profile`.
+fn picks_file(profile: &Path) -> StateFile<Picks> {
+    testing::app_store(profile).app_file(OPTIONS_FILE)
+}
+
+fn set(id: &str, value: AcpConfigValue) -> SetOptionArgs {
+    SetOptionArgs {
+        id: id.to_owned(),
+        value,
+    }
+}
+
+fn pick(value: &str) -> AcpConfigValue {
+    AcpConfigValue::Value(value.to_owned())
+}
+
+impl Fx {
+    /// Claude's agent offering [`claude_options`].
+    fn with_options() -> Self {
+        let fx = Self::new(|_, _| Some("end_turn"));
+        *fx.fake.story.options.lock().unwrap() = Some(claude_options());
+        fx
+    }
+
+    /// The `options` news told so far.
+    fn options_told(&self) -> Vec<Value> {
+        self.events
+            .of_type("options")
+            .into_iter()
+            .map(|e| e["options"].clone())
+            .collect()
+    }
+
+    /// Waits for `options` news whose list is `options`.
+    fn options_now(&self, options: &Value) {
+        self.events.wait_for("options news", WAIT, |list| {
+            list.iter()
+                .any(|e| e["type"] == "options" && e["options"] == *options)
+        });
+    }
+
+    fn picks(&self) -> Option<Picks> {
+        match picks_file(self.profile.path()).load() {
+            Loaded::Found(picks) => Some(picks),
+            _ => None,
+        }
+    }
+}
+
+/// The window is told the agent's model, reasoning level and model settings, groups of values flattened; never its
+/// mode (one can switch off the person's questions), never an option of an own | no category. The status holds them
+/// while the agent runs; a new conversation empties them.
+#[test]
+fn the_agents_model_settings_reach_the_window_and_its_modes_never_do() {
+    let fx = Fx::with_options();
+    assert_eq!(fx.session.status().options, []);
+    fx.ask("Hello.");
+    fx.events.turn_end();
+    assert_eq!(fx.options_told(), [shown_options("default", false)]);
+    assert_eq!(
+        serde_json::to_value(fx.session.status().options).unwrap(),
+        shown_options("default", false)
+    );
+    fx.leave(1);
+    assert_eq!(fx.session.status().options, []);
+}
+
+/// A reasoning level of "none" is a value like any other: shown when the agent offers it and chosen like the rest
+/// (nothing is added when the agent does not offer it).
+#[test]
+fn a_reasoning_level_of_none_is_offered_and_chosen_when_the_agent_has_it() {
+    let fx = Fx::new(|_, _| Some("end_turn"));
+    let levels = json!([
+        { "value": "none", "name": "None" },
+        { "value": "low", "name": "Low" },
+        { "value": "high", "name": "High" },
+    ]);
+    let mut options = claude_options();
+    options[2]["options"] = levels;
+    *fx.fake.story.options.lock().unwrap() = Some(options);
+    let shown = |current: &str| {
+        let mut list = shown_options("default", false);
+        list[1]["kind"]["current"] = json!(current);
+        list[1]["kind"]["choices"] = json!([
+            { "value": "none", "name": "None", "description": null },
+            { "value": "low", "name": "Low", "description": null },
+            { "value": "high", "name": "High", "description": null },
+        ]);
+        list
+    };
+    fx.ask("Hello.");
+    fx.events.turn_end();
+    assert_eq!(fx.options_told(), [shown("high")]);
+    fx.session.set_option(&set("effort", pick("none"))).unwrap();
+    fx.options_now(&shown("none"));
+}
+
+/// The agent's own news of its options (`config_option_update`) reaches the window; news that changes nothing shown
+/// (its mode) is not told again.
+#[test]
+fn the_agents_news_of_its_options_reaches_the_window() {
+    let fx = Fx::new(|peer, _| {
+        let mut options = claude_options();
+        options[0]["currentValue"] = json!("default");
+        peer.update(
+            &json!({ "sessionUpdate": "config_option_update", "configOptions": options.clone() }),
+        );
+        options[3]["currentValue"] = json!(true);
+        peer.update(&json!({ "sessionUpdate": "config_option_update", "configOptions": options }));
+        Some("end_turn")
+    });
+    *fx.fake.story.options.lock().unwrap() = Some(claude_options());
+    fx.ask("Hello.");
+    fx.events.turn_end();
+    assert_eq!(
+        fx.options_told(),
+        [
+            shown_options("default", false),
+            shown_options("default", true)
+        ]
+    );
+}
+
+/// The person's change reaches the agent (`session/set_config_option`, a toggle as a boolean value); its answer
+/// tells the window the new values, and the pick is kept in the profile for that agent.
+#[test]
+fn a_change_of_a_setting_reaches_the_agent_and_is_kept_for_that_agent() {
+    let fx = Fx::with_options();
+    fx.ask("Hello.");
+    fx.events.turn_end();
+    fx.session.set_option(&set("model", pick("haiku"))).unwrap();
+    fx.options_now(&shown_options("haiku", false));
+    fx.session
+        .set_option(&set("fast", AcpConfigValue::On(true)))
+        .unwrap();
+    fx.options_now(&shown_options("haiku", true));
+    let sets: Vec<Value> = fx
+        .fake
+        .seen()
+        .into_iter()
+        .filter(|m| m["method"] == "session/set_config_option")
+        .map(|m| m["params"].clone())
+        .collect();
+    assert_eq!(
+        sets,
+        [
+            json!({ "sessionId": SESSION, "configId": "model", "value": "haiku" }),
+            json!({ "sessionId": SESSION, "configId": "fast", "type": "boolean", "value": true }),
+        ]
+    );
+    // kept once the agent answered: the news above may come first
+    let kept = picks_file(fx.profile.path());
+    let started = Instant::now();
+    let want = json!({ "claude-acp": { "fast": true, "model": "haiku" } });
+    while !matches!(kept.load(), Loaded::Found(ref p) if serde_json::to_value(p).unwrap() == want) {
+        assert!(started.elapsed() < WAIT, "{:?}", fx.picks());
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(!fx.project.path().join(".permark").exists());
+}
+
+/// A change is refused before it reaches the agent: no agent | one starting, an option the window may not change
+/// (a mode, an own category, unknown), a value not offered | of the wrong kind.
+#[test]
+fn a_change_the_window_may_not_make_is_refused() {
+    let fx = Fx::with_options();
+    let detail = |args: SetOptionArgs| fx.session.set_option(&args).unwrap_err().detail;
+    assert_eq!(
+        detail(set("model", pick("opus"))).as_deref(),
+        Some("notRunning")
+    );
+    fx.ask("Hello.");
+    fx.events.turn_end();
+    for id in ["mode", "theme", "plain", "nope"] {
+        assert_eq!(
+            detail(set(id, pick("default"))).as_deref(),
+            Some("unknownSetting"),
+            "{id}"
+        );
+    }
+    assert_eq!(
+        detail(set("model", pick("sonnet"))).as_deref(),
+        Some("notOffered")
+    );
+    assert_eq!(
+        detail(set("model", AcpConfigValue::On(true))).as_deref(),
+        Some("notOffered")
+    );
+    assert_eq!(
+        detail(set("fast", pick("on"))).as_deref(),
+        Some("notOffered")
+    );
+    let running = std::mem::replace(
+        &mut lock(&fx.session.core.inner).state,
+        State::Starting(None),
+    );
+    assert_eq!(
+        detail(set("model", pick("opus"))).as_deref(),
+        Some("starting")
+    );
+    lock(&fx.session.core.inner).state = running;
+    assert_eq!(fx.fake.count("session/set_config_option"), 0);
+}
+
+/// An agent that refuses a change: the window hears why (`optionRefused` with its words, the state as it is) and
+/// the settings again as they are; nothing is kept.
+#[test]
+fn a_change_the_agent_refuses_is_said_and_never_kept() {
+    let fx = Fx::with_options();
+    fx.ask("Hello.");
+    fx.events.turn_end();
+    fx.fake.story.refuse_options.store(true, Ordering::SeqCst);
+    fx.session.set_option(&set("model", pick("opus"))).unwrap();
+    let refused = |e: &Value| e["type"] == "status" && e["error"]["code"] == "optionRefused";
+    let list = fx
+        .events
+        .wait_for("refusal", WAIT, |list| list.iter().any(refused));
+    let refusal = list.iter().find(|e| refused(e)).unwrap();
+    assert_eq!(refusal["state"], "ready");
+    assert_eq!(
+        refusal["error"]["message"],
+        "Model not available on your plan"
+    );
+    assert_eq!(
+        fx.options_told(),
+        [
+            shown_options("default", false),
+            shown_options("default", false)
+        ]
+    );
+    assert_eq!(fx.picks(), None);
+}
+
+/// The person's picks for the chosen agent apply at its next start, after the asking mode, in the agent's order;
+/// a pick the agent no longer offers (the option | the value), one the window may not change | one already on is
+/// skipped without a word. A continued conversation gets them again.
+#[test]
+fn kept_picks_apply_at_the_next_start_when_still_offered() {
+    let fx = Fx::with_options();
+    let mine = [
+        ("fast", AcpConfigValue::On(true)),
+        ("model", pick("opus")),
+        ("effort", pick("ultra")),
+        ("gone", pick("x")),
+        ("theme", pick("a")),
+    ]
+    .into_iter()
+    .map(|(id, value)| (id.to_owned(), value))
+    .collect();
+    let others = [("model".to_owned(), pick("haiku"))].into_iter().collect();
+    let mut picks = Picks::default();
+    picks.0.insert("claude-acp".to_owned(), mine);
+    picks.0.insert("codex-acp".to_owned(), others);
+    picks_file(fx.profile.path()).save(&picks).unwrap();
+    fx.ask("Hello.");
+    fx.events.turn_end();
+    assert_eq!(
+        fx.fake.methods(),
+        [
+            "initialize",
+            "session/new",
+            "session/set_mode",
+            "session/set_config_option",
+            "session/set_config_option",
+            "session/prompt"
+        ]
+    );
+    let sets = || -> Vec<Value> {
+        fx.fake
+            .seen()
+            .into_iter()
+            .filter(|m| m["method"] == "session/set_config_option")
+            .map(|m| json!([m["params"]["configId"], m["params"]["value"]]))
+            .collect()
+    };
+    assert_eq!(sets(), [json!(["model", "opus"]), json!(["fast", true])]);
+    // told once, as they are after the picks
+    assert_eq!(fx.options_told(), [shown_options("opus", true)]);
+    fx.leave(1);
+    *fx.fake.story.options.lock().unwrap() = Some(claude_options());
+    let told = fx.continue_last();
+    assert_eq!(sets().len(), 4);
+    assert!(told
+        .iter()
+        .any(|e| e["type"] == "options" && e["options"] == shown_options("opus", true)));
+}
+
+/// Picks name a listed agent by its registry id, the person's own command by its fingerprint (never its text).
+#[test]
+fn picks_name_an_own_command_by_its_fingerprint() {
+    let own = Choice::Command("my-agent --api-key s3cret".to_owned());
+    assert_eq!(agent_key(&own), fingerprint(&own));
+    assert_eq!(
+        agent_key(&Choice::Agent("claude-acp".to_owned())),
+        "claude-acp"
+    );
 }

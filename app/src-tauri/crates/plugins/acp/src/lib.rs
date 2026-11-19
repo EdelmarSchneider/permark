@@ -11,8 +11,9 @@
 //! profile: [`session::Saved`]); `answer` [`AnswerArgs`] -> `null`; `changes` [`ChangesArgs`] -> the kept
 //! [`ChangeList`] (computed at each turn's end | when asked to refresh; empty while no copy exists); `accept | reject`
 //! [`DecideArgs`] (hunk keys; `null`: the whole file) | `undo` [`UndoArgs`] -> the updated [`ChangeList`]; `render`
-//! [`RenderArgs`] -> [`RenderedReply`] (an agent's finished message as document blocks, [`reply`]). Event
-//! `acp:update` -> [`AcpUpdate`].
+//! [`RenderArgs`] -> [`RenderedReply`] (an agent's finished message as document blocks, [`reply`]); `setOption`
+//! [`SetOptionArgs`] -> `null` (one of the agent's settings: its model, reasoning level; the new values come as
+//! events, the pick is kept per agent in the profile: [`OPTIONS_FILE`]). Event `acp:update` -> [`AcpUpdate`].
 //!
 //! Off | project closed: the agent stops, then the copy is deleted (pending changes with it). The project's last
 //! conversation stays in the plugin's profile folder (its agent, id, title: no text of it) so it can be continued
@@ -42,13 +43,14 @@ use crate::client::lock;
 
 pub use agents::{person_launch, Agents, Choice, Plan, CHOICE_FILE};
 pub use dto::{
-    AcpError, AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason, AcpToolKind,
-    AcpToolStatus, AcpUpdate, AgentEntry, AgentHow, AgentNeed, AnswerArgs, ChangeList, ChangesArgs,
-    ChooseArgs, ContinueWay, DecideArgs, FileChange, FileChangeKind, HunkView, LastConversation,
-    LoginArgs, LoginKind, LoginMethod, PermissionChoice, PromptArgs, PromptSelection, RenderArgs,
-    RenderedReply, ResolveArgs, ResolvedCommand, UndoArgs,
+    AcpConfigCategory, AcpConfigChoice, AcpConfigKind, AcpConfigOption, AcpConfigValue, AcpError,
+    AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason, AcpToolKind, AcpToolStatus,
+    AcpUpdate, AgentEntry, AgentHow, AgentNeed, AnswerArgs, ChangeList, ChangesArgs, ChooseArgs,
+    ContinueWay, DecideArgs, FileChange, FileChangeKind, HunkView, LastConversation, LoginArgs,
+    LoginKind, LoginMethod, PermissionChoice, PromptArgs, PromptSelection, RenderArgs,
+    RenderedReply, ResolveArgs, ResolvedCommand, SetOptionArgs, UndoArgs,
 };
-pub use session::{Host, Remembered, Saved, Session, SAVED_FILE};
+pub use session::{Host, Picks, Remembered, Saved, Session, OPTIONS_FILE, SAVED_FILE};
 pub use work::{copy_dir, Project, WorkCopy};
 
 const ID: PluginId = PluginId::of("acp");
@@ -194,6 +196,11 @@ fn register(
     rpc.extend(cx.rpc("continue", typed(move |_: NoArgs, _| s.continue_last())));
     let s = session.clone();
     rpc.extend(cx.rpc("answer", typed(move |args: AnswerArgs, _| s.answer(&args))));
+    let s = session.clone();
+    rpc.extend(cx.rpc(
+        "setOption",
+        typed(move |args: SetOptionArgs, _| s.set_option(&args)),
+    ));
     let c = Arc::clone(copy);
     rpc.extend(cx.rpc(
         "changes",
@@ -248,6 +255,10 @@ impl Plugin for Acp {
         let saved = cx
             .store()
             .map(|store| store.profile_plugin_file::<Remembered>(&cx.id, SAVED_FILE));
+        // the profile folder itself, like the choice: the picks are the person's, for every project
+        let picks = cx
+            .store()
+            .map(|store| store.app_file::<Picks>(OPTIONS_FILE));
         let session = Session::new(Host {
             agents: Agents::new(choice),
             launch: person_launch(),
@@ -256,6 +267,7 @@ impl Plugin for Acp {
             run: run.clone(),
             copy: Arc::clone(&copy),
             saved,
+            picks,
             events: cx.events().clone(),
         });
         Ok(Box::new(Started {
@@ -334,6 +346,7 @@ mod tests {
             run: Some(run.clone()),
             copy: Arc::clone(&copy),
             saved: None,
+            picks: None,
             events: testing::events(Arc::new(NoEvents)),
         });
         let started = Started {

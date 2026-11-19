@@ -3154,6 +3154,12 @@ export default {
   "acp.error.hiddenFromAgents": "Đoạn văn này đến từ một tệp mà agent không được phép thấy.",
   "acp.error.insideProject": "Không thể lưu bản sao dành cho agent bên trong thư mục này.",
   "acp.error.notApplied": "PerMark không thể áp dụng thay đổi này.",
+  "acp.options": "Cài đặt agent",
+  "acp.option.model": "Mô hình",
+  "acp.fail.optionRefused": "Agent không chấp nhận cài đặt mới.",
+  "acp.error.starting": "Agent vẫn đang khởi động. Hãy thử lại sau giây lát.",
+  "acp.error.notRunning": "Agent không chạy.",
+  "acp.error.settingGone": "Agent không còn cung cấp cài đặt này.",
   "acp.option.allowOnce": "Cho phép một lần",
   "acp.option.rejectOnce": "Không cho phép",
   "acp.alwaysHidden":

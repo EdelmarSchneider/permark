@@ -4,11 +4,12 @@
 // passage chip, and hunks accepted | rejected one by one (files taken only as a whole show no hunk buttons); the
 // picker (no agent chosen | Change): search, a chip per state, How to install, Choose only for an agent that can
 // start, an own command; the sign-in card (the agent's own way, a command to copy, variables, Try again); where the
-// keyboard goes (a question, a sign-in, Stop, a decision), the bar to the changes, Open, the caps, the Snap line.
+// keyboard goes (a question, a sign-in, Stop, a decision), the bar to the changes, Open, the caps, the Snap line; the
+// agent's settings under its name (labelled controls, off while it starts, a refused change shows what holds).
 import "../../core/testing/media";
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MOCK_AGENTS, MOCK_LOGIN_METHODS } from "../../api/mockAcp";
+import { MOCK_AGENTS, MOCK_LOGIN_METHODS, MOCK_OPTIONS } from "../../api/mockAcp";
 import { documents } from "../../core/doc/document.svelte";
 import { t, tn } from "../../core/i18n";
 import AssistantPanel from "./AssistantPanel.svelte";
@@ -60,6 +61,7 @@ function firstRun(): void {
     methods: [],
     skippedFiles: 0,
     last: null,
+    options: [],
   };
   acp.catalog = { status: "ready", agents: MOCK_AGENTS.map((a) => ({ ...a, chosen: false })) };
 }
@@ -79,6 +81,7 @@ beforeEach(() => {
     methods: [],
     skippedFiles: 0,
     last: null,
+    options: [],
   };
   root = document.createElement("div");
   document.body.append(root);
@@ -769,6 +772,90 @@ describe("the Assistant panel", () => {
   });
 });
 
+describe("the agent's settings", () => {
+  /** The agent in `state`, offering the mock's settings. */
+  function withOptions(state: "ready" | "starting"): void {
+    if (acp.status !== null) acp.status = { ...acp.status, state, options: [...MOCK_OPTIONS] };
+  }
+
+  function control<E extends HTMLElement>(label: string, kind: new () => E): E {
+    const found = [...root.querySelectorAll("label")].find(
+      (l) => l.textContent?.trim().startsWith(label) === true,
+    );
+    const inner = found?.querySelector("select, input");
+    if (!(inner instanceof kind)) throw new Error(`no control labelled ${label}`);
+    return inner;
+  }
+
+  it("show under the agent's name as labelled controls in one group; a change goes to the agent", () => {
+    const set = vi.spyOn(acp, "setOption").mockResolvedValue(true);
+    withOptions("ready");
+    open();
+    const group = root.querySelector('header [role="group"]');
+    expect(group?.getAttribute("aria-label")).toBe(t("acp.options"));
+    const model = control(t("acp.option.model"), HTMLSelectElement);
+    expect(model.value).toBe("default");
+    expect([...model.options].map((o) => o.textContent)).toEqual([
+      "Default (recommended)",
+      "Opus 5.5",
+      "Sonnet 5",
+      "Haiku 5",
+    ]);
+    // a reasoning level is named as the agent names it
+    expect(control("Effort", HTMLSelectElement).value).toBe("default");
+    const fast = control("Fast mode", HTMLInputElement);
+    expect(fast.getAttribute("role")).toBe("switch");
+    expect(fast.checked).toBe(false);
+    model.value = "haiku";
+    model.dispatchEvent(new Event("change", { bubbles: true }));
+    fast.click();
+    expect(set.mock.calls).toEqual([
+      ["model", "haiku"],
+      ["fast", true],
+    ]);
+  });
+
+  it("wait while the agent starts, and never show over the picker", () => {
+    withOptions("starting");
+    open();
+    expect(control(t("acp.option.model"), HTMLSelectElement).disabled).toBe(true);
+    expect(control("Fast mode", HTMLInputElement).disabled).toBe(true);
+    acp.openPicker();
+    flushSync();
+    expect(root.querySelector('header [role="group"]')).toBeNull();
+  });
+
+  it("a refused change shows the value that holds again; news of new values keeps the keyboard where it is", async () => {
+    vi.spyOn(acp, "setOption").mockResolvedValue(false);
+    withOptions("ready");
+    open();
+    const model = control(t("acp.option.model"), HTMLSelectElement);
+    model.focus();
+    model.value = "opus";
+    model.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle();
+    expect(model.value).toBe("default");
+    // the agent tells a new model: the same control shows it, still with the keyboard
+    acp.take({
+      type: "options",
+      options: MOCK_OPTIONS.map((o) =>
+        o.kind.type === "select" && o.id === "model"
+          ? { ...o, kind: { ...o.kind, current: "sonnet" } }
+          : o,
+      ),
+    });
+    flushSync();
+    expect(control(t("acp.option.model"), HTMLSelectElement)).toBe(model);
+    expect(model.value).toBe("sonnet");
+    expect(document.activeElement).toBe(model);
+    // a refusal of the agent itself tells the values again as they are (fresh from the backend): the control follows
+    model.value = "haiku";
+    acp.take({ type: "options", options: structuredClone([...acp.options]) });
+    flushSync();
+    expect(model.value).toBe("sonnet");
+  });
+});
+
 describe("the choice of the agent", () => {
   it("none chosen: the picker stands in for the conversation, every agent with how it starts", () => {
     firstRun();
@@ -843,6 +930,7 @@ describe("the choice of the agent", () => {
       methods: [...MOCK_LOGIN_METHODS],
       skippedFiles: 0,
       last: null,
+      options: [],
     };
     open();
     expect(root.querySelector(".agent")?.textContent).toContain(t("acp.ownCommand"));
@@ -986,6 +1074,7 @@ describe("the choice of the agent", () => {
         methods: [],
         skippedFiles: 0,
         last: null,
+        options: [],
       };
       acp.picking = false;
       return true;

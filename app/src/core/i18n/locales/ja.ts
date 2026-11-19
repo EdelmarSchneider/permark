@@ -3186,6 +3186,12 @@ export default {
   "acp.error.hiddenFromAgents": "この箇所は、エージェントに見せてはいけないファイルのものです。",
   "acp.error.insideProject": "エージェント用のコピーをこのフォルダーの中に置くことはできません。",
   "acp.error.notApplied": "PerMark はこの変更を適用できませんでした。",
+  "acp.options": "エージェントの設定",
+  "acp.option.model": "モデル",
+  "acp.fail.optionRefused": "エージェントが新しい設定を受け付けませんでした。",
+  "acp.error.starting": "エージェントはまだ起動中です。しばらくしてからもう一度お試しください。",
+  "acp.error.notRunning": "エージェントは実行されていません。",
+  "acp.error.settingGone": "エージェントはこの設定をもう提供していません。",
   "acp.option.allowOnce": "1 回だけ許可",
   "acp.option.rejectOnce": "許可しない",
   "acp.alwaysHidden":

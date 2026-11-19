@@ -3206,6 +3206,12 @@ export default {
   "acp.error.hiddenFromAgents": "El fragment prové d'un fitxer que els agents no poden veure.",
   "acp.error.insideProject": "La còpia per a l'agent no es pot desar dins d'aquesta carpeta.",
   "acp.error.notApplied": "El PerMark no ha pogut aplicar aquest canvi.",
+  "acp.options": "Configuració de l'agent",
+  "acp.option.model": "Model",
+  "acp.fail.optionRefused": "L'agent no ha acceptat la nova configuració.",
+  "acp.error.starting": "L'agent encara s'està iniciant. Torneu-ho a provar d'aquí a un moment.",
+  "acp.error.notRunning": "L'agent no s'està executant.",
+  "acp.error.settingGone": "L'agent ja no ofereix aquesta configuració.",
   "acp.option.allowOnce": "Permet una vegada",
   "acp.option.rejectOnce": "No ho permetis",
   "acp.alwaysHidden":

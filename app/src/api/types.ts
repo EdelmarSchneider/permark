@@ -235,6 +235,11 @@ import type { NoteList } from "./generated/NoteList";
 import type { NotesIntent } from "./generated/NotesIntent";
 import type { NotesSummary } from "./generated/NotesSummary";
 import type { Version } from "./generated/Version";
+import type { AcpConfigCategory } from "./generated/AcpConfigCategory";
+import type { AcpConfigChoice } from "./generated/AcpConfigChoice";
+import type { AcpConfigKind } from "./generated/AcpConfigKind";
+import type { AcpConfigOption } from "./generated/AcpConfigOption";
+import type { AcpConfigValue } from "./generated/AcpConfigValue";
 import type { AcpError } from "./generated/AcpError";
 import type { AcpErrorCode } from "./generated/AcpErrorCode";
 import type { AcpOptionKind } from "./generated/AcpOptionKind";
@@ -267,6 +272,7 @@ import type { PromptArgs } from "./generated/PromptArgs";
 import type { PromptSelection } from "./generated/PromptSelection";
 import type { RenderArgs } from "./generated/RenderArgs";
 import type { RenderedReply } from "./generated/RenderedReply";
+import type { SetOptionArgs } from "./generated/SetOptionArgs";
 import type { ResolveArgs } from "./generated/ResolveArgs";
 import type { ResolvedCommand } from "./generated/ResolvedCommand";
 import type { UndoArgs } from "./generated/UndoArgs";
@@ -901,6 +907,10 @@ export interface PluginMethods {
   "acp.continue": { args: Record<string, never>; result: null };
   /** Answers one of the agent's questions (`optionId` null: dismissed). */
   "acp.answer": { args: AnswerArgs; result: null };
+  /** Changes one of the running agent's settings (`AcpStatus.options`): answers at once, the new values come as
+   *  `acp:update` `options` (a refusal of the agent: `status` with `optionRefused`). Refused `conflict` `starting`,
+   *  `unavailable` `notRunning`, `notFound` `unknownSetting`, `invalidData` `notOffered`. */
+  "acp.setOption": { args: SetOptionArgs; result: null };
   /** The files of the work copy that differ from the real ones, as kept since the last turn's end (`refresh`:
    *  computed again); at most 500 (`more`: the rest). Empty while there is no copy. */
   "acp.changes": { args: ChangesArgs; result: ChangeList };
@@ -1035,6 +1045,11 @@ export type {
 };
 export type { UnreadList };
 export type {
+  AcpConfigCategory,
+  AcpConfigChoice,
+  AcpConfigKind,
+  AcpConfigOption,
+  AcpConfigValue,
   AcpError,
   AcpErrorCode,
   AcpOptionKind,
@@ -1069,6 +1084,7 @@ export type {
   RenderedReply,
   ResolveArgs,
   ResolvedCommand,
+  SetOptionArgs,
   UndoArgs,
 };
 export type {

@@ -3172,6 +3172,12 @@ export default {
   "acp.error.hiddenFromAgents": "Metin parçası, ajanların göremeyeceği bir dosyadan geliyor.",
   "acp.error.insideProject": "Ajan için kopya bu klasörün içinde tutulamaz.",
   "acp.error.notApplied": "PerMark bu değişikliği uygulayamadı.",
+  "acp.options": "Ajan ayarları",
+  "acp.option.model": "Model",
+  "acp.fail.optionRefused": "Ajan yeni ayarı kabul etmedi.",
+  "acp.error.starting": "Ajan hâlâ başlatılıyor. Biraz sonra yeniden deneyin.",
+  "acp.error.notRunning": "Ajan çalışmıyor.",
+  "acp.error.settingGone": "Ajan artık bu ayarı sunmuyor.",
   "acp.option.allowOnce": "Bir kez izin ver",
   "acp.option.rejectOnce": "İzin verme",
   "acp.alwaysHidden":
