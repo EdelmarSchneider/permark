@@ -34,9 +34,9 @@ use std::time::Duration;
 use permark_core::conditions::{GitCondition, Requirement};
 use permark_core::paths::{Root, VaultPath, WORKTREE_PREFIX};
 use permark_core::plugins::{
-    typed, CommitId, CxWorkspace, FileVersions, Manifest, NoArgs, NoBlob, NoVersions, Plugin,
-    PluginCx, PluginError, PluginId, PluginKind, PluginScope, ProjectFacts, RepoHandle, RepoReader,
-    RpcRegistration, Running, ServiceLease,
+    typed, CommitId, CxWorkspace, FileVersions, Manifest, NoArgs, NoBlob, NoTracking, NoVersions,
+    Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope, ProjectFacts, RepoHandle,
+    RepoReader, RpcRegistration, Running, ServiceLease,
 };
 use permark_core::projects::{ProjectMap, ProjectUid, Projects, ProjectsSubscription};
 use permark_core::settings::GitBackendPref;
@@ -51,6 +51,7 @@ pub use members::{
 };
 use ops::{blob_or_miss, versions_of};
 pub use ops::{Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_FILES};
+use service::TrackedMemo;
 pub use service::{
     BackendCell, BackendChoice, ExcludedAtStart, GitService, Prefs, ServiceArgs, Timings, Visit,
     Why,
@@ -235,6 +236,8 @@ struct Routed {
     members: Weak<Members>,
     projects: Option<Weak<Projects>>,
     backends: Arc<BackendCell>,
+    /// Index answers of members' repositories (the root's reader keeps its own).
+    tracked: TrackedMemo,
 }
 
 impl Routed {
@@ -298,6 +301,15 @@ impl RepoReader for Routed {
             |root| root.file_versions(path, after, limit),
         )
         .unwrap_or(Err(NoVersions::Unavailable))
+    }
+
+    fn tracked_under(&self, path: &str) -> Result<bool, NoTracking> {
+        self.read(
+            path,
+            |git, location, rel| self.tracked.tracked(git, location, rel),
+            |root| root.tracked_under(path),
+        )
+        .unwrap_or(Err(NoTracking::Unavailable))
     }
 
     fn head(&self) -> Option<String> {
@@ -499,6 +511,7 @@ impl Plugin for GitPlugin {
                 members: Arc::downgrade(&members),
                 projects: weak_projects,
                 backends: service.backends(),
+                tracked: TrackedMemo::default(),
             }))));
         Ok(Box::new(GitRunning {
             facts: Arc::clone(&project.facts),

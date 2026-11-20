@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use permark_core::conditions::RepoState;
-use permark_core::plugins::{CommitId, FileVersion, FileVersions, NoBlob, NoVersions};
+use permark_core::plugins::{CommitId, FileVersion, FileVersions, NoBlob, NoTracking, NoVersions};
 
 use crate::types::{BackendKind, HeadInfo, Letter};
 use crate::worktrees::{common_dir, in_nested_repository};
@@ -135,6 +135,17 @@ pub trait GitOps: Send + Sync {
         after: usize,
         limit: usize,
     ) -> Result<FileVersions, GitError>;
+    /// Whether the index holds the folder `path` (relative to the project folder) or anything below it
+    /// ([`tracked_entry`]): entries of every stage (a conflict), intent-to-add and skip-worktree ones too, before the
+    /// first commit as well. Names compare without case when the repository is caseless (`core.ignorecase`).
+    ///
+    /// # Errors
+    /// Git failed | timed out; a backend that does not read the index fails.
+    fn tracked_under(&self, _location: &RepoLocation, _path: &str) -> Result<bool, GitError> {
+        Err(GitError::Failed(
+            "this backend does not read the index".to_owned(),
+        ))
+    }
     /// Whether the repository has the commit.
     fn commit_exists(&self, location: &RepoLocation, oid: &str) -> bool;
     /// Commits reachable from `new` and not from `old` (`None`: a commit unknown | git failed).
@@ -280,6 +291,50 @@ pub fn versions_of(
             GitError::Timeout => NoVersions::Slow,
             _ => NoVersions::Failed,
         })
+}
+
+/// Whether the index of the repository holds the folder `path` (relative to the project folder) or anything below it
+/// ([`GitOps::tracked_under`]), as the reader other plugins use gives it.
+///
+/// # Errors
+/// [`NoTracking`]: the folder is inside another repository below this one (never asked), git was too slow, the call
+/// failed, or `path` is not plain names (`.`, `..`, empty names: both backends would read it differently).
+pub fn tracked_of(
+    backend: &dyn GitOps,
+    location: &RepoLocation,
+    path: &str,
+) -> Result<bool, NoTracking> {
+    if path.contains('\0') || path.split('/').any(|name| matches!(name, "" | "." | "..")) {
+        return Err(NoTracking::Failed);
+    }
+    // the trailing slash makes every name a folder: a repository at the folder itself holds what is below it too
+    let folder = format!("{}/", repo_path(&location.prefix, path));
+    if in_nested_repository(&location.workdir, &folder) {
+        return Err(NoTracking::OtherRepository);
+    }
+    backend
+        .tracked_under(location, path)
+        .map_err(|error| match error {
+            GitError::Timeout => NoTracking::Slow,
+            _ => NoTracking::Failed,
+        })
+}
+
+/// Whether the index entry `entry` (a path relative to the working tree) is the folder `at` (relative to the working
+/// tree too) or below it: whole names only (`a/b-c` is not below `a/b`). `caseless`: ASCII letters compare without
+/// case, as git and libgit2 compare the names of a caseless repository.
+#[must_use]
+pub fn tracked_entry(entry: &[u8], at: &str, caseless: bool) -> bool {
+    let at = at.as_bytes();
+    let Some(head) = entry.get(..at.len()) else {
+        return false;
+    };
+    let same = if caseless {
+        head.eq_ignore_ascii_case(at)
+    } else {
+        head == at
+    };
+    same && matches!(entry.get(at.len()), None | Some(b'/'))
 }
 
 /// `path` (relative to the working tree) below the project folder `prefix`: the part below it; `None`: outside.

@@ -20,7 +20,8 @@ use ts_rs::TS;
 
 pub use enable::{on_ids, resolve_enabled, EnableInputs, Enablement, OffReason};
 pub use facts::{
-    CommitId, FileVersion, FileVersions, NoBlob, NoVersions, ProjectFacts, RepoHandle, RepoReader,
+    CommitId, FileVersion, FileVersions, NoBlob, NoTracking, NoVersions, ProjectFacts, RepoHandle,
+    RepoReader,
 };
 pub use files::{
     is_shared_name, nesting, ChangeListener, FolderReveal, FolderRevealApi, FolderScan, Nesting,

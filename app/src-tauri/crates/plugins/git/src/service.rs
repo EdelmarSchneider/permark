@@ -2,24 +2,28 @@
 //! baseline) are coalesced (300 ms of quiet, at most 2 s), wait out `index.lock`, and make one snapshot; it is
 //! announced only when its content differs. Discovery runs on the worker too: opening a project never waits for git.
 
+use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, OnceLock, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use permark_core::conditions::GitCondition;
 use permark_core::paths::WORKTREE_PREFIX;
-use permark_core::plugins::{CommitId, FileVersions, NoBlob, NoVersions, ProjectFacts, RepoReader};
+use permark_core::plugins::{
+    CommitId, FileVersions, NoBlob, NoTracking, NoVersions, ProjectFacts, RepoReader,
+};
 use permark_core::settings::GitBackendPref;
 use permark_core::state::{StateData, StateFile};
 use serde::{Deserialize, Serialize};
 
 use crate::builtin::BuiltinGit;
 use crate::ops::{
-    blob_or_miss, finish, repo_state, versions_of, Baseline, Discovery, GitError, GitOps, RawFile,
-    RepoLocation,
+    blob_or_miss, finish, repo_path, repo_state, tracked_of, versions_of, Baseline, Discovery,
+    GitError, GitOps, RawFile, RepoLocation,
 };
 use crate::system::SystemGit;
 use crate::types::{BaselineInfo, BaselineKind, GitFile, GitSnapshot, WorktreeInfo};
@@ -135,6 +139,11 @@ struct Shared {
     excluded: RwLock<Option<Vec<String>>>,
     /// The baseline in use (members measure against the same kind).
     baseline: RwLock<Option<BaselineKind>>,
+    /// What the worker's last look found (`None`: no look yet): the reader tells "no repository here" from "not
+    /// looked at yet".
+    looked: RwLock<Option<GitCondition>>,
+    /// Index answers of the reader.
+    tracked: TrackedMemo,
 }
 
 /// The backend of a project, chosen once (the installed git answers `--version`, or the built-in one) and shared by
@@ -491,6 +500,73 @@ impl Drop for GitService {
     }
 }
 
+/// Most answers a [`TrackedMemo`] keeps (a few folders per project are asked about).
+const MAX_TRACKED: usize = 64;
+
+/// How the files an index answer comes from look: name, size and modification time (ns) of the git folder's `index`,
+/// every `sharedindex.*` (a split index) and `HEAD`, sorted. Nanoseconds: an index written again at the same size
+/// within the same millisecond is told apart.
+type IndexStamp = Vec<(OsString, u64, u128)>;
+
+/// The [`IndexStamp`] of `git_dir`, links taken as they are (never followed); `None`: the folder cannot be listed |
+/// a time cannot be read (nothing is kept then).
+fn index_stamp(git_dir: &Path) -> Option<IndexStamp> {
+    let mut stamp = Vec::new();
+    for entry in std::fs::read_dir(git_dir).ok()? {
+        let entry = entry.ok()?;
+        let name = entry.file_name();
+        let wanted = name == "index"
+            || name == "HEAD"
+            || name
+                .to_str()
+                .is_some_and(|name| name.starts_with("sharedindex."));
+        if !wanted {
+            continue;
+        }
+        let meta = entry.metadata().ok()?;
+        let time = meta.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
+        stamp.push((name, meta.len(), time.as_nanos()));
+    }
+    stamp.sort();
+    Some(stamp)
+}
+
+/// Answers of [`tracked_of`] kept while the index looks the same ([`IndexStamp`], taken before git is asked): a folder
+/// asked about again and again reads the index once per change of it, also when no refresh ran. Only answers are kept:
+/// a failure, a slow git, another repository below are asked again.
+#[derive(Default)]
+pub(crate) struct TrackedMemo {
+    kept: Mutex<HashMap<(PathBuf, String), (IndexStamp, bool)>>,
+}
+
+impl TrackedMemo {
+    /// [`tracked_of`], kept per (git folder, path below the working tree).
+    pub(crate) fn tracked(
+        &self,
+        backend: &dyn GitOps,
+        location: &RepoLocation,
+        path: &str,
+    ) -> Result<bool, NoTracking> {
+        let key = (location.git_dir.clone(), repo_path(&location.prefix, path));
+        let stamp = index_stamp(&location.git_dir);
+        if let Some(stamp) = &stamp {
+            let kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some((_, answer)) = kept.get(&key).filter(|(held, _)| held == stamp) {
+                return Ok(*answer);
+            }
+        }
+        let answer = tracked_of(backend, location, path)?;
+        if let Some(stamp) = stamp {
+            let mut kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
+            if kept.len() >= MAX_TRACKED && !kept.contains_key(&key) {
+                kept.clear();
+            }
+            kept.insert(key, (stamp, answer));
+        }
+        Ok(answer)
+    }
+}
+
 struct Reader {
     shared: Arc<Shared>,
 }
@@ -516,6 +592,33 @@ impl Reader {
         };
         Some((Arc::clone(&repo.backend), location.clone(), rest))
     }
+
+    /// Why [`Self::place`] found no working tree for a tracked question: with a repository, the worktree named is
+    /// none of the project's; without one, what the last look found. Before the first look nothing is known yet:
+    /// answered as slow, so a caller that withholds on doubt does not take it for "no repository".
+    fn no_place(&self) -> NoTracking {
+        if self
+            .shared
+            .repo
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
+        {
+            return NoTracking::NoRepository;
+        }
+        match &*self
+            .shared
+            .looked
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+        {
+            None => NoTracking::Slow,
+            Some(GitCondition::Unavailable) => NoTracking::Unavailable,
+            Some(GitCondition::NoRepo) => NoTracking::NoRepository,
+            // a repository is there and its status failed: it cannot answer now
+            Some(GitCondition::Error { .. } | GitCondition::Repo { .. }) => NoTracking::Failed,
+        }
+    }
 }
 
 impl RepoReader for Reader {
@@ -537,6 +640,13 @@ impl RepoReader for Reader {
     ) -> Result<FileVersions, NoVersions> {
         let (backend, location, rest) = self.place(path).ok_or(NoVersions::Unavailable)?;
         versions_of(backend.as_ref(), &location, rest, after, limit)
+    }
+
+    fn tracked_under(&self, path: &str) -> Result<bool, NoTracking> {
+        let (backend, location, rest) = self.place(path).ok_or_else(|| self.no_place())?;
+        self.shared
+            .tracked
+            .tracked(backend.as_ref(), &location, rest)
     }
 
     fn head(&self) -> Option<String> {
@@ -666,6 +776,16 @@ impl Worker {
         }
     }
 
+    /// What a look found, told to the windows (the project's facts) and to the reader.
+    fn tell(&self, condition: GitCondition) {
+        *self
+            .shared
+            .looked
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = Some(condition.clone());
+        self.args.facts.set_git(condition);
+    }
+
     fn discover(&mut self, backend: &Arc<dyn GitOps>) -> Discovery {
         let home = self.args.home.as_deref();
         let found = discover_here(backend.as_ref(), &self.args.root, home);
@@ -688,7 +808,7 @@ impl Worker {
             self.backend = self.backends.get();
         }
         let Some(backend) = self.backend.clone() else {
-            self.args.facts.set_git(GitCondition::Unavailable);
+            self.tell(GitCondition::Unavailable);
             self.publish(None);
             return;
         };
@@ -704,12 +824,12 @@ impl Worker {
             match self.discover(&backend) {
                 Discovery::Repo(_) => {}
                 Discovery::NoRepo => {
-                    self.args.facts.set_git(GitCondition::NoRepo);
+                    self.tell(GitCondition::NoRepo);
                     self.publish(None);
                     return;
                 }
                 Discovery::Error(reason) => {
-                    self.args.facts.set_git(GitCondition::Error { reason });
+                    self.tell(GitCondition::Error { reason });
                     self.publish(None);
                     return;
                 }
@@ -729,13 +849,13 @@ impl Worker {
                     main,
                     worktrees: self.worktree_locations.clone(),
                 });
-                self.args.facts.set_git(GitCondition::Repo {
+                self.tell(GitCondition::Repo {
                     state: snapshot.state,
                 });
                 self.publish(Some(snapshot));
             }
             Err(error) => {
-                self.args.facts.set_git(GitCondition::Error {
+                self.tell(GitCondition::Error {
                     reason: error.to_string(),
                 });
                 self.publish(None);

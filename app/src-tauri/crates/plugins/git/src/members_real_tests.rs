@@ -706,6 +706,55 @@ fn an_included_project_has_its_own_repository_in_the_root_tab() {
     drop(core);
 }
 
+/// The reader other plugins use asks each repository about its own private folder: a member's from the member's
+/// index (asked again after that index changed), the root's from the root's.
+#[test]
+fn the_reader_asks_each_repository_what_its_index_holds() {
+    let (_dir, root) = base();
+    let outer = Repository::init(&root).unwrap();
+    write(&root, "top.md", "t\n");
+    write(&root, ".gitignore", "hubs/\n");
+    commit_all(&outer, "outer");
+    let folder = root.join("hubs").join("hub ü");
+    let inner = Repository::init(&folder).unwrap();
+    write(&folder, "doc.md", "d\n");
+    commit_all(&inner, "inner first");
+    write(&folder, ".permark/local/comments.json", "{}\n");
+    let mut index = inner.index().unwrap();
+    index
+        .add_path(Path::new(".permark/local/comments.json"))
+        .unwrap();
+    index.write().unwrap();
+    write(
+        &root,
+        ".permark/projects.toml",
+        "version = 1\n\n[[project]]\nid = \"k7m2q7xd2a\"\npath = \"hubs/hub ü\"\n",
+    );
+    let state = tempfile::tempdir().unwrap();
+    let env = env_for(state.path());
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    wait_until("the member repo", || {
+        call(&core, "repos", serde_json::Value::Null)
+            .as_array()
+            .is_some_and(|a| a.len() == 1)
+    });
+    wait_until("the root snapshot", || {
+        !call(&core, "snapshot", serde_json::Value::Null).is_null()
+    });
+    let reader = core.services().services.get::<RepoHandle>().unwrap();
+    let member = "hubs/hub ü/.permark/local";
+    assert_eq!(reader.0.tracked_under(member), Ok(true));
+    assert_eq!(reader.0.tracked_under(".permark/local"), Ok(false));
+    // `git rm --cached` in the member: no refresh needed
+    index
+        .remove_path(Path::new(".permark/local/comments.json"))
+        .unwrap();
+    index.write().unwrap();
+    assert_eq!(reader.0.tracked_under(member), Ok(false));
+    drop(core);
+}
+
 #[test]
 fn a_project_renamed_while_closed_is_found_again_by_its_first_commit() {
     let (_dir, root) = base();

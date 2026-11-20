@@ -12,7 +12,7 @@ use permark_core::conditions::{Distribution, GitCondition, RepoState};
 use permark_core::events::NoEvents;
 use permark_core::paths::Root;
 use permark_core::plugins::{
-    CommitId, FileVersion, FileVersions, NoBlob, NoVersions, PluginId, PluginRegistry,
+    CommitId, FileVersion, FileVersions, NoBlob, NoTracking, NoVersions, PluginId, PluginRegistry,
     ProjectFacts, RepoReader, RpcCall,
 };
 use permark_core::settings::AppSettings;
@@ -166,6 +166,60 @@ impl Fixture {
 
     fn head_ref(&self) -> String {
         self.repo.head().unwrap().name().unwrap().to_owned()
+    }
+
+    /// Takes one path out of the index, the file stays on disk (`git rm --cached`).
+    fn unstage(&self, rel: &str) {
+        let mut index = self.repo.index().unwrap();
+        index.remove_path(Path::new(rel)).unwrap();
+        index.write().unwrap();
+    }
+
+    /// Puts an index entry for `rel` as given, whatever the disk holds: `stage` (1..=3: a side of a conflict),
+    /// `extended` (intent-to-add | skip-worktree flags).
+    fn put_entry(&self, rel: &str, stage: u16, extended: u16) {
+        let text: &[u8] = if extended & git2::IndexEntryExtendedFlag::INTENT_TO_ADD.bits() == 0 {
+            b"x\n"
+        } else {
+            b""
+        };
+        let id = self.repo.blob(text).unwrap();
+        let extended_flag = if extended == 0 {
+            0
+        } else {
+            git2::IndexEntryFlag::EXTENDED.bits()
+        };
+        let mut index = self.repo.index().unwrap();
+        index
+            .add(&git2::IndexEntry {
+                ctime: git2::IndexTime::new(0, 0),
+                mtime: git2::IndexTime::new(0, 0),
+                dev: 0,
+                ino: 0,
+                mode: 0o100_644,
+                uid: 0,
+                gid: 0,
+                file_size: u32::try_from(text.len()).unwrap(),
+                id,
+                flags: (stage << 12) | extended_flag,
+                flags_extended: extended,
+                path: rel.as_bytes().to_vec(),
+            })
+            .unwrap();
+        index.write().unwrap();
+        // the entry is on disk as asked (libgit2 keeps the stage and the flags it was given)
+        let index = git2::Index::open(&self.root.join(".git").join("index")).unwrap();
+        let held = index.get_path(Path::new(rel), i32::from(stage)).unwrap();
+        assert_eq!(held.flags_extended & extended, extended, "{rel}");
+    }
+
+    /// `core.ignorecase` of the repository.
+    fn caseless(&self, on: bool) {
+        self.repo
+            .config()
+            .unwrap()
+            .set_bool("core.ignorecase", on)
+            .unwrap();
     }
 }
 
@@ -1881,6 +1935,11 @@ fn a_backend_that_cannot_read_the_repository_is_a_failure_for_the_reader() {
             Err(NoVersions::Failed),
             "{name}"
         );
+        assert_eq!(
+            ops::tracked_of(ops, &nowhere, PRIVATE),
+            Err(NoTracking::Failed),
+            "{name}"
+        );
     });
 }
 
@@ -1921,6 +1980,362 @@ fn the_reader_lists_versions_and_tells_a_file_of_a_nested_repository() {
             );
         }
     });
+}
+
+// ---- what the index holds ------------------------------------------------------------------------------------------
+
+/// PerMark's private folder, as the project path the tracked questions ask about.
+const PRIVATE: &str = ".permark/local";
+
+#[test]
+fn an_index_entry_is_below_a_folder_by_whole_names() {
+    for (entry, at, caseless, below) in [
+        (".permark/local", PRIVATE, false, true),
+        (".permark/local/x.json", PRIVATE, false, true),
+        (".permark/local-x/y", PRIVATE, false, false),
+        (".permark/locals", PRIVATE, false, false),
+        (".permark/loca", PRIVATE, false, false),
+        (".permark", PRIVATE, false, false),
+        (".PerMark/Local/x", PRIVATE, false, false),
+        (".PerMark/Local/x", PRIVATE, true, true),
+        (".PerMark/Local-x/y", PRIVATE, true, false),
+        (
+            "hub ü/.permark/local/x",
+            "hub ü/.permark/local",
+            false,
+            true,
+        ),
+        // letters beyond ASCII keep their case, as git and libgit2 compare them
+        (
+            "HUB Ü/.permark/local/x",
+            "hub ü/.permark/local",
+            true,
+            false,
+        ),
+    ] {
+        assert_eq!(
+            ops::tracked_entry(entry.as_bytes(), at, caseless),
+            below,
+            "{entry} below {at} (caseless {caseless})"
+        );
+    }
+}
+
+#[test]
+fn the_index_tells_whether_a_folder_is_tracked_whatever_gitignore_says() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.write(".permark/local/comments.json", "{}\n");
+        fx.write(".permark/local/.gitignore", "*\n");
+        fx.write("docs/b.md", "b\n");
+        fx.commit("first");
+        let loc = location(ops, &fx.root);
+        let tracked = |path: &str| ops::tracked_of(ops, &loc, path);
+        assert_eq!(tracked(PRIVATE), Ok(false), "{name}: nothing tracked");
+        // a folder whose name starts the same is another folder
+        fx.write(".permark/local-x/y.md", "y\n");
+        fx.stage(".permark/local-x/y.md");
+        assert_eq!(tracked(PRIVATE), Ok(false), "{name}: sibling");
+        assert_eq!(tracked(".permark/local-x"), Ok(true), "{name}");
+        // only the folder's own .gitignore, added with --force
+        fx.stage(".permark/local/.gitignore");
+        assert_eq!(tracked(PRIVATE), Ok(true), "{name}: .gitignore only");
+        fx.unstage(".permark/local/.gitignore");
+        assert_eq!(tracked(PRIVATE), Ok(false), "{name}: rm --cached");
+        fx.stage(".permark/local/comments.json");
+        assert_eq!(tracked(PRIVATE), Ok(true), "{name}: add -f");
+        assert_eq!(tracked(".permark"), Ok(true), "{name}: the folder above");
+        // a project folder below the working tree asks about its own folder
+        fx.write("docs/.permark/local/c.json", "{}\n");
+        let below = location(ops, &fx.root.join("docs"));
+        assert_eq!(
+            ops::tracked_of(ops, &below, PRIVATE),
+            Ok(false),
+            "{name}: docs"
+        );
+        fx.stage("docs/.permark/local/c.json");
+        assert_eq!(
+            ops::tracked_of(ops, &below, PRIVATE),
+            Ok(true),
+            "{name}: docs"
+        );
+        // a path that is not plain names is no question either backend reads alike
+        for bad in [
+            "",
+            "/.permark/local",
+            ".permark/./local",
+            "../x",
+            ".permark//local",
+        ] {
+            assert_eq!(tracked(bad), Err(NoTracking::Failed), "{name}: {bad:?}");
+        }
+    });
+}
+
+#[test]
+fn an_entry_of_any_kind_counts_as_tracked() {
+    let intent = git2::IndexEntryExtendedFlag::INTENT_TO_ADD.bits();
+    let skip = git2::IndexEntryExtendedFlag::SKIP_WORKTREE.bits();
+    each(|name, ops| {
+        // no commit yet, one file staged
+        let fx = Fixture::new();
+        fx.write(".permark/local/a.json", "{}\n");
+        fx.stage(".permark/local/a.json");
+        assert!(fx.repo.head().is_err(), "unborn");
+        let loc = location(ops, &fx.root);
+        assert_eq!(
+            ops::tracked_of(ops, &loc, PRIVATE),
+            Ok(true),
+            "{name}: unborn"
+        );
+        for (what, rel, stage, extended) in [
+            ("intent-to-add", ".permark/local/i.json", 0, intent),
+            ("skip-worktree", ".permark/local/s.json", 0, skip),
+            ("conflict, ours", ".permark/local/c.json", 2, 0),
+            ("conflict, base", ".permark/local/c.json", 1, 0),
+            ("the folder's own name", PRIVATE, 0, 0),
+        ] {
+            let fx = Fixture::new();
+            fx.write("a.md", "a\n");
+            fx.commit("first");
+            fx.put_entry(rel, stage, extended);
+            let loc = location(ops, &fx.root);
+            assert_eq!(
+                ops::tracked_of(ops, &loc, PRIVATE),
+                Ok(true),
+                "{name}: {what}"
+            );
+        }
+    });
+}
+
+#[test]
+fn a_differently_cased_entry_counts_only_in_a_caseless_repository() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.commit("first");
+        fx.put_entry(".PerMark/Local/x.json", 0, 0);
+        let loc = location(ops, &fx.root);
+        fx.caseless(true);
+        assert_eq!(
+            ops::tracked_of(ops, &loc, PRIVATE),
+            Ok(true),
+            "{name}: caseless"
+        );
+        fx.caseless(false);
+        assert_eq!(
+            ops::tracked_of(ops, &loc, PRIVATE),
+            Ok(false),
+            "{name}: case kept"
+        );
+    });
+}
+
+#[test]
+fn the_folder_of_another_repository_is_never_asked_about() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.commit("first");
+        let loc = location(ops, &fx.root);
+        // a nested repository and a submodule-like folder (a `.git` file) below the project
+        let inner = fx.root.join("docs").join("inner ü");
+        std::fs::create_dir_all(&inner).unwrap();
+        Repository::init(&inner).unwrap();
+        let sub = fx.root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join(".git"), "gitdir: ../.git/modules/sub\n").unwrap();
+        for path in ["docs/inner ü/.permark/local", "sub/.permark/local"] {
+            assert_eq!(
+                ops::tracked_of(ops, &loc, path),
+                Err(NoTracking::OtherRepository),
+                "{name}: {path}"
+            );
+        }
+        // a repository at the folder itself holds what is below it
+        let private = fx.root.join(".permark").join("local");
+        std::fs::create_dir_all(&private).unwrap();
+        Repository::init(&private).unwrap();
+        assert_eq!(
+            ops::tracked_of(ops, &loc, PRIVATE),
+            Err(NoTracking::OtherRepository),
+            "{name}: the folder is a repository"
+        );
+    });
+}
+
+#[test]
+fn the_reader_follows_the_index_without_a_refresh() {
+    each(|name, _| {
+        let ops: Arc<dyn GitOps> = if name == "system" {
+            Arc::new(SystemGit::find().unwrap())
+        } else {
+            Arc::new(BuiltinGit)
+        };
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.write(".permark/local/comments.json", "{}\n");
+        fx.write(".permark/local/.gitignore", "*\n");
+        fx.commit("first");
+        let running = start(&fx.root, &ops, Vec::new());
+        wait_until("the first snapshot", || {
+            running.service.snapshot().is_some()
+        });
+        let reader = running.service.reader();
+        assert_eq!(reader.tracked_under(PRIVATE), Ok(false), "{name}");
+        assert_eq!(reader.tracked_under(PRIVATE), Ok(false), "{name}: again");
+        // `git add -f`, then `git rm --cached`: no watch batch, no refresh of the worker
+        fx.stage(".permark/local/comments.json");
+        assert_eq!(reader.tracked_under(PRIVATE), Ok(true), "{name}: add -f");
+        fx.unstage(".permark/local/comments.json");
+        assert_eq!(reader.tracked_under(PRIVATE), Ok(false), "{name}: rm");
+        // a nested repository below is another repository's business
+        let inner = fx.root.join("inner");
+        std::fs::create_dir_all(&inner).unwrap();
+        Repository::init(&inner).unwrap();
+        assert_eq!(
+            reader.tracked_under("inner/.permark/local"),
+            Err(NoTracking::OtherRepository),
+            "{name}"
+        );
+    });
+}
+
+/// A folder without a repository, and folders whose repository the plugin refuses (it ignores the project folder; its
+/// `.git` names a share): no repository holds the private folder.
+#[test]
+fn the_reader_has_no_repository_to_ask_in_a_plain_or_refused_folder() {
+    let share = if cfg!(windows) {
+        r"\\192.0.2.1\s"
+    } else {
+        "//192.0.2.1/s"
+    };
+    each(|name, _| {
+        let ops: Arc<dyn GitOps> = if name == "system" {
+            Arc::new(SystemGit::find().unwrap())
+        } else {
+            Arc::new(BuiltinGit)
+        };
+        let plain = tempfile::tempdir().unwrap();
+        let fx = Fixture::new();
+        fx.write("skipped/b.md", "b\n");
+        fx.write(".gitignore", "skipped/\n");
+        fx.commit("first");
+        let far = fx.dir.path().join("far");
+        std::fs::create_dir_all(&far).unwrap();
+        std::fs::write(
+            far.join(".git"),
+            format!("gitdir: {}\n", Path::new(share).join("a.git").display()),
+        )
+        .unwrap();
+        for folder in [
+            dunce::canonicalize(plain.path()).unwrap(),
+            fx.root.join("skipped"),
+            dunce::canonicalize(&far).unwrap(),
+        ] {
+            let running = start(&folder, &ops, Vec::new());
+            let reader = running.service.reader();
+            // before the first look the reader cannot tell yet
+            wait_until("the first look", || {
+                reader.tracked_under(PRIVATE) != Err(NoTracking::Slow)
+            });
+            assert_eq!(
+                reader.tracked_under(PRIVATE),
+                Err(NoTracking::NoRepository),
+                "{name}: {}",
+                folder.display()
+            );
+        }
+    });
+}
+
+#[test]
+fn a_linked_worktree_answers_from_its_own_index() {
+    each(|name, _| {
+        let ops: Arc<dyn GitOps> = if name == "system" {
+            Arc::new(SystemGit::find().unwrap())
+        } else {
+            Arc::new(BuiltinGit)
+        };
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.commit("first");
+        let wt_dir = fx.dir.path().join("wt ü");
+        fx.repo.worktree("feat", &wt_dir, None).unwrap();
+        std::fs::create_dir_all(wt_dir.join(".permark").join("local")).unwrap();
+        std::fs::write(wt_dir.join(".permark/local/c.json"), "{}\n").unwrap();
+        let wt = Repository::open(&wt_dir).unwrap();
+        let mut index = wt.index().unwrap();
+        index.add_path(Path::new(".permark/local/c.json")).unwrap();
+        index.write().unwrap();
+        let roots: Vec<(String, PathBuf)> = linked_worktrees(&fx.root, None)
+            .into_iter()
+            .map(|l| (l.name, l.folder))
+            .collect();
+        let running = start(&fx.root, &ops, roots);
+        wait_until("worktree letters", || {
+            running
+                .service
+                .snapshot()
+                .is_some_and(|s| !s.worktrees.is_empty())
+        });
+        let reader = running.service.reader();
+        assert_eq!(reader.tracked_under(PRIVATE), Ok(false), "{name}: main");
+        assert_eq!(
+            reader.tracked_under(&format!("@wt/feat/{PRIVATE}")),
+            Ok(true),
+            "{name}: the worktree's index"
+        );
+        assert_eq!(
+            reader.tracked_under(&format!("@wt/nope/{PRIVATE}")),
+            Err(NoTracking::NoRepository),
+            "{name}: no such worktree"
+        );
+    });
+}
+
+/// The kept answer goes with the index as it looks (size + time to the nanosecond): an index written again at the same
+/// size within the same millisecond is read again; one that looks exactly the same is not.
+#[test]
+fn the_kept_answer_follows_an_index_written_again_at_the_same_size() {
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    fx.write(".permark/local/a.md", "a\n");
+    fx.write(".permark/locax/a.md", "a\n");
+    let index_file = fx.root.join(".git").join("index");
+    fx.stage(".permark/local/a.md");
+    let tracked = std::fs::read(&index_file).unwrap();
+    fx.unstage(".permark/local/a.md");
+    fx.stage(".permark/locax/a.md");
+    let other = std::fs::read(&index_file).unwrap();
+    assert_eq!(tracked.len(), other.len(), "the same size");
+    assert_ne!(tracked, other);
+    let at = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let put = |bytes: &[u8], time: std::time::SystemTime| {
+        std::fs::write(&index_file, bytes).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&index_file)
+            .unwrap()
+            .set_modified(time)
+            .unwrap();
+    };
+    let ops = BuiltinGit;
+    let loc = location(&ops, &fx.root);
+    let memo = service::TrackedMemo::default();
+    put(&tracked, at);
+    assert_eq!(memo.tracked(&ops, &loc, PRIVATE), Ok(true));
+    put(&other, at + Duration::from_micros(1));
+    assert_eq!(memo.tracked(&ops, &loc, PRIVATE), Ok(false), "read again");
+    put(&tracked, at + Duration::from_micros(1));
+    assert_eq!(
+        memo.tracked(&ops, &loc, PRIVATE),
+        Ok(false),
+        "looks the same: the kept answer"
+    );
 }
 
 // ---- the system backend's limits ------------------------------------------------------------------------------------

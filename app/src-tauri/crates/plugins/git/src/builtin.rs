@@ -12,9 +12,9 @@ use git2::{
 use permark_core::plugins::{CommitId, FileVersions};
 
 use crate::ops::{
-    below_prefix, finish, is_version, prefix_of, regular, repo_path, shallow, too_broad, version,
-    Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_RENAME_PATHS,
-    MAX_VERSIONS,
+    below_prefix, finish, is_version, prefix_of, regular, repo_path, shallow, too_broad,
+    tracked_entry, version, Baseline, Discovery, GitError, GitOps, RawFile, RawStatus,
+    RepoLocation, MAX_RENAME_PATHS, MAX_VERSIONS,
 };
 use crate::types::{BackendKind, HeadInfo, Letter};
 
@@ -465,6 +465,23 @@ impl GitOps for BuiltinGit {
         limit: usize,
     ) -> Result<FileVersions, GitError> {
         versions(location, path, after, limit, WALK_BUDGET)
+    }
+
+    fn tracked_under(&self, location: &RepoLocation, path: &str) -> Result<bool, GitError> {
+        let repo = open(location)?;
+        let caseless = match repo.config()?.get_bool("core.ignorecase") {
+            Ok(on) => on,
+            Err(e) if e.code() == ErrorCode::NotFound => false,
+            // git refuses to run with such a value: the installed backend fails here too
+            Err(e) => return Err(e.into()),
+        };
+        let at = repo_path(&location.prefix, path);
+        // every entry is looked at: libgit2's prefix search compares with case even in a caseless index, and the
+        // index iterator yields every stage and flag (conflicts, intent-to-add, skip-worktree)
+        Ok(repo
+            .index()?
+            .iter()
+            .any(|entry| tracked_entry(&entry.path, &at, caseless)))
     }
 
     fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32> {

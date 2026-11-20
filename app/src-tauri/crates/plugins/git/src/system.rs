@@ -12,8 +12,9 @@ use std::time::{Duration, Instant};
 use permark_core::plugins::{CommitId, FileVersions};
 
 use crate::ops::{
-    below_prefix, finish, pathspec, prefix_of, repo_path, shallow, too_broad, Baseline, Discovery,
-    GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_RENAME_PATHS, MAX_VERSIONS,
+    below_prefix, finish, pathspec, prefix_of, repo_path, shallow, too_broad, tracked_entry,
+    Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_RENAME_PATHS,
+    MAX_VERSIONS,
 };
 use crate::porcelain::{
     parse_name_status, parse_status, parse_tree_file, parse_untracked, parse_versions_log, Entry,
@@ -28,6 +29,8 @@ const MAX_OUTPUT: usize = 64 * 1024 * 1024;
 /// Most bytes of a committed file.
 const MAX_BLOB: usize = 8 * 1024 * 1024;
 const MAX_STDERR: usize = 64 * 1024;
+/// Most bytes of index entries listed for one folder (whether it is tracked needs one).
+const MAX_LISTED: usize = 64 * 1024;
 /// The largest number of commits `git log --skip` takes.
 const MAX_SKIP: usize = 0x7fff_ffff;
 
@@ -802,6 +805,52 @@ impl GitOps for SystemGit {
         // `^{commit}`: git reads `<tree id>:<path>` too, and a tree is any folder of the repository (also one
         // outside the project folder); only an id that leads to a commit is read from
         self.blob(location, &format!("{}^{{commit}}", commit.as_str()), path)
+    }
+
+    fn tracked_under(&self, location: &RepoLocation, path: &str) -> Result<bool, GitError> {
+        let at = repo_path(&location.prefix, path);
+        // a literal (no pattern) that also matches other cases; which ones count is decided below. A pathspec ignores
+        // `core.ignorecase`, so without `icase` a caseless repository's differently cased entry would not be listed.
+        let spec = format!(":(literal,icase){at}");
+        let args = ["ls-files", "-z", "--cached", "--", spec.as_str()].map(OsStr::new);
+        let out = match run_until(
+            &self.exe,
+            &location.workdir,
+            &args,
+            TIMEOUT,
+            MAX_LISTED,
+            self.cancel.as_deref(),
+        ) {
+            // more entries than the cap: some are there; counted as tracked rather than read whole
+            Err(GitError::TooLarge(_)) => return Ok(true),
+            other => other?,
+        };
+        if out.code != Some(0) {
+            return Err(GitError::Failed(first_line(&out.stderr)));
+        }
+        let entries: Vec<&[u8]> = out
+            .stdout
+            .split(|byte| *byte == 0)
+            .filter(|entry| !entry.is_empty())
+            .collect();
+        if entries.iter().any(|entry| tracked_entry(entry, &at, false)) {
+            return Ok(true);
+        }
+        if entries.is_empty() {
+            return Ok(false);
+        }
+        // only other cases listed: they count when the repository is caseless
+        let caseless = self.call(
+            &location.workdir,
+            &["config", "--bool", "--get", "core.ignorecase"],
+        )?;
+        let caseless = match caseless.code {
+            Some(0) => caseless.stdout.trim_ascii() == b"true",
+            // not set: git compares with case
+            Some(1) => false,
+            _ => return Err(GitError::Failed(first_line(&caseless.stderr))),
+        };
+        Ok(caseless && entries.iter().any(|entry| tracked_entry(entry, &at, true)))
     }
 
     fn file_versions(
