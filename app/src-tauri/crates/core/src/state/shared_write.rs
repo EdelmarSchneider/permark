@@ -380,14 +380,16 @@ mod tests {
         let held = lock_for(&path).unwrap().expect("lock");
         let other = path.clone();
         let waited = std::thread::spawn(move || {
-            let start = Instant::now();
             let lock = lock_for(&other).unwrap();
-            (lock.is_some(), start.elapsed())
+            (lock.is_some(), Instant::now())
         });
         std::thread::sleep(Duration::from_millis(200));
+        // the order, not a wait length: a thread that starts late under load waits less, but never takes the lock
+        // before it is released
+        let released = Instant::now();
         drop(held);
-        let (got, took) = waited.join().unwrap();
-        assert!(got && took >= Duration::from_millis(150), "{took:?}");
+        let (got, taken) = waited.join().unwrap();
+        assert!(got && taken >= released, "{:?}", released - taken);
         // another file: its own lock, no wait
         let _a = lock_for(&path).unwrap().unwrap();
         let _b = lock_for(&dir.path().join("y.json")).unwrap().unwrap();
