@@ -391,6 +391,14 @@ fn a_git_link_opens_only_a_repository_on_this_computer() {
                 "{name}: {found:?}"
             );
         }
+        // the git folder found is the one the link leads to: a folder, which later calls still accept
+        if let Discovery::Repo(at) = &found {
+            assert!(
+                crate::worktrees::git_dir_stays_local(&at.git_dir),
+                "{name}: {}",
+                at.git_dir.display()
+            );
+        }
     });
     let share = if cfg!(windows) {
         r"\\192.0.2.1\s\r.git"

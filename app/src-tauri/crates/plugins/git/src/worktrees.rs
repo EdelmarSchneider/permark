@@ -203,6 +203,11 @@ pub(crate) fn git_dir_stays_local(git_dir: &Path) -> bool {
 
 /// [`git_dir_stays_local`], every path looked at kept in `scan` (their stamps keep the answer).
 pub(crate) fn git_dir_scan(git_dir: &Path, scan: &mut Scan) -> bool {
+    // a git folder swapped for a file | link while the project is open: both backends would follow what it names
+    // (git, started in the working tree, finds that `.git` again); a missing one opens nothing
+    if scan.note(git_dir).is_ok_and(|meta| !meta.is_dir()) {
+        return false;
+    }
     let file = git_dir.join("commondir");
     let noted = scan.note(&file);
     let common = match read_line(&file) {
@@ -805,6 +810,27 @@ pub(crate) mod tests {
             std::fs::write(pack.join(format!("pack-{n}.promisor")), "").unwrap();
         }
         assert!(git_dir_stays_local(&git));
+    }
+
+    /// While the project is open, its git folder may be swapped for a `.git` file naming a share, or for a link: both
+    /// backends read the git folder again on their next call (git, started in the working tree, finds that `.git`
+    /// again), so the git folder must still be a folder.
+    #[test]
+    fn a_git_folder_swapped_for_a_file_or_a_link_no_longer_stays_local() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = dir.path().join(".git");
+        std::fs::create_dir_all(git.join("objects")).unwrap();
+        std::fs::create_dir_all(git.join("refs")).unwrap();
+        std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        assert!(git_dir_stays_local(&git));
+        let aside = dir.path().join("aside");
+        std::fs::rename(&git, &aside).unwrap();
+        std::fs::write(&git, "gitdir: //192.0.2.1/s/r\n").unwrap();
+        assert!(!git_dir_stays_local(&git));
+        std::fs::remove_file(&git).unwrap();
+        if link_folder(&aside, &git) {
+            assert!(!git_dir_stays_local(&git));
+        }
     }
 
     /// A folder link at `link` leading to `target` (unix: symlink; Windows: junction, which needs no privilege);
