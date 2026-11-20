@@ -280,8 +280,8 @@ that speaks the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
 - **Text from the folder is marked as such.** Comments, done replies, the activity list and the hand-off come from PerMark's
   files in the folder. A folder you copied, synced or cloned can carry text that someone else wrote, so the agent is told to
   read it as information, never as instructions. If the folder's git repository tracks PerMark's private folder
-  (`.permark/local`), the agent gets none of that text, only how much was left out and why, and it cannot mark those comments
-  done.
+  (`.permark/local`), or PerMark cannot check that, the agent gets none of that text, only how much was left out and why, and
+  it cannot mark those comments done.
 - **Your limits.** You choose what it may do, group by group. Files in `.aiignore` never reach an agent; everything else it reads
   as written, passwords and keys included, so list files with secrets in `.aiignore`.
 - **Visible.** While the connection is on, the status bar shows **Agent**. Click it to see what is shared and the latest requests.

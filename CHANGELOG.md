@@ -5,7 +5,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Comments removed outside PerMark can come back.** When something other than PerMark removes comments from a folder's comments file — a sync tool, another program, a copy of the folder from elsewhere — the Comments panel says how many went, with **Restore** and **Dismiss**. When many go at once, a notice says so too. Restore adds back only the comments that are missing and never changes the ones that are there. PerMark keeps the removed comments for 30 days. <!-- f: comments -->
+
 ### Changed
+- **AI agents get folder data labeled as such.** Comments, done replies, activity and the hand-off that agents receive are now described as data from the folder, which may hold text from other people, other computers or copies of the folder, and never as instructions. <!-- f: agent-connection -->
+- When the folder's git repository tracks PerMark's private folder (`.permark/local`) — or PerMark cannot check that — agents get no comments, activity or hand-off from it, and the **Hand off to agent** dialog says why. <!-- f: agent-connection, comments -->
 - File moves, renames and deletions made before this update can no longer be undone: the undo history starts empty once. <!-- f: file-ops -->
 - Closing a panel now leaves its own notice with **Undo**, so closing two panels gives you two ways back. The **Panels** menu stays open while you tick several panels, and it groups them by where they sit. <!-- f: side-panels -->
 
@@ -30,6 +35,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Security
 - **A folder from elsewhere can no longer make PerMark act for it.** A folder you download, unzip or receive through a sync tool can hold files that look like PerMark's or git's own. PerMark now never runs the repository's git hooks, including hooks set in git's settings, and never connects to a network share that files in the folder's `.git` point to. It never reads a file's text through a link (a symlink or a junction) for search or for a connected agent, and on Linux it no longer follows links out of the folder while watching for changes. It reads its own state files only when they are plain files of a sensible size, and it leaves a file written by a newer PerMark as it is. Undo only takes back the file changes PerMark recorded itself, on this computer, for this folder, and it never puts a file back outside the folder or inside a git or PerMark state folder. Another working tree of the same repository is shown only when it points back to the repository. An `agent-context.json` that PerMark did not write on this computer for this folder is deleted when the folder opens. <!-- f: file-ops, search, git-status, agent-connection, nested-projects -->
+- **Git never reaches a network share through a repository's settings.** PerMark's git features no longer open a repository whose settings, included settings or object lists point to a network share or through a link, or whose settings are written in a way that different git programs could read differently. They also stop when the repository's `.git` folder is replaced by a file or a link while the folder is open. Git features stay off for such a repository, and agents get no comments, activity or hand-off from it. <!-- f: git-status, agent-connection -->
+- An activity record with impossible numbers is set aside, and a fresh one starts. <!-- f: agent-connection -->
 - Updated the libraries that check HTTPS certificates for downloads and updates, and other libraries with published security fixes. <!-- f: updates -->
 
 ## [0.17.0] - 2026-11-19
