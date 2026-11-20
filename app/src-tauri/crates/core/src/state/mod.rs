@@ -334,7 +334,7 @@ impl<T: StateData> StateFile<T> {
     }
 
     /// Where the file may really be: below `.permark/` when it lives there, else wherever links lead (the profile).
-    fn zone(&self) -> Zone<'_> {
+    pub(crate) fn zone(&self) -> Zone<'_> {
         self.guard
             .as_ref()
             .map_or(Zone::Anywhere, |guard| Zone::Inside(&guard.permark))

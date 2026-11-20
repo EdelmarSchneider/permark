@@ -39,6 +39,9 @@ pub const STALE_MS: u64 = 7 * DAY_MS;
 pub const OUTSIDE_DETAIL_FILES: usize = 50;
 /// The journal file (the project's private state folder).
 pub const JOURNAL_FILE: &str = "activity.json";
+/// Highest number a journal's seqs reach. Past it a number no longer survives readers that hold numbers as doubles
+/// (the app's own windows): a file holding a larger one did not come from PerMark.
+pub const MAX_SEQ: u64 = 1 << 53;
 /// How long the journal waits for more entries before it writes them.
 const FLUSH_DELAY: Duration = Duration::from_millis(500);
 
@@ -251,6 +254,7 @@ pub struct Entry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Checkpoint {
     /// Seq of the `HandOff` entry: everything up to it was handed off.
+    #[serde(deserialize_with = "seq_in_range")]
     pub seq: u64,
     pub at: u64,
     /// HEAD of the repository at the hand-off (git facts of the next one).
@@ -261,6 +265,7 @@ pub struct Checkpoint {
 /// What the person handed off, frozen at confirm: the agent reads exactly what the person saw.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Package {
+    #[serde(deserialize_with = "seq_in_range")]
     pub seq: u64,
     pub at: u64,
     /// The rows as the agent receives them (rendered by the agent connection).
@@ -272,12 +277,12 @@ pub struct Package {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Journal {
     /// The next entry's seq (from 1).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "seq_in_range")]
     pub next: u64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "entries_in_range")]
     pub entries: Vec<Entry>,
     /// Highest seq retention dropped (0: none).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "seq_in_range")]
     pub trimmed_through: u64,
     /// The journal on disk had this older format: its entries were kept aside, read-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -286,6 +291,31 @@ pub struct Journal {
     pub checkpoint: Option<Checkpoint>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package: Option<Package>,
+}
+
+/// A seq-bearing number of the file: one above [`MAX_SEQ`] fails the whole journal's parse, so the load moves the
+/// file aside as it does another format version's journal (a fresh journal starts, the file is kept).
+fn seq_in_range<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    let seq = u64::deserialize(deserializer)?;
+    if seq > MAX_SEQ {
+        return Err(serde::de::Error::custom(
+            "a number past the highest seq a journal reaches",
+        ));
+    }
+    Ok(seq)
+}
+
+/// The rows of the file, each seq checked as [`seq_in_range`] does.
+fn entries_in_range<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Entry>, D::Error> {
+    let entries = Vec::<Entry>::deserialize(deserializer)?;
+    if entries.iter().any(|e| e.seq > MAX_SEQ) {
+        return Err(serde::de::Error::custom(
+            "a row past the highest seq a journal reaches",
+        ));
+    }
+    Ok(entries)
 }
 
 impl StateData for Journal {
@@ -303,11 +333,30 @@ impl Journal {
         &self.entries[at..]
     }
 
-    fn push(&mut self, at: u64, by: By, fact: Fact) -> u64 {
+    /// Adds a row with the next seq; `None` (nothing added) once the seqs are used up: `next` never passes
+    /// [`MAX_SEQ`] (the journal written stays one that loads) and never wraps.
+    fn push(&mut self, at: u64, by: By, fact: Fact) -> Option<u64> {
         let seq = self.next.max(1);
-        self.next = seq + 1;
+        self.next = seq.checked_add(1).filter(|next| *next <= MAX_SEQ)?;
         self.entries.push(Entry { seq, at, by, fact });
-        seq
+        Some(seq)
+    }
+
+    /// Puts the numbers of a journal read from disk in order (a file from elsewhere may hold any): `next` is raised
+    /// past the last row (a new row never repeats a seq); a checkpoint | package past the last seq given is brought
+    /// back to it (else every new row would count as handed off already). Each number is at most [`MAX_SEQ`] here:
+    /// a larger one fails the parse.
+    fn order_seqs(&mut self) {
+        if let Some(last) = self.entries.iter().map(|e| e.seq).max() {
+            self.next = self.next.max(last.saturating_add(1));
+        }
+        let given = self.next.saturating_sub(1);
+        if let Some(checkpoint) = &mut self.checkpoint {
+            checkpoint.seq = checkpoint.seq.min(given);
+        }
+        if let Some(package) = &mut self.package {
+            package.seq = package.seq.min(given);
+        }
     }
 
     /// A change outside merges into the one of the same path since the person's last action: created + deleted ->
@@ -329,7 +378,7 @@ impl Journal {
             .rposition(|e| e.fact.path() == Some(key))
             .map(|i| i + tail);
         let Some(index) = found else {
-            self.push(
+            let _ = self.push(
                 at,
                 By::Outside,
                 Fact::Outside {
@@ -373,9 +422,15 @@ impl Journal {
             )),
             (_, change) => Some((change, path.to_owned(), from.map(str::to_owned))),
         };
-        self.entries.remove(index);
-        if let Some((change, path, from)) = merged {
-            self.push(at, By::Outside, Fact::Outside { change, path, from });
+        let replaced = match merged {
+            Some((change, path, from)) => self
+                .push(at, By::Outside, Fact::Outside { change, path, from })
+                .is_some(),
+            None => true,
+        };
+        // the merged row is in (or none is needed): the row it replaces goes; out of seqs, the earlier row stays
+        if replaced {
+            self.entries.remove(index);
         }
     }
 
@@ -567,9 +622,11 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The version a journal file on disk says it has (`None`: missing | unreadable).
+/// The version a journal file on disk says it has (`None`: missing | unreadable). Read as the load reads it: a plain
+/// file of at most the journal's cap, never through a link in `.permark/`, so a FIFO | link | huge file planted there
+/// never makes the open wait, read elsewhere or take it all in.
 fn version_on_disk(file: &StateFile<Journal>) -> Option<u32> {
-    let bytes = std::fs::read(file.path()).ok()?;
+    let bytes = crate::fsx::read_regular(file.path(), Journal::MAX_BYTES, file.zone()).ok()?;
     let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
     value
         .get("version")
@@ -581,7 +638,10 @@ fn version_on_disk(file: &StateFile<Journal>) -> Option<u32> {
 fn load(file: &StateFile<Journal>) -> Journal {
     let older = version_on_disk(file).filter(|v| *v != Journal::VERSION);
     match file.load() {
-        Loaded::Found(journal) => journal,
+        Loaded::Found(mut journal) => {
+            journal.order_seqs();
+            journal
+        }
         Loaded::Missing => Journal::default(),
         Loaded::Recovered { .. } => Journal {
             upgraded_from: older,
@@ -680,6 +740,7 @@ impl ActivityLog {
             } else {
                 mirror_fact(&mut state, now, by, &fact);
             }
+            // `None` once the seqs are used up: no row, nothing announced
             let seq = state.journal.push(now, by, fact);
             state.journal.trim(now);
             state.dirty = true;
@@ -688,7 +749,7 @@ impl ActivityLog {
                 .journal
                 .entries
                 .last()
-                .filter(|e| e.seq == seq)
+                .filter(|e| Some(e.seq) == seq)
                 .cloned()
         };
         if let Some(entry) = &entry {
@@ -779,15 +840,22 @@ impl ActivityLog {
     /// The person confirmed a hand-off of everything up to `upto` (the seq the preview was built from): the checkpoint
     /// and the frozen package. Entries that came after the preview stay for the next hand-off.
     ///
-    /// Returns the seq of the hand-off marker.
+    /// Returns the seq of the hand-off marker; `None`: the journal's seqs are used up, nothing is noted (a checkpoint
+    /// | package without its marker would point past the rows).
     #[must_use]
-    pub fn hand_off(&self, upto: u64, head: Option<String>, text: String, rows: u32) -> u64 {
+    pub fn hand_off(
+        &self,
+        upto: u64,
+        head: Option<String>,
+        text: String,
+        rows: u32,
+    ) -> Option<u64> {
         let now = self.now();
         let entry = {
             let mut state = lock(&self.inner.state);
             let journal = &mut state.journal;
             // the marker goes at the end: entries that came after the preview (seq > upto) stay for the next hand-off
-            let seq = journal.push(now, By::Person, Fact::HandOff { rows });
+            let seq = journal.push(now, By::Person, Fact::HandOff { rows })?;
             let entry = journal.entries.last().cloned().unwrap_or(Entry {
                 seq,
                 at: now,
@@ -813,7 +881,7 @@ impl ActivityLog {
             entry
         };
         self.announce(&entry);
-        entry.seq
+        Some(entry.seq)
     }
 
     /// Hears every new entry until the returned value is dropped.
@@ -923,7 +991,7 @@ fn flush_mirror(mirror: Vec<(StateFile<Journal>, Mirrored)>) {
         for item in items {
             match item {
                 Mirrored::Fact { at, by, fact } => {
-                    journal.push(at, by, fact);
+                    let _ = journal.push(at, by, fact);
                     last = at;
                 }
                 Mirrored::Outside {
