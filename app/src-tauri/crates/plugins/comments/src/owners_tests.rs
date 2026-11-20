@@ -756,3 +756,81 @@ fn comments_kept_in_the_profile_are_never_withheld() {
     assert_eq!(items.len(), 1);
     assert!(!items[0].withheld);
 }
+
+// ---- comments an outside write removed: set aside per owner -------------------------------------------------------
+
+#[test]
+fn each_project_sets_aside_and_restores_only_its_own_comments() {
+    let (_dir, root) = setup();
+    let base = tempfile::tempdir().unwrap();
+    let core = opened(&root, &env(base.path()));
+    wait_until("owners", || core.projects().owners().slots().len() == 2);
+    let root_file = root.join(".permark/local/comments.json");
+    let member_file = root.join(MEMBER).join(".permark/local/comments.json");
+    for (path, text) in [
+        ("top.md", "root two"),
+        (&*format!("{MEMBER}/doc.md"), "member two"),
+    ] {
+        call(
+            &core,
+            "add",
+            json!({ "path": path, "quote": "alpha", "text": text }),
+        )
+        .unwrap();
+    }
+    // another program removes the member's first comment
+    let mut book: Value = serde_json::from_slice(&std::fs::read(&member_file).unwrap()).unwrap();
+    book["comments"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|c| c["text"] != "member one");
+    std::fs::write(&member_file, serde_json::to_vec_pretty(&book).unwrap()).unwrap();
+    let root_before = std::fs::read(&root_file).unwrap();
+    let found = call(&core, "asides", Value::Null).unwrap();
+    let found = found.as_array().unwrap();
+    assert_eq!(found.len(), 1, "{found:?}");
+    let id = found[0]["id"].as_str().unwrap();
+    assert!(
+        id.strip_prefix(&format!("{UID}:"))
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())),
+        "{id}"
+    );
+    assert_eq!(found[0]["count"], json!(1));
+    assert_eq!(
+        call(&core, "restore", json!({ "id": id })).unwrap(),
+        json!(1)
+    );
+    let book: Value = serde_json::from_slice(&std::fs::read(&member_file).unwrap()).unwrap();
+    let texts: Vec<&str> = book["comments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(texts, ["member two", "member one"]);
+    assert_eq!(
+        book["comments"][1]["id"],
+        json!("same"),
+        "its own id, unprefixed"
+    );
+    assert_eq!(
+        std::fs::read(&root_file).unwrap(),
+        root_before,
+        "the root's file untouched"
+    );
+    assert!(call(&core, "asides", Value::Null)
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .is_empty());
+    // the opened folder's ids carry no prefix
+    let mut book: Value = serde_json::from_slice(&root_before).unwrap();
+    book["comments"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|c| c["text"] != "root one");
+    std::fs::write(&root_file, serde_json::to_vec_pretty(&book).unwrap()).unwrap();
+    let found = call(&core, "asides", Value::Null).unwrap();
+    let id = found[0]["id"].as_str().unwrap();
+    assert!(id.bytes().all(|b| b.is_ascii_digit()), "{id}");
+}

@@ -7,6 +7,9 @@
 #![cfg_attr(test, allow(clippy::assert_is_empty))]
 
 pub mod anchor;
+mod kept;
+#[cfg(test)]
+mod kept_tests;
 pub mod model;
 #[cfg(test)]
 mod owners_tests;
@@ -29,8 +32,8 @@ use permark_core::watch::Subscription;
 use permark_core::IpcError;
 use serde::Deserialize;
 
-pub use model::{Comment, CommentScope, CommentView, PassageState};
-pub use service::{CommentsService, EditTarget, NewComment, Withheld};
+pub use model::{Comment, CommentAside, CommentScope, CommentView, PassageState};
+pub use service::{Announce, CommentsService, EditTarget, NewComment, Withheld};
 
 const ID: PluginId = PluginId::of("comments");
 /// The file in the project's local state.
@@ -38,6 +41,10 @@ pub const FILE: &str = "comments.json";
 /// Most bytes [`FILE`] is read with: up to `MAX_COMMENTS` comments with their quotes and replies, no finite writer
 /// limit below this.
 pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+/// Event `comments:changed`: the comments changed.
+pub const CHANGED_EVENT: &str = "changed";
+/// Event `comments:aside`: comments an outside write removed were set aside, or an aside went away.
+pub const ASIDE_EVENT: &str = "aside";
 
 struct CommentsPlugin {
     manifest: Manifest,
@@ -127,7 +134,7 @@ impl Plugin for CommentsPlugin {
         let service = Arc::new(CommentsService::start_owners(
             started.clone(),
             project.documents.scope().clone(),
-            Arc::new(move || events.emit("changed", serde_json::Value::Null)),
+            Arc::new(move |name: &str| events.emit(name, serde_json::Value::Null)),
         ));
         if early {
             service.start_paused();
@@ -219,6 +226,19 @@ impl Plugin for CommentsPlugin {
                 }
                 Ok(())
             }),
+        ));
+        // comments an outside write removed: listed, restored (only those the file lacks), let go
+        let s = Arc::clone(&service);
+        registrations.extend(cx.rpc(
+            "asides",
+            typed(move |_: serde_json::Value, _| Ok(s.asides())),
+        ));
+        let s = Arc::clone(&service);
+        registrations.extend(cx.rpc("restore", typed(move |args: IdArgs, _| s.restore(&args.id))));
+        let s = Arc::clone(&service);
+        registrations.extend(cx.rpc(
+            "dismissAside",
+            typed(move |args: IdArgs, _| s.dismiss_aside(&args.id)),
         ));
         // a text change is not a journal fact: the journal's comment ops are read by older versions too
         let s = Arc::clone(&service);

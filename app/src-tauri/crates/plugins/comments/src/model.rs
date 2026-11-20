@@ -184,6 +184,23 @@ pub struct CommentView {
     pub replies: Vec<ReplyView>,
 }
 
+/// Comments an outside write (a sync service, a copy, git, another program) removed from one owner's file, kept a
+/// while so they can be restored.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CommentAside {
+    /// `<digits>` for the opened folder's comments, `<project id>:<digits>` for an included project's.
+    pub id: String,
+    /// How many of them the file lacks now: what a restore adds.
+    pub count: u32,
+    /// When they were removed (ms since the epoch).
+    #[ts(type = "number")]
+    pub at: u64,
+    /// A large part of the comments was removed, or the file no longer holds comments at all.
+    pub big: bool,
+}
+
 /// Which comments a list holds.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

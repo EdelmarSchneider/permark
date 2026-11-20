@@ -6,7 +6,7 @@
 //! newer layout) is set aside, not overwritten: the comments in it are the person's. A file that merely cannot be read
 //! right now is left alone and the change fails.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -18,14 +18,17 @@ use permark_core::error::{ErrorKind, IpcError};
 use permark_core::format::units;
 use permark_core::fsx;
 use permark_core::paths::{key_of, VaultPath};
-use permark_core::projects::{OwnerSlot, Owners, OwnersChange, OwnersGate};
-use permark_core::state::RawFile;
+use permark_core::projects::{OwnerSlot, Owners, OwnersChange, OwnersGate, ProjectUid};
+use permark_core::state::shared_write::lock_within;
+use permark_core::state::{RawFile, StateStore};
 use permark_core::watch::{ChangeKind, FsBatch};
 
 use crate::anchor::{fold, Analysis, Placement, Probe, Resolution};
+use crate::kept::{text_of, Keeper};
 use crate::model::{
-    Anchor, Book, By, Comment, CommentScope, CommentView, PassageState, Reply, ReplyView,
-    MAX_COMMENTS, MAX_COMMENT_CHARS, MAX_QUOTE_CHARS, MAX_REPLIES, MAX_REPLY_CHARS, VERSION,
+    Anchor, Book, By, Comment, CommentAside, CommentScope, CommentView, PassageState, Reply,
+    ReplyView, MAX_COMMENTS, MAX_COMMENT_CHARS, MAX_QUOTE_CHARS, MAX_REPLIES, MAX_REPLY_CHARS,
+    VERSION,
 };
 
 /// Comment ids made by this app (every core).
@@ -35,6 +38,12 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 const MAX_DOC_BYTES: u64 = 5 * 1024 * 1024;
 /// How long changes of documents are gathered before the passages are looked for again.
 const QUIET: Duration = Duration::from_millis(150);
+/// Most time a look at a changed file waits for the writers' lock before it compares the file with the kept copy
+/// (busy longer: compared at the next look | write instead).
+const LOOK_WAIT: Duration = Duration::from_secs(2);
+
+/// Tells the windows: `changed` (the comments) | `aside` (the comments set aside).
+pub type Announce = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// What the window sends when the person writes a comment on a selection.
 #[derive(Debug, Clone)]
@@ -62,6 +71,8 @@ pub enum EditTarget {
 /// to that owner.
 struct Slot {
     file: RawFile,
+    /// This install's kept copy of the file and the comments an outside write removed; `None`: no install key.
+    keeper: Option<Keeper>,
     book: Book,
     /// The comments as last read or written: what this core changed since is laid on top of the file as it is when
     /// written (another tab | app | `permark mcp` may have written it meanwhile; `projects.md` §14 D51).
@@ -72,10 +83,12 @@ struct Slot {
     damaged: bool,
     /// The file could not be read just now (it may be fine a moment later).
     unreadable: Option<String>,
+    /// The file was read since the slot was made (the first look compares a missing file with the kept copy too).
+    looked: bool,
 }
 
 /// The comments of a file's bytes (`None`: not comments, or a newer layout).
-fn book_of(bytes: &[u8]) -> Option<Book> {
+pub(crate) fn book_of(bytes: &[u8]) -> Option<Book> {
     let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
     serde_json::from_slice::<Book>(bytes)
         .ok()
@@ -85,7 +98,7 @@ fn book_of(bytes: &[u8]) -> Option<Book> {
 /// Three-way merge by comment id: what this core added, changed or removed since `base` goes on top of `fresh` (the
 /// file now); every other comment is the file's. A comment removed elsewhere stays removed, even when this core changed
 /// it meanwhile.
-fn merge_book(base: &[Comment], mine: &[Comment], fresh: Book) -> Book {
+pub(crate) fn merge_book(base: &[Comment], mine: &[Comment], fresh: Book) -> Book {
     let base_by: HashMap<&str, &Comment> = base.iter().map(|c| (c.id.as_str(), c)).collect();
     let mine_by: HashMap<&str, &Comment> = mine.iter().map(|c| (c.id.as_str(), c)).collect();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -116,25 +129,53 @@ fn merge_book(base: &[Comment], mine: &[Comment], fresh: Book) -> Book {
 }
 
 impl Slot {
-    fn new(file: RawFile) -> Self {
+    fn new(file: RawFile, keeper: Option<Keeper>) -> Self {
         Self {
             // written under the plugin's lock: a hung other writer never holds the lists up long (N10)
             file: file.brief_lock_wait(),
+            keeper,
             book: Book::default(),
             base: Vec::new(),
             stamp: None,
             damaged: false,
             unreadable: None,
+            looked: false,
         }
     }
 
-    /// Reads the file again when it is not what was last read.
+    /// The comments file of an owner's state, with this install's kept copy and asides.
+    fn of(store: &StateStore, announce: &Announce) -> Self {
+        let announce = Arc::clone(announce);
+        Self::new(
+            store.raw_file(crate::FILE).capped(crate::MAX_FILE_BYTES),
+            Keeper::of(store, Arc::new(move || announce(crate::ASIDE_EVENT))),
+        )
+    }
+
+    /// Reads the file again when it is not what was last read. What an outside write removed is set aside before
+    /// the comments are replaced.
     fn refresh(&mut self) {
         let stamp = self.file.stamp();
-        if self.stamp == stamp && self.unreadable.is_none() {
+        if self.looked && self.stamp == stamp && self.unreadable.is_none() {
             return;
         }
-        match self.file.read() {
+        // compared under the writers' lock: a core of this install writing meanwhile (kept copy first, then the file)
+        // never shows its own change as a removal
+        let lock = self
+            .keeper
+            .as_ref()
+            .map(|_| lock_within(self.file.path(), LOOK_WAIT));
+        let read = self.file.read();
+        if let (Some(keeper), Some(Ok(_)), Ok(bytes)) = (&self.keeper, &lock, &read) {
+            if !self.looked {
+                // expired asides go when the comments start
+                keeper.asides(now_ms());
+            }
+            keeper.follow(bytes.as_deref(), now_ms());
+        }
+        drop(lock);
+        self.looked = true;
+        match read {
             Ok(Some(bytes)) => {
                 if let Some(book) = book_of(&bytes) {
                     self.book = book;
@@ -175,17 +216,36 @@ impl Slot {
             self.damaged = false;
         }
         let Self {
-            file, book, base, ..
+            file,
+            keeper,
+            book,
+            base,
+            ..
         } = self;
+        let keeper = keeper.as_ref();
         let mut merged: Option<Book> = None;
         let mut foreign = false;
         let mut encode_error = None;
+        // the kept copy before this write, then each text of the file this write read: what an outside write removed
+        // in between is set aside before the kept copy takes this write's text
+        let mut seen: Option<Option<String>> = None;
         file.update(|now| {
+            if let Some(keeper) = keeper {
+                let text = text_of(now);
+                let reference = seen.get_or_insert_with(|| keeper.kept());
+                if let Some(was) = reference.as_deref().filter(|was| *was != text) {
+                    let _ = keeper.observe(was, now, now_ms());
+                }
+                *reference = Some(text.into_owned());
+            }
             let fresh = match now {
                 None => Book::default(),
                 Some(bytes) => {
                     let Some(fresh) = book_of(bytes) else {
                         foreign = true;
+                        if let Some(keeper) = keeper {
+                            keeper.keep(&text_of(now));
+                        }
                         return None;
                     };
                     fresh
@@ -194,6 +254,11 @@ impl Slot {
             let next = merge_book(base, &book.comments, fresh);
             match serde_json::to_vec_pretty(&next) {
                 Ok(bytes) => {
+                    // kept before the file is written: a core comparing them in between sees this install's own
+                    // write; a write that fails leaves an aside of what it held, never a loss
+                    if let Some(keeper) = keeper {
+                        keeper.keep(&String::from_utf8_lossy(&bytes));
+                    }
                     merged = Some(next);
                     Some(bytes)
                 }
@@ -238,6 +303,40 @@ impl State {
 
     fn unreadable(&self) -> Option<&String> {
         self.slots.iter().find_map(|s| s.unreadable.as_ref())
+    }
+
+    /// What the aside ids of slot `i` start with: nothing for the opened folder, `<uid>:` for an included project.
+    /// `None`: a project without an id (its asides are not offered).
+    fn aside_prefix(&self, i: usize) -> Option<String> {
+        if i == 0 {
+            return Some(String::new());
+        }
+        let uid = self.owners.as_ref()?.slots().get(i)?.uid.as_ref()?;
+        Some(format!("{uid}:"))
+    }
+
+    /// The slot and number an aside id names: `<digits>` (the opened folder's) | `<uid>:<digits>` (an included
+    /// project's); never a path. `Ok(None)`: no such project (any more).
+    fn aside_of(&self, id: &str) -> Result<Option<(usize, u64)>, IpcError> {
+        let invalid = || IpcError::new(ErrorKind::InvalidData).subject("id");
+        let (uid, digits) = match id.split_once(':') {
+            Some((uid, digits)) => (Some(uid), digits),
+            None => (None, id),
+        };
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(invalid());
+        }
+        let n = digits.parse::<u64>().map_err(|_| invalid())?;
+        let Some(uid) = uid else {
+            return Ok(Some((0, n)));
+        };
+        let uid = ProjectUid::parse(uid).ok_or_else(invalid)?;
+        Ok(self
+            .owners
+            .as_ref()
+            .and_then(|o| o.slots().iter().position(|s| s.uid.as_ref() == Some(&uid)))
+            .filter(|i| *i > 0)
+            .map(|i| (i, n)))
     }
 
     /// Whether a comment kept in slot `i` (owner-relative path) belongs to a deeper owner (unused while it is
@@ -343,7 +442,7 @@ struct Cached {
 
 struct Shared {
     scope: DocScope,
-    announce: Arc<dyn Fn() + Send + Sync>,
+    announce: Announce,
     state: Mutex<State>,
     docs: Mutex<HashMap<String, Cached>>,
     rev: AtomicU64,
@@ -351,7 +450,7 @@ struct Shared {
     gate: OwnersGate,
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
@@ -368,7 +467,7 @@ impl Shared {
 
     fn bump(&self) {
         self.rev.fetch_add(1, Ordering::Relaxed);
-        (self.announce)();
+        (self.announce)(crate::CHANGED_EVENT);
     }
 
     /// Changes the comments (one root-relative book over every owner's file). `change` says whether it changed
@@ -426,9 +525,7 @@ impl Shared {
                     state.slots = owners
                         .slots()
                         .iter()
-                        .map(|s| {
-                            Slot::new(s.store.raw_file(crate::FILE).capped(crate::MAX_FILE_BYTES))
-                        })
+                        .map(|s| Slot::of(&s.store, &self.announce))
                         .collect();
                     state.owners = Some((*owners).clone());
                     state.paused = false;
@@ -448,6 +545,95 @@ impl Shared {
         let mut state = self.lock();
         state.refresh();
         state.merged().comments
+    }
+
+    /// Every owner's asides that hold comments its file lacks now.
+    fn asides(&self) -> Vec<CommentAside> {
+        let mut state = self.lock();
+        state.refresh();
+        let now = now_ms();
+        let mut out = Vec::new();
+        for (i, slot) in state.slots.iter().enumerate() {
+            let (Some(keeper), Some(prefix)) = (&slot.keeper, state.aside_prefix(i)) else {
+                continue;
+            };
+            for aside in keeper.asides(now) {
+                let count = missing(&aside.comments, &slot.book).len();
+                if count > 0 {
+                    out.push(CommentAside {
+                        id: format!("{prefix}{}", aside.id),
+                        count: u32::try_from(count).unwrap_or(u32::MAX),
+                        at: aside.at,
+                        big: aside.big,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    /// Adds back the comments of aside `id` the file lacks (never one it holds), through the normal save; the aside
+    /// goes once they are written. The number added (0: no such aside, restored | dismissed meanwhile).
+    fn restore(&self, id: &str) -> Result<usize, IpcError> {
+        self.gate.wait();
+        let mut state = self.lock();
+        let Some((i, n)) = state.aside_of(id)? else {
+            return Ok(0);
+        };
+        state.refresh();
+        let not_now = || IpcError::new(ErrorKind::Unavailable).subject("comments.json");
+        if state.paused {
+            return Err(not_now());
+        }
+        let slot = &mut state.slots[i];
+        if let Some(why) = &slot.unreadable {
+            return Err(not_now().detail(why.clone()));
+        }
+        let Some(aside) = slot
+            .keeper
+            .as_ref()
+            .and_then(|k| k.asides(now_ms()).into_iter().find(|a| a.id == n))
+        else {
+            return Ok(0);
+        };
+        let back: Vec<Comment> = missing(&aside.comments, &slot.book)
+            .into_iter()
+            .cloned()
+            .collect();
+        if slot.book.comments.len() + back.len() > MAX_COMMENTS {
+            return Err(IpcError::new(ErrorKind::TooLarge).subject("comments"));
+        }
+        let added = back.len();
+        if added > 0 {
+            slot.book.comments.extend(back);
+            if let Err(error) = slot.save() {
+                // not written: the file is read again as it is, the aside stays
+                slot.stamp = None;
+                state.refresh();
+                return Err(not_now().detail(error.to_string()));
+            }
+        }
+        // restored (or nothing left to restore): a failure to drop it only leaves an aside with nothing to add
+        if let Some(keeper) = &state.slots[i].keeper {
+            let _ = keeper.drop_aside(n);
+        }
+        state.refresh();
+        drop(state);
+        if added > 0 {
+            self.bump();
+        }
+        Ok(added)
+    }
+
+    /// Lets aside `id` go without restoring it.
+    fn dismiss_aside(&self, id: &str) -> Result<(), IpcError> {
+        let state = self.lock();
+        if let Some((i, n)) = state.aside_of(id)? {
+            if let Some(keeper) = &state.slots[i].keeper {
+                keeper.drop_aside(n)?;
+            }
+        }
+        Ok(())
     }
 
     /// The document `path` as comments see it (read again when its length or time changed).
@@ -503,6 +689,15 @@ impl Shared {
             .unwrap_or_else(PoisonError::into_inner)
             .remove(&key_of(path));
     }
+}
+
+/// The comments of an aside whose id the file's `book` does not hold (each id once).
+fn missing<'a>(aside: &'a [Comment], book: &Book) -> Vec<&'a Comment> {
+    let mut seen: HashSet<&str> = book.comments.iter().map(|c| c.id.as_str()).collect();
+    aside
+        .iter()
+        .filter(|c| seen.insert(c.id.as_str()))
+        .collect()
 }
 
 /// Where a comment is now: its state, its lines, and the place when the quote was found.
@@ -606,23 +801,19 @@ impl Withheld {
 impl CommentsService {
     /// Reads the file and starts the worker that keeps the passages found.
     #[must_use]
-    pub fn start(file: RawFile, scope: DocScope, announce: Arc<dyn Fn() + Send + Sync>) -> Self {
-        Self::start_with(None, vec![file], scope, announce)
+    pub fn start(file: RawFile, scope: DocScope, announce: Announce) -> Self {
+        Self::start_with(None, vec![Slot::new(file, None)], scope, announce)
     }
 
     /// The comments of every owner (the opened folder + included projects, `projects.md` §9.2).
     #[must_use]
-    pub fn start_owners(
-        owners: Owners,
-        scope: DocScope,
-        announce: Arc<dyn Fn() + Send + Sync>,
-    ) -> Self {
-        let files = owners
+    pub fn start_owners(owners: Owners, scope: DocScope, announce: Announce) -> Self {
+        let slots = owners
             .slots()
             .iter()
-            .map(|s| s.store.raw_file(crate::FILE).capped(crate::MAX_FILE_BYTES))
+            .map(|s| Slot::of(&s.store, &announce))
             .collect();
-        Self::start_with(Some(owners), files, scope, announce)
+        Self::start_with(Some(owners), slots, scope, announce)
     }
 
     /// The owners changed (`Projects::follow_owners`).
@@ -638,16 +829,16 @@ impl CommentsService {
 
     fn start_with(
         owners: Option<Owners>,
-        files: Vec<RawFile>,
+        slots: Vec<Slot>,
         scope: DocScope,
-        announce: Arc<dyn Fn() + Send + Sync>,
+        announce: Announce,
     ) -> Self {
         let shared = Arc::new(Shared {
             scope,
             announce,
             state: Mutex::new(State {
                 owners,
-                slots: files.into_iter().map(Slot::new).collect(),
+                slots,
                 paused: false,
             }),
             docs: Mutex::new(HashMap::new()),
@@ -982,6 +1173,28 @@ impl CommentsService {
             *edited = Some(now_ms());
             Ok(((), true))
         })
+    }
+
+    /// The comments an outside write removed, per owner, while the file still lacks some of them.
+    #[must_use]
+    pub fn asides(&self) -> Vec<CommentAside> {
+        self.shared.asides()
+    }
+
+    /// Adds back the comments of an aside the file lacks; the number added (0: no such aside any more).
+    ///
+    /// # Errors
+    /// An id that is not `<digits>` | `<uid>:<digits>`, or the file cannot be written now (the aside stays).
+    pub fn restore(&self, id: &str) -> Result<usize, IpcError> {
+        self.shared.restore(id)
+    }
+
+    /// Lets an aside go (no such aside: nothing to do).
+    ///
+    /// # Errors
+    /// An id that is not `<digits>` | `<uid>:<digits>`, or the asides cannot be written.
+    pub fn dismiss_aside(&self, id: &str) -> Result<(), IpcError> {
+        self.shared.dismiss_aside(id)
     }
 
     /// Changes with every update the window should hear about.
