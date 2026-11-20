@@ -1529,7 +1529,7 @@ export default {
   "agent.handoff.done.other": "已交接 {n} 项操作，已复制，可粘贴到提示中。",
   "agent.handoff.failed": "交接未成功，请重试。",
   "agent.handoff.withheld":
-    "此文件夹的 git 仓库跟踪了 PerMark 的私有文件夹 (.permark/local)，因此其活动不会交接给智能体。",
+    "PerMark 不会将此文件夹的活动交接给智能体：其 git 仓库跟踪了 PerMark 的私有文件夹 (.permark/local)，或 PerMark 无法检查这一点。",
   "agent.handoff.copyFailed": "已交接，但复制失败。",
   "config.sheet": "此文件中的设置",
   "config.root": "顶层",

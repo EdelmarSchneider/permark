@@ -703,18 +703,22 @@ fn tracked_specs(prefix: &str, path: &str) -> Vec<String> {
             glob_names(&names[..depth])
         ));
     }
-    // another spelling of the first name: one holding `~` | a byte beyond printable ASCII, or ending in `.` | a space
-    for alias in ["*[! -}]*", "*[. ]"] {
-        let first = format!(":(glob,icase){base}{alias}");
-        for depth in 1..names.len() {
-            specs.push(format!("{first}/{}", glob_names(&names[1..=depth])));
-        }
-        specs.push(if names.len() > 1 {
-            format!("{first}/{}/**", glob_names(&names[1..]))
+    // another spelling of the name that holds the folder, the folder's name next: one holding `~` | a byte beyond
+    // printable ASCII, or ending in `.` | a space
+    if let Some((last, above)) = names
+        .split_last()
+        .and_then(|(last, rest)| rest.split_last().map(|(_, above)| (last, above)))
+    {
+        let above = if above.is_empty() {
+            String::new()
         } else {
-            format!("{first}/**")
-        });
-        specs.push(first);
+            format!("{}/", glob_names(above))
+        };
+        for alias in ["*[! -}]*", "*[. ]"] {
+            let at = format!(":(glob,icase){base}{above}{alias}/{}", glob_names(&[last]));
+            specs.push(format!("{at}/**"));
+            specs.push(at);
+        }
     }
     specs
 }

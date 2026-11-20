@@ -1622,7 +1622,7 @@ export default {
     "{n} Aktionen übergeben – kopiert, bereit zum Einfügen in den Prompt.",
   "agent.handoff.failed": "Die Übergabe hat nicht geklappt. Erneut versuchen.",
   "agent.handoff.withheld":
-    "Das Git-Repository dieses Ordners verfolgt den privaten Ordner von PerMark (.permark/local), daher wird seine Aktivität nicht an Agenten übergeben.",
+    "PerMark übergibt die Aktivität dieses Ordners nicht an Agenten: Sein Git-Repository verfolgt den privaten Ordner von PerMark (.permark/local), oder PerMark konnte das nicht prüfen.",
   "agent.handoff.copyFailed": "Übergeben, aber das Kopieren hat nicht geklappt.",
   "config.sheet": "Einstellungen in dieser Datei",
   "config.root": "Oberste Ebene",

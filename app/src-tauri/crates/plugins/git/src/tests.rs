@@ -2552,25 +2552,34 @@ fn an_index_entry_counts_by_whole_names_below_the_folder_or_at_a_folder_above() 
     }
 }
 
-/// The first name below the project folder, spelled so a volume may resolve it to the asked folder (`~`, beyond
-/// ASCII, a last `.` | space), is put to the volume when the rest leads into the folder: one folder | unknown ->
-/// counts, two folders -> not. Ordinary ASCII names and names whose rest leads elsewhere never cost a look.
+/// The name that holds the asked folder (`.permark` of `<member>/.permark/local`), spelled so a volume may resolve it
+/// to that folder (`~`, beyond ASCII, a last `.` | space), is put to the volume when the folder's own name follows it
+/// (letters in any case): one folder | unknown -> counts, two folders -> not. Every other name compares as written.
+/// Ordinary ASCII names, names at another place and names without the folder's name next never cost a look.
 #[test]
-fn another_spelling_of_the_first_name_is_put_to_the_volume() {
+fn another_spelling_of_the_holding_name_is_put_to_the_volume() {
     for (entry, prefix, at, name) in [
         ("PERMAR~1/local/comments.json", "", PRIVATE, "PERMAR~1"),
         ("permar~1/local", "", PRIVATE, "permar~1"),
-        ("PERMAR~1", "", PRIVATE, "PERMAR~1"),
+        ("PERMAR~1/LOCAL/x", "", PRIVATE, "PERMAR~1"),
         (".permar\u{212A}/local/x", "", PRIVATE, ".permar\u{212A}"),
         (".permark./local/x", "", PRIVATE, ".permark."),
         (".permark /local/x", "", PRIVATE, ".permark "),
         ("Documentação/local/x", "", PRIVATE, "Documentação"),
         ("hub/PERMAR~1/local/x", "hub", PRIVATE, "PERMAR~1"),
+        // a member without a repository of its own is asked through the one of the folder
+        ("m/PERMAR~1/local/x", "", "m/.permark/local", "PERMAR~1"),
         (
-            "HUB Ü/.permark/local/x",
+            "m/.permar\u{212A}/local/x",
             "",
-            "hub ü/.permark/local",
-            "HUB Ü",
+            "m/.permark/local",
+            ".permar\u{212A}",
+        ),
+        (
+            "hub/a b/m/PERMAR~1/local",
+            "hub",
+            "a b/m/.permark/local",
+            "PERMAR~1",
         ),
     ] {
         for (answer, counts) in [
@@ -2596,16 +2605,24 @@ fn another_spelling_of_the_first_name_is_put_to_the_volume() {
             String::from_utf8_lossy(name)
         )
     };
-    for (entry, prefix) in [
-        ("docs/local/x", ""),
-        ("Documentação/readme.md", ""),
-        ("PERMAR~1/localx/a", ""),
-        ("hub/PERMAR~1/x", "hub"),
-        ("other/PERMAR~1/local/x", "hub"),
+    for (entry, prefix, at) in [
+        ("docs/local/x", "", PRIVATE),
+        ("Documentação/readme.md", "", PRIVATE),
+        ("PERMAR~1/localx/a", "", PRIVATE),
+        // nothing below: no name of the folder follows
+        ("PERMAR~1", "", PRIVATE),
+        ("hub/PERMAR~1/x", "hub", PRIVATE),
+        ("other/PERMAR~1/local/x", "hub", PRIVATE),
+        ("m/PERMAR~1/x", "", "m/.permark/local"),
+        ("PERMAR~1/local/x", "", "m/.permark/local"),
+        // the name of a member compares as written
+        ("HUB Ü/.permark/local/x", "", "hub ü/.permark/local"),
+        // a folder of one name has no holding name below the project folder
+        ("PERMAR~1/x", "", ".permark"),
     ] {
         assert!(
-            !ops::tracked_entry(entry.as_bytes(), prefix, PRIVATE, false, &mut never),
-            "{entry}"
+            !ops::tracked_entry(entry.as_bytes(), prefix, at, false, &mut never),
+            "{entry} for {at}"
         );
     }
 }
@@ -2856,6 +2873,89 @@ fn another_spelling_of_the_folder_on_disk_counts_as_the_folder() {
             "{name}: kelvin sign (one folder on disk: {alias})"
         );
     });
+}
+
+/// A member without a repository of its own is asked through the folder's repository as `<member>/.permark/local`:
+/// another spelling of its `.permark` counts there too.
+#[test]
+fn another_spelling_of_a_members_folder_counts_as_the_folder() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.write("m/.permark/config.toml", "\n");
+        fx.commit("first");
+        let loc = location(ops, &fx.root);
+        let member = "m/.permark/local";
+        let tracked = || ops::tracked_of(ops, &loc, member);
+        assert_eq!(tracked(), Ok(false), "{name}: nothing tracked");
+        let folder = fx.root.join("m").join(".permark");
+        let short = "m/PERMAR~1/local/comments.json";
+        if same_file(&fx.root.join("m").join("PERMAR~1"), &folder) == SameFile::Yes {
+            fx.put_entry(short, 0, 0);
+            assert_eq!(tracked(), Ok(true), "{name}: short name");
+            fx.unstage(short);
+        } else {
+            eprintln!(
+                "SKIPPED: the volume gives `.permark` no short name PERMAR~1 (8.3 names off)"
+            );
+        }
+        let kelvin = ".permar\u{212A}";
+        let alias = same_file(&fx.root.join("m").join(kelvin), &folder) == SameFile::Yes;
+        fx.put_entry(&format!("m/{kelvin}/local/comments.json"), 0, 0);
+        assert_eq!(
+            tracked(),
+            Ok(alias),
+            "{name}: kelvin sign (one folder on disk: {alias})"
+        );
+    });
+}
+
+/// Names beyond ASCII are common in notes: a file, a folder without the private folder's name below it, or a file at
+/// a name the index holds as such a folder never counts as the folder, however many there are.
+#[test]
+fn ordinary_names_beyond_ascii_never_count_as_the_folder() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write(".permark/config.toml", "\n");
+        for n in 0..100 {
+            fx.write(&format!("Café {n}.md"), "x\n");
+            fx.write(&format!("Pasta ç {n}/nota.md"), "x\n");
+        }
+        fx.commit("first");
+        let loc = location(ops, &fx.root);
+        let tracked = || ops::tracked_of(ops, &loc, PRIVATE);
+        assert_eq!(tracked(), Ok(false), "{name}: files and folders");
+        fx.write("Notas ü", "x\n");
+        fx.put_entry("Notas ü/local/comments.json", 0, 0);
+        assert_eq!(tracked(), Ok(false), "{name}: a file at the name");
+    });
+}
+
+/// The volume is asked only about names that are folders (or links) on disk, and only those count toward the most
+/// names looked at: past countless files and missing names, a folder still gets the volume's answer.
+#[test]
+fn only_folders_on_disk_are_put_to_the_volume() {
+    let fx = Fixture::new();
+    fx.write(".permark/config.toml", "\n");
+    fx.write("Notas ü/a.md", "x\n");
+    fx.commit("first");
+    let loc = location(&BuiltinGit, &fx.root);
+    let mut alias = ops::disk_aliases(&loc, PRIVATE);
+    for n in 0..100 {
+        let file = format!("Café {n}");
+        fx.write(&file, "x\n");
+        assert_eq!(alias(file.as_bytes()), SameFile::Other, "{file}: a file");
+        let missing = format!("Nada ü {n}");
+        assert_eq!(alias(missing.as_bytes()), SameFile::Other, "{missing}");
+    }
+    assert_eq!(
+        alias("Notas ü".as_bytes()),
+        SameFile::Other,
+        "another folder"
+    );
+    if same_file(&fx.root.join("PERMAR~1"), &fx.root.join(".permark")) == SameFile::Yes {
+        assert_eq!(alias(b"PERMAR~1"), SameFile::Yes, "short name");
+    }
 }
 
 #[test]

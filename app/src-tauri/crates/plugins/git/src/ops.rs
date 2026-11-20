@@ -342,10 +342,11 @@ pub fn tracked_question(location: &RepoLocation, path: &str) -> Result<(), NoTra
 /// `a/b`); the project folder itself is not inside the project. `caseless`: ASCII letters compare without case, as git
 /// and libgit2 compare the names of a caseless repository.
 ///
-/// The first name below the project folder may also be another spelling that the volume resolves to the folder of the
-/// first name of `path` (a Windows short name such as `PERMAR~1`, a Unicode case fold of a caseless volume): a name
-/// [`alias_candidate`] takes is put to `alias`, which says what the volume answers ([`disk_aliases`]); unknown counts
-/// as the same folder.
+/// The name that holds the folder (`.permark` of `<member>/.permark/local`) may also be another spelling that the
+/// volume resolves to it (a Windows short name such as `PERMAR~1`, a Unicode case fold of a caseless volume) when the
+/// folder's own name follows it, its ASCII letters in any case (the volume finds it so): a name [`alias_candidate`]
+/// takes is put to `alias`, which says what the volume answers ([`disk_aliases`]); unknown counts as the same folder.
+/// Every other name compares as written.
 #[must_use]
 pub fn tracked_entry(
     entry: &[u8],
@@ -367,16 +368,29 @@ pub fn tracked_entry(
             return false;
         }
     }
-    let mut asked = path.split('/');
-    let (Some(first_held), Some(first_asked)) = (held.next(), asked.next()) else {
-        return false;
-    };
+    // the place of the holding name in `path` (the number of names above it) and the folder's own name
+    let (holder, last) = path.rsplit_once('/').map_or((None, path), |(above, last)| {
+        (Some(above.matches('/').count()), last)
+    });
+    let mut below = false;
     // one of the two is the other or starts it: every name both have agrees
-    if !held.zip(asked).all(|(part, name)| same(part, name)) {
-        return false;
+    for (index, name) in path.split('/').enumerate() {
+        let Some(part) = held.next() else {
+            break;
+        };
+        below = true;
+        if same(part, name) {
+            continue;
+        }
+        // the holding name is the last but one: past it and the folder's name, every asked name agreed
+        return Some(index) == holder
+            && alias_candidate(part)
+            && held
+                .next()
+                .is_some_and(|next| next.eq_ignore_ascii_case(last.as_bytes()))
+            && alias(part) != SameFile::Other;
     }
-    same(first_held, first_asked)
-        || (alias_candidate(first_held) && alias(first_held) != SameFile::Other)
+    below
 }
 
 /// A name some volume may resolve to a folder of another name: a short name (`~`), a letter beyond ASCII (case folds
@@ -387,33 +401,38 @@ fn alias_candidate(name: &[u8]) -> bool {
         || matches!(name.last(), Some(b'.' | b' '))
 }
 
-/// Most names [`disk_aliases`] looks at for one question; past it the volume is not asked and the answer is unknown
-/// (counted as the same folder): an index crafted with countless such names costs no more.
+/// Most folders | links [`disk_aliases`] puts to the volume for one question; past it a further one is not asked and
+/// the answer is unknown (counted as the same folder): an index crafted with countless such names costs no more.
+/// Files and missing names are not counted: they never hold a folder.
 const MAX_ALIASES: usize = 64;
 
 /// The `alias` of [`tracked_entry`] for the folder `path` (relative to the project folder of `location`): whether a
-/// name beside the first name of `path` in the project folder is the same folder on disk ([`same_file`], links not
-/// followed). Nothing at either name | not one plain name -> another folder; no UTF-8 | a look that fails otherwise ->
+/// name beside the name that holds the folder is that same folder on disk ([`same_file`], links not followed; no file
+/// ids on the volume (FAT, exFAT) -> the canonical paths compare). A file | nothing at the name | at the holding
+/// folder, not one plain name -> another folder; a link -> where it leads; no UTF-8 | a look that fails otherwise ->
 /// unknown. Each name is looked at once.
 pub fn disk_aliases(location: &RepoLocation, path: &str) -> impl FnMut(&[u8]) -> SameFile {
     let mut base = location.workdir.clone();
     base.extend(location.prefix.split('/').filter(|name| !name.is_empty()));
-    let folder = base.join(path.split('/').next().unwrap_or_default());
+    // a folder of one name has no holding name below the project folder: never asked about
+    let holder = path.rsplit_once('/').map_or("", |(above, _)| above);
+    let (above, name) = holder.rsplit_once('/').unwrap_or(("", holder));
+    base.extend(above.split('/').filter(|name| !name.is_empty()));
+    let folder = base.join(name);
     let mut seen: HashMap<Vec<u8>, SameFile> = HashMap::new();
+    let mut looked = 0;
     move |name| {
         if let Some(answer) = seen.get(name) {
             return *answer;
         }
-        if seen.len() >= MAX_ALIASES {
-            return SameFile::Unknown;
-        }
-        let answer = volume_alias(&base, &folder, name);
+        let answer = volume_alias(&base, &folder, name, &mut looked);
         seen.insert(name.to_vec(), answer);
         answer
     }
 }
 
-fn volume_alias(base: &Path, folder: &Path, name: &[u8]) -> SameFile {
+/// [`disk_aliases`] of one name; `looked`: the folders | links put to the volume so far.
+fn volume_alias(base: &Path, folder: &Path, name: &[u8], looked: &mut usize) -> SameFile {
     let Ok(name) = std::str::from_utf8(name) else {
         return SameFile::Unknown;
     };
@@ -425,14 +444,42 @@ fn volume_alias(base: &Path, folder: &Path, name: &[u8]) -> SameFile {
         return SameFile::Other;
     }
     let there = base.join(name);
-    for path in [&there, folder] {
-        match std::fs::symlink_metadata(path) {
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return SameFile::Other,
-            Err(_) => return SameFile::Unknown,
-        }
+    let kind = match std::fs::symlink_metadata(&there) {
+        Ok(meta) => meta.file_type(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return SameFile::Other,
+        Err(_) => return SameFile::Unknown,
+    };
+    if !kind.is_dir() && !kind.is_symlink() {
+        return SameFile::Other;
     }
-    same_file(&there, folder)
+    match std::fs::symlink_metadata(folder) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return SameFile::Other,
+        Err(_) => return SameFile::Unknown,
+    }
+    if *looked >= MAX_ALIASES {
+        return SameFile::Unknown;
+    }
+    *looked += 1;
+    // the ids of a link are its own: where it leads tells
+    let answer = if kind.is_symlink() {
+        SameFile::Unknown
+    } else {
+        same_file(&there, folder)
+    };
+    if answer != SameFile::Unknown {
+        return answer;
+    }
+    let key = |path: &Path| {
+        permark_core::paths::canonicalize(path)
+            .ok()
+            .and_then(|canonical| canonical.to_str().map(permark_core::paths::key_of))
+    };
+    match (key(&there), key(folder)) {
+        (Some(there), Some(folder)) if there == folder => SameFile::Yes,
+        (Some(_), Some(_)) => SameFile::Other,
+        _ => SameFile::Unknown,
+    }
 }
 
 /// `path` (relative to the working tree) below the project folder `prefix`: the part below it; `None`: outside.

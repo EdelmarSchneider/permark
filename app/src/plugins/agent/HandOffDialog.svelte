@@ -2,7 +2,8 @@
   // The hand-off preview: the sessions of the person's work since the last hand-off (day, hours, age, actions,
   // approximate tokens; stale ones unchecked), the changes made outside PerMark, the notes of the case, the total.
   // Confirm sets the checkpoint and copies one line for the prompt (or the full list). Cancel changes nothing. While
-  // git tracks the private folder the journal lives in, the dialog only says why: nothing to confirm.
+  // git tracks the private folder the journal lives in (or that could not be checked), the dialog only says why:
+  // nothing to confirm.
   import X from "@lucide/svelte/icons/x";
   import { formatLocale, t, tn } from "../../core/i18n";
   import { dialogFocus } from "../../core/shell/dialogFocus";

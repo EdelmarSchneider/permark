@@ -1570,7 +1570,7 @@ export default {
   "agent.handoff.done.other": "작업 {n}개를 넘겼습니다. 복사되었으니 프롬프트에 붙여 넣으세요.",
   "agent.handoff.failed": "넘기지 못했습니다. 다시 시도하세요.",
   "agent.handoff.withheld":
-    "이 폴더의 git 저장소가 PerMark의 비공개 폴더(.permark/local)를 추적하고 있어 활동 내역을 에이전트에 넘기지 않습니다.",
+    "PerMark는 이 폴더의 활동 내역을 에이전트에 넘기지 않습니다. 이 폴더의 git 저장소가 PerMark의 비공개 폴더(.permark/local)를 추적하고 있거나 PerMark가 이를 확인할 수 없었습니다.",
   "agent.handoff.copyFailed": "넘겼지만 복사하지 못했습니다.",
   "config.sheet": "이 파일의 설정",
   "config.root": "최상위",

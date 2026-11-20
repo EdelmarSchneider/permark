@@ -747,8 +747,8 @@ fn scope_upto(journal: &Journal, upto: u64, now: u64) -> Scope {
 }
 
 /// Whether the activity stays away from agents: the journal lives in the opened folder's private folder, and git
-/// tracks that folder (what it holds may have come with a clone | checkout). Asked per call: the answer follows
-/// `git add` | `git rm --cached` at once.
+/// tracks that folder | that could not be checked (what it holds may have come with a clone | checkout). Asked per
+/// call: the answer follows `git add` | `git rm --cached` at once.
 fn withheld(tools: &Tools) -> bool {
     let repo = tools.services().services.get::<RepoHandle>();
     tools
@@ -761,7 +761,7 @@ fn withheld(tools: &Tools) -> bool {
 /// The hand-off's answer while the activity is [`withheld`]: nothing is built, nothing written.
 fn refused() -> ToolError {
     ToolError::Invalid(
-        "this folder's repository tracks PerMark's private files; activity is not given to agents"
+        "this folder's repository tracks PerMark's private files or it could not be checked; activity is not given to agents"
             .to_owned(),
     )
 }

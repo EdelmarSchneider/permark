@@ -43,7 +43,7 @@ pub const MAX_COMMENTS: usize = 100;
 /// hold text written elsewhere (a copy of the folder, a sync partner, a clone). The answers carry it as `source`.
 pub const FOLDER_SOURCE: &str = "folder";
 /// Why data is withheld from agents (`why` next to `withheld`).
-pub const WITHHELD_WHY: &str = "git tracks .permark/local";
+pub const WITHHELD_WHY: &str = "git tracks .permark/local or it could not be checked";
 
 /// The tools, their groups, in the order agents list them.
 pub const TOOLS: [(&str, Group); 13] = [

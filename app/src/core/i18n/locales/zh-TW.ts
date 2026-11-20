@@ -1543,7 +1543,7 @@ export default {
   "agent.handoff.done.other": "已交接 {n} 個動作 — 已複製，可直接貼到您的提示詞中。",
   "agent.handoff.failed": "交接失敗。請再試一次。",
   "agent.handoff.withheld":
-    "此資料夾的 git 存放庫追蹤了 PerMark 的私人資料夾 (.permark/local)，因此其活動不會交接給代理程式。",
+    "PerMark 不會將此資料夾的活動交接給代理程式：其 git 存放庫追蹤了 PerMark 的私人資料夾 (.permark/local)，或 PerMark 無法檢查這一點。",
   "agent.handoff.copyFailed": "已交接，但無法複製。",
   "config.sheet": "此檔案中的設定",
   "config.root": "最上層",

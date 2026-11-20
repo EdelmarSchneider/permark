@@ -1607,7 +1607,7 @@ export default {
   "agent.handoff.done.other": "{n} tindakan diserahkan — disalin, siap ditempel di prompt Anda.",
   "agent.handoff.failed": "Serah terima gagal. Coba lagi.",
   "agent.handoff.withheld":
-    "Repositori git folder ini melacak folder pribadi PerMark (.permark/local), jadi aktivitasnya tidak diserahkan ke agen.",
+    "PerMark tidak menyerahkan aktivitas folder ini ke agen: repositori git-nya melacak folder pribadi PerMark (.permark/local), atau PerMark tidak dapat memeriksanya.",
   "agent.handoff.copyFailed": "Sudah diserahkan, tetapi penyalinan gagal.",
   "config.sheet": "Pengaturan di file ini",
   "config.root": "Tingkat teratas",

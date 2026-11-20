@@ -173,7 +173,7 @@ describe("hand-off flow", () => {
     target.remove();
   });
 
-  it("says why when git tracks the private folder: its own note, no confirm, nothing handed off", async () => {
+  it("says why when git tracks the private folder or that could not be checked: its own note, no confirm, nothing handed off", async () => {
     const { api, store, said } = await setup();
     api.probe.plugins.agent.withhold(true);
     await store.open();
@@ -186,7 +186,7 @@ describe("hand-off flow", () => {
     const dialog = target.querySelector('[role="dialog"]');
     expect(dialog).not.toBeNull();
     expect(target.textContent).toContain(
-      "This folder's git repository tracks PerMark's private folder (.permark/local)",
+      "PerMark does not hand this folder's activity to agents: its git repository tracks PerMark's private folder (.permark/local), or PerMark could not check that.",
     );
     const buttons = [...target.querySelectorAll("button")].map((b) => b.textContent.trim());
     expect(buttons).not.toContain("Hand off and copy");

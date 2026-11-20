@@ -2991,7 +2991,7 @@ fn a_folder_whose_git_leaves_the_private_folder_alone_gets_comments_and_activity
     assert_eq!(text, done.full);
 }
 
-const WHY: &str = "git tracks .permark/local";
+const WHY: &str = "git tracks .permark/local or it could not be checked";
 
 #[test]
 fn withheld_comments_are_left_out_counted_with_the_reason_and_cannot_be_resolved() {
@@ -3036,7 +3036,7 @@ fn withheld_comments_are_left_out_counted_with_the_reason_and_cannot_be_resolved
     assert!(!value.to_string().contains("planted"), "{value}");
     assert_eq!(
         text.lines().next().unwrap(),
-        "list_comments which=open n=1 withheld=1 why=\"git tracks .permark/local\" source=folder"
+        "list_comments which=open n=1 withheld=1 why=\"git tracks .permark/local or it could not be checked\" source=folder"
     );
     let (value, _) = answer(&tools, "list_comments", json!({ "which": "all" }));
     assert_eq!(value["comments"].as_array().unwrap().len(), 1, "{value}");
@@ -3099,13 +3099,13 @@ fn activity_and_the_hand_off_are_withheld_while_git_tracks_the_root_s_private_fo
             assert_eq!(
                 text,
                 format!(
-                    "activity since={since} tz={tz} n=0 withheld why=\"git tracks .permark/local\" source=folder\n"
+                    "activity since={since} tz={tz} n=0 withheld why=\"git tracks .permark/local or it could not be checked\" source=folder\n"
                 )
             );
             assert!(!text.contains("docs/plan.md") && !text.contains("README.md"));
         }
         let refusal = ToolError::Invalid(
-            "this folder's repository tracks PerMark's private files; activity is not given to agents"
+            "this folder's repository tracks PerMark's private files or it could not be checked; activity is not given to agents"
                 .to_owned(),
         );
         // the person's dialog learns why (its own answer), with nothing to confirm

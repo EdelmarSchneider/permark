@@ -1681,7 +1681,7 @@ export default {
   "agent.handoff.done.other": "S-au predat {n} de acțiuni — copiate, gata de lipit în prompt.",
   "agent.handoff.failed": "Predarea nu a reușit. Încearcă din nou.",
   "agent.handoff.withheld":
-    "Depozitul git al acestui dosar urmărește dosarul privat al PerMark (.permark/local), așa că activitatea lui nu este predată agenților.",
+    "PerMark nu predă agenților activitatea acestui dosar: depozitul său git urmărește dosarul privat al PerMark (.permark/local) sau PerMark nu a putut verifica acest lucru.",
   "agent.handoff.copyFailed": "Predat, dar copierea nu a reușit.",
   "config.sheet": "Setările din acest fișier",
   "config.root": "Nivelul de sus",

@@ -13,7 +13,7 @@ import { agent } from "./store.svelte";
 export type HandOffState =
   | { status: "closed" }
   | { status: "loading" }
-  // git tracks the private folder the journal lives in: nothing goes to agents
+  // git tracks the private folder the journal lives in, or that could not be checked: nothing goes to agents
   | { status: "withheld" }
   | { status: "open"; preview: Ready; full: boolean; phase: "idle" | "busy" | "failed" };
 

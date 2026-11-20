@@ -1599,7 +1599,7 @@ export default {
   "agent.handoff.done.other": "{n} acciones entregadas: copiadas, listas para pegar en tu prompt.",
   "agent.handoff.failed": "La entrega no funcionó. Inténtalo de nuevo.",
   "agent.handoff.withheld":
-    "El repositorio git de esta carpeta sigue la carpeta privada de PerMark (.permark/local), así que su actividad no se entrega a los agentes.",
+    "PerMark no entrega la actividad de esta carpeta a los agentes: su repositorio git sigue la carpeta privada de PerMark (.permark/local), o PerMark no pudo comprobarlo.",
   "agent.handoff.copyFailed": "Entregado, pero no se pudo copiar.",
   "config.sheet": "Configuración de este archivo",
   "config.root": "Nivel superior",
