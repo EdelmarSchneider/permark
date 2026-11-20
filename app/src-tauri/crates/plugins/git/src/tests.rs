@@ -303,6 +303,60 @@ fn a_repository_named_on_a_share_is_never_opened() {
     });
 }
 
+/// A project whose `.git` is a link to a repository on this computer opens it as before. One whose `.git` links to a
+/// share is no repository, at once, and never the repository around it: both backends would follow the link.
+#[test]
+fn a_git_link_opens_only_a_repository_on_this_computer() {
+    use crate::worktrees::tests::{link_folder, symlink};
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let store = dunce::canonicalize(fx.dir.path()).unwrap().join("store");
+    std::fs::create_dir_all(&store).unwrap();
+    Repository::init(&store).unwrap();
+    let near = fx.root.join("near");
+    std::fs::create_dir_all(&near).unwrap();
+    if !link_folder(&store.join(".git"), &near.join(".git")) {
+        eprintln!("links could not be made here; skipped");
+        return;
+    }
+    each(|name, ops| {
+        let found = service::discover_here(ops, &near, None);
+        // nothing cut beyond the backend's own answer: libgit2 on unix takes the folder the link leads into as the
+        // working tree, so it finds no repository for this project (as before)
+        assert_eq!(found, ops.discover(&near, None), "{name}");
+        if cfg!(windows) || name == "system" {
+            assert!(
+                matches!(&found, Discovery::Repo(at) if at.workdir == near),
+                "{name}: {found:?}"
+            );
+        }
+    });
+    let share = if cfg!(windows) {
+        r"\\192.0.2.1\s\r.git"
+    } else {
+        "//192.0.2.1/s/r.git"
+    };
+    let far = fx.root.join("far");
+    std::fs::create_dir_all(&far).unwrap();
+    if !symlink(Path::new(share), &far.join(".git")) {
+        eprintln!("symlinks cannot be made here; the share case is skipped");
+        return;
+    }
+    each(|name, ops| {
+        let started = Instant::now();
+        assert_eq!(
+            service::discover_here(ops, &far, None),
+            Discovery::NoRepo,
+            "{name}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{name}: the share was looked up"
+        );
+    });
+}
+
 #[test]
 fn a_nested_repository_is_the_repository_of_its_folder() {
     each(|name, ops| {

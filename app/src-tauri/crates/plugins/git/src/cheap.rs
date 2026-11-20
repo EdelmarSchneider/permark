@@ -5,12 +5,11 @@
 use std::path::Path;
 
 use permark_core::conditions::RepoState;
-use permark_core::fsx::{read_regular, Zone};
 use permark_core::plugins::CommitId;
 
 use crate::ops::{repo_state, RepoLocation};
 use crate::types::HeadInfo;
-use crate::worktrees::{common_dir, commondir_stays_local, named_path, read_line};
+use crate::worktrees::{common_dir, commondir_stays_local, named_path, read_git_file, read_line};
 
 /// Most bytes of `packed-refs` read looking for one ref (a bigger file is not read: the ref counts as missing).
 const MAX_PACKED: u64 = 8 * 1024 * 1024;
@@ -57,6 +56,7 @@ pub fn member_location(folder: &Path) -> Result<RepoLocation, String> {
         }
         permark_core::paths::canonicalize(&target).unwrap_or(target)
     } else {
+        // a link (symlink | junction) too: a member is read from files only, never through a link
         return Err("no .git".to_owned());
     };
     if !commondir_stays_local(&git_dir) {
@@ -91,9 +91,9 @@ fn resolve_ref(common: &Path, git_dir: &Path, name: &str) -> Option<String> {
     let loose = [git_dir, common]
         .into_iter()
         .find_map(|dir| CommitId::parse(&read_line(&dir.join(name))?));
-    // a plain file only (a FIFO would hold the read forever)
+    // a plain file only, never through a link (a FIFO would hold the read forever)
     let id = loose.or_else(|| {
-        let packed = read_regular(&common.join("packed-refs"), MAX_PACKED, Zone::Anywhere).ok()?;
+        let packed = read_git_file(&common.join("packed-refs"), MAX_PACKED)?;
         String::from_utf8_lossy(&packed)
             .lines()
             .filter_map(|line| line.split_once(' '))
@@ -230,6 +230,23 @@ mod tests {
         std::fs::write(sub.join(".git"), "nothing\n").unwrap();
         assert!(member_location(&sub).is_err());
         assert!(member_location(&dir.path().join("none")).is_err());
+    }
+
+    /// A member's `.git` that is a link is refused wherever it leads: a member is read from files only, never through
+    /// a link.
+    #[test]
+    fn a_member_whose_git_is_a_link_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir_all(real.join(".git")).unwrap();
+        let member = dir.path().join("member");
+        std::fs::create_dir_all(&member).unwrap();
+        if !crate::worktrees::tests::link_folder(&real.join(".git"), &member.join(".git")) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+        assert!(member_location(&real).is_ok());
+        assert!(member_location(&member).is_err());
     }
 
     #[test]

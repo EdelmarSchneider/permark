@@ -27,26 +27,64 @@ pub struct Linked {
     pub folder: PathBuf,
 }
 
+/// The bytes of a small file of a git folder, at most `limit`; `None`: missing, too large, or not a plain file itself.
+/// A link there is never read through (its target may be on a share: even the open connects to the server), a FIFO
+/// never waited on.
+pub(crate) fn read_git_file(path: &Path, limit: u64) -> Option<Vec<u8>> {
+    // the name's own metadata: a read anywhere follows a link at the last name
+    if !std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_file()) {
+        return None;
+    }
+    read_regular(path, limit, Zone::Anywhere).ok()
+}
+
 /// The first line of a small file of a git folder; `None`: missing, empty, too large, not UTF-8, or not a plain file
-/// (the read of a FIFO would wait for a writer forever).
+/// itself ([`read_git_file`]).
 pub(crate) fn read_line(path: &Path) -> Option<String> {
-    let bytes = read_regular(path, MAX_LINE_FILE, Zone::Anywhere).ok()?;
-    let text = String::from_utf8(bytes).ok()?;
+    let text = String::from_utf8(read_git_file(path, MAX_LINE_FILE)?).ok()?;
     let line = text.lines().next()?.trim();
     (!line.is_empty()).then(|| line.to_owned())
 }
 
-/// The path a file of a git folder names (`gitdir`, `commondir`), read against `base` (the folder that holds the
-/// file) when relative. `None` when a lookup of it could leave this computer: an absolute path not on a local drive
-/// ([`is_local_path`]: a share, a mapped network drive) | a path with a drive of its own (`Z:x`). A plain relative
-/// path stays on the drive | share of `base`, the place the person opened.
+/// The path a file of a git folder names (`gitdir`, `commondir`, a `.git` link's target), read against `base` (the
+/// folder that holds the file) when relative. `None` when a lookup of it could leave this computer: an absolute path
+/// not on a local drive ([`is_local_path`]: a share, a mapped network drive) | a path with a drive of its own (`Z:x`)
+/// | a relative path through a link below a local `base` | on Windows a root without a drive or a `?`. A plain
+/// relative path stays on the drive | share of `base`, the place the person opened.
 pub(crate) fn named_path(base: &Path, named: &str) -> Option<PathBuf> {
+    // Win32 takes `\??\…` as a system path (a share through the network redirector) and git passes it on; std reads it
+    // as a root without a drive, which git takes as the current drive. No file name holds a `?`.
+    #[cfg(windows)]
+    if named.contains('?')
+        || matches!(
+            Path::new(named).components().next(),
+            Some(Component::RootDir)
+        )
+    {
+        return None;
+    }
     let named = Path::new(named);
     if named.is_absolute() {
         return is_local_path(named).then(|| named.to_path_buf());
     }
     if matches!(named.components().next(), Some(Component::Prefix(_))) {
         return None;
+    }
+    // name by name, never following one: a link on the way could lead anywhere, a share too. Below a share the person
+    // opened its server resolves its links (Windows follows none to another computer by default), and each look is a
+    // round trip there.
+    if is_local_path(base) {
+        let mut at = base.to_path_buf();
+        for part in named.components() {
+            at.push(part);
+            match std::fs::symlink_metadata(&at) {
+                Ok(meta) if meta.file_type().is_symlink() => return None,
+                Ok(_) => {}
+                // nothing below a missing name can be looked up
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => break,
+                Err(_) => return None,
+            }
+        }
     }
     Some(base.join(named))
 }
@@ -58,17 +96,40 @@ enum Dot {
     /// A file `gitdir: <path>`: a linked working tree | a submodule; `None`: a path that may not be looked up
     /// ([`named_path`]).
     File(Option<PathBuf>),
+    /// A link (symlink | junction) git would follow somewhere it may not go: a target that may not be looked up
+    /// ([`named_path`]), a second link, nothing, or neither folder nor file. A link to a folder | file that may is that
+    /// folder | file.
+    Link,
 }
 
-/// What `<dir>/.git` is; `None`: no `.git`, a link, or a file without a `gitdir:` line.
+/// What `<dir>/.git` is; `None`: no `.git`, or a file (also one a link leads to) without a `gitdir:` line.
 fn git_entry(dir: &Path) -> Option<Dot> {
     let entry = dir.join(".git");
     let meta = std::fs::symlink_metadata(&entry).ok()?;
+    if !meta.file_type().is_symlink() {
+        return dot_at(dir, entry, &meta);
+    }
+    // one step, read from the link itself: git and libgit2 follow it on every open
+    let target = std::fs::read_link(&entry)
+        .ok()
+        .and_then(|target| named_path(dir, target.to_str()?));
+    let Some(target) = target else {
+        return Some(Dot::Link);
+    };
+    match std::fs::symlink_metadata(&target) {
+        Ok(meta) if meta.is_dir() || meta.is_file() => dot_at(dir, target, &meta),
+        _ => Some(Dot::Link),
+    }
+}
+
+/// What the `.git` of `dir` at `path` is, a folder | a file (`meta`: its own metadata).
+fn dot_at(dir: &Path, path: PathBuf, meta: &std::fs::Metadata) -> Option<Dot> {
     if meta.is_dir() {
-        return Some(Dot::Folder(entry));
+        return Some(Dot::Folder(path));
     }
     if meta.is_file() {
-        let line = read_line(&entry)?;
+        let line = read_line(&path)?;
+        // relative to the folder of `.git` (also when a link led to the file), as git reads it
         return Some(Dot::File(named_path(
             dir,
             line.strip_prefix("gitdir:")?.trim(),
@@ -78,13 +139,19 @@ fn git_entry(dir: &Path) -> Option<Dot> {
 }
 
 /// Whether opening the git folder `git_dir` keeps git (the program, libgit2) on this computer: its `commondir`, read
-/// on every open, names no path that could leave it ([`named_path`]).
+/// on every open, names no path that could leave it ([`named_path`]). One there that cannot be read here (a link, a
+/// FIFO, too large) is no proof: git reads it whole, wherever it leads.
 pub(crate) fn commondir_stays_local(git_dir: &Path) -> bool {
-    read_line(&git_dir.join("commondir")).is_none_or(|named| named_path(git_dir, &named).is_some())
+    let file = git_dir.join("commondir");
+    match read_line(&file) {
+        Some(named) => named_path(git_dir, &named).is_some(),
+        None => std::fs::symlink_metadata(&file)
+            .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound),
+    }
 }
 
 /// Whether git may open the repository of the folder `root` (the first `.git` walking up) without leaving this
-/// computer: a `.git` file | a `commondir` naming a share would make it connect to the server (and offer it the
+/// computer: a `.git` file | link | a `commondir` naming a share would make it connect to the server (and offer it the
 /// person's sign-in) before anything is known about the repository.
 #[must_use]
 pub(crate) fn opens_locally(root: &Path) -> bool {
@@ -92,7 +159,7 @@ pub(crate) fn opens_locally(root: &Path) -> bool {
     match root.ancestors().take(MAX_LEVELS).find_map(git_entry) {
         None => true,
         Some(Dot::Folder(git_dir) | Dot::File(Some(git_dir))) => commondir_stays_local(&git_dir),
-        Some(Dot::File(None)) => false,
+        Some(Dot::File(None) | Dot::Link) => false,
     }
 }
 
@@ -195,8 +262,8 @@ pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
     let (git_dir, linked) = match dot {
         Dot::Folder(git_dir) => (git_dir, false),
         Dot::File(Some(git_dir)) => (git_dir, true),
-        // a `.git` file naming a share: a repository git cannot open here
-        Dot::File(None) => return Vec::new(),
+        // a `.git` file | link naming a share: a repository git cannot open here
+        Dot::File(None) | Dot::Link => return Vec::new(),
     };
     if too_broad(&workdir, &root, home) || !commondir_stays_local(&git_dir) {
         return Vec::new();
@@ -289,7 +356,7 @@ pub fn branch_of(git_dir: &Path) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn make_worktree(common: &Path, name: &str, tree: &Path) {
@@ -543,6 +610,7 @@ mod tests {
         std::fs::create_dir_all(&git).unwrap();
         make_worktree(&git, "a", &dir.path().join("a"));
         make_worktree(&git, "b", &dir.path().join("b"));
+        make_worktree(&git, "c", &dir.path().join("c"));
         let other = dir.path().join("other.git");
         std::fs::create_dir_all(other.join("refs").join("heads")).unwrap();
         std::fs::write(other.join("HEAD"), "ref: refs/heads/main\n").unwrap();
@@ -571,7 +639,8 @@ mod tests {
         let (from_main, from_a, branch, head, unborn) = rx
             .recv_timeout(std::time::Duration::from_secs(10))
             .expect("a read waited on a FIFO");
-        assert_eq!(from_main, ["a"]);
+        // `a` is not offered: git reads its `commondir` on every open of that tree (and would wait on it)
+        assert_eq!(from_main, ["c"]);
         assert!(from_a.is_empty(), "{from_a:?}");
         assert_eq!(branch, None);
         assert_eq!(head, None);
@@ -580,7 +649,7 @@ mod tests {
 
     /// A folder link at `link` leading to `target` (unix: symlink; Windows: junction, which needs no privilege);
     /// `false`: links cannot be made here.
-    fn link_folder(target: &Path, link: &Path) -> bool {
+    pub(crate) fn link_folder(target: &Path, link: &Path) -> bool {
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(target, link).is_ok()
@@ -736,7 +805,218 @@ mod tests {
         if cfg!(windows) {
             assert_eq!(named_path(base, "Z:x"), None);
             assert_eq!(named_path(base, r"\\?\UNC\192.0.2.1\s\x"), None);
+            // Win32 takes `\??\` as a system path (a share through the network redirector); a root without a drive
+            // is the current drive for git, not the folder's
+            assert_eq!(named_path(base, r"\??\UNC\192.0.2.1\s\x"), None);
+            assert_eq!(named_path(base, r"\x"), None);
+            assert_eq!(named_path(base, "/x"), None);
+            assert_eq!(named_path(base, "a?b"), None);
+            assert_eq!(named_path(base, r"x\.git"), Some(base.join(r"x\.git")));
         }
+    }
+
+    /// A symlink at `link` naming `target` as written (it may be missing, or on a share); `false`: symlinks cannot be
+    /// made here (Windows without the privilege).
+    pub(crate) fn symlink(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(target, link).is_ok()
+        }
+    }
+
+    /// A `.git` that is a link (symlink | junction) is followed one step, only to a real folder | file on this
+    /// computer: git and libgit2 follow it on every open. A link to a second link | to nothing is no repository, and
+    /// the walk never goes on to the repository around it.
+    #[test]
+    fn a_git_link_leads_only_to_a_real_folder_or_file_here() {
+        let dir = tempfile::tempdir().unwrap();
+        let outer = dir.path().join("outer");
+        std::fs::create_dir_all(outer.join(".git")).unwrap();
+        make_worktree(&outer.join(".git"), "up", &dir.path().join("up"));
+        let store = dir.path().join("store").join("near.git");
+        std::fs::create_dir_all(&store).unwrap();
+        make_worktree(&store, "nw", &dir.path().join("nw"));
+        let project = |name: &str| {
+            let folder = outer.join(name);
+            std::fs::create_dir_all(&folder).unwrap();
+            folder
+        };
+        let near = project("near");
+        if !link_folder(&store, &near.join(".git")) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+        assert!(opens_locally(&near));
+        assert_eq!(names(linked_worktrees(&near, None)), ["nw"]);
+        let hop = dir.path().join("hop");
+        assert!(link_folder(&store, &hop));
+        let chain = project("chain");
+        assert!(link_folder(&hop, &chain.join(".git")));
+        let gone = dir.path().join("gone");
+        std::fs::create_dir_all(&gone).unwrap();
+        let dangling = project("dangling");
+        assert!(link_folder(&gone, &dangling.join(".git")));
+        std::fs::remove_dir(&gone).unwrap();
+        for folder in [&chain, &dangling] {
+            assert!(!opens_locally(folder), "{}", folder.display());
+            assert!(
+                linked_worktrees(folder, None).is_empty(),
+                "{}",
+                folder.display()
+            );
+            // still a repository of its own for the one around it: no history of its files from that one
+            assert!(in_nested_repository(
+                &outer,
+                &format!("{}/a.md", folder.file_name().unwrap().to_string_lossy())
+            ));
+        }
+    }
+
+    /// A `.git` link naming a share (directly | through the gitfile it leads to) is never looked up: even a lookup
+    /// connects to the server and offers it the person's sign-in. A link to a gitfile here reads like that file, a
+    /// relative link target against the folder that holds the link.
+    #[test]
+    fn a_git_link_to_a_share_is_never_looked_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let outer = dir.path().join("outer");
+        std::fs::create_dir_all(outer.join(".git")).unwrap();
+        make_worktree(&outer.join(".git"), "up", &dir.path().join("up"));
+        let store = dir.path().join("store.git");
+        std::fs::create_dir_all(&store).unwrap();
+        make_worktree(&store, "nw", &dir.path().join("nw"));
+        let project = |name: &str| {
+            let folder = outer.join(name);
+            std::fs::create_dir_all(&folder).unwrap();
+            folder
+        };
+        let far = project("far");
+        if !symlink(&on_share("r.git"), &far.join(".git")) {
+            eprintln!("symlinks cannot be made here; skipped");
+            return;
+        }
+        let far_file = dir.path().join("far file");
+        std::fs::write(
+            &far_file,
+            format!("gitdir: {}\n", on_share("r.git").display()),
+        )
+        .unwrap();
+        let by_far_file = project("by far file");
+        assert!(symlink(&far_file, &by_far_file.join(".git")));
+        let near_file = dir.path().join("near file");
+        std::fs::write(&near_file, format!("gitdir: {}\n", store.display())).unwrap();
+        let by_near_file = project("by near file");
+        assert!(symlink(&near_file, &by_near_file.join(".git")));
+        let relative = project("relative");
+        assert!(symlink(
+            Path::new("../../store.git"),
+            &relative.join(".git")
+        ));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let folders = [far, by_far_file, by_near_file, relative];
+        std::thread::spawn(move || {
+            let _ = tx.send(folders.map(|folder| {
+                (
+                    opens_locally(&folder),
+                    names(linked_worktrees(&folder, None)),
+                )
+            }));
+        });
+        let [far, by_far_file, by_near_file, relative] = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("a path on a share was looked up");
+        assert_eq!(far, (false, Vec::<String>::new()));
+        assert_eq!(by_far_file, (false, Vec::<String>::new()));
+        // a gitfile naming a main git folder: opens, attaches nothing (no admin folder names the project back)
+        assert_eq!(by_near_file, (true, Vec::<String>::new()));
+        assert_eq!(relative, (true, vec!["nw".to_owned()]));
+    }
+
+    /// A file of a git folder (`gitdir`, `commondir`, `HEAD`, a ref, `packed-refs`) that is a link is never read
+    /// through: its target may be anywhere, a share too. A `commondir` there is no proof that git stays here (git reads
+    /// it whole, wherever it leads), so its tree is not attached and does not open.
+    #[test]
+    fn a_git_file_that_is_a_link_is_not_read_through() {
+        const A: &str = "0123456789abcdef0123456789abcdef01234567";
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("main");
+        let git = main.join(".git");
+        std::fs::create_dir_all(git.join("refs").join("heads")).unwrap();
+        for name in ["a", "b", "c"] {
+            make_worktree(&git, name, &dir.path().join(name));
+        }
+        let spare = dir.path().join("spare");
+        std::fs::create_dir_all(&spare).unwrap();
+        let replace = |at: &Path, name: &str, text: &str| {
+            std::fs::write(spare.join(name), text).unwrap();
+            let _ = std::fs::remove_file(at);
+            symlink(&spare.join(name), at)
+        };
+        if !replace(
+            &git.join("worktrees").join("a").join("commondir"),
+            "commondir",
+            "../..\n",
+        ) {
+            eprintln!("symlinks cannot be made here; skipped");
+            return;
+        }
+        let tree_b = dir.path().join("b");
+        assert!(replace(
+            &git.join("worktrees").join("b").join("gitdir"),
+            "gitdir",
+            &format!("{}\n", tree_b.join(".git").display()),
+        ));
+        assert!(replace(&git.join("HEAD"), "HEAD", "ref: refs/heads/main\n"));
+        assert!(replace(
+            &git.join("refs").join("heads").join("c"),
+            "ref",
+            &format!("{A}\n"),
+        ));
+        assert!(replace(
+            &git.join("packed-refs"),
+            "packed-refs",
+            &format!("{A} refs/heads/c\n"),
+        ));
+        assert_eq!(names(linked_worktrees(&main, None)), ["c"]);
+        assert!(!opens_locally(&dir.path().join("a")));
+        assert!(opens_locally(&dir.path().join("c")));
+        assert_eq!(branch_of(&git), None);
+        assert_eq!(crate::cheap::cheap_facts(&git), None);
+        let c = crate::cheap::cheap_facts(&git.join("worktrees").join("c")).unwrap();
+        assert!(c.head.unborn && c.head.oid.is_none(), "{c:?}");
+    }
+
+    /// A relative path a git file names is never looked up through a link below the folder that holds the file: the
+    /// link could lead anywhere, a share too.
+    #[test]
+    fn a_relative_git_path_through_a_folder_link_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("main");
+        let git = main.join(".git");
+        std::fs::create_dir_all(&git).unwrap();
+        let tree = dir.path().join("w");
+        make_worktree(&git, "w", &tree);
+        // the tree names its admin folder through a link of its own
+        if !link_folder(&git, &tree.join("lnk")) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+        std::fs::write(tree.join(".git"), "gitdir: lnk/worktrees/w\n").unwrap();
+        // an admin folder names the common folder through a link inside it
+        make_worktree(&git, "v", &dir.path().join("v"));
+        let admin_v = git.join("worktrees").join("v");
+        assert!(link_folder(&git, &admin_v.join("via")));
+        std::fs::write(admin_v.join("commondir"), "via\n").unwrap();
+        assert_eq!(named_path(&tree, "lnk/worktrees/w"), None);
+        assert_eq!(named_path(&tree, "real/x"), Some(tree.join("real/x")));
+        assert!(!opens_locally(&tree));
+        assert!(!opens_locally(&dir.path().join("v")));
+        assert!(linked_worktrees(&tree, None).is_empty());
+        assert!(linked_worktrees(&main, None).is_empty());
+        assert!(crate::cheap::member_location(&tree).is_err());
     }
 
     #[test]
