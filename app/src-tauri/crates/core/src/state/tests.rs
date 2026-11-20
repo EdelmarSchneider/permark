@@ -1704,6 +1704,313 @@ fn store_paths_are_pinned() {
     );
 }
 
+/// Every path a project's store hands out.
+#[derive(Debug, PartialEq)]
+struct Resolved {
+    location: StateLocation,
+    dir: PathBuf,
+    cache_dir: PathBuf,
+    cache_file: PathBuf,
+    machine: Option<PathBuf>,
+    shared_file: PathBuf,
+    legacy_shared_file: Option<PathBuf>,
+    profile_file: PathBuf,
+    plugin_dir: PathBuf,
+    profile_plugin_dir: PathBuf,
+}
+
+impl Resolved {
+    fn of(s: &StateStore) -> Self {
+        let git = PluginId::of("git");
+        Self {
+            location: s.location(),
+            dir: s.dir().to_path_buf(),
+            cache_dir: s.cache_dir().to_path_buf(),
+            cache_file: s.cache_file::<Sample>("c.json").path().to_path_buf(),
+            machine: s.machine().map(|m| m.dir().to_path_buf()),
+            shared_file: s.shared_file("meta.toml").path().to_path_buf(),
+            legacy_shared_file: s
+                .legacy_shared_file("meta.toml")
+                .map(|raw| raw.path().to_path_buf()),
+            profile_file: s.profile_file::<Sample>("agent.json").path().to_path_buf(),
+            plugin_dir: s.plugin_dir(&git),
+            profile_plugin_dir: s.profile_plugin_dir(&git),
+        }
+    }
+
+    /// The answer for a store of `f`'s folder whose state sits at `place` (install id `iid`).
+    fn at(f: &Fx, iid: &str, place: Place) -> Self {
+        let id = ProjectId::of(&f.root());
+        let profile = f.dirs.profile.join("projects").join(id.as_str());
+        let profile_cache = f.dirs.cache.join("projects").join(id.as_str());
+        let permark = f.root().path().join(PERMARK_DIR);
+        let (dir, cache) = match place {
+            Place::Profile => (profile.clone(), profile_cache),
+            Place::Project => (permark.join("local"), permark.join("cache")),
+            Place::ProjectStateOnly => (permark.join("local"), profile_cache),
+        };
+        // shared files in `.permark/` (the profile copy kept apart) whenever the state is there
+        let team = !matches!(place, Place::Profile);
+        let shared = if team { &permark } else { &profile };
+        Self {
+            location: if team {
+                StateLocation::Project
+            } else {
+                StateLocation::Profile
+            },
+            cache_file: cache.join("c.json"),
+            cache_dir: cache,
+            machine: Some(dir.join("machine").join(iid)),
+            shared_file: shared.join("meta.toml"),
+            legacy_shared_file: team.then(|| profile.join("meta.toml")),
+            profile_file: profile.join("agent.json"),
+            plugin_dir: dir.join("plugins").join("git"),
+            profile_plugin_dir: profile.join("plugins").join("git"),
+            dir,
+        }
+    }
+}
+
+/// Where a project store's state sits.
+#[derive(Clone, Copy)]
+enum Place {
+    Profile,
+    Project,
+    /// In the project, caches in the profile cache.
+    ProjectStateOnly,
+}
+
+impl Fx {
+    fn permark(&self) -> PathBuf {
+        self.project.path().join(PERMARK_DIR)
+    }
+}
+
+/// Where a project's store sits for each layout its folder can have: `.permark/` a real folder (with `local/` real or
+/// missing) -> `local/`, caches in `cache/` unless something else is there; anything else (no `.permark/`, a file or a
+/// folder link in its place, a file | link as `local/`) -> the profile. Resolving writes nothing into the folder and
+/// nothing through a link; a second store of the same folder gives the same answer.
+#[test]
+fn every_path_a_store_hands_out_is_pinned_for_each_folder_layout() {
+    // (layout, made in the folder: `false` -> the system cannot make it here, skipped)
+    type Make = fn(&Fx, &Path) -> bool;
+    let mut layouts: Vec<(&str, Make, Place)> = vec![
+        ("no .permark", |_, _| true, Place::Profile),
+        (
+            "profile state only",
+            |f, _| {
+                f.store()
+                    .file::<Sample>("session.json")
+                    .save(&sample(1))
+                    .is_ok()
+            },
+            Place::Profile,
+        ),
+        (
+            ".permark, local missing",
+            |f, _| fs::create_dir(f.permark()).is_ok(),
+            Place::Project,
+        ),
+        (
+            ".permark with local",
+            |f, _| fs::create_dir_all(f.permark().join("local")).is_ok(),
+            Place::Project,
+        ),
+        (
+            ".permark a file",
+            |f, _| fs::write(f.permark(), "x").is_ok(),
+            Place::Profile,
+        ),
+        (
+            ".permark a junction | symlink",
+            |f, out| crate::tree::tests::link_out(&f.permark(), out),
+            Place::Profile,
+        ),
+        (
+            "local a file",
+            |f, _| {
+                fs::create_dir(f.permark()).is_ok()
+                    && fs::write(f.permark().join("local"), "x").is_ok()
+            },
+            Place::Profile,
+        ),
+        (
+            "local a junction | symlink",
+            |f, out| {
+                fs::create_dir(f.permark()).is_ok()
+                    && crate::tree::tests::link_out(&f.permark().join("local"), out)
+            },
+            Place::Profile,
+        ),
+        (
+            "cache a file",
+            |f, _| {
+                fs::create_dir(f.permark()).is_ok()
+                    && fs::write(f.permark().join("cache"), "x").is_ok()
+            },
+            Place::ProjectStateOnly,
+        ),
+    ];
+    // Windows makes directory symlinks only with the privilege (developer mode): skipped without it
+    #[cfg(windows)]
+    layouts.push((
+        ".permark a directory symlink",
+        |f, out| std::os::windows::fs::symlink_dir(out, f.permark()).is_ok(),
+        Place::Profile,
+    ));
+    for (name, make, place) in layouts {
+        let f = fx();
+        let outside = tempfile::tempdir().unwrap();
+        if !make(&f, outside.path()) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        let before = entries_below(f.project.path());
+        let s = f.store();
+        let got = Resolved::of(&s);
+        let iid = s.machine().unwrap().iid().to_owned();
+        assert_eq!(got, Resolved::at(&f, &iid, place), "{name}");
+        assert_eq!(Resolved::of(&f.store()), got, "{name}: a second store");
+        assert_eq!(
+            entries_below(f.project.path()),
+            before,
+            "{name}: folder untouched"
+        );
+        assert!(
+            fs::read_dir(outside.path()).unwrap().next().is_none(),
+            "{name}: nothing behind a link"
+        );
+    }
+}
+
+/// Undo of an init takes `.permark/` back only while `local/` and `cache/` hold no link anywhere: a junction | symlink
+/// inside or in their place, or a file in place of `local/`, leaves `.permark/` as it is (nothing carried back,
+/// nothing removed, the link's target untouched).
+#[test]
+fn uninit_project_takes_back_only_state_folders_without_a_link() {
+    fn local(permark: &Path) -> PathBuf {
+        permark.join("local")
+    }
+    // (what is put into the fresh `.permark/`, taken back; `false` from the maker -> cannot be made here, skipped)
+    type Make = fn(&Path, &Path) -> bool;
+    let mut cases: Vec<(&str, Make, bool)> = vec![
+        (
+            "plain folder + file in local",
+            |p, _| {
+                fs::create_dir(local(p).join("sub")).is_ok()
+                    && fs::write(local(p).join("sub").join("a.json"), "{}").is_ok()
+            },
+            true,
+        ),
+        (
+            "junction | symlink in local",
+            |p, out| crate::tree::tests::link_out(&local(p).join("elsewhere"), out),
+            false,
+        ),
+        (
+            "junction | symlink as cache",
+            |p, out| {
+                fs::remove_dir_all(p.join("cache")).is_ok()
+                    && crate::tree::tests::link_out(&p.join("cache"), out)
+            },
+            false,
+        ),
+        (
+            "file in place of local",
+            |p, _| fs::remove_dir_all(local(p)).is_ok() && fs::write(local(p), "x").is_ok(),
+            false,
+        ),
+    ];
+    #[cfg(unix)]
+    cases.push((
+        "file symlink in local",
+        |p, out| {
+            std::os::unix::fs::symlink(out.join("kept.txt"), local(p).join("kept.txt")).is_ok()
+        },
+        false,
+    ));
+    // Windows makes symlinks only with the privilege (developer mode): skipped without it
+    #[cfg(windows)]
+    cases.push((
+        "directory symlink in local",
+        |p, out| std::os::windows::fs::symlink_dir(out, local(p).join("elsewhere")).is_ok(),
+        false,
+    ));
+    for (name, make, taken) in cases {
+        let f = fx();
+        init_project(&f.dirs, &f.root()).unwrap();
+        let permark = f.root().path().join(PERMARK_DIR);
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("kept.txt"), b"theirs").unwrap();
+        if !make(&permark, outside.path()) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        assert_eq!(uninit_project(&f.dirs, &f.root()).unwrap(), taken, "{name}");
+        assert_eq!(
+            fs::symlink_metadata(&permark).is_ok(),
+            !taken,
+            "{name}: .permark kept"
+        );
+        assert_eq!(
+            entries_below(outside.path()),
+            ["kept.txt"],
+            "{name}: target untouched"
+        );
+        assert_eq!(
+            fs::read(outside.path().join("kept.txt")).unwrap(),
+            b"theirs"
+        );
+    }
+}
+
+/// Pins a known defect, kept visible until it is fixed: Initialize copies a plugin's profile-only folder
+/// ([`StateStore::profile_plugin_dir`]) into `.permark/local/` with the rest of the profile state. The copy is not
+/// wanted: those folders stay in the profile on purpose (the Assistant's work copy of the project and its saved
+/// conversation), since inside the project a tool walking up from the work copy finds the project, and a synced or
+/// shared folder carries the conversation to other computers. Nothing reads the copy (the store keeps answering the
+/// profile folder).
+#[test]
+fn init_project_today_copies_profile_pinned_plugin_folders() {
+    let f = fx();
+    let before = f.store();
+    let acp = PluginId::of("acp");
+    let pinned = before.profile_plugin_dir(&acp);
+    fs::create_dir_all(pinned.join("work").join("proj")).unwrap();
+    fs::write(pinned.join("work").join("proj").join("doc.md"), b"# copy").unwrap();
+    fs::create_dir_all(pinned.join("run")).unwrap();
+    before
+        .profile_plugin_file::<Sample>(&acp, "session.json")
+        .save(&sample(1))
+        .unwrap();
+    let after = init_project(&f.dirs, &f.root()).unwrap();
+    assert_eq!(after.location(), StateLocation::Project);
+    let copied = after.dir().join("plugins").join("acp");
+    assert_eq!(
+        entries_below(&copied),
+        [
+            "run/",
+            "session.json",
+            "work/",
+            "work/proj/",
+            "work/proj/doc.md"
+        ]
+    );
+    assert_eq!(
+        fs::read(copied.join("work").join("proj").join("doc.md")).unwrap(),
+        b"# copy"
+    );
+    // the profile keeps its folder whole, and every store of the folder still answers it
+    assert_eq!(after.profile_plugin_dir(&acp), pinned);
+    assert_eq!(entries_below(&pinned), entries_below(&copied));
+    assert_eq!(
+        after
+            .profile_plugin_file::<Sample>(&acp, "session.json")
+            .load(),
+        Loaded::Found(sample(1))
+    );
+}
+
 #[test]
 fn app_dirs_under_layout_is_pinned() {
     let base = Path::new("base");

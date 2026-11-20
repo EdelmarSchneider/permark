@@ -1149,6 +1149,119 @@ fn members_asked_from_many_threads_are_read_once() {
     });
 }
 
+/// The readers of a folder's team files (project list, tag vocabulary, card place, project marker) take only a real
+/// `.permark/` folder: a folder link (junction | symlink) or a file in its place counts as none, nothing is read
+/// through it, and the card stays in the profile.
+#[test]
+fn team_readers_take_only_a_real_permark_folder() {
+    fn fill(permark: &Path) -> bool {
+        fs::create_dir_all(permark).is_ok()
+            && fs::write(permark.join(record::RECORD_FILE), "version = 1\n").is_ok()
+            && fs::write(
+                permark.join(vocabulary::VOCABULARY_FILE),
+                "version = 1\n\n[tags.spec]\n",
+            )
+            .is_ok()
+            && fs::write(permark.join(card::CARD_FILE), "version = 1\n").is_ok()
+    }
+    // (layout of `<folder>/.permark` given an outside folder, read as a real `.permark/`; `false` from the maker ->
+    // cannot be made here, skipped)
+    type Make = fn(&Path, &Path) -> bool;
+    let base = tempfile::tempdir().unwrap();
+    let dirs = AppDirs::under(base.path());
+    let mut layouts: Vec<(&str, Make, bool)> = vec![
+        ("missing", |_, _| true, false),
+        ("plain folder", |permark, _| fill(permark), true),
+        (
+            "junction | symlink",
+            |permark, out| fill(out) && crate::tree::tests::link_out(permark, out),
+            false,
+        ),
+        ("file", |permark, _| fs::write(permark, "x").is_ok(), false),
+    ];
+    // Windows makes directory symlinks only with the privilege (developer mode): skipped without it
+    #[cfg(windows)]
+    layouts.push((
+        "directory symlink",
+        |permark, out| fill(out) && std::os::windows::fs::symlink_dir(out, permark).is_ok(),
+        false,
+    ));
+    for (name, make, real) in layouts {
+        let folder = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let team = outside.path().join("team");
+        let permark = folder.path().join(PERMARK_DIR);
+        if !make(&permark, &team) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        assert_eq!(real_dir(&permark), real, "{name}: marker");
+        let place = card::file_of(&dirs, folder.path()).map(|file| file.place());
+        if real {
+            assert!(
+                matches!(record::read(folder.path()), RecordRead::Read(_)),
+                "{name}"
+            );
+            let vocab = vocabulary::read(folder.path());
+            assert!(
+                vocab.vocab().is_some_and(|v| v.tags.contains_key("spec")),
+                "{name}: {vocab:?}"
+            );
+            assert_eq!(place, Some(CardPlace::Project), "{name}");
+        } else {
+            assert_eq!(record::read(folder.path()), RecordRead::Absent, "{name}");
+            let vocab = vocabulary::read(folder.path());
+            // a file in place of `.permark/`: Linux | macOS report the read as failed (not a folder), Windows finds no
+            // file there; neither reads tags
+            if cfg!(unix) && name == "file" {
+                assert!(
+                    matches!(vocab, VocabRead::Unreadable { .. }),
+                    "{name}: {vocab:?}"
+                );
+            } else {
+                assert_eq!(vocab, VocabRead::Absent, "{name}");
+            }
+            assert_eq!(place, Some(CardPlace::Profile), "{name}");
+        }
+    }
+}
+
+/// The owners rebuilt twice over unchanged folders are the same places (followers read nothing again). A `.permark/`
+/// arriving in a member moves that member's state into it, so the next rebuild differs once; the rebuilds after it
+/// agree again.
+#[test]
+fn owners_rebuilt_over_the_same_folders_are_the_same() {
+    use crate::state::StateLocation::{self, Profile, Project};
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    permark(root, "");
+    git(root, "sub");
+    fs::write(
+        root.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"sub\"\n",
+    )
+    .unwrap();
+    let (env, _sink) = env(base.path());
+    let core = ProjectCore::open(Root::open(root).unwrap(), &env);
+    let projects = core.projects();
+    wait("owners", || projects.owners().slots().len() == 2);
+    // one map for every rebuild: only what is on disk changes between them
+    let map = projects.snapshot();
+    let first = projects.owners_for(&map, &[]);
+    assert!(first.same(&projects.owners_for(&map, &[])));
+    assert!(first.same(&projects.owners()));
+    let location = |owners: &Owners| -> Vec<StateLocation> {
+        owners.slots().iter().map(|s| s.store.location()).collect()
+    };
+    assert_eq!(location(&first), [Project, Profile]);
+    permark(root, "sub");
+    let moved = projects.owners_for(&map, &[]);
+    assert_eq!(location(&moved), [Project, Project]);
+    assert!(!moved.same(&first));
+    assert!(moved.same(&projects.owners_for(&map, &[])));
+}
+
 /// Live moves (real fs renames under the real watch).
 #[path = "rename_tests.rs"]
 mod rename;
