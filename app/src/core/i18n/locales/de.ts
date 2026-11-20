@@ -1277,6 +1277,19 @@ export default {
   "comments.replyPlaceholder": "Antwort schreiben …",
   "comments.deleteConfirm": "Kommentar löschen?",
   "comments.copyFailed": "Das Kopieren in die Zwischenablage ist fehlgeschlagen.",
+  "comments.aside.line.one": "{n} Kommentar wurde außerhalb von PerMark entfernt.",
+  "comments.aside.line.other": "{n} Kommentare wurden außerhalb von PerMark entfernt.",
+  "comments.aside.restore": "Wiederherstellen",
+  "comments.aside.dismiss": "Verwerfen",
+  "comments.aside.dismissHint":
+    "Verwirft diese Kommentare. Danach lassen sie sich nicht mehr wiederherstellen.",
+  "comments.aside.restored.one": "{n} Kommentar wiederhergestellt.",
+  "comments.aside.restored.other": "{n} Kommentare wiederhergestellt.",
+  "comments.aside.nothing": "Diese Kommentare sind schon wieder da.",
+  "comments.aside.restoreFailed":
+    "Die Kommentare konnten nicht wiederhergestellt werden: {message}",
+  "comments.aside.dismissFailed":
+    "Die entfernten Kommentare konnten nicht verworfen werden: {message}",
   "brokenLinks.title": "Defekte Links",
   "brokenLinks.checking": "Dokumente werden geprüft…",
   "brokenLinks.none": "Keine defekten Links",

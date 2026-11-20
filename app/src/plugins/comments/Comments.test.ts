@@ -151,6 +151,37 @@ describe("the Comments tab", () => {
     expect(target.querySelector<HTMLButtonElement>(".where")?.disabled).toBe(true);
   });
 
+  it("offers comments removed outside PerMark back in one line: Restore adds them, Dismiss lets them go", async () => {
+    await open();
+    component = mount(CommentsPanel, { target });
+    flushSync();
+    expect(target.querySelector("[data-aside]")).toBeNull();
+    const organizing = mock.probe.plugins.organizing;
+    const removed = [
+      { path: "docs/guide.md", quote: "Back to the readme", text: "Say it better", line: 3 },
+    ];
+    organizing.setAside(removed, false);
+    await until(() => target.querySelector("[data-aside]") !== null, "the line");
+    const line = target.querySelector<HTMLElement>("[data-aside]")!;
+    expect(line.textContent).toContain("1 comment was removed outside PerMark.");
+    expect(line.getAttribute("aria-label")).toBe("1 comment was removed outside PerMark.");
+    const button = (label: string): HTMLButtonElement | undefined =>
+      Array.from(target.querySelectorAll<HTMLButtonElement>("[data-aside] button")).find(
+        (b) => b.textContent?.trim() === label,
+      );
+    button("Restore")?.click();
+    await until(() => target.querySelector("[data-aside]") === null, "restored");
+    expect(target.textContent).toContain("Say it better");
+    expect(windowStore.notices.some((n) => "text" in n && n.text === "Restored 1 comment.")).toBe(
+      true,
+    );
+    organizing.setAside([{ ...removed[0]!, text: "Other words" }], false);
+    await until(() => target.querySelector("[data-aside]") !== null, "the second line");
+    button("Dismiss")?.click();
+    await until(() => target.querySelector("[data-aside]") === null, "dismissed");
+    expect(target.textContent).not.toContain("Other words");
+  });
+
   it("scrolls to and marks the comment a click in the margin asked for", async () => {
     await open();
     const id = await addComment("docs/guide.md", "Back to the readme", "Say it better");

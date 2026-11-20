@@ -352,6 +352,7 @@ export function createMockApi(): Api & {
     "unread:changed": new Set(),
     "tags:changed": new Set(),
     "comments:changed": new Set(),
+    "comments:aside": new Set(),
     "quiet:changed": new Set(),
     "broken-links:changed": new Set(),
     "agent:status": new Set(),
@@ -1458,6 +1459,19 @@ export const mockApi = createMockApi();
 // there too (earlier versions of a document). Tests keep their own mock, with no repository unless they set one.
 if (import.meta.env.MODE === "mock") {
   mockApi.probe.context.set({ git: { status: "repo", state: "clean" } });
+  // ...and comments something outside the app removed wait in the Comments tab to be restored
+  mockApi.probe.plugins.organizing.setAside(
+    [
+      {
+        path: "docs/guide.md",
+        quote: "Back to the readme",
+        text: "Link the install steps here.",
+        line: 3,
+      },
+      { path: "README.md", quote: "Demo", text: "Why this name?", line: 1 },
+    ],
+    false,
+  );
 }
 
 // `dev:mock` opened with `?unshared` shows the notice about sharing an update turned off (once, like the app)
