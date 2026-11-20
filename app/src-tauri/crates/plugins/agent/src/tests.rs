@@ -2060,11 +2060,15 @@ fn a_context_file_that_came_with_the_folder_is_removed_at_open() {
     std::fs::write(&file, b"{\"v\":1,\"doc\":\"docs/plan.md\"}").unwrap();
     fx.reopen();
     assert!(!file.exists(), "no token of this install: removed");
-    fx.rpc(
-        "publish",
-        json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
-    )
-    .unwrap();
+    // right after an open the projects inside may still be unknown: a publish then leaves the file to a later one
+    assert!(wait_for(|| {
+        fx.rpc(
+            "publish",
+            json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+        )
+        .unwrap();
+        file.exists()
+    }));
     let written = std::fs::read(&file).unwrap();
     fx.reopen();
     assert_eq!(
