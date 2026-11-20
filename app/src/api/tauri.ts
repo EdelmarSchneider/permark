@@ -232,6 +232,7 @@ export const tauriApi: Api = {
   onPlugin: <E extends PluginEventName>(event: E, handler: (payload: PluginEnvelope<E>) => void) =>
     listenHere<PluginEnvelope<E>>(event, handler),
   projectInit: (path) => call("project_init", { path }),
+  projectDataKeep: (path) => call("project_data_keep", { path }),
   folderEmpty: (path) => call("folder_empty", { path }),
   projectsView: () => call("projects_view", {}),
   projectsInclude: (pick) => call("projects_include", { pick }),

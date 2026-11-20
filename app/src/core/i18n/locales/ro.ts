@@ -1779,6 +1779,19 @@ export default {
   "project.ignoreHint":
     "Fișierele care se potrivesc nu sunt căutate și nu apar niciodată în fluxul în timp real. Lista de fișiere le arată estompate, ca pe fișierele ignorate de git.",
   "project.ignoreLabel": "Excluse din căutare și din fluxul în timp real",
+  "project.dataAsk":
+    "Acest dosar are acum un dosar .permark. Comentariile, marcajele de citire și celelalte date ale tale pentru el sunt păstrate în continuare pe acest computer.",
+  "project.dataMove": "Mută în dosar",
+  "project.dataKeep": "Păstrează pe acest computer",
+  "project.dataMissing":
+    "Dosarul .permark al acestui dosar lipsește sau nu poate fi folosit. PerMark folosește copia datelor tale păstrată pe acest computer, care poate fi mai veche.",
+  "project.dataKeepCopy": "Folosește în continuare această copie",
+  "project.dataPlace": "Datele tale pentru acest dosar",
+  "project.dataPlaceProfile": "Păstrate pe acest computer, în profilul tău de utilizator.",
+  "project.dataMoved": "Datele tale pentru acest dosar sunt acum în dosarul său .permark.",
+  "project.dataMoveHeld":
+    "Dosarul .permark al acestui dosar conține deja date PerMark din altă parte, așa că datele tale rămân pe acest computer.",
+  "project.dataMoveFailed": "Datele tale nu au putut fi mutate în dosar: {message}",
   "project.initButton": "Inițializează PerMark",
   "project.initConfig": "Setările pe care acest proiect le partajează cu echipa sa.",
   "project.initConfirm": "Inițializează PerMark",

@@ -28,6 +28,7 @@ use crate::search::{SearchFilter, SearchIndex, SearchOptions};
 use crate::settings::{
     AppSettings, ProjectConfig, ProjectConfigFile, ProjectSettingChange, SettingsError,
 };
+use crate::state::location::DataOffer;
 use crate::state::{AppDirs, ProjectId, StateData, StateLocation, StateStore};
 use crate::tree::Explorer;
 use crate::watch::{
@@ -272,6 +273,9 @@ pub struct ProjectCore {
     vault: Vault,
     /// Where the project's state lives; moves when PerMark is initialized in the folder (`reload_state`).
     store: RwLock<StateStore>,
+    /// What the window offers about the place of the person's data, worked out with `store` (and again on Keep): views
+    /// read it, never the disk.
+    data_offer: RwLock<DataOffer>,
     config: RwLock<ProjectConfig>,
     enablement: Mutex<BTreeMap<PluginId, Enablement>>,
     plugins: Mutex<PluginSet>,
@@ -348,6 +352,7 @@ impl ProjectCore {
         // a context file for scripts that came with the folder goes before a plugin starts, whatever the agent
         // connection's state: scripts would take it for the person's live context
         crate::state::context::remove_foreign(&store);
+        let data_offer = crate::state::location::offer(&store);
         let config = ProjectConfig::load(&root);
         // plugins that are on may offer extra roots (linked worktrees) before the project is built
         let (enablement, on) = project_enablement(env, &config, &store);
@@ -460,6 +465,7 @@ impl ProjectCore {
             hub,
             id,
             store: RwLock::new(store),
+            data_offer: RwLock::new(data_offer),
             config: RwLock::new(config),
             vault,
             enablement: Mutex::new(BTreeMap::new()),
@@ -759,7 +765,46 @@ impl ProjectCore {
 
     #[must_use]
     pub fn state_location(&self) -> StateLocation {
-        self.store().location()
+        self.store
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .location()
+    }
+
+    /// Whether the folder had a team folder when its state was last read (open, Initialize, a reload): a `.permark/`
+    /// that arrives meanwhile counts from the next read.
+    #[must_use]
+    pub fn has_team_folder(&self) -> bool {
+        self.store
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .has_team_folder()
+    }
+
+    /// What the window offers about the place of the person's data ([`crate::state::location::offer`]), as worked out
+    /// when the state was last read | the data was kept.
+    #[must_use]
+    pub fn data_offer(&self) -> DataOffer {
+        *self
+            .data_offer
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The person keeps the folder's data on this computer ([`crate::state::location::keep`]): the place and the plugins
+    /// stay as they are (the store already reads the profile), only the offer is worked out again. The caller tells
+    /// the windows.
+    ///
+    /// # Errors
+    /// The profile's row file cannot be written.
+    pub fn keep_data(&self, env: &CoreEnv) -> Result<(), crate::IpcError> {
+        crate::state::location::keep(&env.dirs, self.vault.main())?;
+        let store = self.store();
+        *self
+            .data_offer
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = crate::state::location::offer(&store);
+        Ok(())
     }
 
     /// PerMark was initialized in this folder: the state folder and the config are read again, the file operations'
@@ -768,6 +813,10 @@ impl ProjectCore {
     pub fn reload_state(&self, env: &CoreEnv) {
         let store = StateStore::for_project(&env.dirs, self.vault.main());
         let config = ProjectConfig::load(self.vault.main());
+        *self
+            .data_offer
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = crate::state::location::offer(&store);
         *self.store.write().unwrap_or_else(PoisonError::into_inner) = store.clone();
         *self.config.write().unwrap_or_else(PoisonError::into_inner) = config.clone();
         self.fileops.use_store(&store);

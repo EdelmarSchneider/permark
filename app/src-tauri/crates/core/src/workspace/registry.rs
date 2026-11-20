@@ -1174,6 +1174,24 @@ impl WorkspaceRegistry {
         Ok(())
     }
 
+    /// The person keeps a folder's data on this computer (its window's offer), then every window is told: a core open
+    /// on the folder works its offer out again ([`ProjectCore::keep_data`]); no core, only the row is written.
+    ///
+    /// # Errors
+    /// The profile's row file cannot be written.
+    pub fn keep_data(&self, root: &crate::paths::Root) -> Result<(), IpcError> {
+        match self
+            .cores()
+            .iter()
+            .find(|core| core.root().key() == root.key())
+        {
+            Some(core) => core.keep_data(&self.env)?,
+            None => crate::state::location::keep(&self.env.dirs, root)?,
+        }
+        self.refresh();
+        Ok(())
+    }
+
     /// Recomputes + emits what changed (after settings | plugin | unsaved changes).
     pub fn refresh(&self) {
         let mut inner = lock(&self.inner);
@@ -1547,6 +1565,7 @@ fn workspace_view(id: WorkspaceId, entry: &Entry) -> WorkspaceView {
             name: core.root().name(),
             root: core.root().path().display().to_string(),
             state_location: core.state_location(),
+            data_offer: core.data_offer(),
         },
         Workspace::SingleFile(file) => WorkspaceView::SingleFile {
             id,
@@ -1603,8 +1622,8 @@ fn context_of(
     match &entry.workspace {
         Workspace::Project(core) => {
             context.workspace = WorkspaceKind::Project;
-            // read again at each look: a team folder that arrived while the project is open counts at once
-            context.permark = if crate::state::has_team_folder(core.root()) {
+            // as the folder's state was last read: a context is built at every change, never with a look at the disk
+            context.permark = if core.has_team_folder() {
                 PermarkCondition::Initialized
             } else {
                 PermarkCondition::NotInitialized

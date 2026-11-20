@@ -1664,6 +1664,19 @@ export default {
   "project.ignoreHint":
     "일치하는 파일은 검색되지 않으며 실시간 변경 목록에도 나타나지 않습니다. 파일 목록에서는 git이 무시하는 파일처럼 흐리게 표시됩니다.",
   "project.ignoreLabel": "검색 및 실시간 변경 목록에서 제외",
+  "project.dataAsk":
+    "이 폴더에 이제 .permark 폴더가 있습니다. 이 폴더에 대한 댓글, 읽음 표시 등의 데이터는 계속 이 컴퓨터에 보관됩니다.",
+  "project.dataMove": "폴더로 옮기기",
+  "project.dataKeep": "이 컴퓨터에 두기",
+  "project.dataMissing":
+    "이 폴더의 .permark 폴더가 없거나 사용할 수 없습니다. PerMark는 이 컴퓨터에 보관된 데이터 사본을 사용하고 있으며, 이 사본은 더 오래되었을 수 있습니다.",
+  "project.dataKeepCopy": "이 사본 계속 사용",
+  "project.dataPlace": "이 폴더에 대한 데이터",
+  "project.dataPlaceProfile": "이 컴퓨터의 사용자 프로필에 보관됩니다.",
+  "project.dataMoved": "이 폴더에 대한 데이터가 이제 .permark 폴더에 있습니다.",
+  "project.dataMoveHeld":
+    "이 폴더의 .permark 폴더에 이미 다른 곳에서 온 PerMark 데이터가 있어 데이터는 이 컴퓨터에 그대로 둡니다.",
+  "project.dataMoveFailed": "데이터를 폴더로 옮길 수 없습니다: {message}",
   "project.initButton": "PerMark 초기화",
   "project.initConfig": "이 프로젝트가 팀과 공유하는 설정입니다.",
   "project.initConfirm": "PerMark 초기화",

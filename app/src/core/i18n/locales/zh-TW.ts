@@ -1636,6 +1636,19 @@ export default {
   "project.ignoreHint":
     "符合的檔案不會被搜尋，也不會出現在即時動態中。檔案清單會像顯示 git 忽略的檔案那樣將它們淡化顯示。",
   "project.ignoreLabel": "不出現在搜尋和即時動態中",
+  "project.dataAsk":
+    "此資料夾現在有 .permark 資料夾。您在此資料夾中的註解、已讀標記和其他資料仍保存在這台電腦上。",
+  "project.dataMove": "移入資料夾",
+  "project.dataKeep": "保留在這台電腦上",
+  "project.dataMissing":
+    "此資料夾的 .permark 資料夾不見了或無法使用。PerMark 正在使用保存在這台電腦上的資料副本，它可能較舊。",
+  "project.dataKeepCopy": "繼續使用此副本",
+  "project.dataPlace": "您在此資料夾中的資料",
+  "project.dataPlaceProfile": "保存在這台電腦上您的使用者設定檔中。",
+  "project.dataMoved": "您在此資料夾中的資料現在位於它的 .permark 資料夾中。",
+  "project.dataMoveHeld":
+    "此資料夾的 .permark 資料夾中已有來自別處的 PerMark 資料，因此您的資料仍保留在這台電腦上。",
+  "project.dataMoveFailed": "無法將您的資料移入資料夾：{message}",
   "project.initButton": "初始化 PerMark",
   "project.initConfig": "此專案與團隊共用的設定。",
   "project.initConfirm": "初始化 PerMark",

@@ -1695,6 +1695,19 @@ export default {
   "project.ignoreHint":
     "Các tệp khớp mẫu không được tìm kiếm và không bao giờ xuất hiện trong bảng tin trực tiếp. Danh sách tệp hiển thị chúng mờ đi, giống các tệp mà git bỏ qua.",
   "project.ignoreLabel": "Loại khỏi tìm kiếm và bảng tin trực tiếp",
+  "project.dataAsk":
+    "Thư mục này giờ có một thư mục .permark. Nhận xét, dấu đã đọc và dữ liệu khác của bạn cho thư mục này vẫn được giữ trên máy tính này.",
+  "project.dataMove": "Chuyển vào thư mục",
+  "project.dataKeep": "Giữ trên máy tính này",
+  "project.dataMissing":
+    "Thư mục .permark của thư mục này bị thiếu hoặc không dùng được. PerMark đang dùng bản sao dữ liệu của bạn được giữ trên máy tính này, bản sao này có thể cũ hơn.",
+  "project.dataKeepCopy": "Tiếp tục dùng bản sao này",
+  "project.dataPlace": "Dữ liệu của bạn cho thư mục này",
+  "project.dataPlaceProfile": "Được giữ trên máy tính này, trong hồ sơ người dùng của bạn.",
+  "project.dataMoved": "Dữ liệu của bạn cho thư mục này giờ nằm trong thư mục .permark của nó.",
+  "project.dataMoveHeld":
+    "Thư mục .permark của thư mục này đã chứa dữ liệu PerMark từ nơi khác, nên dữ liệu của bạn vẫn ở trên máy tính này.",
+  "project.dataMoveFailed": "Không thể chuyển dữ liệu của bạn vào thư mục: {message}",
   "project.initButton": "Khởi tạo PerMark",
   "project.initConfig": "Các cài đặt dự án này dùng chung với nhóm.",
   "project.initConfirm": "Khởi tạo PerMark",

@@ -1709,6 +1709,19 @@ export default {
   "project.ignoreHint":
     "Os ficheiros correspondentes não são pesquisados e nunca aparecem no feed em tempo real. A lista de ficheiros mostra-os esbatidos, como os ficheiros que o git ignora.",
   "project.ignoreLabel": "Fora da pesquisa e do feed em tempo real",
+  "project.dataAsk":
+    "Esta pasta tem agora uma pasta .permark. Os seus comentários, marcas de leitura e outros dados desta pasta continuam guardados neste computador.",
+  "project.dataMove": "Mover para a pasta",
+  "project.dataKeep": "Manter neste computador",
+  "project.dataMissing":
+    "A pasta .permark desta pasta não existe ou não pode ser usada. O PerMark está a usar a cópia dos seus dados guardada neste computador, que pode ser mais antiga.",
+  "project.dataKeepCopy": "Continuar a usar esta cópia",
+  "project.dataPlace": "Os seus dados desta pasta",
+  "project.dataPlaceProfile": "Guardados neste computador, no seu perfil de utilizador.",
+  "project.dataMoved": "Os seus dados desta pasta estão agora na respetiva pasta .permark.",
+  "project.dataMoveHeld":
+    "A pasta .permark desta pasta já contém dados do PerMark vindos de outro sítio, por isso os seus dados ficam neste computador.",
+  "project.dataMoveFailed": "Não foi possível mover os seus dados para a pasta: {message}",
   "project.initButton": "Inicializar o PerMark",
   "project.initConfig": "As definições que este projeto partilha com a equipa.",
   "project.initConfirm": "Inicializar o PerMark",

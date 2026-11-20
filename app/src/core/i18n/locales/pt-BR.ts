@@ -1693,6 +1693,19 @@ export default {
   "project.ignoreHint":
     "Arquivos que combinam não entram na busca e nunca aparecem no feed ao vivo. A lista de arquivos mostra esses arquivos esmaecidos, como os que o git ignora.",
   "project.ignoreLabel": "Fora da busca e do feed ao vivo",
+  "project.dataAsk":
+    "Esta pasta agora tem uma pasta .permark. Seus comentários, marcas de leitura e outros dados dela continuam guardados neste computador.",
+  "project.dataMove": "Mover para a pasta",
+  "project.dataKeep": "Manter neste computador",
+  "project.dataMissing":
+    "A pasta .permark desta pasta está faltando ou não pode ser usada. O PerMark está usando a cópia dos seus dados guardada neste computador, que pode ser mais antiga.",
+  "project.dataKeepCopy": "Continuar usando esta cópia",
+  "project.dataPlace": "Seus dados desta pasta",
+  "project.dataPlaceProfile": "Guardados neste computador, no seu perfil de usuário.",
+  "project.dataMoved": "Seus dados desta pasta agora estão na pasta .permark dela.",
+  "project.dataMoveHeld":
+    "A pasta .permark desta pasta já contém dados do PerMark vindos de outro lugar, então seus dados continuam neste computador.",
+  "project.dataMoveFailed": "Não foi possível mover seus dados para a pasta: {message}",
   "project.initButton": "Inicializar o PerMark",
   "project.initConfig": "As configurações que este projeto compartilha com a equipe.",
   "project.initConfirm": "Inicializar o PerMark",

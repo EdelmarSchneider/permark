@@ -2,7 +2,8 @@
 //! folder and kept in the profile (`location.json`, a row per folder that stood at the path, bound to its
 //! [`FolderIdentity`]): a `.permark/` that arrives, goes or turns into a link later never moves the data by itself.
 //! Reading a row never writes; a row is written when a folder is opened and none answers for it yet ([`settle`]), and
-//! when the person initializes PerMark in it.
+//! when the person initializes PerMark in it or keeps its data on this computer ([`keep`]). What the folder's window
+//! offers about the place ([`offer`]) is read from the row and what each place holds.
 
 use std::fs::Metadata;
 use std::path::Path;
@@ -10,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use ts_rs::TS;
 
 use super::{
     private, AppDirs, Parsed, RawFile, StateData, StateFile, StateLocation, StateStore,
@@ -79,6 +81,25 @@ pub(super) struct Rows {
 impl StateData for Rows {
     const VERSION: u32 = 1;
     const MAX_BYTES: u64 = 16 * 1024;
+}
+
+/// What the window of an opened folder offers about the place of the person's data ([`offer`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum DataOffer {
+    /// Nothing to answer or know.
+    #[default]
+    None,
+    /// The data is in the profile, not chosen yet, and a team folder whose `local/` holds nothing arrived: Move | Keep.
+    Ask,
+    /// As `Ask`, the profile chosen by the person: Move stays possible, nothing is asked.
+    Movable,
+    /// The row names the project, whose `local/` cannot be used now: the profile's copy is in use (it may be older).
+    Missing,
+    /// The profile and the project's `local/` both hold PerMark data: Move would be refused, so neither copy hides the
+    /// other.
+    Both,
 }
 
 /// The place a new row takes.
@@ -281,6 +302,55 @@ pub(super) fn record(
             Some(rows)
         })
         .map(|_| ())
+}
+
+/// Records the profile as the place the person chose for the folder's data (Keep, also of the copy in use while the
+/// project's `local/` cannot be used): nothing is written into the folder, a `.permark/` arriving later never takes
+/// the data by itself, Move stays possible. Writes nothing when the row already says so.
+///
+/// # Errors
+/// The row file cannot be written (IO, a newer version's file).
+pub fn keep(dirs: &AppDirs, root: &Root) -> Result<(), super::StateError> {
+    record(dirs, root, StateLocation::Profile, true, false)
+}
+
+/// What the window of the folder `store` was made for offers about the place of the person's data, from the folder's
+/// row and what each place holds: one small profile file and at most two folder listings, so it is worked out when
+/// the folder opens or its state is read again, never per view. No row this version reads (the app-wide store, a
+/// profile it cannot write): nothing.
+#[must_use]
+pub fn offer(store: &StateStore) -> DataOffer {
+    let Some(root) = store.root.as_ref() else {
+        return DataOffer::None;
+    };
+    let row = read(&store.profile_dir.join(FILE)).and_then(|rows| {
+        rows.matching(FolderIdentity::of(root.path()))
+            .map(|row| (row.place, row.decided))
+    });
+    match row {
+        Some((StateLocation::Project, _)) if store.location == StateLocation::Profile => {
+            DataOffer::Missing
+        }
+        // no row this version reads, or the data in the project as its row says
+        None | Some((StateLocation::Project, _)) => DataOffer::None,
+        Some((StateLocation::Profile, decided)) => {
+            let local = root.path().join(super::PERMARK_DIR).join("local");
+            // as Initialize takes them: a team folder whose `local/` is real or missing, else Move cannot run
+            if !store.has_team_folder() || matches!(private::entry(&local), private::Entry::Other) {
+                DataOffer::None
+            } else if !local_holds_data(&local) {
+                if decided {
+                    DataOffer::Movable
+                } else {
+                    DataOffer::Ask
+                }
+            } else if profile_holds_data(&store.profile_dir) {
+                DataOffer::Both
+            } else {
+                DataOffer::None
+            }
+        }
+    }
 }
 
 /// The row file of the folder, in its profile folder.

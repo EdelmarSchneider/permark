@@ -1665,6 +1665,19 @@ const en = {
   "project.ignoreHint":
     "Files that match are not searched and never appear in the live feed. The file list shows them dimmed, as it does files git ignores.",
   "project.ignoreLabel": "Left out of search and live feed",
+  "project.dataAsk":
+    "This folder now has a .permark folder. Your comments, read marks and other data for it are still kept on this computer.",
+  "project.dataMove": "Move into the folder",
+  "project.dataKeep": "Keep on this computer",
+  "project.dataMissing":
+    "This folder's .permark folder is missing or can't be used. PerMark is using the copy of your data kept on this computer, which may be older.",
+  "project.dataKeepCopy": "Keep using this copy",
+  "project.dataPlace": "Your data for this folder",
+  "project.dataPlaceProfile": "Kept on this computer, in your user profile.",
+  "project.dataMoved": "Your data for this folder is now in its .permark folder.",
+  "project.dataMoveHeld":
+    "This folder's .permark folder already holds PerMark data from elsewhere, so your data stays on this computer.",
+  "project.dataMoveFailed": "Couldn't move your data into the folder: {message}",
   "project.initButton": "Initialize PerMark",
   "project.initConfig": "The settings this project shares with its team.",
   "project.initConfirm": "Initialize PerMark",

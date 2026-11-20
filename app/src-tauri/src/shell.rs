@@ -370,6 +370,15 @@ impl Shell {
         self.registry.init_project(&Root::open(path)?)
     }
 
+    /// Keeps the private data of the folder at `path` on this computer ([`WorkspaceRegistry::keep_data`]): windows are
+    /// told.
+    ///
+    /// # Errors
+    /// The folder does not exist | is not a folder; the profile's row file cannot be written.
+    pub fn keep_data(&self, path: &std::path::Path) -> Result<(), IpcError> {
+        self.registry.keep_data(&Root::open(path)?)
+    }
+
     /// App exit: stop serving, stop plugins (reverse order), final session save already done on last close.
     pub fn shutdown(&self) {
         drop(lock(&self.server).take());

@@ -1711,6 +1711,19 @@ export default {
   "project.ignoreHint":
     "Els fitxers que hi coincideixen no es cerquen i no apareixen mai als canvis en directe. La llista de fitxers els mostra atenuats, com els que git ignora.",
   "project.ignoreLabel": "Fora de la cerca i dels canvis en directe",
+  "project.dataAsk":
+    "Aquesta carpeta ara té una carpeta .permark. Els vostres comentaris, marques de lectura i altres dades d'aquesta carpeta continuen desats en aquest ordinador.",
+  "project.dataMove": "Mou a la carpeta",
+  "project.dataKeep": "Mantén en aquest ordinador",
+  "project.dataMissing":
+    "La carpeta .permark d'aquesta carpeta falta o no es pot fer servir. El PerMark fa servir la còpia de les vostres dades desada en aquest ordinador, que pot ser més antiga.",
+  "project.dataKeepCopy": "Continua fent servir aquesta còpia",
+  "project.dataPlace": "Les vostres dades d'aquesta carpeta",
+  "project.dataPlaceProfile": "Desades en aquest ordinador, al vostre perfil d'usuari.",
+  "project.dataMoved": "Les vostres dades d'aquesta carpeta ara són a la seva carpeta .permark.",
+  "project.dataMoveHeld":
+    "La carpeta .permark d'aquesta carpeta ja conté dades del PerMark d'un altre lloc, així que les vostres dades es queden en aquest ordinador.",
+  "project.dataMoveFailed": "No s'han pogut moure les vostres dades a la carpeta: {message}",
   "project.initButton": "Inicialitza el PerMark",
   "project.initConfig": "La configuració que aquest projecte comparteix amb el seu equip.",
   "project.initConfirm": "Inicialitza el PerMark",

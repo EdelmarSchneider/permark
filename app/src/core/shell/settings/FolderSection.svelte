@@ -2,17 +2,41 @@
   // This folder's overview: the offer to set PerMark up while `.permark/` is missing (the full card lives here only);
   // once set up, who each kind of folder setting is for (Everyone = its `.permark/config.toml`, Only you = this
   // computer: before, nothing is marked Everyone yet) and the shared file, with a way to see it in the file manager;
-  // the folder's own card where it holds projects. Nothing is written into the folder until the person answers the
-  // Initialize question.
+  // where the person's data for the folder is kept while it is not in the folder's `.permark/` (Move stays here after
+  // Keep); the folder's own card where it holds projects. Nothing is written into the folder until the person answers
+  // the Initialize question | presses Move.
   import { conditions } from "../../conditions/context.svelte";
   import { documents } from "../../doc/document.svelte";
-  import { t } from "../../i18n";
+  import { t, type MessageKey } from "../../i18n";
   import { projects } from "../../projects/instance.svelte";
+  import { windowStore, type ProjectView } from "../../window.svelte";
   import Card from "./Card.svelte";
   import SettingRow from "./SettingRow.svelte";
   import ShareInit from "./ShareInit.svelte";
 
   const initialized = $derived(conditions.current.permark === "initialized");
+  type Offer = Exclude<ProjectView["dataOffer"], "none">;
+  /** The project on screen and what its window offers about the place of its data (`null`: nothing). */
+  const offering = $derived.by((): { project: ProjectView; offer: Offer } | null => {
+    const workspace = windowStore.screen?.workspace;
+    if (workspace?.kind !== "project" || workspace.dataOffer === "none") return null;
+    return { project: workspace, offer: workspace.dataOffer };
+  });
+
+  /** Where the data is now, in words, for each offer. */
+  function placeHint(offer: Offer): MessageKey {
+    switch (offer) {
+      case "ask":
+      case "movable":
+        return "project.dataPlaceProfile";
+      case "missing":
+        return "project.dataMissing";
+      case "both":
+        return "project.dataMoveHeld";
+      default:
+        return offer satisfies never;
+    }
+  }
   /** The folder's shared settings file (what Everyone means), relative to the folder. */
   const SHARED_FILE = ".permark/config.toml";
 
@@ -35,6 +59,38 @@
         >
           {t("menu.showInFileManager")}
         </button>
+      </SettingRow>
+    </Card>
+  {/if}
+  {#if offering}
+    {@const { project, offer } = offering}
+    <Card>
+      <SettingRow label={t("project.dataPlace")} hint={t(placeHint(offer))} scope="you">
+        {#if offer === "ask" || offer === "movable"}
+          <button
+            type="button"
+            class="btn btn--sm"
+            onclick={() => void windowStore.moveData(project)}
+          >
+            {t("project.dataMove")}
+          </button>
+        {:else if offer === "missing"}
+          <button
+            type="button"
+            class="btn btn--sm"
+            onclick={() => void windowStore.keepData(project)}
+          >
+            {t("project.dataKeepCopy")}
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="btn btn--sm"
+            onclick={() => void windowStore.revealFolderData()}
+          >
+            {t("menu.showInFileManager")}
+          </button>
+        {/if}
       </SettingRow>
     </Card>
   {/if}

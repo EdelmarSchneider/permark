@@ -859,3 +859,159 @@ fn the_profile_only_store_answers_profile_files_without_looking_at_the_folder() 
     );
     assert!(!f.dirs.profile.exists());
 }
+
+/// What the folder's window offers about the place of the data, from the row and what each place holds: Move | Keep
+/// while a team folder arrived after the first open and its `local/` holds nothing; Move alone once the person kept
+/// the data on this computer; a neutral word when both places hold data (Move would be refused); the profile copy
+/// in use while the project's `local/` cannot be used; nothing otherwise.
+#[test]
+fn the_offer_follows_the_row_and_what_each_place_holds() {
+    type Make = fn(&Fx);
+    let cases: [(&str, Make, DataOffer); 9] = [
+        (
+            "no team folder",
+            |f| {
+                f.profile_state();
+                let _ = f.settle();
+            },
+            DataOffer::None,
+        ),
+        (
+            "a team folder arrived after the first open",
+            |f| {
+                f.profile_state();
+                let _ = f.settle();
+                f.team_folder();
+            },
+            DataOffer::Ask,
+        ),
+        (
+            "the person kept the data on this computer",
+            |f| {
+                f.profile_state();
+                let _ = f.settle();
+                f.team_folder();
+                f.write_row("profile", FolderIdentity::of(f.project.path()), true);
+            },
+            DataOffer::Movable,
+        ),
+        (
+            "both places hold data",
+            |f| {
+                f.profile_state();
+                let _ = f.settle();
+                f.team_folder();
+                f.local_state();
+            },
+            DataOffer::Both,
+        ),
+        (
+            "only the folder's local holds data",
+            |f| {
+                let _ = f.settle();
+                f.team_folder();
+                f.local_state();
+            },
+            DataOffer::None,
+        ),
+        (
+            "local is a file",
+            |f| {
+                f.profile_state();
+                let _ = f.settle();
+                f.team_folder();
+                fs::write(f.local(), b"x").unwrap();
+            },
+            DataOffer::None,
+        ),
+        (
+            "the data is in the project",
+            |f| {
+                f.team_folder();
+                f.local_state();
+                assert_eq!(f.settle().location(), Project);
+            },
+            DataOffer::None,
+        ),
+        (
+            "the project's .permark is gone",
+            |f| {
+                f.team_folder();
+                f.local_state();
+                assert_eq!(f.settle().location(), Project);
+                fs::remove_dir_all(f.permark()).unwrap();
+            },
+            DataOffer::Missing,
+        ),
+        (
+            "the project's local is a file",
+            |f| {
+                f.team_folder();
+                assert_eq!(f.settle().location(), Project);
+                fs::write(f.local(), b"x").unwrap();
+            },
+            DataOffer::Missing,
+        ),
+    ];
+    for (name, make, want) in cases {
+        let f = fx();
+        make(&f);
+        let folder = listing(f.project.path());
+        let row = f.row_bytes();
+        assert_eq!(offer(&f.store()), want, "{name}");
+        assert_eq!(listing(f.project.path()), folder, "{name}: reads only");
+        assert_eq!(f.row_bytes(), row, "{name}: reads only");
+    }
+    // no row this version can read: nothing to offer
+    let f = fx();
+    f.profile_state();
+    f.team_folder();
+    assert_eq!(offer(&f.store()), DataOffer::None);
+}
+
+/// Keep: the row names the profile as the person's choice, the place and everything in the folder unchanged; Move is
+/// still offered; a second Keep writes nothing. Keeping the copy in use while the project's `.permark/` is gone does
+/// the same, so a `.permark/` coming back never takes the data by itself.
+#[test]
+fn keep_records_the_profile_as_chosen_and_writes_nothing_into_the_folder() {
+    let f = fx();
+    f.profile_state();
+    let first = answer(&f.settle());
+    f.team_folder();
+    let folder = listing(f.project.path());
+    assert_eq!(offer(&f.store()), DataOffer::Ask);
+    keep(&f.dirs, &f.root()).unwrap();
+    let rows = f.rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!((rows[0].place, rows[0].decided), (Profile, true));
+    assert_eq!(
+        answer(&f.store()),
+        (first.0, first.1.clone(), first.2.clone(), true)
+    );
+    assert_eq!(offer(&f.store()), DataOffer::Movable);
+    assert_eq!(listing(f.project.path()), folder);
+    let row = f.row_bytes();
+    keep(&f.dirs, &f.root()).unwrap();
+    assert_eq!(f.row_bytes(), row);
+
+    let f = fx();
+    f.team_folder();
+    f.local_state();
+    assert_eq!(f.settle().location(), Project);
+    fs::remove_dir_all(f.permark()).unwrap();
+    let fallback = answer(&f.store());
+    assert_eq!(offer(&f.store()), DataOffer::Missing);
+    keep(&f.dirs, &f.root()).unwrap();
+    assert_eq!(answer(&f.store()), fallback);
+    assert_eq!(offer(&f.store()), DataOffer::None);
+    let rows = f.rows();
+    assert_eq!((rows[0].place, rows[0].decided), (Profile, true));
+    f.team_folder();
+    f.local_state();
+    assert_eq!(f.store().location(), Profile);
+    assert_eq!(
+        offer(&f.store()),
+        DataOffer::None,
+        "local holds data, the profile none"
+    );
+}

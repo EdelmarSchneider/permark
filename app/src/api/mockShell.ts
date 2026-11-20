@@ -1,7 +1,9 @@
 // What the shell's backend half answers in the mock backend: the plugin list with its switches, the project's shared
-// settings, the other windows of the process. In memory; same shapes as the real commands.
+// settings, where a folder's data is kept, the other windows of the process. In memory; same shapes as the real
+// commands.
 
 import type { Context } from "./generated/Context";
+import type { DataOffer } from "./generated/DataOffer";
 import type { Manifest } from "./generated/Manifest";
 import type { PluginInfo } from "./generated/PluginInfo";
 import type { PluginKind } from "./generated/PluginKind";
@@ -158,6 +160,8 @@ export function createMockShell(deps: {
   let project = emptyProject();
   /** The folders PerMark was initialized in (the real thing is a `.permark/` folder on disk). */
   const initializedPaths = new Set<string>();
+  /** What a folder's window offers about the place of its data (none listed: nothing). */
+  const offers = new Map<string, DataOffer>();
   let currentPath = "";
   const choices = new Map<string, boolean>();
   /** Plugins the project's shared file turns off for everyone (`enabled = false`). */
@@ -214,15 +218,35 @@ export function createMockShell(deps: {
       /** Every folder is as new: nothing is initialized. */
       forgetInit(): void {
         initializedPaths.clear();
+        offers.clear();
         project = emptyProject();
       },
+      /** The folder at `path` offers `offer` about its data when it opens; with Move | Keep and both places holding
+       *  data it has a team folder (a `.permark/` that arrived while the data stayed on this computer). */
+      dataOffer(path: string, offer: DataOffer): void {
+        offers.set(path, offer);
+        if (offer === "ask" || offer === "movable" || offer === "both") initializedPaths.add(path);
+        if (path === currentPath) project = { ...project, initialized: initializedPaths.has(path) };
+      },
     },
-    /** `.permark/` was created in `path`; `true` when that is the folder shown. */
+    /** What the window of the folder at `path` offers about the place of its data. */
+    offerOf: (path: string): DataOffer => offers.get(path) ?? "none",
+    /** `.permark/` was created in `path` (the data moved in: nothing left to offer); `true` when that is the folder
+     *  shown. */
     initProject(path: string): boolean {
       initializedPaths.add(path);
+      offers.delete(path);
       if (path !== currentPath) return false;
       project = { ...project, initialized: true };
       return true;
+    },
+    /** The person keeps the data of the folder at `path` on this computer: Move alone is left after Move | Keep; the
+     *  copy in use is kept as the place; `true` when that is the folder shown. */
+    keepData(path: string): boolean {
+      const offer = offers.get(path);
+      if (offer === "ask") offers.set(path, "movable");
+      if (offer === "missing") offers.delete(path);
+      return path === currentPath;
     },
     api: {
       focusWorkspace: (id: number) => {

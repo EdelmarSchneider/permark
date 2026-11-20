@@ -1651,11 +1651,12 @@ fn initializing_an_included_project_holds_its_writes_around_the_copy() {
     assert_eq!(member(&projects.owners()), StateLocation::Project);
 }
 
-/// The window's `permark` condition tells whether the folder has a team folder (`.permark/` a real folder), read again
-/// at each look: also while the private state stays in the profile (here `local/` is a file), and for a `.permark/`
-/// that arrived while the project is open; a file in its place is none.
+/// The window's `permark` condition tells whether the folder has a team folder (`.permark/` a real folder), as the
+/// folder's state was read (at open, after Initialize | a reload): also while the private state stays in the profile
+/// (here `local/` is a file); a `.permark/` that arrives while the project is open counts from the next read, and a
+/// file in its place is none. Building a context never looks at the disk.
 #[test]
-fn the_permark_condition_follows_the_team_folder_on_disk() {
+fn the_permark_condition_follows_the_team_folder_as_last_read() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
     let permark = dir.path().join(".permark");
@@ -1663,14 +1664,69 @@ fn the_permark_condition_follows_the_team_folder_on_disk() {
     let condition = || f.registry.context_of(&view).unwrap().permark;
     assert_eq!(condition(), PermarkCondition::NotInitialized);
     std::fs::write(&permark, "x").unwrap();
+    core.reload_state(f.registry.env());
     assert_eq!(condition(), PermarkCondition::NotInitialized);
     std::fs::remove_file(&permark).unwrap();
     std::fs::create_dir(&permark).unwrap();
     std::fs::write(permark.join("local"), "x").unwrap();
-    assert_eq!(condition(), PermarkCondition::Initialized);
+    assert_eq!(
+        condition(),
+        PermarkCondition::NotInitialized,
+        "not read yet"
+    );
     core.reload_state(f.registry.env());
     assert_eq!(core.state_location(), StateLocation::Profile);
     assert_eq!(condition(), PermarkCondition::Initialized);
+}
+
+/// The offer about the place of the data is worked out when the folder opens (and when its state is read again | the
+/// person keeps the data); the window's view carries it, and building a view never looks at the folder again. Keep:
+/// Move alone is left, the place and the plugins unchanged. Move: nothing left to offer, the data in the project.
+#[test]
+fn the_view_carries_the_data_offer_worked_out_when_the_folder_opens() {
+    use crate::state::location::DataOffer;
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let env = f.registry.env().clone();
+    // the person's data in the profile at the first open; a team folder arrives later (a pull)
+    let first = crate::state::location::settle(&env.dirs, &Root::open(dir.path()).unwrap());
+    std::fs::create_dir_all(first.dir()).unwrap();
+    std::fs::write(first.dir().join("session.json"), b"{}").unwrap();
+    let permark = dir.path().join(".permark");
+    std::fs::create_dir(&permark).unwrap();
+    std::fs::write(permark.join("config.toml"), b"# team\n").unwrap();
+    let (core, view) = open_project(&f, dir.path());
+    let offer = || match f.registry.window_view(&view).unwrap() {
+        WindowView::Showing {
+            workspace: WorkspaceView::Project { data_offer, .. },
+            ..
+        } => data_offer,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(offer(), DataOffer::Ask);
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    assert_eq!(
+        f.registry.context_of(&view).unwrap().permark,
+        PermarkCondition::Initialized
+    );
+    // data arriving in `local/` meanwhile is seen at the next read, not by a view built again
+    std::fs::create_dir(permark.join("local")).unwrap();
+    std::fs::write(permark.join("local").join("comments.json"), b"{}").unwrap();
+    f.registry.refresh();
+    assert_eq!(offer(), DataOffer::Ask);
+    std::fs::remove_dir_all(permark.join("local")).unwrap();
+
+    f.registry.keep_data(core.root()).unwrap();
+    assert_eq!(offer(), DataOffer::Movable);
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    assert!(take(&f.log).is_empty(), "the plugins go on as they were");
+    let names: Vec<String> = f.sink.take().iter().map(|e| e.name().to_owned()).collect();
+    assert!(names.contains(&"window-changed".to_owned()), "{names:?}");
+
+    f.registry.init_project(core.root()).unwrap();
+    assert_eq!(offer(), DataOffer::None);
+    assert_eq!(core.state_location(), StateLocation::Project);
+    assert!(core.store().dir().join("session.json").is_file());
 }
 
 #[test]

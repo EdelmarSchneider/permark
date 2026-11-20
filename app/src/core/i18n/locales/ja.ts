@@ -1710,6 +1710,19 @@ export default {
   "project.ignoreHint":
     "一致するファイルは検索されず、リアルタイムの変更にも表示されません。ファイル一覧では、git が無視するファイルと同じように淡色で表示されます。",
   "project.ignoreLabel": "検索とリアルタイムの変更から除外",
+  "project.dataAsk":
+    "このフォルダーに .permark フォルダーができました。このフォルダーのコメント、既読の印などのデータは、引き続きこのコンピューターに保存されています。",
+  "project.dataMove": "フォルダーに移動",
+  "project.dataKeep": "このコンピューターに残す",
+  "project.dataMissing":
+    "このフォルダーの .permark フォルダーが見つからないか、使えません。PerMark はこのコンピューターに保存されたデータのコピーを使っています。このコピーは古い可能性があります。",
+  "project.dataKeepCopy": "このコピーを使い続ける",
+  "project.dataPlace": "このフォルダーのデータ",
+  "project.dataPlaceProfile": "このコンピューターのユーザープロファイルに保存されています。",
+  "project.dataMoved": "このフォルダーのデータは .permark フォルダーに移りました。",
+  "project.dataMoveHeld":
+    "このフォルダーの .permark フォルダーには別の場所からの PerMark データが既にあるため、データはこのコンピューターに残ります。",
+  "project.dataMoveFailed": "データをフォルダーに移動できませんでした：{message}",
   "project.initButton": "PerMark を初期化",
   "project.initConfig": "このプロジェクトがチームと共有する設定。",
   "project.initConfirm": "PerMark を初期化",

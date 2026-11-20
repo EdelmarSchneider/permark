@@ -1710,6 +1710,19 @@ export default {
   "project.ignoreHint":
     "I file che corrispondono non vengono cercati e non compaiono mai nel feed in tempo reale. L'elenco dei file li mostra attenuati, come i file ignorati da git.",
   "project.ignoreLabel": "Esclusi dalla ricerca e dal feed in tempo reale",
+  "project.dataAsk":
+    "Questa cartella ora ha una cartella .permark. I tuoi commenti, segni di lettura e altri dati di questa cartella restano salvati su questo computer.",
+  "project.dataMove": "Sposta nella cartella",
+  "project.dataKeep": "Tieni su questo computer",
+  "project.dataMissing":
+    "La cartella .permark di questa cartella manca o non si può usare. PerMark usa la copia dei tuoi dati salvata su questo computer, che potrebbe essere meno recente.",
+  "project.dataKeepCopy": "Continua a usare questa copia",
+  "project.dataPlace": "I tuoi dati di questa cartella",
+  "project.dataPlaceProfile": "Salvati su questo computer, nel tuo profilo utente.",
+  "project.dataMoved": "I tuoi dati di questa cartella ora sono nella sua cartella .permark.",
+  "project.dataMoveHeld":
+    "La cartella .permark di questa cartella contiene già dati di PerMark provenienti da altrove, quindi i tuoi dati restano su questo computer.",
+  "project.dataMoveFailed": "Impossibile spostare i tuoi dati nella cartella: {message}",
   "project.initButton": "Inizializza PerMark",
   "project.initConfig": "Le impostazioni che questo progetto condivide con il team.",
   "project.initConfirm": "Inizializza PerMark",

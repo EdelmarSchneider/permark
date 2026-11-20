@@ -1567,6 +1567,13 @@ pub fn project_init(handle: AppHandle, path: String) -> Result<(), IpcError> {
     state(&handle).init_project(std::path::Path::new(&path))
 }
 
+/// Keeps a folder's private data on this computer (the answer to its window's offer): only the profile's row is
+/// written, never the folder. Move is `project_init`.
+#[tauri::command(async)]
+pub fn project_data_keep(handle: AppHandle, path: String) -> Result<(), IpcError> {
+    state(&handle).keep_data(std::path::Path::new(&path))
+}
+
 /// Whether a folder has nothing in it yet (New project asks first before writing `.permark/` into a folder with files).
 /// A folder that cannot be read counts as not empty.
 #[tauri::command(async)]
@@ -1798,6 +1805,7 @@ commands![
     search_recent,
     plugin_call,
     project_init,
+    project_data_keep,
     folder_empty,
     project_config_get,
     project_config_set,

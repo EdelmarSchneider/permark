@@ -1720,6 +1720,19 @@ export default {
   "project.ignoreHint":
     "Passende Dateien werden nicht durchsucht und erscheinen nie im Live-Feed. Die Dateiliste zeigt sie abgeblendet, wie von git ignorierte Dateien.",
   "project.ignoreLabel": "Nicht in Suche und Live-Feed",
+  "project.dataAsk":
+    "Dieser Ordner hat jetzt einen .permark-Ordner. Kommentare, Gelesen-Markierungen und andere Daten zu diesem Ordner liegen weiterhin auf diesem Computer.",
+  "project.dataMove": "In den Ordner verschieben",
+  "project.dataKeep": "Auf diesem Computer behalten",
+  "project.dataMissing":
+    "Der .permark-Ordner dieses Ordners fehlt oder ist nicht nutzbar. PerMark verwendet die auf diesem Computer gespeicherte Kopie der Daten, die älter sein kann.",
+  "project.dataKeepCopy": "Diese Kopie weiter verwenden",
+  "project.dataPlace": "Daten zu diesem Ordner",
+  "project.dataPlaceProfile": "Auf diesem Computer gespeichert, im Benutzerprofil.",
+  "project.dataMoved": "Die Daten zu diesem Ordner liegen jetzt in seinem .permark-Ordner.",
+  "project.dataMoveHeld":
+    "Der .permark-Ordner dieses Ordners enthält bereits PerMark-Daten von anderswo, daher bleiben die Daten auf diesem Computer.",
+  "project.dataMoveFailed": "Die Daten konnten nicht in den Ordner verschoben werden: {message}",
   "project.initButton": "PerMark einrichten",
   "project.initConfig": "Die Einstellungen, die dieses Projekt mit dem Team teilt.",
   "project.initConfirm": "PerMark einrichten",

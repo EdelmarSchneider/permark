@@ -1696,6 +1696,19 @@ export default {
   "project.ignoreHint":
     "Os ficheiros que coinciden non se buscan e nunca aparecen nos cambios en directo. A lista de ficheiros móstraos atenuados, como os ficheiros que git ignora.",
   "project.ignoreLabel": "Fóra da busca e dos cambios en directo",
+  "project.dataAsk":
+    "Este cartafol ten agora un cartafol .permark. Os seus comentarios, marcas de lectura e outros datos deste cartafol seguen gardados neste ordenador.",
+  "project.dataMove": "Mover ao cartafol",
+  "project.dataKeep": "Manter neste ordenador",
+  "project.dataMissing":
+    "O cartafol .permark deste cartafol falta ou non se pode usar. PerMark está a usar a copia dos seus datos gardada neste ordenador, que pode ser máis antiga.",
+  "project.dataKeepCopy": "Seguir usando esta copia",
+  "project.dataPlace": "Os seus datos deste cartafol",
+  "project.dataPlaceProfile": "Gardados neste ordenador, no seu perfil de usuario.",
+  "project.dataMoved": "Os seus datos deste cartafol están agora no seu cartafol .permark.",
+  "project.dataMoveHeld":
+    "O cartafol .permark deste cartafol xa contén datos de PerMark doutro lugar, así que os seus datos quedan neste ordenador.",
+  "project.dataMoveFailed": "Non foi posíbel mover os seus datos ao cartafol: {message}",
   "project.initButton": "Inicializar PerMark",
   "project.initConfig": "A configuración que este proxecto comparte co seu equipo.",
   "project.initConfirm": "Inicializar PerMark",

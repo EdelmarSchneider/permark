@@ -1736,6 +1736,19 @@ export default {
   "project.ignoreHint":
     "Les fichiers correspondants ne sont pas recherchés et n'apparaissent jamais dans le flux en direct. La liste des fichiers les affiche estompés, comme les fichiers ignorés par git.",
   "project.ignoreLabel": "Exclus de la recherche et du flux en direct",
+  "project.dataAsk":
+    "Ce dossier a maintenant un dossier .permark. Vos commentaires, marques de lecture et autres données pour ce dossier restent conservés sur cet ordinateur.",
+  "project.dataMove": "Déplacer dans le dossier",
+  "project.dataKeep": "Garder sur cet ordinateur",
+  "project.dataMissing":
+    "Le dossier .permark de ce dossier est absent ou inutilisable. PerMark utilise la copie de vos données conservée sur cet ordinateur, qui peut être plus ancienne.",
+  "project.dataKeepCopy": "Continuer avec cette copie",
+  "project.dataPlace": "Vos données pour ce dossier",
+  "project.dataPlaceProfile": "Conservées sur cet ordinateur, dans votre profil utilisateur.",
+  "project.dataMoved": "Vos données pour ce dossier sont maintenant dans son dossier .permark.",
+  "project.dataMoveHeld":
+    "Le dossier .permark de ce dossier contient déjà des données PerMark venues d'ailleurs, vos données restent donc sur cet ordinateur.",
+  "project.dataMoveFailed": "Impossible de déplacer vos données dans le dossier : {message}",
   "project.initButton": "Initialiser PerMark",
   "project.initConfig": "Les paramètres que ce projet partage avec son équipe.",
   "project.initConfirm": "Initialiser PerMark",

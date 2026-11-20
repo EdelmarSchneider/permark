@@ -1622,6 +1622,19 @@ export default {
   "project.ignoreHint":
     "匹配的文件不会被搜索，也不会出现在实时动态中。文件列表会像显示 git 忽略的文件那样将它们淡化显示。",
   "project.ignoreLabel": "不出现在搜索和实时动态中",
+  "project.dataAsk":
+    "此文件夹现在有了 .permark 文件夹。你在此文件夹中的批注、已读标记和其他数据仍保存在这台电脑上。",
+  "project.dataMove": "移入文件夹",
+  "project.dataKeep": "保留在这台电脑上",
+  "project.dataMissing":
+    "此文件夹的 .permark 文件夹不见了或无法使用。PerMark 正在使用保存在这台电脑上的数据副本，它可能较旧。",
+  "project.dataKeepCopy": "继续使用此副本",
+  "project.dataPlace": "你在此文件夹中的数据",
+  "project.dataPlaceProfile": "保存在这台电脑上你的用户配置文件中。",
+  "project.dataMoved": "你在此文件夹中的数据现在位于它的 .permark 文件夹中。",
+  "project.dataMoveHeld":
+    "此文件夹的 .permark 文件夹中已有来自别处的 PerMark 数据，因此你的数据仍保留在这台电脑上。",
+  "project.dataMoveFailed": "无法将你的数据移入文件夹：{message}",
   "project.initButton": "初始化 PerMark",
   "project.initConfig": "此项目与团队共享的设置。",
   "project.initConfirm": "初始化 PerMark",

@@ -1703,6 +1703,19 @@ export default {
   "project.ignoreHint":
     "File yang cocok tidak dicari dan tidak pernah muncul di umpan langsung. Daftar file menampilkannya redup, seperti file yang diabaikan git.",
   "project.ignoreLabel": "Dikecualikan dari pencarian dan umpan langsung",
+  "project.dataAsk":
+    "Folder ini sekarang punya folder .permark. Komentar, tanda sudah dibaca, dan data Anda lainnya untuk folder ini masih disimpan di komputer ini.",
+  "project.dataMove": "Pindahkan ke folder",
+  "project.dataKeep": "Simpan di komputer ini",
+  "project.dataMissing":
+    "Folder .permark milik folder ini hilang atau tidak dapat digunakan. PerMark memakai salinan data Anda yang disimpan di komputer ini, yang mungkin lebih lama.",
+  "project.dataKeepCopy": "Tetap pakai salinan ini",
+  "project.dataPlace": "Data Anda untuk folder ini",
+  "project.dataPlaceProfile": "Disimpan di komputer ini, di profil pengguna Anda.",
+  "project.dataMoved": "Data Anda untuk folder ini sekarang ada di folder .permark-nya.",
+  "project.dataMoveHeld":
+    "Folder .permark milik folder ini sudah berisi data PerMark dari tempat lain, jadi data Anda tetap di komputer ini.",
+  "project.dataMoveFailed": "Tidak dapat memindahkan data Anda ke folder: {message}",
   "project.initButton": "Inisialisasi PerMark",
   "project.initConfig": "Pengaturan yang dibagikan proyek ini dengan timnya.",
   "project.initConfirm": "Inisialisasi PerMark",

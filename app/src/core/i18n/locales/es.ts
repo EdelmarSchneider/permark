@@ -1694,6 +1694,19 @@ export default {
   "project.ignoreHint":
     "Los archivos que coinciden no se buscan y nunca aparecen en el feed en vivo. La lista de archivos los muestra atenuados, como los archivos que git ignora.",
   "project.ignoreLabel": "Fuera de la búsqueda y del feed en vivo",
+  "project.dataAsk":
+    "Esta carpeta tiene ahora una carpeta .permark. Tus comentarios, marcas de lectura y demás datos de ella siguen guardados en este equipo.",
+  "project.dataMove": "Mover a la carpeta",
+  "project.dataKeep": "Mantener en este equipo",
+  "project.dataMissing":
+    "La carpeta .permark de esta carpeta falta o no se puede usar. PerMark está usando la copia de tus datos guardada en este equipo, que puede ser más antigua.",
+  "project.dataKeepCopy": "Seguir usando esta copia",
+  "project.dataPlace": "Tus datos de esta carpeta",
+  "project.dataPlaceProfile": "Guardados en este equipo, en tu perfil de usuario.",
+  "project.dataMoved": "Tus datos de esta carpeta están ahora en su carpeta .permark.",
+  "project.dataMoveHeld":
+    "La carpeta .permark de esta carpeta ya contiene datos de PerMark de otro lugar, así que tus datos se quedan en este equipo.",
+  "project.dataMoveFailed": "No se pudieron mover tus datos a la carpeta: {message}",
   "project.initButton": "Inicializar PerMark",
   "project.initConfig": "La configuración que este proyecto comparte con su equipo.",
   "project.initConfirm": "Inicializar PerMark",

@@ -1760,6 +1760,19 @@ export default {
   "project.ignoreHint":
     "Pasujące pliki nie są przeszukiwane i nigdy nie pojawiają się w kanale zmian. Lista plików pokazuje je przygaszone, tak jak pliki ignorowane przez git.",
   "project.ignoreLabel": "Pomijane w wyszukiwaniu i kanale zmian",
+  "project.dataAsk":
+    "Ten folder ma teraz folder .permark. Twoje komentarze, znaczniki przeczytania i inne dane dla tego folderu nadal są przechowywane na tym komputerze.",
+  "project.dataMove": "Przenieś do folderu",
+  "project.dataKeep": "Zachowaj na tym komputerze",
+  "project.dataMissing":
+    "Brakuje folderu .permark tego folderu albo nie można go użyć. PerMark używa kopii Twoich danych przechowywanej na tym komputerze, która może być starsza.",
+  "project.dataKeepCopy": "Dalej używaj tej kopii",
+  "project.dataPlace": "Twoje dane dla tego folderu",
+  "project.dataPlaceProfile": "Przechowywane na tym komputerze, w Twoim profilu użytkownika.",
+  "project.dataMoved": "Twoje dane dla tego folderu są teraz w jego folderze .permark.",
+  "project.dataMoveHeld":
+    "Folder .permark tego folderu zawiera już dane PerMark z innego miejsca, więc Twoje dane zostają na tym komputerze.",
+  "project.dataMoveFailed": "Nie udało się przenieść Twoich danych do folderu: {message}",
   "project.initButton": "Zainicjuj PerMark",
   "project.initConfig": "Ustawienia, które ten projekt współdzieli z zespołem.",
   "project.initConfirm": "Zainicjuj PerMark",

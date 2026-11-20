@@ -1699,6 +1699,19 @@ export default {
   "project.ignoreHint":
     "Eşleşen dosyalar aranmaz ve canlı akışta hiç görünmez. Dosya listesi bunları, git'in yok saydığı dosyalar gibi soluk gösterir.",
   "project.ignoreLabel": "Aramanın ve canlı akışın dışında",
+  "project.dataAsk":
+    "Bu klasörde artık bir .permark klasörü var. Bu klasöre ait yorumlarınız, okundu işaretleriniz ve diğer verileriniz hâlâ bu bilgisayarda tutuluyor.",
+  "project.dataMove": "Klasöre taşı",
+  "project.dataKeep": "Bu bilgisayarda tut",
+  "project.dataMissing":
+    "Bu klasörün .permark klasörü yok ya da kullanılamıyor. PerMark, verilerinizin bu bilgisayarda tutulan kopyasını kullanıyor; bu kopya daha eski olabilir.",
+  "project.dataKeepCopy": "Bu kopyayı kullanmaya devam et",
+  "project.dataPlace": "Bu klasöre ait verileriniz",
+  "project.dataPlaceProfile": "Bu bilgisayarda, kullanıcı profilinizde tutuluyor.",
+  "project.dataMoved": "Bu klasöre ait verileriniz artık klasörün .permark klasöründe.",
+  "project.dataMoveHeld":
+    "Bu klasörün .permark klasöründe başka bir yerden gelmiş PerMark verileri zaten var, bu yüzden verileriniz bu bilgisayarda kalıyor.",
+  "project.dataMoveFailed": "Verileriniz klasöre taşınamadı: {message}",
   "project.initButton": "PerMark'ı başlat",
   "project.initConfig": "Bu projenin ekibiyle paylaştığı ayarlar.",
   "project.initConfirm": "PerMark'ı başlat",
