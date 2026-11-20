@@ -402,12 +402,15 @@ fn derive(dirs: &AppDirs, root: &Root, legacy_link: Link, rows: Option<&Rows>) -
 }
 
 /// Where the caches of a folder whose data is at `place` go: the project's `.permark/cache/` only with the data in
-/// the project, on a local disk, in a `.permark/` no cloud service keeps as a placeholder (earlier versions' link
-/// test calls it a link, std a folder); else this computer's app cache.
+/// the project, on a local disk, outside a cloud sync root, in a `.permark/` no cloud service keeps as a placeholder
+/// (earlier versions' link test calls it a link, std a folder); else this computer's app cache. The sync root is
+/// asked for, not the attributes: in the default placeholder compatibility mode of a normal process a hydrated
+/// placeholder folder looks like a plain one. The local-disk check comes first: no lookup ever reaches a share.
 fn cache_place(root: &Root, place: StateLocation, legacy_link: Link) -> CachePlace {
     let permark = root.path().join(super::PERMARK_DIR);
     if place == StateLocation::Project
         && crate::fsx::is_local_path(root.path())
+        && !crate::fsx::in_cloud_folder(root.path())
         && matches!(
             private::entry_as(&permark, legacy_link),
             private::Entry::Folder

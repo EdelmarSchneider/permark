@@ -601,6 +601,24 @@ pub fn is_local_path(path: &Path) -> bool {
     }
 }
 
+/// Whether `path` is inside a folder a cloud sync service manages. Windows: a Cloud Files sync root (OneDrive,
+/// Dropbox, iCloud, Box, ...), told by the system's registration of the root, never by attributes: a normal process
+/// runs in the default placeholder compatibility mode, where a hydrated placeholder folder looks like a plain folder
+/// (no reparse attribute, not a link). Other systems: false (their cloud folders are not told apart). Looks the path
+/// up: a path that came from file content passes [`is_local_path`] first.
+#[must_use]
+pub fn in_cloud_folder(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        win::in_sync_root(path)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        false
+    }
+}
+
 fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {
@@ -651,8 +669,70 @@ fn discard(tmp: &Path) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// A folder registered as a Cloud Files sync root, the way OneDrive | Dropbox register theirs, while this lives
+    /// (no provider connected: nothing is ever fetched); the registration goes on drop. Unregister before the folder
+    /// is removed: keep this after the temp folder in the test's bindings.
+    #[cfg(windows)]
+    pub(crate) struct SyncRoot(Vec<u16>);
+
+    // Documented FFI, test only: the Cloud Files registration has no std wrapper. Every pointer passed comes from a
+    // live local buffer | struct that outlives the call.
+    #[cfg(windows)]
+    #[allow(unsafe_code)]
+    impl SyncRoot {
+        /// `None` (the reason printed): the system refused, e.g. no Cloud Files service on this machine.
+        pub(crate) fn register(dir: &Path) -> Option<Self> {
+            use windows_sys::core::GUID;
+            use windows_sys::Win32::Storage::CloudFilters::{
+                CfRegisterSyncRoot, CF_HYDRATION_POLICY_FULL, CF_POPULATION_POLICY_ALWAYS_FULL,
+                CF_REGISTER_FLAG_NONE, CF_SYNC_POLICIES, CF_SYNC_REGISTRATION,
+            };
+            let path = win::wide(dir).unwrap();
+            let name: Vec<u16> = "PerMarkTest\0".encode_utf16().collect();
+            let version: Vec<u16> = "1.0\0".encode_utf16().collect();
+            let registration = CF_SYNC_REGISTRATION {
+                StructSize: u32::try_from(std::mem::size_of::<CF_SYNC_REGISTRATION>()).unwrap(),
+                ProviderName: name.as_ptr(),
+                ProviderVersion: version.as_ptr(),
+                ProviderId: GUID::from_u128(0x5f0c_2a47_9d3e_4b8a_a1c6_7e2d_9b40_f318),
+                ..CF_SYNC_REGISTRATION::default()
+            };
+            let mut policies = CF_SYNC_POLICIES {
+                StructSize: u32::try_from(std::mem::size_of::<CF_SYNC_POLICIES>()).unwrap(),
+                ..CF_SYNC_POLICIES::default()
+            };
+            policies.Hydration.Primary = CF_HYDRATION_POLICY_FULL;
+            policies.Population.Primary = CF_POPULATION_POLICY_ALWAYS_FULL;
+            // SAFETY: `path`, `name`, `version` are live NUL-terminated buffers; both structs are live locals with
+            // their sizes set; all outlive the call.
+            let result = unsafe {
+                CfRegisterSyncRoot(
+                    path.as_ptr(),
+                    &raw const registration,
+                    &raw const policies,
+                    CF_REGISTER_FLAG_NONE,
+                )
+            };
+            if result != 0 {
+                eprintln!("no Cloud Files sync root here (HRESULT {result:#010x}): skipped");
+                return None;
+            }
+            Some(Self(path))
+        }
+    }
+
+    #[cfg(windows)]
+    #[allow(unsafe_code)]
+    impl Drop for SyncRoot {
+        fn drop(&mut self) {
+            use windows_sys::Win32::Storage::CloudFilters::CfUnregisterSyncRoot;
+            // SAFETY: `self.0` is the live NUL-terminated path the root was registered with.
+            let _ = unsafe { CfUnregisterSyncRoot(self.0.as_ptr()) };
+        }
+    }
 
     #[test]
     fn a_reused_file_id_with_another_birth_is_another_folder() {
@@ -1042,6 +1122,27 @@ mod tests {
         {
             assert!(is_local_path(Path::new("/x")));
             assert!(is_local_path(Path::new("/")));
+        }
+    }
+
+    /// A folder a cloud sync service registered (and anything below it) is a cloud folder; a plain folder beside it
+    /// is not.
+    #[test]
+    fn a_folder_a_sync_service_registered_is_a_cloud_folder() {
+        let outside = tempfile::tempdir().unwrap();
+        assert!(!in_cloud_folder(outside.path()));
+        #[cfg(windows)]
+        {
+            let cloud = tempfile::tempdir().unwrap();
+            let inner = cloud.path().join("notes ação");
+            std::fs::create_dir(&inner).unwrap();
+            assert!(!in_cloud_folder(cloud.path()), "not registered yet");
+            let Some(_root) = SyncRoot::register(cloud.path()) else {
+                return;
+            };
+            assert!(in_cloud_folder(cloud.path()));
+            assert!(in_cloud_folder(&inner));
+            assert!(!in_cloud_folder(outside.path()));
         }
     }
 

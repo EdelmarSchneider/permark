@@ -418,6 +418,28 @@ fn caches_sit_in_this_computers_folder_of_the_project_only_as_the_row_says() {
     }
 }
 
+/// A project inside a cloud sync root keeps its caches in the app cache even though its `.permark/` looks like a
+/// plain folder (a hydrated placeholder does, to a normal process): a sync service would carry them to every device.
+#[cfg(windows)]
+#[test]
+fn a_project_in_a_cloud_sync_root_keeps_its_caches_in_the_app_cache() {
+    let f = fx();
+    let Some(_root) = crate::fsx::tests::SyncRoot::register(f.project.path()) else {
+        return;
+    };
+    f.team_folder();
+    let store = f.settle();
+    assert_eq!(store.location(), Project, "data stays in the project");
+    let app = f
+        .dirs
+        .cache
+        .join("projects")
+        .join(ProjectId::of(&f.root()).as_str());
+    assert_eq!(store.cache_dir(), app);
+    assert_eq!(f.rows()[0].cache, CachePlace::App);
+    assert!(!f.permark().join("cache").exists());
+}
+
 /// A `.permark/` that arrives after the first open (a pull, a sync tool) leaves the data in the profile: opened again,
 /// the store still answers the profile, and the team files stay the only files in `.permark/`.
 #[test]
