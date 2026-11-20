@@ -307,6 +307,7 @@ fn init_project_copies_profile_state_except_profile_only_files() {
             "projects-copied.json",
             "card.json",
             "from-0.5",
+            "location.json",
         ]
     );
     let after = init_project(&f.dirs, &f.root()).unwrap();
@@ -1102,8 +1103,13 @@ fn uninit_project_never_carries_profile_only_files_back() {
         fs::read(profile.join("agent.json")).unwrap(),
         b"person's choice"
     );
+    // nothing of the project's comes back (the row of the folder's data place is the profile's own)
     for name in PROFILE_ONLY.iter().chain(&SHARED_FILES).skip(1) {
-        assert!(!profile.join(name).exists(), "{name} stays out");
+        assert_ne!(
+            fs::read(profile.join(name)).ok().as_deref(),
+            Some(&b"from the project"[..]),
+            "{name} stays out"
+        );
     }
     assert_eq!(
         f.store().file::<Sample>("session.json").load().into_value(),

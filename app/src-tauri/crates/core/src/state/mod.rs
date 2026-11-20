@@ -4,6 +4,7 @@
 //! a handle holding those defaults. Plugins get own namespaces.
 
 pub mod context;
+pub mod location;
 pub mod older;
 mod private;
 mod raw;
@@ -33,7 +34,7 @@ pub use shared_write::{merge3, FileLock};
 pub const PERMARK_DIR: &str = ".permark";
 /// Per-project files that ALWAYS stay in the profile (a project's files must never switch them). Initialize never
 /// copies them into `.permark/local/` (a copy there would never be read) and undoing it never carries one back.
-pub const PROFILE_ONLY: [&str; 8] = [
+pub const PROFILE_ONLY: [&str; 9] = [
     "agent.json",
     "agent-refused.json",
     "plugins.json",
@@ -42,9 +43,13 @@ pub const PROFILE_ONLY: [&str; 8] = [
     crate::projects::migrate::LEDGER_FILE,
     crate::projects::card::PROFILE_CARD,
     older::TAKEN_OVER,
+    location::FILE,
 ];
 /// Per-project files that live in the shared `.permark/` itself (never in `local/`).
 pub const SHARED_FILES: [&str; 1] = ["meta.toml"];
+/// Plugins whose folder for a project ([`StateStore::profile_plugin_dir`]) stays in the profile whatever the project
+/// holds (the Assistant's work copy of the project and its conversation): never the project's data.
+pub const PROFILE_PLUGINS: [&str; 1] = ["acp"];
 /// Most bytes a state | raw file is read with unless its kind says otherwise ([`StateData::MAX_BYTES`],
 /// [`RawFile::capped`]): a larger one is left unread, never taken into memory.
 pub const DEFAULT_MAX_BYTES: u64 = 8 * 1024 * 1024;
@@ -155,7 +160,7 @@ impl ProjectId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum StateLocation {
@@ -682,21 +687,36 @@ impl StateStore {
         }
     }
 
-    /// `.permark/local/` when `.permark/` is a real folder (and `local/` real or missing), else the profile. Shared
-    /// files follow the team folder ([`has_team_folder`]) whatever place holds the state.
+    /// Where the folder's row ([`location`]) puts the private state: the profile, or `.permark/local/` while
+    /// `.permark/` is a real folder (and `local/` real or missing; else the profile for now, the row untouched). No
+    /// row: `.permark/local/` when earlier versions put it there. Shared files follow the team folder
+    /// ([`has_team_folder`]) whatever place holds the state. Writes nothing; a folder being opened gets its row first
+    /// ([`location::settle`]).
     #[must_use]
     pub fn for_project(dirs: &AppDirs, root: &Root) -> Self {
         Self::for_project_as(dirs, root, crate::tree::is_link_meta)
     }
 
-    /// [`StateStore::for_project`], `legacy_link` telling what counts as a link for the place of the private state:
-    /// earlier versions counted any reparse point, a cloud placeholder folder too, so a project in a synced folder
-    /// keeps its state in the profile, where they kept it (moved to `.permark/local/`, it would be left unread). Tests
-    /// pass another predicate to stand for a cloud folder, which none can make.
-    pub(crate) fn for_project_as(
+    /// [`StateStore::for_project`], `legacy_link` telling what counts as a link for the place of the private state of
+    /// a folder without a row: earlier versions counted any reparse point, a cloud placeholder folder too, so a
+    /// project in a synced folder keeps its state in the profile, where they kept it (moved to `.permark/local/`, it
+    /// would be left unread). Tests pass another predicate to stand for a cloud folder, which none can make.
+    pub(crate) fn for_project_as(dirs: &AppDirs, root: &Root, legacy_link: location::Link) -> Self {
+        let profile_dir = dirs
+            .profile
+            .join("projects")
+            .join(ProjectId::of(root).as_str());
+        let place = location::place_of(&profile_dir, root);
+        Self::at_place(dirs, root, legacy_link, place)
+    }
+
+    /// The store of the folder whose private state a row puts at `place`; `None`: no row, the earlier versions' rule
+    /// decides (with `legacy_link`).
+    fn at_place(
         dirs: &AppDirs,
         root: &Root,
-        legacy_link: fn(&std::fs::Metadata) -> bool,
+        legacy_link: location::Link,
+        place: Option<StateLocation>,
     ) -> Self {
         let id = ProjectId::of(root);
         let profile_dir = dirs.profile.join("projects").join(id.as_str());
@@ -705,9 +725,16 @@ impl StateStore {
         let local = permark.join("local");
         let cache = permark.join("cache");
         let team = has_team_folder(root).then(|| permark.clone());
-        let entry = |path: &Path| private::entry_as(path, legacy_link);
-        // the state is in `local/` only inside a team folder, whatever `legacy_link` takes for a folder
-        let usable = team.is_some()
+        // a row was written with std's link test: a cloud placeholder folder is a folder
+        let link = if place.is_some() {
+            crate::fsx::is_link
+        } else {
+            legacy_link
+        };
+        let entry = |path: &Path| private::entry_as(path, link);
+        // the state is in `local/` only inside a team folder, whatever `link` takes for a folder
+        let usable = place != Some(StateLocation::Profile)
+            && team.is_some()
             && matches!(entry(&permark), private::Entry::Folder)
             && !matches!(entry(&local), private::Entry::Other);
         if usable {
@@ -747,6 +774,29 @@ impl StateStore {
                 root: Some(root.clone()),
                 machine: Arc::default(),
             }
+        }
+    }
+
+    /// A store for the project's profile files ([`StateStore::profile_file`]: the agent switch and the like), made
+    /// without looking at the folder: no identity, no row, no `.permark/` lookup. Its private state place is the
+    /// profile whatever the folder holds, so it serves a reader of profile files that walks many folders (the
+    /// agent's side looking up the connected folder from its working folder), never the project's own data.
+    #[must_use]
+    pub fn profile_only(dirs: &AppDirs, root: &Root) -> Self {
+        let id = ProjectId::of(root);
+        let profile_dir = dirs.profile.join("projects").join(id.as_str());
+        Self {
+            location: StateLocation::Profile,
+            dir: profile_dir.clone(),
+            cache: dirs.cache.join("projects").join(id.as_str()),
+            profile_dir,
+            app_dir: dirs.profile.clone(),
+            team: None,
+            guard: None,
+            cache_guard: None,
+            roots: dirs.clone(),
+            root: Some(root.clone()),
+            machine: Arc::default(),
         }
     }
 
@@ -1018,13 +1068,16 @@ pub fn remove_plugin_data_everywhere(
 }
 
 /// Creates `.permark/` in `root` (config, ignore, `local/`, `cache/`); existing files kept; copies profile state in
-/// (never over an existing entry; profile-only files stay). Never auto-called.
+/// (never over an existing entry; profile-only files stay), and the folder's row then names the project, as the
+/// person chose. The profile's data is copied whenever it is the place now, also in a folder no window opened in
+/// this version ([`location::answer`]). Data on both sides (a `local/` holding data from elsewhere): nothing is
+/// carried and the row is left, so the folder's files never hide the person's. Never auto-called.
 ///
 /// # Errors
-/// `.permark` | `local` | `cache` is a link or a file; IO failure.
+/// `.permark` | `local` | `cache` is a link or a file; IO failure; the row cannot be written.
 pub fn init_project(dirs: &AppDirs, root: &Root) -> Result<StateStore, StateError> {
     let permark = root.path().join(PERMARK_DIR);
-    let before = StateStore::for_project(dirs, root);
+    let before = location::answer(dirs, root, crate::tree::is_link_meta);
     let fail = |p: &Path| {
         let p = p.to_path_buf();
         move |e| StateError::io(&p, e)
@@ -1053,11 +1106,15 @@ pub fn init_project(dirs: &AppDirs, root: &Root) -> Result<StateStore, StateErro
         let path = permark.join(name);
         private::create_if_missing(&path, content).map_err(fail(&path))?;
     }
-    let after = StateStore::for_project(dirs, root);
-    if before.location == StateLocation::Profile && after.location == StateLocation::Project {
-        copy_missing(&before.dir, &after.dir, true).map_err(fail(&before.dir))?;
+    if before.location == StateLocation::Profile {
+        let local = permark.join("local");
+        if location::local_holds_data(&local) && location::profile_holds_data(&before.dir) {
+            return Ok(StateStore::for_project(dirs, root));
+        }
+        copy_missing(&before.dir, &local, true).map_err(fail(&before.dir))?;
     }
-    Ok(after)
+    location::record(dirs, root, StateLocation::Project, true)?;
+    Ok(StateStore::for_project(dirs, root))
 }
 
 /// Takes back what [`init_project`] made, when it is untouched (`projects.md` §2.4, undo of a first include):

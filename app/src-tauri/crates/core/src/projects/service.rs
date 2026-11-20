@@ -965,6 +965,13 @@ impl Projects {
         Some(StateStore::for_project(&self.dirs, &root))
     }
 
+    /// [`Projects::store_of`] for an owner slot: the member's data place settled first, as when it is opened alone
+    /// (its row written once), so every store of the member gives one answer.
+    fn settled_store_of(&self, path: &VaultPath) -> Option<StateStore> {
+        let root = Root::open(&abs_of(self.root.path(), path)).ok()?;
+        Some(crate::state::location::settle(&self.dirs, &root))
+    }
+
     /// Writes the first commits the `git` plugin learned (`RecordOp::SetFirstCommit`, one record write for all;
     /// `projects.md` D21): only for entries without one, only while the record reads. Others are skipped quietly.
     ///
@@ -1765,7 +1772,8 @@ impl Projects {
             || map.member(uid).is_some_and(|m| is_copied(&inner, m))
     }
 
-    /// The owners for `map`: members copied (or about to be: `extra`) whose folder is there.
+    /// The owners for `map`: members copied (or about to be: `extra`) whose folder is there, each member's data place
+    /// settled (under `owners_turn`: one writer of the rows at a time).
     fn owners_for(&self, map: &ProjectMap, extra: &[ProjectUid]) -> Owners {
         let root = StateStore::for_project(&self.dirs, &self.root);
         let copied: Vec<bool> = {
@@ -1779,7 +1787,7 @@ impl Projects {
             .filter(|(m, copied)| *copied || extra.contains(&m.uid))
             .map(|(m, _)| m)
             .filter_map(|m| {
-                let store = self.store_of(&m.path)?;
+                let store = self.settled_store_of(&m.path)?;
                 Some(OwnerSlot::member(m.uid.clone(), m.path.as_str(), store))
             })
             .collect();

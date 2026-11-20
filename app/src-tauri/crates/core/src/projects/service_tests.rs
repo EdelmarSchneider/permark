@@ -1255,11 +1255,88 @@ fn owners_rebuilt_over_the_same_folders_are_the_same() {
         owners.slots().iter().map(|s| s.store.location()).collect()
     };
     assert_eq!(location(&first), [Project, Profile]);
+    // the member's data stays where its first open put it; only its team folder arrives
     permark(root, "sub");
     let moved = projects.owners_for(&map, &[]);
-    assert_eq!(location(&moved), [Project, Project]);
+    assert_eq!(location(&moved), [Project, Profile]);
     assert!(!moved.same(&first));
     assert!(moved.same(&projects.owners_for(&map, &[])));
+}
+
+/// What a store says about where a folder's data sits.
+type Answer = (
+    crate::state::StateLocation,
+    std::path::PathBuf,
+    std::path::PathBuf,
+    bool,
+);
+
+fn answer(store: &StateStore) -> Answer {
+    (
+        store.location(),
+        store.dir().to_path_buf(),
+        store.cache_dir().to_path_buf(),
+        store.has_team_folder(),
+    )
+}
+
+/// Every store of one folder gives one answer: the opened folder's own store, the store after a reload, its owner
+/// slot, a member's owner slot and the member opened alone. Layouts: an initialized folder whose profile still holds
+/// an older copy, and a `.permark/` that arrived with nothing private in it while the profile holds the state.
+#[test]
+fn every_store_of_a_folder_gives_one_answer() {
+    use crate::state::StateLocation::{Profile, Project};
+    // (layout, the private state in `.permark/local/` too, where every store puts it)
+    let layouts = [
+        ("initialized, older profile copy", true, Project),
+        ("team folder arrived, state in the profile", false, Profile),
+    ];
+    for (name, local_state, place) in layouts {
+        let base = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        git(root, "sub");
+        let (env, _sink) = env(base.path());
+        for folder in [root.to_path_buf(), root.join("sub")] {
+            let id = crate::state::ProjectId::of(&Root::open(&folder).unwrap());
+            let profile = env.dirs.profile.join("projects").join(id.as_str());
+            fs::create_dir_all(&profile).unwrap();
+            fs::write(profile.join("session.json"), b"{}").unwrap();
+            fs::create_dir_all(folder.join(".permark")).unwrap();
+            if local_state {
+                let local = folder.join(".permark/local");
+                fs::create_dir_all(&local).unwrap();
+                fs::write(local.join("session.json"), b"{}").unwrap();
+            }
+        }
+        fs::write(
+            root.join(".permark/projects.toml"),
+            "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"sub\"\n",
+        )
+        .unwrap();
+        let core = ProjectCore::open(Root::open(root).unwrap(), &env);
+        let projects = core.projects();
+        wait("owners", || projects.owners().slots().len() == 2);
+        let opened = answer(&core.store());
+        assert_eq!(opened.0, place, "{name}");
+        let owners = projects.owners();
+        assert_eq!(
+            answer(&owners.slots()[0].store),
+            opened,
+            "{name}: root slot"
+        );
+        core.reload_state(&env);
+        assert_eq!(answer(&core.store()), opened, "{name}: reloaded");
+        let member = answer(&owners.slots()[1].store);
+        assert_eq!(member.0, place, "{name}: member");
+        let alone = ProjectCore::open(Root::open(&root.join("sub")).unwrap(), &env);
+        assert_eq!(
+            answer(&alone.store()),
+            member,
+            "{name}: member opened alone"
+        );
+        drop(alone);
+    }
 }
 
 /// Live moves (real fs renames under the real watch).

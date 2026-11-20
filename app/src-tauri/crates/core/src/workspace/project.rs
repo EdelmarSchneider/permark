@@ -340,7 +340,9 @@ impl ProjectCore {
     #[allow(clippy::too_many_lines)] // the composition root: every service built and wired in one place
     pub fn open(root: Root, env: &CoreEnv) -> Arc<Self> {
         let id = ProjectId::of(&root);
-        let store = StateStore::for_project(&env.dirs, &root);
+        // where the person's data sits is settled before anything reads or writes it: a first open records it, so a
+        // `.permark/` that arrives later never moves it
+        let store = crate::state::location::settle(&env.dirs, &root);
         // the person's data 0.5 kept in its own profile folder, taken over once
         crate::state::older::take_over_project(&env.dirs, &root, &store);
         // a context file for scripts that came with the folder goes before a plugin starts, whatever the agent

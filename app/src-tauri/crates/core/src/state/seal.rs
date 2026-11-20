@@ -161,6 +161,9 @@ pub struct Machine {
 }
 
 impl Machine {
+    /// Name of the folder in a state folder that holds every install's own folder.
+    pub(super) const DIR: &'static str = "machine";
+
     pub(super) fn new(install: &Install, root: &Root, state_dir: &Path) -> Self {
         Self {
             key: install.key.clone(),
@@ -170,7 +173,7 @@ impl Machine {
                 FolderIdentity::of(root.path()),
                 root.key().as_str(),
             ),
-            dir: state_dir.join("machine").join(&install.iid),
+            dir: state_dir.join(Self::DIR).join(&install.iid),
         }
     }
 
