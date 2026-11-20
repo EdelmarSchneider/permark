@@ -80,6 +80,11 @@ impl SessionSaver {
         self.frozen.store(true, Ordering::Release);
     }
 
+    /// The session is final (the last window closed | the app stops): nothing saves it again.
+    pub fn is_frozen(&self) -> bool {
+        self.frozen.load(Ordering::Acquire)
+    }
+
     /// App exit (main thread): freezes, stops the thread. Not joined: a save in flight waits on the main thread
     /// (window geometry), so joining here could deadlock; the thread ends with the process.
     pub fn stop(&self) {

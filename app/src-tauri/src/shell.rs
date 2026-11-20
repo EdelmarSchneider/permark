@@ -379,8 +379,27 @@ impl Shell {
         self.registry.keep_data(&Root::open(path)?)
     }
 
-    /// App exit: stop serving, stop plugins (reverse order), final session save already done on last close.
-    pub fn shutdown(&self) {
+    /// Writes what every open project's activity journal holds now (its writer waits a moment to gather entries, and an
+    /// exit that skips destructors would lose them).
+    #[cfg(feature = "plugin-updates")]
+    pub fn flush_activity(&self) {
+        for core in self.registry.cores() {
+            core.activity().flush();
+        }
+    }
+
+    /// App exit: saves the session unless the last window's close did (frozen: the windows may be gone by now), then
+    /// stops serving, stops plugins (reverse order). An exit no window close led to (macOS Dock Quit, logout, a system
+    /// shutdown) keeps the windows of this run.
+    pub fn shutdown(&self, handle: &AppHandle) {
+        // an exit after the windows already went (logout, system shutdown) has nothing to keep: the last saved
+        // session stays as it is
+        if !self.saver.is_frozen() {
+            let session = self.session_snapshot(handle);
+            if !session.windows.is_empty() {
+                let _ = app_session_file(&self.app_store).save(&session);
+            }
+        }
         drop(lock(&self.server).take());
         self.saver.stop();
         self.env.stop_app_plugins();

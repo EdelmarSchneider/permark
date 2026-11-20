@@ -911,7 +911,7 @@ impl ActivityLog {
         }
     }
 
-    /// Writes what is pending now (tests; Drop does it too).
+    /// Writes what is pending now (before an update install ends the process without the Drop; tests).
     pub fn flush(&self) {
         flush(&self.inner);
     }

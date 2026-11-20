@@ -7,6 +7,7 @@ mod commands;
 mod default_app;
 mod downloads_http;
 mod files;
+mod menu;
 mod nav;
 mod open;
 mod plugins;
@@ -97,6 +98,11 @@ pub fn run(request: OpenRequest) -> Result<(), StartError> {
     // signed self-updates (direct builds; the plugin `updates` drives it, from Rust only: no window permission)
     #[cfg(feature = "plugin-updates")]
     let app = app.plugin(tauri_plugin_updater::Builder::new().build());
+    // macOS: the app menu's Quit asks every window to close (the system's Quit ends the process with no question)
+    #[cfg(target_os = "macos")]
+    let app = app
+        .menu(menu::build)
+        .on_menu_event(|handle, event| menu::on_event(handle, &event));
     let app = app
         .invoke_handler(commands::handler())
         .setup(move |app| {
@@ -113,7 +119,7 @@ pub fn run(request: OpenRequest) -> Result<(), StartError> {
         .build(tauri::generate_context!())?;
     app.run(|handle, event| match event {
         RunEvent::WindowEvent { label, event, .. } => on_window_event(handle, &label, &event),
-        RunEvent::Exit => shell::state(handle).shutdown(),
+        RunEvent::Exit => shell::state(handle).shutdown(handle),
         #[cfg(target_os = "macos")]
         RunEvent::Opened { urls } => open::opened_urls(handle, &urls),
         _ => {}
@@ -139,25 +145,9 @@ fn on_window_event(handle: &tauri::AppHandle, label: &str, event: &WindowEvent) 
         }
         WindowEvent::Focused(true) => shell.registry.focused(label, open::now_ms()),
         WindowEvent::CloseRequested { api, .. } => {
-            if shell.registry.is_closing(label) {
-                return;
+            if !request_close(handle, label) {
+                api.prevent_close();
             }
-            // unsaved edits in any tab: one prompt in the view on screen (the window closes once it is answered)
-            let outcome = shell.registry.request_close(label);
-            let closes = outcome
-                .changes
-                .iter()
-                .any(|c| matches!(c, permark_core::workspace::ViewChange::CloseWindow { .. }));
-            if closes {
-                // the last window: the session keeps it (saved now, frozen until exit)
-                if shell.registry.is_last_on_screen(label) {
-                    shell.save_session_now(handle);
-                    shell.saver.freeze();
-                }
-                return;
-            }
-            api.prevent_close();
-            open::run(handle, outcome);
         }
         WindowEvent::Destroyed => {
             let views: Vec<String> = shell
@@ -175,6 +165,31 @@ fn on_window_event(handle: &tauri::AppHandle, label: &str, event: &WindowEvent) 
         }
         _ => {}
     }
+}
+
+/// Asks the work window `label` to close, as its close button does. Unsaved edits in any tab -> one prompt in the view
+/// on screen (the window closes once it is answered) and `false`. `true`: it may close now (the last window on screen
+/// saved the session first, frozen until exit); the caller lets the system's close go through, or closes it.
+pub(crate) fn request_close(handle: &tauri::AppHandle, label: &str) -> bool {
+    let shell = shell::state(handle);
+    if shell.registry.is_closing(label) {
+        return true;
+    }
+    let outcome = shell.registry.request_close(label);
+    let closes = outcome
+        .changes
+        .iter()
+        .any(|c| matches!(c, permark_core::workspace::ViewChange::CloseWindow { .. }));
+    if closes {
+        // the last window: the session keeps it (saved now, frozen until exit)
+        if shell.registry.is_last_on_screen(label) {
+            shell.save_session_now(handle);
+            shell.saver.freeze();
+        }
+        return true;
+    }
+    open::run(handle, outcome);
+    false
 }
 
 #[cfg(test)]
