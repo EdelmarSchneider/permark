@@ -539,6 +539,9 @@ fn list_comments(data: &Value) -> String {
         .opt("which", (!which.is_empty()).then_some(which))
         .kv("n", n_of(comments))
         .opt("more", u(data, "more").filter(|m| *m > 0))
+        .opt("withheld", u(data, "withheld").filter(|w| *w > 0))
+        .opt("why", data.get("why").and_then(Value::as_str))
+        .opt("source", data.get("source").and_then(Value::as_str))
         .line();
     out.push('\n');
     let rows: Vec<Vec<String>> = comments
@@ -686,11 +689,27 @@ fn activity_row(r: &Value) -> Vec<String> {
 const ACTIVITY_COLS: [&str; 7] = ["seq", "time", "by", "kind", "path", "detail", "flags"];
 
 fn activity(data: &Value) -> String {
-    // a hand-off package is frozen text: exactly what was handed off
+    // a hand-off package is frozen text: exactly what was handed off, its source told at the end of the first line
     if let Some(text) = data.get("frozen").and_then(Value::as_str) {
-        return text.to_owned();
+        return match data.get("source").and_then(Value::as_str) {
+            Some(source) => labeled(text, source),
+            None => text.to_owned(),
+        };
     }
     activity_text(data)
+}
+
+/// `text` with ` source=<source>` at the end of its first line (before its line break); every other byte kept.
+fn labeled(text: &str, source: &str) -> String {
+    let end = text.find('\n').map_or(text.len(), |at| {
+        if text[..at].ends_with('\r') {
+            at - 1
+        } else {
+            at
+        }
+    });
+    let (head, rest) = text.split_at(end);
+    format!("{head} source={}{rest}", format::value(source))
 }
 
 /// The text of an activity answer | a hand-off package from its data.
@@ -712,11 +731,14 @@ pub fn activity_text(data: &Value) -> String {
         .kv("n", rows)
         .opt("sessions", (!sessions.is_empty()).then_some(sessions.len()))
         .opt("hidden", u(data, "hidden").filter(|h| *h > 0))
+        .flag("withheld", b(data, "withheld"))
+        .opt("why", data.get("why").and_then(Value::as_str))
         .flag("no_handoff", b(data, "no_handoff"))
         .flag("older_entries_not_kept", b(data, "trimmed"))
         .flag("format_upgraded", b(data, "upgraded"))
         .flag("older_unchecked", b(data, "older_unchecked"))
         .flag("outside_only", b(data, "outside_only"))
+        .opt("source", data.get("source").and_then(Value::as_str))
         .line();
     out.push('\n');
     let plain = list(data, "rows");
@@ -877,6 +899,41 @@ mod tests {
         assert_eq!(
             render_at("get_context", &json!({ "openComments": 0 }), 0),
             "get_context nodoc\n"
+        );
+    }
+
+    #[test]
+    fn a_frozen_package_tells_its_source_at_the_end_of_its_first_line_only() {
+        let text = "activity since=handoff n=1\n#cols seq\n1\tx source=elsewhere\n";
+        assert_eq!(
+            render_at(
+                "activity",
+                &json!({ "frozen": text, "source": "folder" }),
+                0
+            ),
+            "activity since=handoff n=1 source=folder\n#cols seq\n1\tx source=elsewhere\n"
+        );
+        assert_eq!(
+            render_at("activity", &json!({ "frozen": "activity n=0\r\nrest" }), 0),
+            "activity n=0\r\nrest",
+            "no source: exactly as frozen"
+        );
+        assert_eq!(
+            render_at(
+                "activity",
+                &json!({ "frozen": "activity n=0\r\nrest", "source": "folder" }),
+                0
+            ),
+            "activity n=0 source=folder\r\nrest"
+        );
+        assert_eq!(
+            render_at(
+                "list_comments",
+                &json!({ "which": "all", "comments": [], "more": 0, "withheld": 0, "source": "folder" }),
+                0
+            ),
+            "list_comments which=all n=0 source=folder\n",
+            "no withheld comments: no count"
         );
     }
 

@@ -39,6 +39,11 @@ pub const SEARCH_BUDGET: (u64, u64) = (200, 12_000);
 pub const MAX_LINKS: usize = 50;
 /// Most comments one `list_comments` lists (the answer counts the rest in `more`).
 pub const MAX_COMMENTS: usize = 100;
+/// Where comments, done replies, the activity and the hand-off come from: PerMark's files in the folder, which may
+/// hold text written elsewhere (a copy of the folder, a sync partner, a clone). The answers carry it as `source`.
+pub const FOLDER_SOURCE: &str = "folder";
+/// Why data is withheld from agents (`why` next to `withheld`).
+pub const WITHHELD_WHY: &str = "git tracks .permark/local";
 
 /// The tools, their groups, in the order agents list them.
 pub const TOOLS: [(&str, Group); 13] = [
@@ -612,10 +617,13 @@ impl Tools {
         let list = self.comments()?.0.list(filter).map_err(|e| {
             ToolError::Failed(format!("the comments cannot be read now: {}", why(&e)))
         })?;
-        let shared: Vec<_> = list
+        let mut shared: Vec<_> = list
             .into_iter()
             .filter(|c| !guard.hidden(&c.path, false))
             .collect();
+        // counted after the hidden paths are out: a hidden path's comment is never told, not even as a number
+        let withheld = shared.iter().filter(|c| c.withheld).count();
+        shared.retain(|c| !c.withheld);
         let more = shared.len().saturating_sub(MAX_COMMENTS);
         let comments: Vec<Value> = shared
             .into_iter()
@@ -646,6 +654,11 @@ impl Tools {
         if more > 0 {
             answer["more"] = json!(more);
         }
+        if withheld > 0 {
+            answer["withheld"] = json!(withheld);
+            answer["why"] = json!(WITHHELD_WHY);
+        }
+        answer["source"] = json!(FOLDER_SOURCE);
         Ok(answer)
     }
 
@@ -655,10 +668,10 @@ impl Tools {
         let list = api.0.list(CommentFilter::All).map_err(|e| {
             ToolError::Failed(format!("the comments cannot be read now: {}", why(&e)))
         })?;
-        // a comment on a file agents do not get is not there for them
+        // a comment on a file agents do not get, or a withheld one, is not there for them
         if !list
             .iter()
-            .any(|c| c.id == id && !guard.hidden(&c.path, false))
+            .any(|c| c.id == id && !c.withheld && !guard.hidden(&c.path, false))
         {
             return Err(ToolError::NotFound(id));
         }

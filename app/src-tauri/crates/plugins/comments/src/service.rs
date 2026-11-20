@@ -18,7 +18,7 @@ use permark_core::error::{ErrorKind, IpcError};
 use permark_core::format::units;
 use permark_core::fsx;
 use permark_core::paths::{key_of, VaultPath};
-use permark_core::projects::{Owners, OwnersChange, OwnersGate};
+use permark_core::projects::{OwnerSlot, Owners, OwnersChange, OwnersGate};
 use permark_core::state::RawFile;
 use permark_core::watch::{ChangeKind, FsBatch};
 
@@ -584,6 +584,25 @@ fn not_found(subject: &str) -> IpcError {
     IpcError::new(ErrorKind::NotFound).subject(subject)
 }
 
+/// The owners whose comments stay away from agents, decided once for one call ([`CommentsService::withheld`]).
+pub struct Withheld {
+    owners: Option<Owners>,
+    slots: Vec<bool>,
+}
+
+impl Withheld {
+    /// Whether the comment at root-relative `path` is kept by a withheld owner.
+    #[must_use]
+    pub fn holds(&self, path: &str) -> bool {
+        self.owners.as_ref().is_some_and(|owners| {
+            self.slots
+                .get(owners.owner_of(path))
+                .copied()
+                .unwrap_or(false)
+        })
+    }
+}
+
 impl CommentsService {
     /// Reads the file and starts the worker that keeps the passages found.
     #[must_use]
@@ -827,12 +846,28 @@ impl CommentsService {
         })
     }
 
+    /// Which owners' comments stay away from agents now: `tracked` answers per owner (it may ask git, so it runs
+    /// outside the comments lock, once per owner).
+    #[must_use]
+    pub fn withheld(&self, tracked: impl Fn(&OwnerSlot) -> bool) -> Withheld {
+        let owners = self.shared.lock().owners.clone();
+        let slots = owners
+            .as_ref()
+            .map_or_else(Vec::new, |o| o.slots().iter().map(tracked).collect());
+        Withheld { owners, slots }
+    }
+
     /// Marks a comment done by an agent, with its short reply (the only change an agent makes). Already done: left
     /// as it is.
     ///
     /// # Errors
-    /// No such comment, or the file cannot be used.
-    pub fn resolve_by_agent(&self, id: &str, reply: Option<&str>) -> Result<(), IpcError> {
+    /// No such comment, one of a `withheld` owner (`Denied`), or the file cannot be used.
+    pub fn resolve_by_agent(
+        &self,
+        id: &str,
+        reply: Option<&str>,
+        withheld: &Withheld,
+    ) -> Result<(), IpcError> {
         let reply = reply
             .map(|r| cut(r.trim(), MAX_REPLY_CHARS))
             .filter(|r| !r.is_empty());
@@ -842,6 +877,9 @@ impl CommentsService {
                 .iter_mut()
                 .find(|c| c.id == id)
                 .ok_or_else(|| not_found(id))?;
+            if withheld.holds(&comment.path) {
+                return Err(IpcError::new(ErrorKind::Denied).subject(id));
+            }
             if comment.done.is_some() {
                 return Ok(((), false));
             }

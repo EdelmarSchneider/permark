@@ -328,10 +328,17 @@ fn save(path: &str, sections: &[&str]) -> Fact {
     }
 }
 
+/// A frozen package as `activity` serves it: the text as handed off, its source told at the end of the first line.
+fn served(full: &str) -> String {
+    let (head, rest) = full.split_once('\n').unwrap();
+    format!("{head} source=folder\n{rest}")
+}
+
 fn confirm(fx: &Budget) -> handoff::HandOffDone {
     let tools = fx.tools();
     let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
-    let HandOffPreview::Ready { upto, sessions, .. } = handoff::preview(&tools, &guard, None)
+    let HandOffPreview::Ready { upto, sessions, .. } =
+        handoff::preview(&tools, &guard, None).unwrap()
     else {
         panic!("a preview");
     };
@@ -350,13 +357,16 @@ fn the_hand_off_freezes_what_the_person_did_and_activity_answers_it() {
     let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
     // S5: nothing yet
     assert_eq!(
-        handoff::preview(&tools, &guard, None),
+        handoff::preview(&tools, &guard, None).unwrap(),
         HandOffPreview::Nothing
     );
     let (value, text) = call(&fx, "activity", json!({})).unwrap();
     assert_eq!(value["no_handoff"], true);
     assert!(text.starts_with("activity since=handoff tz="), "{text}");
-    assert!(text.trim_end().ends_with("n=0 no_handoff"), "{text}");
+    assert!(
+        text.trim_end().ends_with("n=0 no_handoff source=folder"),
+        "{text}"
+    );
     note(
         &fx,
         save("docs/plan.md", &["Plan > Rollout", "Plan > Gone heading"]),
@@ -396,7 +406,7 @@ fn the_hand_off_freezes_what_the_person_did_and_activity_answers_it() {
         rows,
         tokens,
         ..
-    } = handoff::preview(&tools, &guard, None)
+    } = handoff::preview(&tools, &guard, None).unwrap()
     else {
         panic!("a preview");
     };
@@ -427,7 +437,7 @@ fn the_hand_off_freezes_what_the_person_did_and_activity_answers_it() {
     // the agent reads exactly the package, even after more work
     note(&fx, save("README.md", &["Atlas"]));
     let (_, text) = call(&fx, "activity", json!({ "since": "handoff" })).unwrap();
-    assert_eq!(text, done.full);
+    assert_eq!(text, served(&done.full));
     // raw rows since the hand-off, then since a seq, by person | outside
     let (value, text) = call(&fx, "activity", json!({ "since": "handoff", "limit": 10 })).unwrap();
     assert_eq!(value["rows"].as_array().unwrap().len(), 1, "{text}");
@@ -523,7 +533,10 @@ fn a_frozen_package_leaves_out_rows_whose_path_is_hidden_now_and_counts_them() {
     );
     // the rule lifted: exactly the frozen text again
     write(&fx, ".aiignore", "private/\n");
-    assert_eq!(call(&fx, "activity", json!({})).unwrap().1, done.full);
+    assert_eq!(
+        call(&fx, "activity", json!({})).unwrap().1,
+        served(&done.full)
+    );
 }
 
 #[test]
@@ -594,7 +607,7 @@ fn changes_made_outside_are_listed_then_counted_per_folder_when_many() {
         case,
         outside: seen,
         ..
-    } = handoff::preview(&tools, &guard, None)
+    } = handoff::preview(&tools, &guard, None).unwrap()
     else {
         panic!("a preview");
     };

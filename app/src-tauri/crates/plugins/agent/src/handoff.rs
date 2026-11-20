@@ -24,7 +24,7 @@ use ts_rs::TS;
 
 use crate::format::{self, CEILING_CHARS};
 use crate::render::activity_text;
-use crate::tools::Tools;
+use crate::tools::{Tools, FOLDER_SOURCE, WITHHELD_WHY};
 use crate::ToolError;
 
 /// Rows `activity` lists by default, and at most.
@@ -743,14 +743,43 @@ fn scope_upto(journal: &Journal, upto: u64, now: u64) -> Scope {
     scope(&seen, now)
 }
 
+/// Whether the activity stays away from agents: the journal lives in the opened folder's private folder, and git
+/// tracks that folder (what it holds may have come with a clone | checkout). Asked per call: the answer follows
+/// `git add` | `git rm --cached` at once.
+fn withheld(tools: &Tools) -> bool {
+    let repo = tools.services().services.get::<RepoHandle>();
+    tools
+        .services()
+        .owners(tools.store())
+        .root()
+        .private_tracked(repo.as_deref())
+}
+
+/// The hand-off's answer while the activity is [`withheld`]: nothing is built, nothing written.
+fn refused() -> ToolError {
+    ToolError::Invalid(
+        "this folder's repository tracks PerMark's private files; activity is not given to agents"
+            .to_owned(),
+    )
+}
+
 /// The hand-off dialog's content (`checked`: the person's choice of sessions, else the default).
-#[must_use]
-pub fn preview(tools: &Tools, guard: &Guard, checked: Option<&[u32]>) -> HandOffPreview {
+///
+/// # Errors
+/// `Invalid` while the activity is withheld from agents.
+pub fn preview(
+    tools: &Tools,
+    guard: &Guard,
+    checked: Option<&[u32]>,
+) -> Result<HandOffPreview, ToolError> {
+    if withheld(tools) {
+        return Err(refused());
+    }
     let activity = &tools.services().activity;
     let journal = activity.snapshot();
     let scope = scope(&journal, activity.now());
     if scope.case == Case::Nothing {
-        return HandOffPreview::Nothing;
+        return Ok(HandOffPreview::Nothing);
     }
     let chosen: Vec<u32> = checked.map_or_else(
         || {
@@ -789,7 +818,7 @@ pub fn preview(tools: &Tools, guard: &Guard, checked: Option<&[u32]>) -> HandOff
             }
         })
         .collect();
-    HandOffPreview::Ready {
+    Ok(HandOffPreview::Ready {
         case: scope.case,
         first: journal.checkpoint.is_none(),
         sessions,
@@ -804,7 +833,7 @@ pub fn preview(tools: &Tools, guard: &Guard, checked: Option<&[u32]>) -> HandOff
         rows: u32::try_from(built.rows).unwrap_or(u32::MAX),
         tokens: estimate(&built.text),
         upto: scope.upto,
-    }
+    })
 }
 
 /// The line the person pastes in the prompt.
@@ -820,13 +849,16 @@ pub fn prompt_line(rows: u32, outside_only: bool) -> String {
 /// Confirms a hand-off: the package of what the preview showed is frozen, the checkpoint set.
 ///
 /// # Errors
-/// `Invalid` when nothing is left to hand off (S5).
+/// `Invalid` when nothing is left to hand off, or while the activity is withheld from agents.
 pub fn confirm(
     tools: &Tools,
     guard: &Guard,
     upto: u64,
     checked: &[u32],
 ) -> Result<HandOffDone, ToolError> {
+    if withheld(tools) {
+        return Err(refused());
+    }
     let activity = &tools.services().activity;
     let journal = activity.snapshot();
     let scope = scope_upto(&journal, upto, activity.now());
@@ -854,11 +886,41 @@ pub fn confirm(
     })
 }
 
-/// The `activity` tool: the latest package (default, `since=handoff`), or net rows since a time | seq.
+/// The `activity` tool: the latest package (default, `since=handoff`), or net rows since a time | seq. Every answer
+/// says where it comes from (`source`); while the activity is [`withheld`], whatever was asked: no rows, no package,
+/// only that and why.
 ///
 /// # Errors
 /// `Invalid` for an unreadable `since` | `by`.
 pub fn activity_tool(
+    tools: &Tools,
+    guard: &Guard,
+    since: Option<&str>,
+    limit: Option<usize>,
+    by: Option<&str>,
+) -> Result<Value, ToolError> {
+    if withheld(tools) {
+        let since = since
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("handoff");
+        return Ok(json!({
+            "since": since,
+            "tz": format::tz(),
+            "rows": [],
+            "withheld": true,
+            "why": WITHHELD_WHY,
+            "source": FOLDER_SOURCE,
+        }));
+    }
+    let mut data = answer(tools, guard, since, limit, by)?;
+    // last key: the answer before it stays as it was
+    data["source"] = json!(FOLDER_SOURCE);
+    Ok(data)
+}
+
+/// [`activity_tool`]'s answer from the journal.
+fn answer(
     tools: &Tools,
     guard: &Guard,
     since: Option<&str>,

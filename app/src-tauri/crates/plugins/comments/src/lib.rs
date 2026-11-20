@@ -15,14 +15,14 @@ mod service;
 mod tests;
 
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use permark_core::activity::{ActivityLog, CommentOp, Fact};
 use permark_core::conditions::Requirement;
 use permark_core::organizing::{CommentBook, CommentFilter, CommentItem, CommentsApi};
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
-    RpcRegistration, Running, ServiceLease,
+    RepoHandle, RpcRegistration, Running, ServiceLease, Services,
 };
 use permark_core::projects::OwnersChange;
 use permark_core::watch::Subscription;
@@ -30,7 +30,7 @@ use permark_core::IpcError;
 use serde::Deserialize;
 
 pub use model::{Comment, CommentScope, CommentView, PassageState};
-pub use service::{CommentsService, EditTarget, NewComment};
+pub use service::{CommentsService, EditTarget, NewComment, Withheld};
 
 const ID: PluginId = PluginId::of("comments");
 /// The file in the project's local state.
@@ -231,7 +231,10 @@ impl Plugin for CommentsPlugin {
         ));
         let lease = project
             .services
-            .provide(Arc::new(CommentsApi(Arc::new(Book(Arc::clone(&service))))));
+            .provide(Arc::new(CommentsApi(Arc::new(Book {
+                service: Arc::clone(&service),
+                services: Arc::downgrade(&project.services),
+            }))));
         Ok(Box::new(CommentsRunning {
             subscription: Some(subscription),
             owners,
@@ -264,7 +267,24 @@ impl Drop for CommentsRunning {
 }
 
 /// What the agent connection asks of the comments.
-struct Book(Arc<CommentsService>);
+struct Book {
+    service: Arc<CommentsService>,
+    /// The project's services, for the repository reader the `git` plugin offers while it runs (weak: this book is
+    /// one of those services).
+    services: Weak<Services>,
+}
+
+impl Book {
+    /// The owners whose private folder git tracks now: their comments may have come with a clone | checkout.
+    fn withheld(&self) -> Withheld {
+        let repo = self
+            .services
+            .upgrade()
+            .and_then(|services| services.get::<RepoHandle>());
+        self.service
+            .withheld(|slot| slot.private_tracked(repo.as_deref()))
+    }
+}
 
 impl CommentBook for Book {
     fn list(&self, which: CommentFilter) -> Result<Vec<CommentItem>, IpcError> {
@@ -273,8 +293,9 @@ impl CommentBook for Book {
             CommentFilter::Done => CommentScope::Done,
             CommentFilter::All => CommentScope::All,
         };
+        let withheld = self.withheld();
         Ok(self
-            .0
+            .service
             .list(None, scope)?
             .into_iter()
             .map(|view| CommentItem {
@@ -284,6 +305,7 @@ impl CommentBook for Book {
                     PassageState::PassageChanged => "passageChanged",
                     PassageState::DocumentMissing => "documentMissing",
                 },
+                withheld: withheld.holds(&view.path),
                 id: view.id,
                 path: view.path,
                 quote: view.quote,
@@ -299,7 +321,7 @@ impl CommentBook for Book {
     }
 
     fn resolve(&self, id: &str, reply: Option<&str>) -> Result<(), IpcError> {
-        self.0.resolve_by_agent(id, reply)
+        self.service.resolve_by_agent(id, reply, &self.withheld())
     }
 }
 
