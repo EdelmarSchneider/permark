@@ -1895,6 +1895,43 @@ fn the_ignore_patterns_apply_at_once_and_back() {
     assert!(shown(&core).contains(&"draft.md".to_owned()));
 }
 
+/// The sharing choice rewrites `.permark/.gitignore`, and the tree takes its rules at once (what git skips is listed
+/// as ignored), without waiting for the watcher; back to shared, the team files are listed again.
+#[test]
+fn the_sharing_choice_reaches_the_tree_at_once() {
+    use crate::state::Sharing;
+    use crate::tree::{FilterShow, TreeFilter};
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.md"), "# a\n").unwrap();
+    let (core, _) = open_project(&f, dir.path());
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, core.root()).unwrap();
+    core.reload_state(&env);
+    let shown = |core: &ProjectCore| -> Vec<String> {
+        let snapshot = core.explorer().open_view(
+            "main",
+            Some(TreeFilter {
+                show: FilterShow::Everything,
+                show_hidden: true,
+                ..TreeFilter::default()
+            }),
+        );
+        snapshot.nodes.iter().map(|n| n.path.clone()).collect()
+    };
+    let team = ".permark/config.toml".to_owned();
+    assert!(shown(&core).contains(&team), "{:?}", shown(&core));
+    assert_eq!(
+        core.set_sharing(Sharing::Private).unwrap(),
+        Sharing::Private
+    );
+    let private = shown(&core);
+    assert!(!private.contains(&team), "{private:?}");
+    assert!(private.contains(&"a.md".to_owned()));
+    assert_eq!(core.set_sharing(Sharing::Shared).unwrap(), Sharing::Shared);
+    assert!(shown(&core).contains(&team));
+}
+
 #[test]
 fn a_per_project_choice_stops_and_starts_the_plugin_and_is_kept_in_the_profile() {
     let f = fx();

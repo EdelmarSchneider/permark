@@ -1349,6 +1349,19 @@ fn a_changed_gitignore_rebuilds_the_picture() {
     assert_eq!(delta.removed, ["b.md"]);
 }
 
+/// An ignore file the app wrote itself is read at once, as one a watch batch reports: its rules decide what is listed
+/// without waiting for the watcher.
+#[test]
+fn an_ignore_file_the_app_wrote_rebuilds_the_picture_at_once() {
+    let f = fixture(&["a.md", "b.md"]);
+    f.explorer.open_view("w", None);
+    f.sink.take();
+    fs::write(f.dir.path().join(".gitignore"), "b.md\n").unwrap();
+    f.explorer.sync_paths(&[".gitignore".to_owned()], &[]);
+    let delta = deltas(&f, "w").remove(0);
+    assert_eq!(delta.removed, ["b.md"]);
+}
+
 #[test]
 fn batches_before_the_first_walk_are_ignored_and_a_vanished_file_leaves() {
     let f = fixture(&["a.md"]);

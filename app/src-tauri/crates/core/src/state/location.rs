@@ -14,8 +14,8 @@ use serde_json::{Map, Value};
 use ts_rs::TS;
 
 use super::{
-    private, AppDirs, Parsed, RawFile, StateData, StateFile, StateLocation, StateStore,
-    PROFILE_ONLY, PROFILE_PLUGINS, SHARED_FILES,
+    is_profile_only, private, AppDirs, Parsed, RawFile, StateData, StateFile, StateLocation,
+    StateStore, PROFILE_PLUGINS, SHARED_FILES,
 };
 use crate::fsx::FolderIdentity;
 use crate::paths::Root;
@@ -335,7 +335,7 @@ pub fn keep(store: &StateStore) -> Result<(), super::StateError> {
 /// What the window of the folder `store` was made for offers about the place of the person's data, from the folder's
 /// row and what each place holds: one small profile file and at most two folder listings, so it is worked out when
 /// the folder opens or its state is read again, never per view. No row this version reads (the app-wide store, a
-/// profile it cannot write): nothing.
+/// profile it cannot write), or a profile holding none of the person's data (nothing to keep or move): nothing.
 #[must_use]
 pub fn offer(store: &StateStore) -> DataOffer {
     let Some(root) = store.root.as_ref() else {
@@ -354,18 +354,17 @@ pub fn offer(store: &StateStore) -> DataOffer {
         Some((StateLocation::Profile, decided)) => {
             let local = root.path().join(super::PERMARK_DIR).join("local");
             // as Initialize takes them: a team folder whose `local/` is real or missing, else Move cannot run
-            if !store.has_team_folder() || matches!(private::entry(&local), private::Entry::Other) {
+            if !store.has_team_folder()
+                || matches!(private::entry(&local), private::Entry::Other)
+                || !profile_holds_data(&store.profile_dir)
+            {
                 DataOffer::None
-            } else if !local_holds_data(&local) {
-                if decided {
-                    DataOffer::Movable
-                } else {
-                    DataOffer::Ask
-                }
-            } else if profile_holds_data(&store.profile_dir) {
+            } else if local_holds_data(&local) {
                 DataOffer::Both
+            } else if decided {
+                DataOffer::Movable
             } else {
-                DataOffer::None
+                DataOffer::Ask
             }
         }
     }
@@ -420,12 +419,17 @@ fn cache_place(root: &Root, place: StateLocation, legacy_link: Link) -> CachePla
     }
 }
 
-/// Whether the project's profile folder holds the person's data: anything but the files that always stay there, the
-/// profile copy of the team files, this computer's own folder and the plugin folders kept in the profile on purpose.
-/// Unreadable: held (the profile's data is never assumed away).
+/// Whether the project's profile folder holds the person's data: anything but the files that always stay there (and
+/// their copies moved aside), the profile copy of the team files, this computer's own folder, the ignore file of
+/// `local/` an undo of Initialize carried back and the plugin folders kept in the profile on purpose. Unreadable: held
+/// (the profile's data is never assumed away).
 pub(super) fn profile_holds_data(dir: &Path) -> bool {
     holds(dir, true, |name, path| {
-        if PROFILE_ONLY.contains(&name) || SHARED_FILES.contains(&name) || name == MACHINE {
+        if is_profile_only(name)
+            || SHARED_FILES.contains(&name)
+            || name == MACHINE
+            || name == ".gitignore"
+        {
             return false;
         }
         name != "plugins" || holds(path, true, |plugin, _| !PROFILE_PLUGINS.contains(&plugin))
@@ -437,7 +441,7 @@ pub(super) fn profile_holds_data(dir: &Path) -> bool {
 /// profile-only files an earlier version copied). Unreadable: none (the profile's data is never hidden behind it).
 pub(super) fn local_holds_data(dir: &Path) -> bool {
     holds(dir, false, |name, _| {
-        !(PROFILE_ONLY.contains(&name)
+        !(is_profile_only(name)
             || name == ".gitignore"
             || name == MACHINE
             || name == super::context::FILE)

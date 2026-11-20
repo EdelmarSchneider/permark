@@ -2882,6 +2882,57 @@ fn uninit_project_never_carries_a_profile_pinned_plugin_folder_back() {
     );
 }
 
+/// A profile-only file moved aside as unreadable (`<name>.broken-<ms>`) stays in the profile as the file itself does:
+/// Initialize | Move never copies one into `.permark/local/`, and undoing it never carries one an earlier version
+/// copied there back over the profile's. An aside of the project's own data is carried as before.
+#[test]
+fn profile_only_files_moved_aside_never_travel_with_the_data() {
+    let f = fx();
+    let before = f.settled();
+    before
+        .file::<Sample>("session.json")
+        .save(&sample(5))
+        .unwrap();
+    let asides = [
+        "location.json.broken-1",
+        "agent.json.broken-2-1",
+        "card.json.broken-3",
+    ];
+    for name in asides {
+        fs::write(before.dir().join(name), b"profile's aside").unwrap();
+    }
+    fs::write(before.dir().join("session.json.broken-4"), b"data aside").unwrap();
+    let after = init_project(&f.dirs, &f.root()).unwrap();
+    assert_eq!(after.location(), StateLocation::Project);
+    for name in asides {
+        assert!(!after.dir().join(name).exists(), "{name} stays out");
+    }
+    assert_eq!(
+        fs::read(after.dir().join("session.json.broken-4")).unwrap(),
+        b"data aside"
+    );
+    assert_eq!(
+        after.file::<Sample>("session.json").load(),
+        Loaded::Found(sample(5))
+    );
+    for name in asides.iter().chain(&["plugins.json.broken-5"]) {
+        fs::write(after.dir().join(name), b"from the project").unwrap();
+    }
+    assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+    for name in asides {
+        assert_eq!(
+            fs::read(before.dir().join(name)).unwrap(),
+            b"profile's aside",
+            "{name}"
+        );
+    }
+    assert!(!before.dir().join("plugins.json.broken-5").exists());
+    assert_eq!(
+        f.store().file::<Sample>("session.json").load(),
+        Loaded::Found(sample(5))
+    );
+}
+
 #[test]
 fn app_dirs_under_layout_is_pinned() {
     let base = Path::new("base");

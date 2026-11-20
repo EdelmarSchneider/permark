@@ -33,7 +33,8 @@ pub use shared_write::{merge3, FileLock};
 
 pub const PERMARK_DIR: &str = ".permark";
 /// Per-project files that ALWAYS stay in the profile (a project's files must never switch them). Initialize never
-/// copies them into `.permark/local/` (a copy there would never be read) and undoing it never carries one back.
+/// copies them (nor a copy of one moved aside as unreadable) into `.permark/local/` (a copy there would never be
+/// read) and undoing it never carries one back ([`is_profile_only`]).
 pub const PROFILE_ONLY: [&str; 9] = [
     "agent.json",
     "agent-refused.json",
@@ -45,6 +46,18 @@ pub const PROFILE_ONLY: [&str; 9] = [
     older::TAKEN_OVER,
     location::FILE,
 ];
+/// What [`move_aside`] adds to the name of a file it could not read.
+const BROKEN: &str = ".broken-";
+
+/// Whether `name` is a [`PROFILE_ONLY`] file or one moved aside as unreadable ([`move_aside`]): both stay in the
+/// profile, never the project's data.
+fn is_profile_only(name: &str) -> bool {
+    PROFILE_ONLY.iter().any(|kept| {
+        name.strip_prefix(kept)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(BROKEN))
+    })
+}
+
 /// Per-project files that live in the shared `.permark/` itself (never in `local/`).
 pub const SHARED_FILES: [&str; 1] = ["meta.toml"];
 /// Plugins whose folder for a project ([`StateStore::profile_plugin_dir`]) stays in the profile whatever the project
@@ -629,7 +642,7 @@ fn move_aside(path: &Path) -> Option<PathBuf> {
         } else {
             format!("-{n}")
         };
-        let backup = path.with_file_name(format!("{name}.broken-{ms}{suffix}"));
+        let backup = path.with_file_name(format!("{name}{BROKEN}{ms}{suffix}"));
         if std::fs::symlink_metadata(&backup).is_ok() {
             continue;
         }
@@ -1414,7 +1427,9 @@ pub fn remove_plugin_data_everywhere(
 /// now, also in a folder no window opened in this version ([`location::answer`]), all or nothing ([`carry_in`]); the
 /// row then marks the profile's copy as the older one. Data on both sides (a `local/` holding data from elsewhere):
 /// refused before anything is made, so the folder's files never hide the person's. A failure leaves the folder as it
-/// was (a `.permark/` this call made goes), so Initialize can run again. Never auto-called.
+/// was when this call made `.permark/` (it goes whole); in a `.permark/` that was there, only PerMark's empty
+/// skeleton (`local/`, `cache/`, the default config, the ignore file) stays beside what it held, no data copied.
+/// Initialize can run again either way. Never auto-called.
 ///
 /// # Errors
 /// `.permark` | `local` | `cache` is a link or a file; both places hold data ([`StateError::BothHoldData`]); IO
@@ -1642,8 +1657,8 @@ fn holds_link(dir: &Path) -> bool {
 /// How deep a copy between a project's state folders is: what stays out depends on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Depth {
-    /// A project's state folder itself: its profile-only and shared files stay out (a project's files must never
-    /// switch them).
+    /// A project's state folder itself: its profile-only files (their copies moved aside too) and shared files stay
+    /// out (a project's files must never switch them).
     Top,
     /// Its `plugins/`: the plugin folders kept in the profile on purpose stay out ([`PROFILE_PLUGINS`]).
     Plugins,
@@ -1654,7 +1669,10 @@ enum Depth {
 impl Depth {
     fn keeps_out(self, name: &std::ffi::OsStr) -> bool {
         match self {
-            Self::Top => PROFILE_ONLY.iter().chain(&SHARED_FILES).any(|p| name == *p),
+            Self::Top => {
+                name.to_str().is_some_and(is_profile_only)
+                    || SHARED_FILES.iter().any(|p| name == *p)
+            }
             Self::Plugins => PROFILE_PLUGINS.iter().any(|p| name == *p),
             Self::All => false,
         }

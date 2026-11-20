@@ -306,6 +306,13 @@ mod tests {
         assert!(!manifest.default_enabled);
     }
 
+    /// The core keeps this plugin's folder of a project in the profile by its id (never copied into the project by
+    /// Initialize, never carried back by its undo): the id must stay in that list.
+    #[test]
+    fn its_project_folder_stays_in_the_profile() {
+        assert!(permark_core::state::PROFILE_PLUGINS.contains(&ID.as_str()));
+    }
+
     #[test]
     fn it_needs_a_project() {
         let dir = tempfile::tempdir().unwrap();

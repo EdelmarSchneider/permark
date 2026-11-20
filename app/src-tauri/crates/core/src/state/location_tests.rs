@@ -5,7 +5,7 @@ use serde_json::json;
 
 use super::*;
 use crate::state::StateLocation::{Profile, Project};
-use crate::state::{init_project, ProjectId, PROFILE_ONLY};
+use crate::state::{init_project, uninit_project, ProjectId, PROFILE_ONLY};
 
 struct Fx {
     _base: tempfile::TempDir,
@@ -1038,6 +1038,38 @@ fn the_offer_follows_the_row_and_what_each_place_holds() {
     f.profile_state();
     f.team_folder();
     assert_eq!(offer(&f.store()), DataOffer::None);
+}
+
+/// Move | Keep only while the profile holds the person's data: a team folder arriving at a folder whose profile holds
+/// none (opened once before it came, or initialized and taken back, the undo carrying back only PerMark's own ignore
+/// file) offers nothing, kept by the person or not.
+#[test]
+fn nothing_is_offered_while_the_profile_holds_none_of_the_persons_data() {
+    type Make = fn(&Fx);
+    let cases: [(&str, Make); 3] = [
+        ("opened once before the team folder came", |f| {
+            let _ = f.settle();
+        }),
+        ("kept on this computer with nothing there", |f| {
+            let _ = f.settle();
+            f.write_row("profile", FolderIdentity::of(f.project.path()), true);
+        }),
+        ("initialized, then taken back", |f| {
+            init_project(&f.dirs, &f.root()).unwrap();
+            assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+            assert_eq!(f.rows()[0].place, Profile);
+        }),
+    ];
+    for (name, make) in cases {
+        let f = fx();
+        make(&f);
+        f.team_folder();
+        assert_eq!(f.store().location(), Profile, "{name}");
+        assert_eq!(offer(&f.store()), DataOffer::None, "{name}");
+        // the person's data in the profile: the offer is back
+        fs::write(f.profile().join("session.json"), b"profile's").unwrap();
+        assert_ne!(offer(&f.store()), DataOffer::None, "{name}");
+    }
 }
 
 /// Keep: the row names the profile as the person's choice, the place and everything in the folder unchanged; Move is

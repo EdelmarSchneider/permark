@@ -29,7 +29,7 @@ use crate::settings::{
     AppSettings, ProjectConfig, ProjectConfigFile, ProjectSettingChange, SettingsError,
 };
 use crate::state::location::DataOffer;
-use crate::state::{AppDirs, ProjectId, StateData, StateLocation, StateStore};
+use crate::state::{AppDirs, ProjectId, Sharing, StateData, StateLocation, StateStore};
 use crate::tree::Explorer;
 use crate::watch::{
     FsBatch, LiveStatus, OwnWrites, PathHold, StatusHook, Subscription, WatchHub, Watcher,
@@ -851,6 +851,21 @@ impl ProjectCore {
         self.explorer.reconfigure(&config);
         self.rescan();
         Ok(config)
+    }
+
+    /// What git may see of the folder's `.permark/` ([`crate::state::set_sharing`]): a rewritten ignore file reaches the
+    /// tree at once (its rules decide what is listed as ignored), not only when the watcher reports it.
+    ///
+    /// # Errors
+    /// What `set_sharing` refuses: no real team folder, someone else's ignore file, IO.
+    pub fn set_sharing(&self, to: Sharing) -> Result<Sharing, crate::state::StateError> {
+        let before = crate::state::sharing(self.vault.main());
+        let now = crate::state::set_sharing(self.vault.main(), to)?;
+        if now != before {
+            self.explorer
+                .sync_paths(&[format!("{}/.gitignore", crate::state::PERMARK_DIR)], &[]);
+        }
+        Ok(now)
     }
 
     /// The person asked to read the folder again: the tree is walked, and the index, git and every plugin that keeps a

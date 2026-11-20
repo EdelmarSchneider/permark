@@ -372,15 +372,21 @@ impl Explorer {
     }
 
     /// The app changed these paths itself (a move, a delete, a new file): the model syncs at once, without waiting for
-    /// the watcher.
+    /// the watcher. An ignore file among them reads the tree again, as a watch batch does: its rules decide what is
+    /// listed.
     pub fn sync_paths(&self, paths: &[String], renames: &[Renamed]) {
         let mut guard = self.model();
         let Some(model) = guard.as_mut() else {
             return;
         };
         let mut changed = false;
-        for path in paths {
-            changed |= model.sync_path(path);
+        if paths.iter().any(|path| is_ignore_file(path)) {
+            model.rebuild();
+            changed = true;
+        } else {
+            for path in paths {
+                changed |= model.sync_path(path);
+            }
         }
         if changed {
             self.refresh_views(model, renames, paths.len() > BULK_CHANGES);

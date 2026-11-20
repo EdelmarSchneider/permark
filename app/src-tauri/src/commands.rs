@@ -1621,7 +1621,7 @@ pub fn project_sharing_set(
     sharing: Sharing,
 ) -> Result<ProjectSettings, IpcError> {
     let core = project_of(&handle, &window)?;
-    let sharing = permark_core::state::set_sharing(core.root(), sharing)?;
+    let sharing = core.set_sharing(sharing)?;
     Ok(ProjectSettings::of(true, sharing, &core.config()))
 }
 

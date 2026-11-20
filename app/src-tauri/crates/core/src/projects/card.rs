@@ -281,7 +281,7 @@ pub enum CardFile {
 pub fn file_of(dirs: &AppDirs, abs: &Path) -> Option<CardFile> {
     let profile = crate::paths::Root::open(abs)
         .ok()
-        .map(|root| crate::state::StateStore::for_project(dirs, &root).profile_file(PROFILE_CARD));
+        .map(|root| crate::state::StateStore::profile_only(dirs, &root).profile_file(PROFILE_CARD));
     let permark = abs.join(PERMARK_DIR);
     if std::fs::symlink_metadata(&permark).is_ok_and(|m| m.is_dir() && !crate::fsx::is_link(&m)) {
         return Some(CardFile::Project {
@@ -608,5 +608,35 @@ mod tests {
         // a project card of its own, even one without a name: the profile card is no longer shown
         std::fs::write(project.join(PERMARK_DIR).join(CARD_FILE), "version = 1\n").unwrap();
         assert_eq!(file_of(&dirs, &project).unwrap().read(), Card::default());
+    }
+
+    /// The profile card is found from the folder's path alone, as every profile-only file is: the folder's data place
+    /// is never worked out for it, so no install key is made for a folder whose caches sit in the project.
+    #[test]
+    fn the_profile_card_is_found_without_working_out_the_folder_data_place() {
+        let base = tempfile::tempdir().unwrap();
+        let dirs = AppDirs::under(&base.path().join("dirs"));
+        let project = base.path().join("proj");
+        std::fs::create_dir_all(project.join(PERMARK_DIR)).unwrap();
+        let root = crate::paths::Root::open(&project).unwrap();
+        let profile = dirs
+            .profile
+            .join("projects")
+            .join(crate::state::ProjectId::of(&root).as_str());
+        std::fs::create_dir_all(&profile).unwrap();
+        std::fs::write(
+            profile.join("location.json"),
+            r#"{"version":1,"data":{"rows":[{"place":"project","decided":true,"at":1,"cache":"project"}]}}"#,
+        )
+        .unwrap();
+        let Some(CardFile::Project {
+            earlier: Some(kept),
+            ..
+        }) = file_of(&dirs, &project)
+        else {
+            panic!("the project card, the profile card as the earlier one");
+        };
+        assert_eq!(kept.path(), profile.join(PROFILE_CARD));
+        assert!(!dirs.install.exists(), "no install key made");
     }
 }
