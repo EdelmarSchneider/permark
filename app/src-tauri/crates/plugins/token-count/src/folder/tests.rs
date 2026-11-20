@@ -1072,7 +1072,9 @@ fn the_cache_outlives_the_app_and_goes_with_remove_data() {
     assert_eq!((second.counted, second.skipped, second.cached), (4, 1, 4));
     assert_eq!(second.tokens, first.tokens);
     // remove data deletes it
-    StateStore::app(&rig.dirs).remove_plugin_data(&ID).unwrap();
+    StateStore::app(&rig.dirs)
+        .remove_plugin_data(&ID, &[])
+        .unwrap();
     assert!(!file_dir.exists());
 }
 
@@ -1471,7 +1473,9 @@ fn turned_off_the_plugin_serves_no_job_listens_to_nothing_and_leaves_no_thread()
         .join("token-count")
         .join("folders");
     assert!(cache.is_dir());
-    StateStore::app(&full.dirs).remove_plugin_data(&ID).unwrap();
+    StateStore::app(&full.dirs)
+        .remove_plugin_data(&ID, &[])
+        .unwrap();
     assert!(!cache.exists());
 }
 

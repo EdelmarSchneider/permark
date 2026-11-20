@@ -782,7 +782,7 @@ fn remove_data_removes_the_models_of_a_chosen_store_only() {
     assert!(chosen.join(WHISPER_LINEAGE).join("read me.txt").is_file());
     assert!(chosen.join("photos").join("a.jpg").is_file());
     // core then deletes the namespace (state, default store)
-    app.remove_plugin_data(&ID).unwrap();
+    app.remove_plugin_data(&ID, &[]).unwrap();
     assert!(!app.plugin_dir(&ID).exists());
 
     // default store: nothing outside the namespace

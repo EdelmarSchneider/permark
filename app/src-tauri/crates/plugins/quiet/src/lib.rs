@@ -489,6 +489,11 @@ impl Plugin for QuietPlugin {
         &self.manifest
     }
 
+    /// [`FILE`] sits straight in the state folder, in the layout earlier versions wrote.
+    fn root_files(&self) -> &'static [&'static str] {
+        &[FILE]
+    }
+
     fn start(&self, cx: &PluginCx) -> Result<Box<dyn Running>, PluginError> {
         let (Some(project), CxWorkspace::Project(_), Some(hub), Some(store)) =
             (cx.project(), &cx.workspace, cx.watch(), cx.store())

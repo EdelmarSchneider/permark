@@ -403,10 +403,10 @@ fn kept_file(core: &ProjectCore) -> PathBuf {
         .join("comments-kept.json")
 }
 
-/// "Remove data" takes the kept copy and the asides with the rest of the plugin's data, in a folder with its own
-/// `.permark/local` and in one whose state lives in the profile.
+/// "Remove data" takes the comments file, the kept copy and the asides with the rest of the plugin's data, in a
+/// folder with its own `.permark/local` and in one whose state lives in the profile.
 #[test]
-fn remove_data_takes_the_kept_copy_and_the_asides() {
+fn remove_data_takes_the_comments_file_the_kept_copy_and_the_asides() {
     for fx in [Fx::new(), Fx::initialized()] {
         let core = fx.open();
         add(&core, "kept");
@@ -422,7 +422,14 @@ fn remove_data_takes_the_kept_copy_and_the_asides() {
         let dirs = core.store().app_dirs().clone();
         drop(core);
         let root = Root::open(&fx.root).unwrap();
-        permark_core::state::remove_plugin_data_everywhere(&dirs, &ID, &[root]).unwrap();
+        permark_core::state::remove_plugin_data_everywhere(
+            &dirs,
+            &ID,
+            plugin().root_files(),
+            &[root],
+        )
+        .unwrap();
+        assert!(!file.exists(), "{}", file.display());
         assert!(!kept.exists(), "{}", kept.display());
         assert!(!asides_file.exists(), "{}", asides_file.display());
     }
