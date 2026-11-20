@@ -128,6 +128,16 @@ impl Fx {
         )
         .unwrap();
     }
+    /// Rows written as this version writes them.
+    fn write_rows(&self, rows: &Rows) {
+        fs::create_dir_all(self.profile()).unwrap();
+        let data = serde_json::to_value(rows).unwrap();
+        fs::write(
+            self.row_file(),
+            serde_json::to_vec(&json!({ "version": 1, "data": data })).unwrap(),
+        )
+        .unwrap();
+    }
 }
 
 /// Resolving a store writes nothing (no row, no folder, nothing in the project), and a folder without a row keeps
@@ -593,28 +603,246 @@ fn initialize_after_an_open_moves_the_data_in_and_the_row_follows() {
     assert_eq!((rows[0].place, rows[0].decided), (Project, true));
 }
 
-/// Data on both sides (the profile and a `local/` that arrived): Initialize carries nothing over the folder's files
-/// and never hides the person's data behind them.
+/// Data on both sides (the profile and a `local/` that arrived, or a cloud folder's stale `local/` an earlier version
+/// wrote): Initialize is refused before it makes anything, so the folder's files never hide the person's data, and
+/// nothing is written anywhere.
 #[test]
-fn initialize_never_hides_the_profile_data_behind_a_local_folder_that_arrived() {
+fn initialize_refuses_when_both_places_hold_data_and_writes_nothing() {
+    type Make = fn(&Fx);
+    // (case, how the folder got its row)
+    let cases: [(&str, Make); 2] = [
+        ("a local folder arrived after the first open", |f| {
+            f.profile_state();
+            assert_eq!(f.settle().location(), Profile);
+            f.team_folder();
+            f.local_state();
+        }),
+        ("a cloud folder with a stale local folder", |f| {
+            f.profile_state();
+            f.team_folder();
+            f.local_state();
+            let cloud: Link = |_| true;
+            assert_eq!(settle_as(&f.dirs, &f.root(), cloud).location(), Profile);
+        }),
+    ];
+    for (name, make) in cases {
+        let f = fx();
+        make(&f);
+        let folder = listing(f.project.path());
+        let profile = listing(&f.profile());
+        let row = f.row_bytes();
+        let Err(error) = init_project(&f.dirs, &f.root()) else {
+            panic!("{name}: not refused");
+        };
+        let error = crate::IpcError::from(error);
+        assert_eq!(error.kind, crate::ErrorKind::Conflict, "{name}");
+        assert_eq!(error.detail.as_deref(), Some(BOTH_HOLD_DATA), "{name}");
+        assert_eq!(
+            listing(f.project.path()),
+            folder,
+            "{name}: folder untouched"
+        );
+        assert_eq!(listing(&f.profile()), profile, "{name}: profile untouched");
+        assert_eq!(f.row_bytes(), row, "{name}: row untouched");
+        assert_eq!(f.store().location(), Profile, "{name}");
+        assert_eq!(
+            fs::read(f.local().join("session.json")).unwrap(),
+            b"folder's",
+            "{name}"
+        );
+    }
+}
+
+/// A `.permark/` with only team files arriving after the first open leaves the data in the profile; Initialize then
+/// moves it in: the data in `local/`, the files that always stay in the profile and the team files left out, the
+/// profile copy kept byte for byte, the row naming the project; running it again writes nothing.
+#[test]
+fn a_team_folder_that_arrived_takes_the_data_only_by_initialize() {
+    let f = fx();
+    f.profile_state();
+    // the row file is written by the first open below
+    for name in PROFILE_ONLY
+        .iter()
+        .chain(&SHARED_FILES)
+        .filter(|name| **name != FILE)
+    {
+        fs::write(f.profile().join(name), b"profile's own").unwrap();
+    }
+    assert_eq!(f.settle().location(), Profile);
+    f.team_folder();
+    let team = listing(&f.permark());
+    assert_eq!(f.settle().location(), Profile);
+    assert_eq!(listing(&f.permark()), team, "nothing private written");
+    let profile: Vec<(String, Vec<u8>)> = listing(&f.profile())
+        .into_iter()
+        .filter(|name| !name.ends_with('/') && name != FILE)
+        .map(|name| {
+            let bytes = fs::read(f.profile().join(&name)).unwrap();
+            (name, bytes)
+        })
+        .collect();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    assert_eq!(store.location(), Project);
+    assert_eq!(
+        listing(&f.local()),
+        [
+            ".gitignore",
+            "plugins/",
+            "plugins/tags/",
+            "plugins/tags/t.json",
+            "session.json"
+        ]
+    );
+    for (name, bytes) in &profile {
+        assert_eq!(&fs::read(f.profile().join(name)).unwrap(), bytes, "{name}");
+    }
+    let rows = f.rows();
+    assert_eq!((rows[0].place, rows[0].decided), (Project, true));
+    let (row, local) = (f.row_bytes(), listing(&f.local()));
+    init_project(&f.dirs, &f.root()).unwrap();
+    assert_eq!((f.row_bytes(), listing(&f.local())), (row, local));
+}
+
+/// Makes a profile file unreadable while the returned handle lives (a copy of it fails).
+#[cfg(windows)]
+fn unreadable(path: &Path) -> impl Sized {
+    use std::os::windows::fs::OpenOptionsExt;
+    fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(path)
+        .unwrap()
+}
+
+/// Makes a profile file unreadable while the returned handle lives (a copy of it fails).
+#[cfg(unix)]
+fn unreadable(path: &Path) -> impl Sized {
+    use std::os::unix::fs::PermissionsExt;
+    struct Restore(PathBuf);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o644));
+        }
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(0o000)).unwrap();
+    Restore(path.to_path_buf())
+}
+
+/// A copy that fails half way leaves the folder as it was: a `.permark/` the attempt made is gone, a `local/` that
+/// was there holds what it held (nothing half copied, no temp left beside it), the profile and the row are untouched;
+/// once the file can be read, Initialize runs again and carries everything.
+#[test]
+fn a_copy_that_fails_leaves_the_folder_as_it_was_and_initialize_runs_again() {
+    for team in [false, true] {
+        let f = fx();
+        f.profile_state();
+        assert_eq!(f.settle().location(), Profile);
+        if team {
+            f.team_folder();
+            fs::create_dir_all(f.local().join("machine").join("abc")).unwrap();
+            fs::write(
+                f.local().join(".gitignore"),
+                b"*
+",
+            )
+            .unwrap();
+            fs::write(f.local().join("machine").join("abc").join("j.json"), b"x").unwrap();
+        }
+        let locked = f.profile().join("zz-locked.json");
+        fs::write(&locked, b"profile's").unwrap();
+        let local = listing(&f.local());
+        let profile = listing(&f.profile());
+        let row = f.row_bytes();
+        {
+            let _held = unreadable(&locked);
+            if fs::read(&locked).is_ok() {
+                eprintln!("skipped: the file stays readable here");
+                return;
+            }
+            assert!(init_project(&f.dirs, &f.root()).is_err(), "team {team}");
+        }
+        if team {
+            assert_eq!(listing(&f.local()), local, "local/ as it was");
+            assert_eq!(
+                fs::read(f.permark().join("config.toml")).unwrap(),
+                b"# team
+"
+            );
+            let temps: Vec<String> = fs::read_dir(f.permark())
+                .unwrap()
+                .flatten()
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .filter(|name| {
+                    ![".gitignore", "cache", "config.toml", "local"].contains(&name.as_str())
+                })
+                .collect();
+            assert!(temps.is_empty(), "nothing left beside local/: {temps:?}");
+        } else {
+            assert!(!f.permark().exists(), "the .permark/ it made is gone");
+        }
+        assert_eq!(
+            listing(&f.profile()),
+            profile,
+            "team {team}: profile untouched"
+        );
+        assert_eq!(f.row_bytes(), row, "team {team}: row untouched");
+        assert_eq!(f.store().location(), Profile, "team {team}");
+        let store = init_project(&f.dirs, &f.root()).unwrap();
+        assert_eq!(store.location(), Project, "team {team}");
+        for file in ["session.json", "zz-locked.json", "plugins/tags/t.json"] {
+            assert_eq!(
+                fs::read(f.local().join(file)).unwrap(),
+                b"profile's",
+                "team {team}: {file}"
+            );
+        }
+    }
+}
+
+/// Initialize that carries the profile's data in marks the row: the profile's copy is the older one from then on.
+/// Undone (the data carried back), the profile is the place again and the mark goes.
+#[test]
+fn initialize_marks_the_profile_copy_as_moved_and_undo_names_the_profile_again() {
     let f = fx();
     f.profile_state();
     assert_eq!(f.settle().location(), Profile);
+    init_project(&f.dirs, &f.root()).unwrap();
+    let rows = f.rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!((rows[0].place, rows[0].moved), (Project, true));
+    // a second run carries nothing and keeps the mark
+    let row = f.row_bytes();
+    init_project(&f.dirs, &f.root()).unwrap();
+    assert_eq!(f.row_bytes(), row);
+
+    assert!(crate::state::uninit_project(&f.dirs, &f.root()).unwrap());
+    let rows = f.rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!((rows[0].place, rows[0].moved), (Profile, false));
+    // a `.permark/` arriving later (a pull) never takes the data back into the folder by itself
     f.team_folder();
-    f.local_state();
-    let local = listing(&f.local());
-    let profile = listing(&f.profile());
-    let _ = init_project(&f.dirs, &f.root());
     assert_eq!(f.store().location(), Profile);
-    // the folder's own ignore file aside, nothing carried in
-    let mut now = listing(&f.local());
-    now.retain(|name| name != ".gitignore");
-    assert_eq!(now, local);
-    assert_eq!(listing(&f.profile()), profile);
-    assert_eq!(
-        fs::read(f.local().join("session.json")).unwrap(),
-        b"folder's"
-    );
+    assert_eq!(f.settle().location(), Profile);
+}
+
+/// Another folder at the path after the data moved into the project (a clone made again, its `local/` empty): the
+/// profile's copy is the older one, so it never counts as the person's current data, and the folder's team folder
+/// takes the data, as for a fresh clone. Without the mark the profile's data is current and stays the place.
+#[test]
+fn a_folder_made_again_after_a_move_never_takes_the_older_profile_copy_for_current() {
+    for moved in [true, false] {
+        let f = fx();
+        f.profile_state();
+        f.team_folder();
+        let mut then = row(Project, Some(id(u64::MAX, 7)), true, 1);
+        then.moved = moved;
+        f.write_rows(&rows(vec![then]));
+        let place = if moved { Project } else { Profile };
+        assert_eq!(f.settle().location(), place, "moved {moved}");
+        let now = f.rows();
+        assert_eq!(now.len(), 2, "moved {moved}");
+        assert_eq!(now[1].moved, moved && place == Project, "moved {moved}");
+    }
 }
 
 /// The profile-only store reads profile files at the paths every store gives them, whatever the folder holds.

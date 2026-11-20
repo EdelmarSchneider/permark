@@ -1543,6 +1543,114 @@ fn initializing_an_open_project_moves_its_state_and_restarts_its_plugins() {
     }
 }
 
+/// A project plugin that writes what it holds into its own folder when it stops (a final flush).
+struct Flushing(crate::plugins::Manifest);
+
+struct Flushed(std::path::PathBuf);
+
+impl crate::plugins::Running for Flushed {}
+
+impl Drop for Flushed {
+    fn drop(&mut self) {
+        let _ = std::fs::create_dir_all(&self.0);
+        let _ = std::fs::write(self.0.join("flushed.json"), b"{}");
+    }
+}
+
+impl Plugin for Flushing {
+    fn manifest(&self) -> &crate::plugins::Manifest {
+        &self.0
+    }
+
+    fn start(
+        &self,
+        cx: &crate::plugins::PluginCx,
+    ) -> Result<Box<dyn crate::plugins::Running>, crate::plugins::PluginError> {
+        Ok(Box::new(Flushed(cx.state_dir.clone())))
+    }
+}
+
+/// The plugins stop before the person's data is copied into `.permark/local/`: what they write last is copied with
+/// the rest, and they start again on the new place.
+#[test]
+fn initializing_an_open_project_stops_its_plugins_before_the_copy() {
+    let flushing = Flushing(crate::plugins::Manifest {
+        id: PluginId::of("flush"),
+        kind: crate::plugins::PluginKind::Feature,
+        scope: PluginScope::Project,
+        requires: crate::conditions::Requirement::NONE,
+        depends_on: std::borrow::Cow::Borrowed(&[]),
+        default_enabled: true,
+    });
+    let f = fx_with(vec![Arc::new(flushing)], Log::default());
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _) = open_project(&f, dir.path());
+    let flushed = |store: &crate::state::StateStore| {
+        store
+            .plugin_dir(&PluginId::of("flush"))
+            .join("flushed.json")
+    };
+    let before = core.store();
+    assert!(!flushed(&before).exists());
+    f.registry.init_project(core.root()).unwrap();
+    let after = core.store();
+    assert_eq!(after.location(), StateLocation::Project);
+    assert!(flushed(&after).is_file(), "the last write was copied");
+    // plugins keeping state per owner start again on the new place too
+    let owners = core.projects().owners();
+    assert_eq!(owners.root().store.location(), StateLocation::Project);
+    assert_eq!(owners.root().store.dir(), after.dir());
+}
+
+/// Initialize of a project included in an open folder: that folder's owner followers hold their writes while the
+/// project's data is copied, then go on with the project's new place.
+#[test]
+fn initializing_an_included_project_holds_its_writes_around_the_copy() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("sub").join(".git")).unwrap();
+    std::fs::create_dir_all(root.join(".permark")).unwrap();
+    std::fs::write(
+        root.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"sub\"\n",
+    )
+    .unwrap();
+    let (core, _) = open_project(&f, root);
+    let projects = Arc::clone(core.projects());
+    let start = std::time::Instant::now();
+    while projects.owners().slots().len() != 2 {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(15),
+            "owners"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let member = |owners: &crate::projects::Owners| owners.slots()[1].store.location();
+    assert_eq!(member(&projects.owners()), StateLocation::Profile);
+    let heard: Arc<Mutex<Vec<String>>> = Arc::default();
+    let _follow = projects.follow_owners({
+        let heard = Arc::clone(&heard);
+        move |change| {
+            let word = match change {
+                crate::projects::OwnersChange::Pause => "pause".to_owned(),
+                crate::projects::OwnersChange::Resume(owners) => {
+                    format!("resume:{:?}", member(owners))
+                }
+            };
+            heard.lock().unwrap().push(word);
+        }
+    });
+    let sub = Root::open(&root.join("sub")).unwrap();
+    f.registry.init_project(&sub).unwrap();
+    let heard = heard.lock().unwrap().clone();
+    assert!(
+        heard.starts_with(&["pause".to_owned(), "resume:Project".to_owned()]),
+        "{heard:?}"
+    );
+    assert_eq!(member(&projects.owners()), StateLocation::Project);
+}
+
 /// The window's `permark` condition tells whether the folder has a team folder (`.permark/` a real folder), read again
 /// at each look: also while the private state stays in the profile (here `local/` is a file), and for a `.permark/`
 /// that arrived while the project is open; a file in its place is none.

@@ -2095,14 +2095,12 @@ fn the_local_folder_is_offered_only_inside_a_real_team_folder() {
     }
 }
 
-/// Pins a known defect, kept visible until it is fixed: Initialize copies a plugin's profile-only folder
-/// ([`StateStore::profile_plugin_dir`]) into `.permark/local/` with the rest of the profile state. The copy is not
-/// wanted: those folders stay in the profile on purpose (the Assistant's work copy of the project and its saved
-/// conversation), since inside the project a tool walking up from the work copy finds the project, and a synced or
-/// shared folder carries the conversation to other computers. Nothing reads the copy (the store keeps answering the
-/// profile folder).
+/// Initialize never copies a plugin's profile-only folder ([`StateStore::profile_plugin_dir`]) into `.permark/local/`:
+/// those folders stay in the profile on purpose (the Assistant's work copy of the project and its saved conversation),
+/// since inside the project a tool walking up from the work copy finds the project, and a synced or shared folder
+/// carries the conversation to other computers. The other plugins' data is copied as before.
 #[test]
-fn init_project_today_copies_profile_pinned_plugin_folders() {
+fn init_project_leaves_profile_pinned_plugin_folders_in_the_profile() {
     let f = fx();
     let before = f.store();
     let acp = PluginId::of("acp");
@@ -2114,31 +2112,64 @@ fn init_project_today_copies_profile_pinned_plugin_folders() {
         .profile_plugin_file::<Sample>(&acp, "session.json")
         .save(&sample(1))
         .unwrap();
+    before
+        .plugin_file::<Sample>(&PluginId::of("tags"), "t.json")
+        .save(&sample(4))
+        .unwrap();
+    let listed = entries_below(&pinned);
     let after = init_project(&f.dirs, &f.root()).unwrap();
     assert_eq!(after.location(), StateLocation::Project);
-    let copied = after.dir().join("plugins").join("acp");
+    assert!(!after.dir().join("plugins").join("acp").exists());
     assert_eq!(
-        entries_below(&copied),
-        [
-            "run/",
-            "session.json",
-            "work/",
-            "work/proj/",
-            "work/proj/doc.md"
-        ]
-    );
-    assert_eq!(
-        fs::read(copied.join("work").join("proj").join("doc.md")).unwrap(),
-        b"# copy"
+        after
+            .plugin_file::<Sample>(&PluginId::of("tags"), "t.json")
+            .load(),
+        Loaded::Found(sample(4))
     );
     // the profile keeps its folder whole, and every store of the folder still answers it
     assert_eq!(after.profile_plugin_dir(&acp), pinned);
-    assert_eq!(entries_below(&pinned), entries_below(&copied));
+    assert_eq!(entries_below(&pinned), listed);
     assert_eq!(
         after
             .profile_plugin_file::<Sample>(&acp, "session.json")
             .load(),
         Loaded::Found(sample(1))
+    );
+}
+
+/// Undo of an init never carries a profile-only plugin folder back from `local/` (one an earlier version copied
+/// there): the profile's own folder is the live one and stays as it is; the rest of `local/` comes back.
+#[test]
+fn uninit_project_never_carries_a_profile_pinned_plugin_folder_back() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    let acp = PluginId::of("acp");
+    store
+        .profile_plugin_file::<Sample>(&acp, "session.json")
+        .save(&sample(1))
+        .unwrap();
+    let stale = store.dir().join("plugins").join("acp");
+    fs::create_dir_all(stale.join("work")).unwrap();
+    fs::write(stale.join("session.json"), b"older copy").unwrap();
+    fs::write(stale.join("work").join("doc.md"), b"# older").unwrap();
+    store
+        .plugin_file::<Sample>(&PluginId::of("tags"), "t.json")
+        .save(&sample(4))
+        .unwrap();
+    let pinned = store.profile_plugin_dir(&acp);
+    let listed = entries_below(&pinned);
+    assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+    assert_eq!(entries_below(&pinned), listed);
+    let back = f.store();
+    assert_eq!(
+        back.profile_plugin_file::<Sample>(&acp, "session.json")
+            .load(),
+        Loaded::Found(sample(1))
+    );
+    assert_eq!(
+        back.plugin_file::<Sample>(&PluginId::of("tags"), "t.json")
+            .load(),
+        Loaded::Found(sample(4))
     );
 }
 

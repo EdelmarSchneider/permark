@@ -477,6 +477,22 @@ impl std::fmt::Debug for Projects {
     }
 }
 
+/// The writes for an included project held ([`Projects::hold_member`]); dropped, the followers resume with the owners
+/// worked out again (the project's new place).
+pub struct MemberHold<'a> {
+    projects: &'a Projects,
+    _turn: MutexGuard<'a, ()>,
+}
+
+impl Drop for MemberHold<'_> {
+    fn drop(&mut self) {
+        let projects = self.projects;
+        let now = projects.owners_for(&projects.snapshot(), &[]);
+        *lock(&projects.owners) = now.clone();
+        projects.tell_owners(&OwnersChange::Resume(&now));
+    }
+}
+
 /// Listening to project news until dropped (teardown symmetry).
 pub struct ProjectsSubscription {
     owner: Weak<Projects>,
@@ -1830,6 +1846,46 @@ impl Projects {
         let now = self.owners_for(&map, &[]);
         *lock(&self.owners) = now.clone();
         self.tell_owners(&OwnersChange::Resume(&now));
+    }
+
+    /// The opened folder's own data place moved (PerMark initialized in it, or that undone): the owners are worked out
+    /// again from what the folders hold now; followers paused and resumed only when a place changed. Before the owners
+    /// are first known, they are replaced quietly: followers wait for the worker's `Resume`, which reads them.
+    pub fn reload_owners(&self) {
+        let _turn = lock(&self.owners_turn);
+        let now = self.owners_for(&self.snapshot(), &[]);
+        if now.same(&lock(&self.owners)) {
+            return;
+        }
+        if !self.owners_known() {
+            *lock(&self.owners) = now;
+            return;
+        }
+        self.tell_owners(&OwnersChange::Pause);
+        *lock(&self.owners) = now.clone();
+        self.tell_owners(&OwnersChange::Resume(&now));
+    }
+
+    /// Holds the writes for the included project whose folder is `folder` while PerMark is initialized in it (its data
+    /// copied into its `.permark/local/`): followers paused now, resumed with the owners worked out again when the hold
+    /// goes. `None`: `folder` is no owner of this folder now (nothing to hold).
+    #[must_use]
+    pub fn hold_member(&self, folder: &Root) -> Option<MemberHold<'_>> {
+        let turn = lock(&self.owners_turn);
+        let owned = self.owners().slots().iter().skip(1).any(|slot| {
+            VaultPath::parse(&slot.path)
+                .ok()
+                .and_then(|path| Root::open(&abs_of(self.root.path(), &path)).ok())
+                .is_some_and(|member| member.key() == folder.key())
+        });
+        if !owned {
+            return None;
+        }
+        self.tell_owners(&OwnersChange::Pause);
+        Some(MemberHold {
+            projects: self,
+            _turn: turn,
+        })
     }
 
     fn tell_owners(&self, change: &OwnersChange<'_>) {

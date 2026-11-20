@@ -1150,6 +1150,30 @@ impl WorkspaceRegistry {
             .collect()
     }
 
+    /// Initializes PerMark in a folder (Explorer, New project, Settings), then every window is told. A core open on the
+    /// folder stops its plugins around the copy of the person's data ([`ProjectCore::initialize`]); a core that keeps
+    /// the folder as an included project holds that project's writes meanwhile ([`crate::projects::Projects::hold_member`]).
+    ///
+    /// # Errors
+    /// What [`crate::state::init_project`] refuses.
+    pub fn init_project(&self, root: &crate::paths::Root) -> Result<(), IpcError> {
+        let cores = self.cores();
+        let held: Vec<_> = cores
+            .iter()
+            .filter_map(|core| core.projects().hold_member(root))
+            .collect();
+        let done = match cores.iter().find(|core| core.root().key() == root.key()) {
+            Some(core) => core.initialize(&self.env),
+            None => crate::state::init_project(&self.env.dirs, root)
+                .map(|_| ())
+                .map_err(IpcError::from),
+        };
+        drop(held);
+        done?;
+        self.refresh();
+        Ok(())
+    }
+
     /// Recomputes + emits what changed (after settings | plugin | unsaved changes).
     pub fn refresh(&self) {
         let mut inner = lock(&self.inner);

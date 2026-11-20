@@ -362,20 +362,12 @@ impl Shell {
         self.settings_file.characters_target(&self.env.settings())
     }
 
-    /// Creates `.permark/` in `path`; a project open on that folder reloads its state and its windows are told.
+    /// Creates `.permark/` in `path` ([`WorkspaceRegistry::init_project`]): open projects follow, windows are told.
     ///
     /// # Errors
-    /// The folder does not exist | is not a folder; a link or a file is in the way; IO failure.
+    /// The folder does not exist | is not a folder; a link or a file is in the way; both places hold data; IO failure.
     pub fn init_project(&self, path: &std::path::Path) -> Result<(), IpcError> {
-        let root = Root::open(path)?;
-        permark_core::state::init_project(&self.env.dirs, &root)?;
-        for core in self.registry.cores() {
-            if core.root().key() == root.key() {
-                core.reload_state(&self.env);
-            }
-        }
-        self.registry.refresh();
-        Ok(())
+        self.registry.init_project(&Root::open(path)?)
     }
 
     /// App exit: stop serving, stop plugins (reverse order), final session save already done on last close.

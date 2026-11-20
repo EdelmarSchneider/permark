@@ -20,6 +20,9 @@ use crate::paths::Root;
 
 /// Name of the row file in the project's profile folder.
 pub const FILE: &str = "location.json";
+/// `detail` of the `conflict` refusal of an Initialize while the profile and the project's `local/` both hold
+/// PerMark data: nothing is carried, so neither copy hides the other.
+pub const BOTH_HOLD_DATA: &str = "bothHoldData";
 /// This computer's own folder in a state folder.
 const MACHINE: &str = super::Machine::DIR;
 /// Most rows kept: one per folder that stood at the path (a roaming profile, a dual boot, a clone made again), the
@@ -103,6 +106,14 @@ impl Rows {
         }
     }
 
+    /// The data was moved into the project from the profile (the newest row names the project and says so): the
+    /// profile's copy is the older one, never the person's current data.
+    fn profile_copy_older(&self) -> bool {
+        self.newest().is_some_and(|index| {
+            self.rows[index].place == StateLocation::Project && self.rows[index].moved
+        })
+    }
+
     fn newest(&self) -> Option<usize> {
         self.rows
             .iter()
@@ -129,8 +140,8 @@ impl Rows {
     /// The index of the row that answers for `current`, made when none does: the newest row when it names the same
     /// place on the same volume (a folder whose id changed: made again by a sync tool, restored, on a volume whose ids
     /// do not last) takes the new identity, so such a folder writes once, not a row per open; else a row of its own
-    /// (a folder of another computer in a roaming profile keeps its row). The person's choice of the newest row is
-    /// carried when the place is the same.
+    /// (a folder of another computer in a roaming profile keeps its row). The person's choice of the newest row, and
+    /// its mark of an older profile copy, are carried when the place is the same.
     fn answering(&mut self, current: Option<FolderIdentity>, new: New, now: u64) -> usize {
         if let Some(index) = self.matching_index(current) {
             return index;
@@ -139,6 +150,7 @@ impl Rows {
             .newest()
             .filter(|&index| self.rows[index].place == new.place);
         let decided = same_place.is_some_and(|index| self.rows[index].decided);
+        let moved = same_place.is_some_and(|index| self.rows[index].moved);
         let same_volume = same_place.filter(|&index| {
             self.rows[index]
                 .folder
@@ -158,7 +170,7 @@ impl Rows {
             decided,
             at: now,
             cache: new.cache,
-            moved: false,
+            moved,
             rest: Map::new(),
         });
         // the oldest goes first, never the row just written (a clock set back would make it the oldest)
@@ -210,9 +222,12 @@ pub fn settle(dirs: &AppDirs, root: &Root) -> StateStore {
 pub(crate) fn settle_as(dirs: &AppDirs, root: &Root, legacy_link: Link) -> StateStore {
     let file = row_file(dirs, root);
     let current = FolderIdentity::of(root.path());
-    let answered = read(file.path()).is_some_and(|rows| rows.matching(current).is_some());
+    let rows = read(file.path());
+    let answered = rows
+        .as_ref()
+        .is_some_and(|rows| rows.matching(current).is_some());
     if !answered {
-        let new = derive(dirs, root, legacy_link);
+        let new = derive(dirs, root, legacy_link, rows.as_ref());
         // best effort: a row that cannot be written leaves the answer of a folder without one, as every reader sees
         let _ = file.update(|disk| Rows::settled(disk, current, new, now_ms()));
     }
@@ -223,14 +238,21 @@ pub(crate) fn settle_as(dirs: &AppDirs, root: &Root, legacy_link: Link) -> State
 /// Initialize, also in a folder no window opened in this version (the earlier rule alone would take a `.permark/`
 /// that arrived for the place and leave the profile's data unseen).
 pub(super) fn answer(dirs: &AppDirs, root: &Root, legacy_link: Link) -> StateStore {
-    let profile_dir = &StateStore::profile_only(dirs, root).profile_dir;
-    let place =
-        place_of(profile_dir, root).unwrap_or_else(|| derive(dirs, root, legacy_link).place);
+    let rows = read(row_file(dirs, root).path());
+    let place = rows
+        .as_ref()
+        .and_then(|rows| rows.matching(FolderIdentity::of(root.path())))
+        .map_or_else(
+            || derive(dirs, root, legacy_link, rows.as_ref()).place,
+            |row| row.place,
+        );
     StateStore::at_place(dirs, root, legacy_link, Some(place))
 }
 
 /// Writes the folder's row: its data at `place`, `decided` by the person (a row for another folder at the path is
-/// taken over or added as [`settle`] does). Writes nothing when the row already says so.
+/// taken over or added as [`settle`] does). `moved`: the profile's data was just carried into the project, so the
+/// profile's copy is the older one from now on (kept while the data stays in the project; the profile as the place
+/// is the current copy again). Writes nothing when the row already says so.
 ///
 /// # Errors
 /// The row file cannot be written (IO, a newer version's file).
@@ -239,6 +261,7 @@ pub(super) fn record(
     root: &Root,
     place: StateLocation,
     decided: bool,
+    moved: bool,
 ) -> Result<(), super::StateError> {
     let current = FolderIdentity::of(root.path());
     let new = New {
@@ -254,6 +277,7 @@ pub(super) fn record(
             row.place = place;
             row.decided = decided;
             row.cache = new.cache;
+            row.moved = place == StateLocation::Project && (row.moved || moved);
             Some(rows)
         })
         .map(|_| ())
@@ -264,15 +288,18 @@ fn row_file(dirs: &AppDirs, root: &Root) -> StateFile<Rows> {
     StateStore::profile_only(dirs, root).profile_file(FILE)
 }
 
-/// The place for a folder no row answers for. The profile unless the project's `local/` can hold the data (a real
-/// `.permark/` and `local/` real or missing) and nothing the person has would drop out of view: the profile holds
-/// none of the person's data, or earlier versions already kept the data in `local/` and it holds some.
-fn derive(dirs: &AppDirs, root: &Root, legacy_link: Link) -> New {
+/// The place for a folder no row answers for (`rows`: the rows of other folders at the path). The profile unless the
+/// project's `local/` can hold the data (a real `.permark/` and `local/` real or missing) and nothing the person has
+/// would drop out of view: the profile holds none of the person's current data (none, or only the older copy left
+/// when the data moved into a folder at the path), or earlier versions already kept the data in `local/` and it
+/// holds some.
+fn derive(dirs: &AppDirs, root: &Root, legacy_link: Link, rows: Option<&Rows>) -> New {
     let earlier = StateStore::at_place(dirs, root, legacy_link, None);
     let local = root.path().join(super::PERMARK_DIR).join("local");
     let usable =
         earlier.has_team_folder() && !matches!(private::entry(&local), private::Entry::Other);
-    let in_profile = || profile_holds_data(&earlier.profile_dir);
+    let older = rows.is_some_and(Rows::profile_copy_older);
+    let in_profile = || !older && profile_holds_data(&earlier.profile_dir);
     let place = if usable
         && ((earlier.location() == StateLocation::Project && local_holds_data(&local))
             || !in_profile())

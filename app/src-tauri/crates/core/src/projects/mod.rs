@@ -29,7 +29,7 @@ pub use fsm::{AgentChoice, MissingReason, ProjectMarker, RootAnswer};
 pub use map::{AgentRules, AncestorRules, MemberInfo, Owner, ProjectMap};
 pub use owners::{OwnerSlot, Owners, OwnersChange, OwnersGate};
 pub use record::{HiddenRule, RecordOp, RecordRead, RecordSkip, SkippedEntry};
-pub use service::{Projects, ProjectsSubscription, RootCommitAsk, UndoPlan};
+pub use service::{MemberHold, Projects, ProjectsSubscription, RootCommitAsk, UndoPlan};
 pub use uid::ProjectUid;
 pub use view::{
     CardTarget, IncludeOutcome, LocateRefusal, MemberState, ProjectEvent, ProjectPick, ProjectRow,

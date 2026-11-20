@@ -619,11 +619,27 @@ impl ProjectCore {
         env: &CoreEnv,
         pick: &ProjectPick,
     ) -> Result<(IncludeOutcome, bool), crate::IpcError> {
-        self.projects.include(pick, &|| {
-            crate::state::init_project(&env.dirs, self.vault.main())?;
-            self.reload_state(env);
-            Ok(())
-        })
+        self.projects.include(pick, &|| self.initialize(env))
+    }
+
+    /// Initializes PerMark in this folder ([`crate::state::init_project`]): the plugins stop first, so what they write
+    /// last lands in the place the person's data is copied from; then everything reads the state again from the new
+    /// place ([`ProjectCore::reload_state`]). A refusal starts the plugins again on the place they had. The caller
+    /// tells the windows.
+    ///
+    /// # Errors
+    /// What `init_project` refuses: both places hold data (`Conflict`), a link or a file in the way, IO.
+    pub fn initialize(&self, env: &CoreEnv) -> Result<(), crate::IpcError> {
+        self.plugins
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .stop_all();
+        if let Err(error) = crate::state::init_project(&env.dirs, self.vault.main()) {
+            self.apply_plugins(env);
+            return Err(error.into());
+        }
+        self.reload_state(env);
+        Ok(())
     }
 
     /// Takes back the last include (`token`); a `.permark/` it made goes when untouched (the state goes back to the
@@ -761,6 +777,8 @@ impl ProjectCore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .stop_all();
+        // plugins keeping state per owner start on the folder's new place, not the one the owners had
+        self.projects.reload_owners();
         self.apply_plugins(env);
         self.rescan();
     }

@@ -177,6 +177,10 @@ pub enum StateError {
         path: String,
         source: serde_json::Error,
     },
+    /// The project's `local/` (`path`) holds PerMark data while the profile holds the person's: carried either way,
+    /// one copy would hide the other.
+    #[error("{path} already holds PerMark data")]
+    BothHoldData { path: String },
 }
 
 impl StateError {
@@ -195,6 +199,9 @@ impl From<StateError> for IpcError {
             StateError::Encode { path, source } => IpcError::new(ErrorKind::Internal)
                 .subject(path)
                 .detail(source.to_string()),
+            StateError::BothHoldData { path } => IpcError::new(ErrorKind::Conflict)
+                .subject(path)
+                .detail(location::BOTH_HOLD_DATA),
         }
     }
 }
@@ -1068,23 +1075,24 @@ pub fn remove_plugin_data_everywhere(
 }
 
 /// Creates `.permark/` in `root` (config, ignore, `local/`, `cache/`); existing files kept; copies profile state in
-/// (never over an existing entry; profile-only files stay), and the folder's row then names the project, as the
-/// person chose. The profile's data is copied whenever it is the place now, also in a folder no window opened in
-/// this version ([`location::answer`]). Data on both sides (a `local/` holding data from elsewhere): nothing is
-/// carried and the row is left, so the folder's files never hide the person's. Never auto-called.
+/// (never over an existing entry; profile-only files and the plugin folders kept in the profile stay), and the
+/// folder's row then names the project, as the person chose. The profile's data is copied whenever it is the place
+/// now, also in a folder no window opened in this version ([`location::answer`]), all or nothing ([`carry_in`]); the
+/// row then marks the profile's copy as the older one. Data on both sides (a `local/` holding data from elsewhere):
+/// refused before anything is made, so the folder's files never hide the person's. A failure leaves the folder as it
+/// was (a `.permark/` this call made goes), so Initialize can run again. Never auto-called.
 ///
 /// # Errors
-/// `.permark` | `local` | `cache` is a link or a file; IO failure; the row cannot be written.
+/// `.permark` | `local` | `cache` is a link or a file; both places hold data ([`StateError::BothHoldData`]); IO
+/// failure; the row cannot be written.
 pub fn init_project(dirs: &AppDirs, root: &Root) -> Result<StateStore, StateError> {
     let permark = root.path().join(PERMARK_DIR);
+    let local = permark.join("local");
     let before = location::answer(dirs, root, crate::tree::is_link_meta);
-    let fail = |p: &Path| {
-        let p = p.to_path_buf();
-        move |e| StateError::io(&p, e)
-    };
-    match private::entry(&permark) {
-        private::Entry::Missing => std::fs::create_dir(&permark).map_err(fail(&permark))?,
-        private::Entry::Folder => {}
+    let carry = before.location == StateLocation::Profile;
+    let made = match private::entry(&permark) {
+        private::Entry::Missing => true,
+        private::Entry::Folder => false,
         private::Entry::Other => {
             return Err(StateError::io(
                 &permark,
@@ -1094,35 +1102,105 @@ pub fn init_project(dirs: &AppDirs, root: &Root) -> Result<StateStore, StateErro
                 ),
             ))
         }
+    };
+    // `local/` listed only as a real folder (never through a link: refused below before anything is written there)
+    if carry
+        && private::is_real_folder(&local)
+        && location::local_holds_data(&local)
+        && location::profile_holds_data(&before.dir)
+    {
+        return Err(StateError::BothHoldData {
+            path: local.display().to_string(),
+        });
     }
+    if made {
+        std::fs::create_dir(&permark).map_err(|e| StateError::io(&permark, e))?;
+    }
+    let done = make_permark(&permark).and_then(|()| {
+        if carry {
+            carry_in(&before.dir, &permark, || {
+                location::record(dirs, root, StateLocation::Project, true, true)
+            })
+        } else {
+            location::record(dirs, root, StateLocation::Project, true, false)
+        }
+    });
+    if let Err(error) = done {
+        if made {
+            // best effort: everything in it is this call's
+            let _ = remove_tree(&permark);
+        }
+        return Err(error);
+    }
+    Ok(StateStore::for_project(dirs, root))
+}
+
+/// What Initialize puts in `.permark/` (an existing file kept as it is): `local/` and `cache/` ready, the default
+/// config and the ignore file.
+fn make_permark(permark: &Path) -> Result<(), StateError> {
     for sub in ["local", "cache"] {
         let dir = permark.join(sub);
-        private::prepare(&permark, &dir, &dir).map_err(fail(&dir))?;
+        private::prepare(permark, &dir, &dir).map_err(|e| StateError::io(&dir, e))?;
     }
     for (name, content) in [
         ("config.toml", DEFAULT_CONFIG_TOML),
         (".gitignore", PROJECT_GITIGNORE),
     ] {
         let path = permark.join(name);
-        private::create_if_missing(&path, content).map_err(fail(&path))?;
+        private::create_if_missing(&path, content).map_err(|e| StateError::io(&path, e))?;
     }
-    if before.location == StateLocation::Profile {
-        let local = permark.join("local");
-        if location::local_holds_data(&local) && location::profile_holds_data(&before.dir) {
-            return Ok(StateStore::for_project(dirs, root));
+    Ok(())
+}
+
+/// Carries the profile folder `from` into the project's `local/` all or nothing: the new `local/` (what it holds, then
+/// what the profile adds, never over an entry it has) is built under a hidden name in `.permark/` and renamed into
+/// place when whole; the earlier `local/` is kept aside until `commit` (the row) is written. A failure removes what
+/// this call made and puts the earlier `local/` back: no half copy is ever taken for the person's data.
+fn carry_in(
+    from: &Path,
+    permark: &Path,
+    commit: impl FnOnce() -> Result<(), StateError>,
+) -> Result<(), StateError> {
+    let local = permark.join("local");
+    let rename =
+        |a: &Path, b: &Path| crate::fsx::retry(&crate::fsx::RETRY_DELAYS, || std::fs::rename(a, b));
+    let stage = crate::fsx::scratch_in(permark);
+    let built = std::fs::create_dir(&stage)
+        .and_then(|()| copy_missing(&local, &stage, Depth::All))
+        .and_then(|()| copy_missing(from, &stage, Depth::Top));
+    if let Err(error) = built {
+        let _ = remove_tree(&stage);
+        return Err(StateError::io(from, error));
+    }
+    let aside = crate::fsx::scratch_in(permark);
+    if let Err(error) = rename(&local, &aside) {
+        let _ = remove_tree(&stage);
+        return Err(StateError::io(&local, error));
+    }
+    if let Err(error) = rename(&stage, &local) {
+        let _ = rename(&aside, &local);
+        let _ = remove_tree(&stage);
+        return Err(StateError::io(&local, error));
+    }
+    if let Err(error) = commit() {
+        // the copy goes, the earlier `local/` comes back
+        if rename(&local, &stage).is_ok() {
+            let _ = rename(&aside, &local);
+            let _ = remove_tree(&stage);
         }
-        copy_missing(&before.dir, &local, true).map_err(fail(&before.dir))?;
+        return Err(error);
     }
-    location::record(dirs, root, StateLocation::Project, true)?;
-    Ok(StateStore::for_project(dirs, root))
+    let _ = remove_tree(&aside);
+    Ok(())
 }
 
 /// Takes back what [`init_project`] made, when it is untouched (`projects.md` §2.4, undo of a first include):
 /// `.permark/` holds only `config.toml` + `.gitignore` with the bytes init wrote, `local/`, `cache/`, no link anywhere.
-/// The project's private state (`local/`, the live state since init) is carried back into the profile (newer wins),
-/// then `.permark/` is removed in one step: renamed away first (a temp name the tree and the watch never show), then
-/// deleted; a file held open (antivirus, editor) makes the rename fail and leaves `.permark/` whole, never half
-/// removed. The caller stopped the plugins before (their files flushed) and reloads the state after.
+/// The project's private state (`local/`, the live state since init) is carried back into the profile (newer wins;
+/// never the files and plugin folders that always stay in the profile), then `.permark/` is removed in one step:
+/// renamed away first (a temp name the tree and the watch never show), then deleted; a file held open (antivirus,
+/// editor) makes the rename fail and leaves `.permark/` whole, never half removed. The folder's row then names the
+/// profile. The caller stopped the plugins before (their files flushed) and reloads the state after.
 /// `Ok(false)`: changed since init, left as it is.
 ///
 /// # Errors
@@ -1163,7 +1241,7 @@ pub fn uninit_project(dirs: &AppDirs, root: &Root) -> Result<bool, StateError> {
     let local = permark.join("local");
     if private::is_real_folder(&local) {
         std::fs::create_dir_all(&profile).map_err(fail(&profile))?;
-        copy_over(&local, &profile, true).map_err(fail(&local))?;
+        copy_over(&local, &profile, Depth::Top).map_err(fail(&local))?;
     }
     // one step for everyone looking: `.permark/` is there whole or gone; the leftover temp folder is best effort
     let gone = root.path().join(format!(
@@ -1175,6 +1253,9 @@ pub fn uninit_project(dirs: &AppDirs, root: &Root) -> Result<bool, StateError> {
     ));
     std::fs::rename(&permark, &gone).map_err(fail(&permark))?;
     let _ = std::fs::remove_dir_all(&gone);
+    // the profile is the place again, also for a `.permark/` a pull brings back later; best effort: without the row
+    // the folder, now without `.permark/`, keeps its data in the profile all the same
+    let _ = location::record(dirs, root, StateLocation::Profile, false, false);
     Ok(true)
 }
 
@@ -1201,7 +1282,7 @@ pub fn move_profile_state(dirs: &AppDirs, from: &Path, to: &Path) -> Result<bool
         if std::fs::symlink_metadata(&new).is_err() {
             std::fs::rename(&old, &new).map_err(|e| StateError::io(&old, e))?;
         } else {
-            copy_missing(&old, &new, false).map_err(|e| StateError::io(&new, e))?;
+            copy_missing(&old, &new, Depth::All).map_err(|e| StateError::io(&new, e))?;
             std::fs::remove_dir_all(&old).map_err(|e| StateError::io(&old, e))?;
         }
         moved = true;
@@ -1225,19 +1306,49 @@ fn holds_link(dir: &Path) -> bool {
     }
 }
 
-/// Copies files + folders of `from` into `to`, the copy winning over what `to` holds (links never followed). `top`:
-/// the profile-only and shared files of a project folder stay out (a project's files must never switch them).
-fn copy_over(from: &Path, to: &Path, top: bool) -> io::Result<()> {
+/// How deep a copy between a project's state folders is: what stays out depends on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Depth {
+    /// A project's state folder itself: its profile-only and shared files stay out (a project's files must never
+    /// switch them).
+    Top,
+    /// Its `plugins/`: the plugin folders kept in the profile on purpose stay out ([`PROFILE_PLUGINS`]).
+    Plugins,
+    /// Deeper, or a copy of everything.
+    All,
+}
+
+impl Depth {
+    fn keeps_out(self, name: &std::ffi::OsStr) -> bool {
+        match self {
+            Self::Top => PROFILE_ONLY.iter().chain(&SHARED_FILES).any(|p| name == *p),
+            Self::Plugins => PROFILE_PLUGINS.iter().any(|p| name == *p),
+            Self::All => false,
+        }
+    }
+
+    fn below(self, name: &std::ffi::OsStr) -> Self {
+        if self == Self::Top && name == "plugins" {
+            Self::Plugins
+        } else {
+            Self::All
+        }
+    }
+}
+
+/// Copies files + folders of `from` into `to`, the copy winning over what `to` holds (links never followed); what
+/// `depth` keeps out stays out.
+fn copy_over(from: &Path, to: &Path, depth: Depth) -> io::Result<()> {
     for entry in std::fs::read_dir(from)?.flatten() {
         let name = entry.file_name();
-        if top && PROFILE_ONLY.iter().chain(&SHARED_FILES).any(|p| name == *p) {
+        if depth.keeps_out(&name) {
             continue;
         }
         let target = to.join(&name);
         let kind = entry.file_type()?;
         if kind.is_dir() {
             std::fs::create_dir_all(&target)?;
-            copy_over(&entry.path(), &target, false)?;
+            copy_over(&entry.path(), &target, depth.below(&name))?;
         } else if kind.is_file() {
             std::fs::copy(entry.path(), &target)?;
         }
@@ -1245,14 +1356,15 @@ fn copy_over(from: &Path, to: &Path, top: bool) -> io::Result<()> {
     Ok(())
 }
 
-/// Copies files + folders of `from` into `to`, never over an existing entry (links not followed or copied).
-fn copy_missing(from: &Path, to: &Path, top: bool) -> io::Result<()> {
+/// Copies files + folders of `from` into `to`, never over an existing entry (links not followed or copied); what
+/// `depth` keeps out stays out.
+fn copy_missing(from: &Path, to: &Path, depth: Depth) -> io::Result<()> {
     let Ok(entries) = std::fs::read_dir(from) else {
         return Ok(());
     };
     for entry in entries.flatten() {
         let name = entry.file_name();
-        if top && PROFILE_ONLY.iter().chain(&SHARED_FILES).any(|p| name == *p) {
+        if depth.keeps_out(&name) {
             continue;
         }
         let target = to.join(&name);
@@ -1262,7 +1374,7 @@ fn copy_missing(from: &Path, to: &Path, top: bool) -> io::Result<()> {
         let kind = entry.file_type()?;
         if kind.is_dir() {
             std::fs::create_dir(&target)?;
-            copy_missing(&entry.path(), &target, false)?;
+            copy_missing(&entry.path(), &target, depth.below(&name))?;
         } else if kind.is_file() {
             std::fs::copy(entry.path(), &target)?;
         }

@@ -186,6 +186,36 @@ fn found_projects_are_offered_then_included_all_and_undone() {
     assert!(!again.undone);
 }
 
+/// The owners follow the opened folder's own data place: an include that initializes PerMark puts the folder's slot
+/// where the core's store is, its undo puts it back in the profile (the row names the profile), so the plugins started
+/// again write where the data is.
+#[test]
+fn the_owners_follow_the_opened_folder_initialized_and_undone() {
+    use crate::state::StateLocation::{Profile, Project};
+    let base = tempfile::tempdir().unwrap();
+    let dir = sample_root();
+    let root = dir.path();
+    let (env, _sink) = env(base.path());
+    let core = ProjectCore::open(Root::open(root).unwrap(), &env);
+    ready(&core);
+    let slot = |core: &ProjectCore| answer(&core.projects().owners().root().store);
+    assert_eq!(slot(&core).0, Profile);
+    let (outcome, initialized) = core.projects_include(&env, &paths(&["notes"])).unwrap();
+    assert!(initialized);
+    assert_eq!(core.store().location(), Project);
+    assert_eq!(slot(&core), answer(&core.store()));
+    let (undone, moved) = core.projects_undo(&env, outcome.undo.unwrap()).unwrap();
+    assert!(undone.undone && moved);
+    assert_eq!(core.store().location(), Profile);
+    assert_eq!(slot(&core), answer(&core.store()));
+    // a `.permark/` arriving later never takes the data back into the folder by itself
+    permark(root, "");
+    assert_eq!(
+        StateStore::for_project(&env.dirs, core.root()).location(),
+        Profile
+    );
+}
+
 #[test]
 fn undo_keeps_a_permark_folder_that_changed_and_a_record_that_existed() {
     let base = tempfile::tempdir().unwrap();
