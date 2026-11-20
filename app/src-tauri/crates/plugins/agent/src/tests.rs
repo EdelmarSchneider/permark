@@ -1978,6 +1978,68 @@ fn the_context_file_exists_only_while_the_context_group_is_on() {
 }
 
 #[test]
+fn the_context_file_holds_the_published_context_and_nothing_else() {
+    let fx = fx();
+    let file = fx.root.join(".permark/local").join(crate::CONTEXT_FILE);
+    let read = || -> serde_json::Map<String, Value> {
+        serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap()
+    };
+    let keys = |map: &serde_json::Map<String, Value>| -> Vec<String> {
+        let mut keys: Vec<String> = map.keys().cloned().collect();
+        keys.sort();
+        keys
+    };
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    fx.rpc(
+        "publish",
+        json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+    )
+    .unwrap();
+    let map = read();
+    assert_eq!(keys(&map), ["doc", "mode", "openComments", "token", "v"]);
+    // only this install can make it for this folder: a copy that came with the folder has none it accepts
+    let token = permark_core::state::context::token(&fx.core().store()).unwrap();
+    assert_eq!(map["token"], json!(token));
+    assert_eq!(map["v"], json!(1));
+    assert_eq!(map["doc"], json!("docs/plan.md"));
+    assert_eq!(map["mode"], json!("view"));
+    // the comment in a file agents never see is not counted
+    assert_eq!(map["openComments"], json!(1));
+    // no open comment: no count
+    fx.comments.0.lock().unwrap().clear();
+    fx.rpc(
+        "publish",
+        json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+    )
+    .unwrap();
+    assert_eq!(keys(&read()), ["doc", "mode", "token", "v"]);
+}
+
+/// A context file that came with the folder (a zip, a clone) is removed when the project opens, even while the
+/// connection is on (the plugin then leaves the file to the next publish); the one this install wrote stays.
+#[test]
+fn a_context_file_that_came_with_the_folder_is_removed_at_open() {
+    let mut fx = fx();
+    let file = fx.root.join(".permark/local").join(crate::CONTEXT_FILE);
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    std::fs::write(&file, b"{\"v\":1,\"doc\":\"docs/plan.md\"}").unwrap();
+    fx.reopen();
+    assert!(!file.exists(), "no token of this install: removed");
+    fx.rpc(
+        "publish",
+        json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+    )
+    .unwrap();
+    let written = std::fs::read(&file).unwrap();
+    fx.reopen();
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        written,
+        "this install's file stays"
+    );
+}
+
+#[test]
 fn the_agent_proxies_to_the_app_and_refuses_while_it_is_closed() {
     let fx = fx();
     let started_roots = Arc::new(Mutex::new(Vec::<PathBuf>::new()));

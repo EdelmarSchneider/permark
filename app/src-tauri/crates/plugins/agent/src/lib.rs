@@ -60,7 +60,7 @@ use crate::tools::Tools;
 
 const ID: PluginId = PluginId::of("agent");
 /// The last published context, for scripts without MCP (only in a project with `.permark/`).
-pub const CONTEXT_FILE: &str = "agent-context.json";
+pub const CONTEXT_FILE: &str = permark_core::state::context::FILE;
 
 /// Why a tool call gave no answer. The words are what the agent reads.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -244,6 +244,8 @@ fn sync_context_file(hub: &Hub, write: bool) {
         if open > 0 {
             map.insert("openComments".to_owned(), serde_json::json!(open));
         }
+        // tells this install's file from one that came with the folder (removed when the project opens)
+        permark_core::state::context::stamp(store, map);
     }
     if let Ok(bytes) = serde_json::to_vec(&value) {
         let _ = file.write(&bytes);

@@ -3,6 +3,7 @@
 //! `.permark/`, larger than its cap, written by a newer version) -> left as it is, defaults used, never written over by
 //! a handle holding those defaults. Plugins get own namespaces.
 
+pub mod context;
 pub mod older;
 mod private;
 mod raw;
@@ -30,12 +31,17 @@ pub use seal::{Machine, Seal};
 pub use shared_write::{merge3, FileLock};
 
 pub const PERMARK_DIR: &str = ".permark";
-/// Per-project files that ALWAYS stay in the profile (a project's files must never switch them).
-pub const PROFILE_ONLY: [&str; 4] = [
+/// Per-project files that ALWAYS stay in the profile (a project's files must never switch them). Initialize never
+/// copies them into `.permark/local/` (a copy there would never be read) and undoing it never carries one back.
+pub const PROFILE_ONLY: [&str; 8] = [
     "agent.json",
     "agent-refused.json",
     "plugins.json",
     "pictures.json",
+    crate::projects::fsm::MEMBERSHIP_FILE,
+    crate::projects::migrate::LEDGER_FILE,
+    crate::projects::card::PROFILE_CARD,
+    older::TAKEN_OVER,
 ];
 /// Per-project files that live in the shared `.permark/` itself (never in `local/`).
 pub const SHARED_FILES: [&str; 1] = ["meta.toml"];

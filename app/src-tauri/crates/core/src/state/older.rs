@@ -19,7 +19,7 @@ pub const OLDER_FOLDER: &str = "dev.permark.app";
 /// Project files 0.5 kept in its profile that hold the person's data.
 pub const OLDER_PROJECT_FILES: [&str; 3] = ["meta.toml", "comments.json", "quiet.json"];
 /// Marks a project profile folder whose 0.5 data was looked at (copied or absent).
-const TAKEN_OVER: &str = "from-0.5";
+pub(crate) const TAKEN_OVER: &str = "from-0.5";
 /// Largest file copied (a bigger one stays where it is).
 const MAX_FILE: u64 = 64 * 1024 * 1024;
 /// 0.5's last window geometry file, in its profile folder.

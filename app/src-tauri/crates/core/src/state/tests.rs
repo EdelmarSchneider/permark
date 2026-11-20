@@ -285,7 +285,39 @@ fn init_project_copies_profile_state_except_profile_only_files() {
         .plugin_file::<Sample>(&PluginId::of("tags"), "t.json")
         .save(&sample(4))
         .unwrap();
+    // the person's answers about included projects, the copy ledger, the profile card and the mark of the 0.5
+    // take-over are read from the profile only: a copy in the project would never be read
+    let read_from_profile = [
+        "membership.json",
+        "projects-copied.json",
+        "card.json",
+        "from-0.5",
+    ];
+    for name in read_from_profile {
+        fs::write(before.dir().join(name), b"profile's").unwrap();
+    }
+    assert_eq!(
+        PROFILE_ONLY[..],
+        [
+            "agent.json",
+            "agent-refused.json",
+            "plugins.json",
+            "pictures.json",
+            "membership.json",
+            "projects-copied.json",
+            "card.json",
+            "from-0.5",
+        ]
+    );
     let after = init_project(&f.dirs, &f.root()).unwrap();
+    for name in read_from_profile {
+        assert!(!after.dir().join(name).exists(), "{name} stays out");
+        assert_eq!(
+            fs::read(before.dir().join(name)).unwrap(),
+            b"profile's",
+            "{name} kept in the profile"
+        );
+    }
     assert_eq!(
         after.file::<Sample>("session.json").load(),
         Loaded::Found(sample(5))
@@ -303,6 +335,216 @@ fn init_project_copies_profile_state_except_profile_only_files() {
     );
     let default = fs::read_to_string(f.root().path().join(".permark").join("config.toml")).unwrap();
     assert_eq!(default, DEFAULT_CONFIG_TOML);
+}
+
+/// Every entry below `dir`, relative, `/`-separated, folders ending in `/`, sorted.
+fn entries_below(dir: &Path) -> Vec<String> {
+    fn walk(dir: &Path, prefix: &str, out: &mut Vec<String>) {
+        for entry in fs::read_dir(dir).unwrap().flatten() {
+            let name = format!("{prefix}{}", entry.file_name().to_string_lossy());
+            if entry.file_type().unwrap().is_dir() {
+                out.push(format!("{name}/"));
+                walk(&entry.path(), &format!("{name}/"), out);
+            } else {
+                out.push(name);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, "", &mut out);
+    out.sort();
+    out
+}
+
+#[test]
+fn init_project_makes_exactly_these_files() {
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    let permark = f.root().path().join(".permark");
+    assert_eq!(
+        entries_below(&permark),
+        [
+            ".gitignore",
+            "cache/",
+            "cache/.gitignore",
+            "cache/CACHEDIR.TAG",
+            "config.toml",
+            "local/",
+            "local/.gitignore",
+        ]
+    );
+    assert!(
+        fs::read_to_string(permark.join("cache").join("CACHEDIR.TAG"))
+            .unwrap()
+            .starts_with("Signature: 8a477f597d28d172789f06886806bc55")
+    );
+    for state in ["local", "cache"] {
+        assert_eq!(
+            fs::read_to_string(permark.join(state).join(".gitignore")).unwrap(),
+            "*\n"
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(permark.join(".gitignore")).unwrap(),
+        PROJECT_GITIGNORE
+    );
+}
+
+#[test]
+fn uninit_project_takes_back_a_cache_holding_more_files() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    store
+        .cache_file::<Sample>("index.json")
+        .save(&sample(1))
+        .unwrap();
+    fs::write(store.cache_dir().join("extra.bin"), b"x").unwrap();
+    assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+    assert!(!f.root().path().join(".permark").exists());
+}
+
+#[test]
+fn a_state_entry_is_a_folder_only_when_it_is_a_real_folder() {
+    let f = fx();
+    let base = f.project.path();
+    fs::create_dir(base.join("folder")).unwrap();
+    fs::write(base.join("file"), b"x").unwrap();
+    assert!(matches!(
+        private::entry(&base.join("folder")),
+        private::Entry::Folder
+    ));
+    assert!(matches!(
+        private::entry(&base.join("missing")),
+        private::Entry::Missing
+    ));
+    assert!(matches!(
+        private::entry(&base.join("file")),
+        private::Entry::Other
+    ));
+    if link_folder(&base.join("folder"), &base.join("folder link")) {
+        assert!(matches!(
+            private::entry(&base.join("folder link")),
+            private::Entry::Other
+        ));
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(base.join("file"), base.join("file link")).unwrap();
+        assert!(matches!(
+            private::entry(&base.join("file link")),
+            private::Entry::Other
+        ));
+    }
+}
+
+/// A folder where a state folder's ignore file belongs cannot be replaced without deleting what it holds: it is left
+/// as it is and the save still goes through.
+#[test]
+fn a_folder_in_place_of_the_ignore_file_never_blocks_a_save() {
+    let f = fx();
+    let local = f.project.path().join(".permark").join("local");
+    fs::create_dir_all(local.join(".gitignore")).unwrap();
+    fs::write(local.join(".gitignore").join("kept"), b"x").unwrap();
+    let file = f.store().file::<Sample>("x.json");
+    file.save(&sample(1)).unwrap();
+    assert_eq!(file.load(), Loaded::Found(sample(1)));
+    assert_eq!(
+        fs::read(local.join(".gitignore").join("kept")).unwrap(),
+        b"x"
+    );
+}
+
+/// A folder may arrive with its own ignore files in the state folders: they are set back to "everything" at the next
+/// write, while the repository's ignore file and `.permark/.gitignore` stay as they are.
+#[test]
+fn the_state_folders_ignore_everything_whatever_the_folder_shipped() {
+    let f = fx();
+    let permark = f.project.path().join(".permark");
+    for (path, text) in [
+        (".gitignore", "build/\n"),
+        (".permark/.gitignore", "# the team's own\n"),
+        (".permark/local/.gitignore", "!*\n"),
+        (".permark/cache/.gitignore", ""),
+    ] {
+        let path = f.project.path().join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+    let store = f.store();
+    store.file::<Sample>("x.json").save(&sample(1)).unwrap();
+    store
+        .cache_file::<Sample>("index.json")
+        .save(&sample(2))
+        .unwrap();
+    for state in ["local", "cache"] {
+        assert_eq!(
+            fs::read_to_string(permark.join(state).join(".gitignore")).unwrap(),
+            "*\n",
+            "{state}"
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(f.project.path().join(".gitignore")).unwrap(),
+        "build/\n"
+    );
+    assert_eq!(
+        fs::read_to_string(permark.join(".gitignore")).unwrap(),
+        "# the team's own\n"
+    );
+    // a raw write sets it back too
+    fs::write(permark.join("local").join(".gitignore"), "x\n").unwrap();
+    store.raw_file("comments.json").write(b"{}").unwrap();
+    assert_eq!(
+        fs::read_to_string(permark.join("local").join(".gitignore")).unwrap(),
+        "*\n"
+    );
+}
+
+/// A link in place of a state folder's ignore file is replaced by a plain file, never written through.
+#[cfg(unix)]
+#[test]
+fn a_link_in_place_of_an_ignore_file_is_replaced_never_followed() {
+    let f = fx();
+    let local = f.project.path().join(".permark").join("local");
+    fs::create_dir_all(&local).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let target = outside.path().join("ignore");
+    fs::write(&target, "!*\n").unwrap();
+    std::os::unix::fs::symlink(&target, local.join(".gitignore")).unwrap();
+    f.store().file::<Sample>("x.json").save(&sample(1)).unwrap();
+    let meta = fs::symlink_metadata(local.join(".gitignore")).unwrap();
+    assert!(meta.file_type().is_file());
+    assert_eq!(fs::read_to_string(local.join(".gitignore")).unwrap(), "*\n");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "!*\n");
+}
+
+/// The cache folder tells backup tools it holds only rebuildable files (<https://bford.info/cachedir/>); a tag already
+/// there is kept as it is, and the private state folder never gets one.
+#[test]
+fn the_cache_folder_carries_a_cache_directory_tag() {
+    let f = fx();
+    let permark = f.project.path().join(".permark");
+    fs::create_dir(&permark).unwrap();
+    let store = f.store();
+    store.file::<Sample>("x.json").save(&sample(1)).unwrap();
+    store
+        .cache_file::<Sample>("index.json")
+        .save(&sample(2))
+        .unwrap();
+    let tag = permark.join("cache").join("CACHEDIR.TAG");
+    let text = fs::read_to_string(&tag).unwrap();
+    assert!(text.starts_with("Signature: 8a477f597d28d172789f06886806bc55\n"));
+    assert!(!permark.join("local").join("CACHEDIR.TAG").exists());
+    fs::write(
+        &tag,
+        "Signature: 8a477f597d28d172789f06886806bc55\n# mine\n",
+    )
+    .unwrap();
+    store
+        .cache_file::<Sample>("index.json")
+        .save(&sample(3))
+        .unwrap();
+    assert!(fs::read_to_string(&tag).unwrap().ends_with("# mine\n"));
 }
 
 #[test]
