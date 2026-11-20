@@ -254,6 +254,55 @@ fn discovery_tells_plain_folders_from_repositories_and_finds_the_prefix() {
     });
 }
 
+/// A repository whose git folder is named by a path not on a local drive (a `.git` file | a `commondir` naming a
+/// share no host answers) is no repository, at once: neither backend looks it up, since even that connects to the
+/// server and offers it the person's sign-in.
+#[test]
+fn a_repository_named_on_a_share_is_never_opened() {
+    let share = if cfg!(windows) {
+        r"\\192.0.2.1\s"
+    } else {
+        "//192.0.2.1/s"
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let root = dunce::canonicalize(dir.path()).unwrap();
+    let by_file = root.join("by file");
+    std::fs::create_dir_all(&by_file).unwrap();
+    std::fs::write(
+        by_file.join(".git"),
+        format!("gitdir: {}\n", Path::new(share).join("a.git").display()),
+    )
+    .unwrap();
+    let by_common = root.join("by common");
+    std::fs::create_dir_all(by_common.join(".git")).unwrap();
+    std::fs::write(
+        by_common.join(".git").join("HEAD"),
+        "ref: refs/heads/main\n",
+    )
+    .unwrap();
+    std::fs::write(
+        by_common.join(".git").join("commondir"),
+        format!("{}\n", Path::new(share).join("common").display()),
+    )
+    .unwrap();
+    each(|name, ops| {
+        for project in [&by_file, &by_common] {
+            let started = Instant::now();
+            assert_eq!(
+                service::discover_here(ops, project, None),
+                Discovery::NoRepo,
+                "{name}: {}",
+                project.display()
+            );
+            assert!(
+                started.elapsed() < Duration::from_secs(5),
+                "{name}: {} was looked up",
+                project.display()
+            );
+        }
+    });
+}
+
 #[test]
 fn a_nested_repository_is_the_repository_of_its_folder() {
     each(|name, ops| {

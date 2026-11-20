@@ -572,6 +572,35 @@ pub fn free_space(path: &Path) -> io::Result<u64> {
     }
 }
 
+/// Whether looking up `path` stays on this computer: an absolute path on a local drive. Windows: a drive letter path
+/// (also its `\\?\C:\` spelling) on a fixed | removable | RAM disk; never a share, a mapped network drive, a device
+/// path, a CD drive or an unknown drive. Unix: any absolute path but one that starts with two separators (a network
+/// spelling: [`crate::process::is_network_path`]); a mount point of a network file system is not told apart. Use it
+/// before the first lookup of a path that came from file content: even a metadata lookup on a share connects to the
+/// server and offers it the person's sign-in.
+#[must_use]
+pub fn is_local_path(path: &Path) -> bool {
+    if !path.is_absolute() {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        // a drive letter path never starts with two separators: no text check needed beside the prefix
+        match path.components().next() {
+            Some(Component::Prefix(prefix)) => match prefix.kind() {
+                Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => win::local_drive(letter),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        !crate::process::is_network_path(path.as_os_str())
+    }
+}
+
 fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {
@@ -967,6 +996,53 @@ mod tests {
         assert!(free_space(&file).unwrap() > 0);
         // a store root not created yet: its nearest existing folder answers
         assert!(free_space(&folder.join("not").join("yet")).unwrap() > 0);
+    }
+
+    /// Only an absolute path on a disk of this computer is local: a share, a device path, a relative path is not,
+    /// whatever its spelling.
+    #[test]
+    fn only_an_absolute_path_on_a_local_disk_is_local() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(is_local_path(dir.path()));
+        for odd in [
+            r"\\server\share\x",
+            "//server/share/x",
+            r"\\?\UNC\server\share\x",
+            r"\\.\pipe\x",
+            r"\\.\C:\x",
+            "relative",
+            "./x",
+            "../x",
+            "",
+        ] {
+            assert!(!is_local_path(Path::new(odd)), "{odd:?}");
+        }
+        #[cfg(windows)]
+        {
+            assert!(is_local_path(Path::new(r"C:\")));
+            assert!(is_local_path(Path::new(r"\\?\C:\x")));
+            for odd in [
+                r"C:x",
+                r"\x",
+                "/x",
+                r"\\?\Volume{00000000-0000-0000-0000-000000000000}\x",
+            ] {
+                assert!(!is_local_path(Path::new(odd)), "{odd:?}");
+            }
+            // a drive letter with no drive behind it tells nothing
+            if let Some(letter) = (b'A'..=b'Z')
+                .rev()
+                .find(|l| !Path::new(&format!("{}:\\", char::from(*l))).exists())
+            {
+                let free = format!(r"{}:\x", char::from(letter));
+                assert!(!is_local_path(Path::new(&free)), "{free}");
+            }
+        }
+        #[cfg(unix)]
+        {
+            assert!(is_local_path(Path::new("/x")));
+            assert!(is_local_path(Path::new("/")));
+        }
     }
 
     /// The opened file's own path: a link (junction | symlink) on the way is followed to where the file really is.

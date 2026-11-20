@@ -1598,12 +1598,7 @@ fn copy_folder_refuses_a_source_that_is_a_link_or_a_file() {
 #[cfg(windows)]
 #[test]
 fn a_local_drive_is_never_taken_for_a_network_drive() {
-    assert!(!network_drive(b'C'));
+    assert!(crate::fsx::is_local_path(Path::new(r"C:\")));
     let temp = std::env::temp_dir();
-    let Some(Component::Prefix(prefix)) = temp.components().next() else {
-        panic!("{}", temp.display());
-    };
-    if let Prefix::Disk(letter) = prefix.kind() {
-        assert!(!network_drive(letter), "{}", temp.display());
-    }
+    assert!(crate::fsx::is_local_path(&temp), "{}", temp.display());
 }

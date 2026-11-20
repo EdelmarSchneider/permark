@@ -2,7 +2,7 @@
 //! process, no libgit2: where it is (`.git` folder | gitfile), HEAD (branch | detached commit | no commit yet) and the
 //! repository state from marker files. A few small reads per repository.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use permark_core::conditions::RepoState;
 use permark_core::fsx::{read_regular, Zone};
@@ -10,7 +10,7 @@ use permark_core::plugins::CommitId;
 
 use crate::ops::{repo_state, RepoLocation};
 use crate::types::HeadInfo;
-use crate::worktrees::{common_dir, read_line};
+use crate::worktrees::{common_dir, commondir_stays_local, named_path, read_line};
 
 /// Most bytes of `packed-refs` read looking for one ref (a bigger file is not read: the ref counts as missing).
 const MAX_PACKED: u64 = 8 * 1024 * 1024;
@@ -33,7 +33,8 @@ pub struct Cheap {
 /// only). `Err`: why it cannot be used (the sentence names the cause).
 ///
 /// # Errors
-/// No `.git` | a gitfile without a `gitdir:` line | its target missing.
+/// No `.git` | a gitfile without a `gitdir:` line | its target missing | not on this computer (also the common
+/// folder its `commondir` names).
 pub fn member_location(folder: &Path) -> Result<RepoLocation, String> {
     #[cfg(test)]
     LOCATIONS_READ.with(|c| c.set(c.get() + 1));
@@ -48,12 +49,9 @@ pub fn member_location(folder: &Path) -> Result<RepoLocation, String> {
             .map(str::trim)
             .filter(|t| !t.is_empty())
             .ok_or_else(|| "a .git file without gitdir".to_owned())?;
-        let target = PathBuf::from(target);
-        let target = if target.is_absolute() {
-            target
-        } else {
-            folder.join(target)
-        };
+        // a share | a mapped network drive named here would be looked up below, and by git on every open
+        let target = named_path(folder, target)
+            .ok_or_else(|| "the repository named by .git is not on this computer".to_owned())?;
         if !target.is_dir() {
             return Err("the repository named by .git is missing".to_owned());
         }
@@ -61,6 +59,9 @@ pub fn member_location(folder: &Path) -> Result<RepoLocation, String> {
     } else {
         return Err("no .git".to_owned());
     };
+    if !commondir_stays_local(&git_dir) {
+        return Err("the common folder of the repository is not on this computer".to_owned());
+    }
     Ok(RepoLocation {
         workdir: folder.to_path_buf(),
         git_dir,

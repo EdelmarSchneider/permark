@@ -4,7 +4,8 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use permark_core::fsx::{read_regular, Zone};
+use permark_core::fsx::{is_local_path, read_regular, Zone};
+use permark_core::paths::canonicalize;
 
 use crate::ops::too_broad;
 
@@ -35,24 +36,64 @@ pub(crate) fn read_line(path: &Path) -> Option<String> {
     (!line.is_empty()).then(|| line.to_owned())
 }
 
-/// `<dir>/.git` as `(git folder, linked)`: a folder is a main working tree; a file `gitdir: <path>` a linked one.
-fn git_entry(dir: &Path) -> Option<(PathBuf, bool)> {
+/// The path a file of a git folder names (`gitdir`, `commondir`), read against `base` (the folder that holds the
+/// file) when relative. `None` when a lookup of it could leave this computer: an absolute path not on a local drive
+/// ([`is_local_path`]: a share, a mapped network drive) | a path with a drive of its own (`Z:x`). A plain relative
+/// path stays on the drive | share of `base`, the place the person opened.
+pub(crate) fn named_path(base: &Path, named: &str) -> Option<PathBuf> {
+    let named = Path::new(named);
+    if named.is_absolute() {
+        return is_local_path(named).then(|| named.to_path_buf());
+    }
+    if matches!(named.components().next(), Some(Component::Prefix(_))) {
+        return None;
+    }
+    Some(base.join(named))
+}
+
+/// What `<dir>/.git` is.
+enum Dot {
+    /// A folder: the git folder of a main working tree.
+    Folder(PathBuf),
+    /// A file `gitdir: <path>`: a linked working tree | a submodule; `None`: a path that may not be looked up
+    /// ([`named_path`]).
+    File(Option<PathBuf>),
+}
+
+/// What `<dir>/.git` is; `None`: no `.git`, a link, or a file without a `gitdir:` line.
+fn git_entry(dir: &Path) -> Option<Dot> {
     let entry = dir.join(".git");
     let meta = std::fs::symlink_metadata(&entry).ok()?;
     if meta.is_dir() {
-        return Some((entry, false));
+        return Some(Dot::Folder(entry));
     }
     if meta.is_file() {
         let line = read_line(&entry)?;
-        let target = PathBuf::from(line.strip_prefix("gitdir:")?.trim());
-        let git_dir = if target.is_absolute() {
-            target
-        } else {
-            dir.join(target)
-        };
-        return Some((git_dir, true));
+        return Some(Dot::File(named_path(
+            dir,
+            line.strip_prefix("gitdir:")?.trim(),
+        )));
     }
     None
+}
+
+/// Whether opening the git folder `git_dir` keeps git (the program, libgit2) on this computer: its `commondir`, read
+/// on every open, names no path that could leave it ([`named_path`]).
+pub(crate) fn commondir_stays_local(git_dir: &Path) -> bool {
+    read_line(&git_dir.join("commondir")).is_none_or(|named| named_path(git_dir, &named).is_some())
+}
+
+/// Whether git may open the repository of the folder `root` (the first `.git` walking up) without leaving this
+/// computer: a `.git` file | a `commondir` naming a share would make it connect to the server (and offer it the
+/// person's sign-in) before anything is known about the repository.
+#[must_use]
+pub(crate) fn opens_locally(root: &Path) -> bool {
+    let root = canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    match root.ancestors().take(MAX_LEVELS).find_map(git_entry) {
+        None => true,
+        Some(Dot::Folder(git_dir) | Dot::File(Some(git_dir))) => commondir_stays_local(&git_dir),
+        Some(Dot::File(None)) => false,
+    }
 }
 
 /// Whether the file `path` (relative to the working tree `workdir`, `/`-separated) is inside another repository
@@ -83,17 +124,13 @@ pub(crate) fn in_nested_repository(workdir: &Path, path: &str) -> bool {
 /// linked tree's admin folder there (`<common>/worktrees/<name>`, git's own layout). A `commondir` anywhere else came
 /// with the folder and names nothing.
 pub(crate) fn common_dir(git_dir: &Path) -> PathBuf {
-    let own =
-        || permark_core::paths::canonicalize(git_dir).unwrap_or_else(|_| git_dir.to_path_buf());
-    let Some(named) = read_line(&git_dir.join("commondir")).map(PathBuf::from) else {
+    let own = || canonicalize(git_dir).unwrap_or_else(|_| git_dir.to_path_buf());
+    let Some(named) =
+        read_line(&git_dir.join("commondir")).and_then(|line| named_path(git_dir, &line))
+    else {
         return own();
     };
-    let named = if named.is_absolute() {
-        named
-    } else {
-        git_dir.join(named)
-    };
-    match (git_dir.parent(), permark_core::paths::canonicalize(&named)) {
+    match (git_dir.parent(), canonicalize(&named)) {
         (Some(admins), Ok(common)) if same_folder(admins, &common.join("worktrees")) => common,
         _ => own(),
     }
@@ -102,27 +139,43 @@ pub(crate) fn common_dir(git_dir: &Path) -> PathBuf {
 /// The working tree the admin folder `admin` (`<common>/worktrees/<name>`) stands for, when that tree names it back.
 /// `admin/gitdir` holds `<tree>/.git` (relative: to `admin`, as `git worktree add --relative-paths` writes it), and
 /// that `.git` is a file whose `gitdir:` leads to the same admin folder (git's own rule). Both files are content of
-/// the folder: a planted `gitdir` | a tree that belongs to another admin folder -> `None`.
+/// the folder: a planted `gitdir` | a tree that belongs to another admin folder -> `None`. So is a tree git could not
+/// open without leaving this computer (the admin folder's `commondir`).
 fn named_back(admin: &Path) -> Option<PathBuf> {
-    let line = PathBuf::from(read_line(&admin.join("gitdir"))?);
-    let dot_git = if line.is_absolute() {
-        line
-    } else {
-        admin.join(line)
-    };
+    if !commondir_stays_local(admin) {
+        return None;
+    }
+    let dot_git = named_path(admin, &read_line(&admin.join("gitdir"))?)?;
     let tree = dot_git.parent()?.to_path_buf();
-    let (back, true) = git_entry(&tree)? else {
+    let Some(Dot::File(Some(back))) = git_entry(&tree) else {
         return None;
     };
     same_folder(&back, admin).then_some(tree)
 }
 
+/// `<common>/worktrees` where it really is (canonical), when it is a real folder there: a link in its place would lend
+/// another repository's admin folders to this one.
+fn admin_folders(common: &Path) -> Option<PathBuf> {
+    let admins = common.join("worktrees");
+    // the metadata of a link itself (symlink | junction) is never a folder's
+    if !std::fs::symlink_metadata(&admins).is_ok_and(|meta| meta.is_dir()) {
+        return None;
+    }
+    canonicalize(&admins).ok()
+}
+
+/// Whether `admin` is an admin folder of `admins` (a canonical `<common>/worktrees`) itself: a real folder, not a
+/// link, whose real place is `admins/<its name>`.
+fn is_admin_in(admins: &Path, admin: &Path) -> bool {
+    std::fs::symlink_metadata(admin).is_ok_and(|meta| meta.is_dir())
+        && admin
+            .file_name()
+            .is_some_and(|name| canonicalize(admin).is_ok_and(|real| real == admins.join(name)))
+}
+
 /// Whether `a` and `b` are the same existing folder (links resolved, case as on disk).
 fn same_folder(a: &Path, b: &Path) -> bool {
-    match (
-        permark_core::paths::canonicalize(a),
-        permark_core::paths::canonicalize(b),
-    ) {
+    match (canonicalize(a), canonicalize(b)) {
         (Ok(a), Ok(b)) => a == b,
         _ => false,
     }
@@ -131,15 +184,21 @@ fn same_folder(a: &Path, b: &Path) -> bool {
 /// The other working trees of the repository the project folder `root` belongs to.
 #[must_use]
 pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
-    let root = permark_core::paths::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-    let Some((workdir, git_dir, linked)) = root
+    let root = canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let Some((workdir, dot)) = root
         .ancestors()
         .take(MAX_LEVELS)
-        .find_map(|dir| git_entry(dir).map(|(git, linked)| (dir.to_path_buf(), git, linked)))
+        .find_map(|dir| git_entry(dir).map(|dot| (dir.to_path_buf(), dot)))
     else {
         return Vec::new();
     };
-    if too_broad(&workdir, &root, home) {
+    let (git_dir, linked) = match dot {
+        Dot::Folder(git_dir) => (git_dir, false),
+        Dot::File(Some(git_dir)) => (git_dir, true),
+        // a `.git` file naming a share: a repository git cannot open here
+        Dot::File(None) => return Vec::new(),
+    };
+    if too_broad(&workdir, &root, home) || !commondir_stays_local(&git_dir) {
         return Vec::new();
     }
     // the project's own `.git` file is content too: one its admin folder does not name back leads nowhere
@@ -151,27 +210,23 @@ pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
         .unwrap_or(Path::new(""))
         .to_path_buf();
     // a main tree's `.git` folder is the common folder (git writes no `commondir` there); a linked tree's admin
-    // folder sits in `<common>/worktrees`, else its `commondir` could name any repository above the project
+    // folder is a real folder in `<common>/worktrees`, else its `commondir` could name any repository above the
+    // project
     let common = if linked {
         let common = common_dir(&git_dir);
-        if !git_dir
-            .parent()
-            .is_some_and(|admins| same_folder(admins, &common.join("worktrees")))
-        {
+        if !admin_folders(&common).is_some_and(|admins| is_admin_in(&admins, &git_dir)) {
             return Vec::new();
         }
         common
     } else {
-        permark_core::paths::canonicalize(&git_dir).unwrap_or(git_dir)
+        canonicalize(&git_dir).unwrap_or(git_dir)
     };
     let mut found: Vec<Linked> = Vec::new();
     let mut add = |name: String, tree: PathBuf| {
         let folder = permark_core::paths::simplified(&tree.join(&prefix)).into_owned();
         // the same rule as the project's own tree (no drive root, no home folder), and never a tree that is the
         // project or holds it: that would offer the project's surroundings as one more root
-        let holds_root = |path: &Path| {
-            permark_core::paths::canonicalize(path).is_ok_and(|path| root.starts_with(path))
-        };
+        let holds_root = |path: &Path| canonicalize(path).is_ok_and(|path| root.starts_with(path));
         if folder.is_dir()
             && !holds_root(&tree)
             && !holds_root(&folder)
@@ -185,7 +240,7 @@ pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
     // the main working tree, when the project sits in a linked one: its `.git` is the common folder itself
     if linked && common.file_name().is_some_and(|n| n == ".git") {
         if let Some(main) = common.parent() {
-            if git_entry(main).is_some_and(|(git, linked)| !linked && same_folder(&git, &common)) {
+            if matches!(git_entry(main), Some(Dot::Folder(git)) if same_folder(&git, &common)) {
                 let name = main
                     .file_name()
                     .map_or_else(|| "main".to_owned(), |n| n.to_string_lossy().into_owned());
@@ -193,15 +248,24 @@ pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
             }
         }
     }
-    let Ok(entries) = std::fs::read_dir(common.join("worktrees")) else {
+    let Some(admins) = admin_folders(&common) else {
+        return found;
+    };
+    let Ok(entries) = std::fs::read_dir(&admins) else {
         return found;
     };
     let mut names: Vec<(String, PathBuf)> = entries
         .filter_map(Result::ok)
         .take(MAX_SCANNED)
+        // the entry's own type: a link among them is never followed
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .filter_map(|entry| {
+            let admin = entry.path();
+            if !is_admin_in(&admins, &admin) {
+                return None;
+            }
             let name = entry.file_name().to_string_lossy().into_owned();
-            Some((name, named_back(&entry.path())?))
+            Some((name, named_back(&admin)?))
         })
         .collect();
     names.sort();
@@ -512,6 +576,167 @@ mod tests {
         assert_eq!(branch, None);
         assert_eq!(head, None);
         assert_eq!(unborn, Some((true, None)));
+    }
+
+    /// A folder link at `link` leading to `target` (unix: symlink; Windows: junction, which needs no privilege);
+    /// `false`: links cannot be made here.
+    fn link_folder(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .output()
+                .is_ok_and(|o| o.status.success())
+        }
+    }
+
+    /// `<common>/worktrees` and each admin folder in it must be real folders of this repository: a link there (an
+    /// archive | a sync partner can place one) would lend another repository's working trees to the project.
+    #[test]
+    fn admin_folders_reached_through_a_link_attach_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = dir.path().join("other");
+        std::fs::create_dir_all(other.join(".git")).unwrap();
+        make_worktree(&other.join(".git"), "w", &dir.path().join("w"));
+        let other_admins = other.join(".git").join("worktrees");
+        // the whole `worktrees` folder is a link
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        if !link_folder(&other_admins, &project.join(".git").join("worktrees")) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+        assert!(names(linked_worktrees(&project, None)).is_empty());
+        // one admin folder is a link: the real one beside it is still found
+        let second = dir.path().join("second");
+        std::fs::create_dir_all(second.join(".git")).unwrap();
+        make_worktree(&second.join(".git"), "real", &dir.path().join("real"));
+        assert!(link_folder(
+            &other_admins.join("w"),
+            &second.join(".git").join("worktrees").join("w")
+        ));
+        assert_eq!(names(linked_worktrees(&second, None)), ["real"]);
+        // a linked project whose own admin folder is a link to a folder outside the common one
+        let third = dir.path().join("third");
+        std::fs::create_dir_all(third.join(".git")).unwrap();
+        make_worktree(&third.join(".git"), "s", &dir.path().join("s"));
+        let stash = dir.path().join("stash").join("p");
+        std::fs::create_dir_all(&stash).unwrap();
+        let tree = dir.path().join("p");
+        std::fs::create_dir_all(&tree).unwrap();
+        let admin = third.join(".git").join("worktrees").join("p");
+        assert!(link_folder(&stash, &admin));
+        std::fs::write(
+            stash.join("gitdir"),
+            format!("{}\n", tree.join(".git").display()),
+        )
+        .unwrap();
+        std::fs::write(
+            stash.join("commondir"),
+            format!("{}\n", third.join(".git").display()),
+        )
+        .unwrap();
+        std::fs::write(tree.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
+        assert!(names(linked_worktrees(&tree, None)).is_empty());
+        // the real layouts still list their trees
+        assert_eq!(names(linked_worktrees(&other, None)), ["w"]);
+        assert_eq!(
+            names(linked_worktrees(&dir.path().join("s"), None)),
+            ["third"]
+        );
+    }
+
+    /// A share no host answers (TEST-NET-1, never routed): a lookup there would wait for the network.
+    fn on_share(rest: &str) -> PathBuf {
+        let share = if cfg!(windows) {
+            r"\\192.0.2.1\s"
+        } else {
+            "//192.0.2.1/s"
+        };
+        Path::new(share).join(rest)
+    }
+
+    /// A path a git file names that is not on a local drive (a share) is never looked up: even a lookup connects to
+    /// the server and offers it the person's sign-in. The tree it would lead to is not attached, at once.
+    #[test]
+    fn a_share_named_by_a_git_file_is_never_looked_up() {
+        let dir = tempfile::tempdir().unwrap();
+        // the project's own `.git` file
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            project.join(".git"),
+            format!("gitdir: {}\n", on_share("a.git").display()),
+        )
+        .unwrap();
+        // an admin folder's `gitdir`, an admin folder's `commondir`
+        let main = dir.path().join("main");
+        let git = main.join(".git");
+        std::fs::create_dir_all(&git).unwrap();
+        make_worktree(&git, "w", &dir.path().join("w"));
+        let far = git.join("worktrees").join("far");
+        std::fs::create_dir_all(&far).unwrap();
+        std::fs::write(
+            far.join("gitdir"),
+            format!("{}\n", on_share("far/.git").display()),
+        )
+        .unwrap();
+        let tree_c = dir.path().join("c");
+        make_worktree(&git, "c", &tree_c);
+        let admin_c = git.join("worktrees").join("c");
+        std::fs::write(
+            admin_c.join("commondir"),
+            format!("{}\n", on_share("common").display()),
+        )
+        .unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send((
+                names(linked_worktrees(&project, None)),
+                names(linked_worktrees(&main, None)),
+                names(linked_worktrees(&tree_c, None)),
+                crate::cheap::cheap_facts(&admin_c).map(|c| c.head.unborn),
+                crate::cheap::member_location(&project).is_err(),
+                [&project, &tree_c, &main].map(|folder| opens_locally(folder)),
+            ));
+        });
+        let (from_project, from_main, from_c, unborn, refused, opens) = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("a path on a share was looked up");
+        assert!(from_project.is_empty(), "{from_project:?}");
+        assert_eq!(from_main, ["w"]);
+        assert!(from_c.is_empty(), "{from_c:?}");
+        assert_eq!(unborn, Some(true));
+        assert!(refused);
+        assert_eq!(opens, [false, false, true]);
+    }
+
+    /// A relative path a git file names stays where that file is (also when the project itself sits on a share the
+    /// person opened); an absolute one must be on a local drive; one with a drive of its own is never read against
+    /// the folder.
+    #[test]
+    fn a_named_path_is_read_against_its_folder_or_must_be_local() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        assert_eq!(named_path(base, "../x/.git"), Some(base.join("../x/.git")));
+        let share = on_share("p");
+        assert_eq!(
+            named_path(&share, "worktrees/a"),
+            Some(share.join("worktrees/a"))
+        );
+        let local = base.join("y");
+        assert_eq!(named_path(base, &local.display().to_string()), Some(local));
+        assert_eq!(named_path(base, &on_share("x").display().to_string()), None);
+        if cfg!(windows) {
+            assert_eq!(named_path(base, "Z:x"), None);
+            assert_eq!(named_path(base, r"\\?\UNC\192.0.2.1\s\x"), None);
+        }
     }
 
     #[test]

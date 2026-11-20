@@ -11,7 +11,7 @@ mod copy;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io;
-use std::path::{Component, Path, PathBuf, Prefix};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -749,18 +749,8 @@ impl FileOps {
     /// project and its worktrees (an import never moves an item that is already inside), and outside the person's
     /// state folders.
     fn may_return_to(&self, from: &Path) -> bool {
-        let local_drive = match from.components().next() {
-            Some(Component::Prefix(prefix)) => match prefix.kind() {
-                #[cfg(windows)]
-                Prefix::Disk(letter) => !network_drive(letter),
-                #[cfg(not(windows))]
-                Prefix::Disk(_) => true,
-                _ => false,
-            },
-            _ => !cfg!(windows),
-        };
-        if !local_drive || !from.is_absolute() || crate::process::is_network_path(from.as_os_str())
-        {
+        // a local disk also in its verbatim spelling: the text check keeps that one out too
+        if !crate::fsx::is_local_path(from) || crate::process::is_network_path(from.as_os_str()) {
             return false;
         }
         let roots = &self.roots;
@@ -769,20 +759,6 @@ impl FileOps {
                 .into_iter()
                 .any(|root| within(from, root))
     }
-}
-
-/// The drive `letter` is a network drive (a mapped `Z:`, a `subst` of a share): any lookup on it connects to a server.
-// Documented FFI: no std wrapper tells the drive type. The argument is a NUL-terminated wide string owned by this
-// function and alive for the whole call.
-#[cfg(windows)]
-#[allow(unsafe_code)]
-fn network_drive(letter: u8) -> bool {
-    use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
-    /// `DRIVE_REMOTE` of `GetDriveTypeW` (WinBase.h).
-    const DRIVE_REMOTE: u32 = 4;
-    let root = [u16::from(letter), u16::from(b':'), u16::from(b'\\'), 0];
-    // SAFETY: `root` is a live NUL-terminated buffer that outlives the call.
-    unsafe { GetDriveTypeW(root.as_ptr()) == DRIVE_REMOTE }
 }
 
 /// `path` is `root` or inside it: as spelled, else canonical (links, 8.3 names), on the root's volume only (another
