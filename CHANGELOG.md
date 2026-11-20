@@ -24,6 +24,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - **Keep mine** for a note file now writes only over the version you saw; if the file changed meanwhile, PerMark says so and leaves it alone. <!-- f: notes -->
+- A document whose front matter repeats a key, for example a model card with a list of authors, no longer fails to show in View and Edit: the properties card shows every row. Backslashes in quoted values, such as Windows paths, now show as written. <!-- f: frontmatter-card -->
+- Text that a crash left in a note file stays safe until you choose **Reload**, **Keep mine** or **Save as note**, and **Keep mine** now works while the file is open. A notes folder that cannot be read for a moment no longer loses its pins, shares and marks, and shared notes saved in UTF-16 read correctly. <!-- f: notes -->
+- **Remove data** for Comments and Quiet folders now also deletes their main file. <!-- f: plugins, comments -->
 - After switching folders, a late answer for the previous folder could reset the Explorer list; it is now ignored. <!-- f: explorer -->
 - Turning the agent connection on or off while it was also being changed elsewhere could lose one of the two choices. <!-- f: agent-connection -->
 - **Ctrl+R**, **Ctrl+Shift+R** and **Ctrl+P** no longer reload or print the app window when no command uses them. <!-- f: shell -->
