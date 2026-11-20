@@ -719,7 +719,8 @@ fn a_tracked_private_folder_withholds_only_its_owner_s_comments_from_agents() {
     assert!(done_in(&member_file));
     drop(repo);
 
-    // a repository that cannot answer now: withheld (fail closed); another repository's folder: served
+    // a repository that cannot answer now: withheld (fail closed); the member's folder inside a repository below the
+    // root's (a nested repository | a submodule): withheld too, that repository delivers what the folder holds
     let repo = offer_repo(&core, |p| {
         if p == ".permark/local" {
             Err(NoTracking::Slow)
@@ -727,7 +728,9 @@ fn a_tracked_private_folder_withholds_only_its_owner_s_comments_from_agents() {
             Err(NoTracking::OtherRepository)
         }
     });
-    assert_eq!(withheld_ids(&core), ["same".to_owned()]);
+    let mut both = vec!["same".to_owned(), prefixed.clone()];
+    both.sort();
+    assert_eq!(withheld_ids(&core), both);
     drop(repo);
 
     // the git plugin off: nothing to ask, every comment served

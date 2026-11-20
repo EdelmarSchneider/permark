@@ -41,9 +41,12 @@ impl OwnerSlot {
     }
 
     /// Whether this owner's private state folder (`<owner>/.permark/local`) counts as tracked by git: its index holds
-    /// the folder, or a repository that holds it cannot answer now (slow | failed). Then what the folder keeps may have
-    /// come with a clone | checkout and never reaches agents. State kept in the profile, no reader (git plugin off), no
-    /// usable repository, a folder of another repository: not tracked. Asks git: never call it on the open path.
+    /// the folder, the folder is inside a repository below the one asked (a nested repository | a checked-out
+    /// submodule at `.permark` | `.permark/local` delivers what it holds, e.g. `git clone --recursive`), or a
+    /// repository that holds it cannot answer now (slow | failed; before the git plugin's first look the reader answers
+    /// slow, so startup withholds too). Then what the folder keeps may have come with a clone | checkout and never
+    /// reaches agents. State kept in the profile, no reader (git plugin off), no usable repository: not tracked. Asks
+    /// git: never call it on the open path.
     #[must_use]
     pub fn private_tracked(&self, repo: Option<&RepoHandle>) -> bool {
         if self.store.location() == StateLocation::Profile {
@@ -60,7 +63,7 @@ impl OwnerSlot {
         };
         matches!(
             repo.0.tracked_under(&folder),
-            Ok(true) | Err(NoTracking::Failed | NoTracking::Slow)
+            Ok(true) | Err(NoTracking::OtherRepository | NoTracking::Failed | NoTracking::Slow)
         )
     }
 }
@@ -359,9 +362,10 @@ mod tests {
             (Ok(true), true),
             (Err(NoTracking::Failed), true),
             (Err(NoTracking::Slow), true),
+            // a nested repository | a submodule at the folder or above it delivers what the folder holds
+            (Err(NoTracking::OtherRepository), true),
             (Ok(false), false),
             (Err(NoTracking::NoRepository), false),
-            (Err(NoTracking::OtherRepository), false),
             (Err(NoTracking::Unavailable), false),
         ];
         for (answer, tracked) in cases {

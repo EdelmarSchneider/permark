@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use git2::{IndexAddOption, Repository, Signature};
 use permark_core::conditions::{Distribution, GitCondition, RepoState};
 use permark_core::events::NoEvents;
+use permark_core::fsx::{same_file, SameFile};
 use permark_core::paths::Root;
 use permark_core::plugins::{
     CommitId, FileVersion, FileVersions, NoBlob, NoTracking, NoVersions, PluginId, PluginRegistry,
@@ -178,6 +179,11 @@ impl Fixture {
     /// Puts an index entry for `rel` as given, whatever the disk holds: `stage` (1..=3: a side of a conflict),
     /// `extended` (intent-to-add | skip-worktree flags).
     fn put_entry(&self, rel: &str, stage: u16, extended: u16) {
+        self.put_kind(rel, stage, extended, 0o100_644);
+    }
+
+    /// [`Self::put_entry`] of the kind `mode` (`0o160_000`: a submodule, `0o120_000`: a link).
+    fn put_kind(&self, rel: &str, stage: u16, extended: u16, mode: u32) {
         let text: &[u8] = if extended & git2::IndexEntryExtendedFlag::INTENT_TO_ADD.bits() == 0 {
             b"x\n"
         } else {
@@ -196,7 +202,7 @@ impl Fixture {
                 mtime: git2::IndexTime::new(0, 0),
                 dev: 0,
                 ino: 0,
-                mode: 0o100_644,
+                mode,
                 uid: 0,
                 gid: 0,
                 file_size: u32::try_from(text.len()).unwrap(),
@@ -2400,35 +2406,109 @@ fn the_reader_lists_versions_and_tells_a_file_of_a_nested_repository() {
 const PRIVATE: &str = ".permark/local";
 
 #[test]
-fn an_index_entry_is_below_a_folder_by_whole_names() {
-    for (entry, at, caseless, below) in [
-        (".permark/local", PRIVATE, false, true),
-        (".permark/local/x.json", PRIVATE, false, true),
-        (".permark/local-x/y", PRIVATE, false, false),
-        (".permark/locals", PRIVATE, false, false),
-        (".permark/loca", PRIVATE, false, false),
-        (".permark", PRIVATE, false, false),
-        (".PerMark/Local/x", PRIVATE, false, false),
-        (".PerMark/Local/x", PRIVATE, true, true),
-        (".PerMark/Local-x/y", PRIVATE, true, false),
+fn an_index_entry_counts_by_whole_names_below_the_folder_or_at_a_folder_above() {
+    // a volume that keeps every name apart
+    let mut apart = |_: &[u8]| SameFile::Other;
+    for (entry, prefix, at, caseless, counts) in [
+        (".permark/local", "", PRIVATE, false, true),
+        (".permark/local/x.json", "", PRIVATE, false, true),
+        (".permark/local-x/y", "", PRIVATE, false, false),
+        (".permark/locals", "", PRIVATE, false, false),
+        (".permark/loca", "", PRIVATE, false, false),
+        // a submodule | a link at the folder above brings what is below it
+        (".permark", "", PRIVATE, false, true),
+        (".permarkx", "", PRIVATE, false, false),
+        (".PerMark/Local/x", "", PRIVATE, false, false),
+        (".PerMark/Local/x", "", PRIVATE, true, true),
+        (".PerMark/Local-x/y", "", PRIVATE, true, false),
+        (".PERMARK", "", PRIVATE, true, true),
+        // a project folder below the working tree: the folder itself and what is beside it are not inside it
+        ("hub/.permark/local/x", "hub", PRIVATE, false, true),
+        ("hub/.permark", "hub", PRIVATE, false, true),
+        ("HUB/.permark/local/x", "hub", PRIVATE, true, true),
+        ("HUB/.permark/local/x", "hub", PRIVATE, false, false),
+        ("hub", "hub", PRIVATE, false, false),
+        ("hubx/.permark/local", "hub", PRIVATE, false, false),
         (
             "hub ü/.permark/local/x",
+            "",
             "hub ü/.permark/local",
             false,
             true,
         ),
+        ("hub ü/.permark", "", "hub ü/.permark/local", false, true),
+        ("hub ü", "", "hub ü/.permark/local", false, true),
         // letters beyond ASCII keep their case, as git and libgit2 compare them
         (
             "HUB Ü/.permark/local/x",
+            "",
             "hub ü/.permark/local",
             true,
             false,
         ),
     ] {
         assert_eq!(
-            ops::tracked_entry(entry.as_bytes(), at, caseless),
-            below,
-            "{entry} below {at} (caseless {caseless})"
+            ops::tracked_entry(entry.as_bytes(), prefix, at, caseless, &mut apart),
+            counts,
+            "{entry} for {at} below {prefix:?} (caseless {caseless})"
+        );
+    }
+}
+
+/// The first name below the project folder, spelled so a volume may resolve it to the asked folder (`~`, beyond
+/// ASCII, a last `.` | space), is put to the volume when the rest leads into the folder: one folder | unknown ->
+/// counts, two folders -> not. Ordinary ASCII names and names whose rest leads elsewhere never cost a look.
+#[test]
+fn another_spelling_of_the_first_name_is_put_to_the_volume() {
+    for (entry, prefix, at, name) in [
+        ("PERMAR~1/local/comments.json", "", PRIVATE, "PERMAR~1"),
+        ("permar~1/local", "", PRIVATE, "permar~1"),
+        ("PERMAR~1", "", PRIVATE, "PERMAR~1"),
+        (".permar\u{212A}/local/x", "", PRIVATE, ".permar\u{212A}"),
+        (".permark./local/x", "", PRIVATE, ".permark."),
+        (".permark /local/x", "", PRIVATE, ".permark "),
+        ("Documentação/local/x", "", PRIVATE, "Documentação"),
+        ("hub/PERMAR~1/local/x", "hub", PRIVATE, "PERMAR~1"),
+        (
+            "HUB Ü/.permark/local/x",
+            "",
+            "hub ü/.permark/local",
+            "HUB Ü",
+        ),
+    ] {
+        for (answer, counts) in [
+            (SameFile::Yes, true),
+            (SameFile::Unknown, true),
+            (SameFile::Other, false),
+        ] {
+            let mut asked: Vec<Vec<u8>> = Vec::new();
+            let held = {
+                let mut volume = |name: &[u8]| {
+                    asked.push(name.to_vec());
+                    answer
+                };
+                ops::tracked_entry(entry.as_bytes(), prefix, at, false, &mut volume)
+            };
+            assert_eq!(held, counts, "{entry} when the volume answers {answer:?}");
+            assert_eq!(asked, [name.as_bytes()], "{entry}");
+        }
+    }
+    let mut never = |name: &[u8]| -> SameFile {
+        panic!(
+            "the volume was asked about {}",
+            String::from_utf8_lossy(name)
+        )
+    };
+    for (entry, prefix) in [
+        ("docs/local/x", ""),
+        ("Documentação/readme.md", ""),
+        ("PERMAR~1/localx/a", ""),
+        ("hub/PERMAR~1/x", "hub"),
+        ("other/PERMAR~1/local/x", "hub"),
+    ] {
+        assert!(
+            !ops::tracked_entry(entry.as_bytes(), prefix, PRIVATE, false, &mut never),
+            "{entry}"
         );
     }
 }
@@ -2574,6 +2654,109 @@ fn the_folder_of_another_repository_is_never_asked_about() {
             ops::tracked_of(ops, &loc, PRIVATE),
             Err(NoTracking::OtherRepository),
             "{name}: the folder is a repository"
+        );
+    });
+}
+
+/// A submodule | a link the index holds at the folder or at a folder above it inside the project brings what is below
+/// it with a checkout (`git clone --recursive`): the folder counts as tracked. The project folder itself, names that
+/// only start the same, and a file beside do not.
+#[test]
+fn a_submodule_or_a_link_at_the_folder_or_above_counts_as_tracked() {
+    each(|name, ops| {
+        for (what, rel, mode, tracked) in [
+            ("submodule at the folder", PRIVATE, 0o160_000, true),
+            ("submodule above", ".permark", 0o160_000, true),
+            ("link above", ".permark", 0o120_000, true),
+            ("a name that starts the same", ".permarkx", 0o160_000, false),
+            ("a file beside", ".permark-notes.md", 0o100_644, false),
+        ] {
+            let fx = Fixture::new();
+            fx.write("a.md", "a\n");
+            fx.commit("first");
+            fx.put_kind(rel, 0, 0, mode);
+            let loc = location(ops, &fx.root);
+            assert_eq!(
+                ops::tracked_of(ops, &loc, PRIVATE),
+                Ok(tracked),
+                "{name}: {what}"
+            );
+        }
+        // a project folder below the working tree: the entry at the project folder itself is not inside it
+        let fx = Fixture::new();
+        fx.write("docs [1]/a.md", "a\n");
+        fx.commit("first");
+        let below = location(ops, &fx.root.join("docs [1]"));
+        fx.put_kind("docs [1]", 0, 0, 0o160_000);
+        assert_eq!(
+            ops::tracked_of(ops, &below, PRIVATE),
+            Ok(false),
+            "{name}: the project folder"
+        );
+        fx.put_kind("docs [1]/.permark", 0, 0, 0o160_000);
+        assert_eq!(
+            ops::tracked_of(ops, &below, PRIVATE),
+            Ok(true),
+            "{name}: submodule above, below the working tree"
+        );
+    });
+}
+
+/// A repository made in the folder after an answer was kept, the index unchanged: told at the next question.
+#[test]
+fn a_repository_made_in_the_folder_after_an_answer_was_kept_is_told_at_once() {
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let ops = BuiltinGit;
+    let loc = location(&ops, &fx.root);
+    let memo = service::TrackedMemo::default();
+    assert_eq!(memo.tracked(&ops, &loc, PRIVATE), Ok(false));
+    let index_file = fx.root.join(".git").join("index");
+    let index = std::fs::read(&index_file).unwrap();
+    let private = fx.root.join(".permark").join("local");
+    std::fs::create_dir_all(&private).unwrap();
+    Repository::init(&private).unwrap();
+    assert_eq!(std::fs::read(&index_file).unwrap(), index, "same index");
+    assert_eq!(
+        memo.tracked(&ops, &loc, PRIVATE),
+        Err(NoTracking::OtherRepository)
+    );
+}
+
+/// Another spelling of `.permark` that the volume resolves to the same folder (the short name Windows gives it, a
+/// Unicode case fold on a caseless macOS volume) puts what is below it into the private folder at a checkout: it
+/// counts as that folder. A spelling the volume keeps apart, and an ordinary folder named beyond ASCII, do not.
+#[test]
+fn another_spelling_of_the_folder_on_disk_counts_as_the_folder() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.write(".permark/config.toml", "\n");
+        fx.write("Documentação/local/x.md", "x\n");
+        fx.commit("first");
+        let loc = location(ops, &fx.root);
+        let tracked = || ops::tracked_of(ops, &loc, PRIVATE);
+        assert_eq!(tracked(), Ok(false), "{name}: an ordinary folder");
+        let folder = fx.root.join(".permark");
+        let short = "PERMAR~1/local/comments.json";
+        if same_file(&fx.root.join("PERMAR~1"), &folder) == SameFile::Yes {
+            fx.put_entry(short, 0, 0);
+            assert_eq!(tracked(), Ok(true), "{name}: short name");
+            fx.unstage(short);
+        } else {
+            eprintln!(
+                "SKIPPED: the volume gives `.permark` no short name PERMAR~1 (8.3 names off)"
+            );
+        }
+        // KELVIN SIGN folds to `k` on a caseless macOS volume; NTFS and ext4 keep the two names apart
+        let kelvin = ".permar\u{212A}";
+        let alias = same_file(&fx.root.join(kelvin), &folder) == SameFile::Yes;
+        fx.put_entry(&format!("{kelvin}/local/comments.json"), 0, 0);
+        assert_eq!(
+            tracked(),
+            Ok(alias),
+            "{name}: kelvin sign (one folder on disk: {alias})"
         );
     });
 }

@@ -1,11 +1,13 @@
 //! The read-only operations both git backends implement, and the pure rules they share (paths below the project,
 //! "too broad" repositories, repository state from marker files). NEVER commits, stages or creates anything.
 
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use permark_core::conditions::RepoState;
+use permark_core::fsx::{same_file, SameFile};
 use permark_core::plugins::{CommitId, FileVersion, FileVersions, NoBlob, NoTracking, NoVersions};
 
 use crate::types::{BackendKind, HeadInfo, Letter};
@@ -135,9 +137,10 @@ pub trait GitOps: Send + Sync {
         after: usize,
         limit: usize,
     ) -> Result<FileVersions, GitError>;
-    /// Whether the index holds the folder `path` (relative to the project folder) or anything below it
-    /// ([`tracked_entry`]): entries of every stage (a conflict), intent-to-add and skip-worktree ones too, before the
-    /// first commit as well. Names compare without case when the repository is caseless (`core.ignorecase`).
+    /// Whether the index holds the folder `path` (relative to the project folder), anything below it, or a submodule |
+    /// link at a folder above it inside the project ([`tracked_entry`], other spellings on disk via [`disk_aliases`]):
+    /// entries of every stage (a conflict), intent-to-add and skip-worktree ones too, before the first commit as well.
+    /// Names compare without case when the repository is caseless (`core.ignorecase`).
     ///
     /// # Errors
     /// Git failed | timed out; a backend that does not read the index fails.
@@ -297,21 +300,13 @@ pub fn versions_of(
 /// ([`GitOps::tracked_under`]), as the reader other plugins use gives it.
 ///
 /// # Errors
-/// [`NoTracking`]: the folder is inside another repository below this one (never asked), git was too slow, the call
-/// failed, or `path` is not plain names (`.`, `..`, empty names: both backends would read it differently).
+/// [`NoTracking`]: see [`tracked_question`]; git was too slow, or the call failed.
 pub fn tracked_of(
     backend: &dyn GitOps,
     location: &RepoLocation,
     path: &str,
 ) -> Result<bool, NoTracking> {
-    if path.contains('\0') || path.split('/').any(|name| matches!(name, "" | "." | "..")) {
-        return Err(NoTracking::Failed);
-    }
-    // the trailing slash makes every name a folder: a repository at the folder itself holds what is below it too
-    let folder = format!("{}/", repo_path(&location.prefix, path));
-    if in_nested_repository(&location.workdir, &folder) {
-        return Err(NoTracking::OtherRepository);
-    }
+    tracked_question(location, path)?;
     backend
         .tracked_under(location, path)
         .map_err(|error| match error {
@@ -320,21 +315,121 @@ pub fn tracked_of(
         })
 }
 
-/// Whether the index entry `entry` (a path relative to the working tree) is the folder `at` (relative to the working
-/// tree too) or below it: whole names only (`a/b-c` is not below `a/b`). `caseless`: ASCII letters compare without
-/// case, as git and libgit2 compare the names of a caseless repository.
+/// What is known of the tracked question about the folder `path` (relative to the project folder) before the index is
+/// read: cheap, read from the folders as they are now.
+///
+/// # Errors
+/// [`NoTracking::OtherRepository`]: the folder is inside another repository below this one (the index is not asked);
+/// [`NoTracking::Failed`]: `path` is not plain names (`.`, `..`, empty names: both backends would read it differently).
+pub fn tracked_question(location: &RepoLocation, path: &str) -> Result<(), NoTracking> {
+    if path.contains('\0') || path.split('/').any(|name| matches!(name, "" | "." | "..")) {
+        return Err(NoTracking::Failed);
+    }
+    // the trailing slash makes every name a folder: a repository at the folder itself holds what is below it too
+    let folder = format!("{}/", repo_path(&location.prefix, path));
+    if in_nested_repository(&location.workdir, &folder) {
+        return Err(NoTracking::OtherRepository);
+    }
+    Ok(())
+}
+
+/// Whether the index entry `entry` (a path relative to the working tree) brings content into the folder `path`
+/// (relative to the project folder `prefix`) at a checkout: the entry is the folder, below it, or at a folder above it
+/// inside the project (a submodule | a link there delivers what is below). Whole names only (`a/b-c` is not below
+/// `a/b`); the project folder itself is not inside the project. `caseless`: ASCII letters compare without case, as git
+/// and libgit2 compare the names of a caseless repository.
+///
+/// The first name below the project folder may also be another spelling that the volume resolves to the folder of the
+/// first name of `path` (a Windows short name such as `PERMAR~1`, a Unicode case fold of a caseless volume): a name
+/// [`alias_candidate`] takes is put to `alias`, which says what the volume answers ([`disk_aliases`]); unknown counts
+/// as the same folder.
 #[must_use]
-pub fn tracked_entry(entry: &[u8], at: &str, caseless: bool) -> bool {
-    let at = at.as_bytes();
-    let Some(head) = entry.get(..at.len()) else {
+pub fn tracked_entry(
+    entry: &[u8],
+    prefix: &str,
+    path: &str,
+    caseless: bool,
+    alias: &mut dyn FnMut(&[u8]) -> SameFile,
+) -> bool {
+    let same = |held: &[u8], name: &str| {
+        if caseless {
+            held.eq_ignore_ascii_case(name.as_bytes())
+        } else {
+            held == name.as_bytes()
+        }
+    };
+    let mut held = entry.split(|byte| *byte == b'/');
+    for name in prefix.split('/').filter(|name| !name.is_empty()) {
+        if !held.next().is_some_and(|part| same(part, name)) {
+            return false;
+        }
+    }
+    let mut asked = path.split('/');
+    let (Some(first_held), Some(first_asked)) = (held.next(), asked.next()) else {
         return false;
     };
-    let same = if caseless {
-        head.eq_ignore_ascii_case(at)
-    } else {
-        head == at
+    // one of the two is the other or starts it: every name both have agrees
+    if !held.zip(asked).all(|(part, name)| same(part, name)) {
+        return false;
+    }
+    same(first_held, first_asked)
+        || (alias_candidate(first_held) && alias(first_held) != SameFile::Other)
+}
+
+/// A name some volume may resolve to a folder of another name: a short name (`~`), a letter beyond ASCII (case folds
+/// such as KELVIN SIGN to `k`), a last `.` | space (dropped by Windows). Ordinary ASCII names never are: they never cost
+/// a look at the disk.
+fn alias_candidate(name: &[u8]) -> bool {
+    name.iter().any(|byte| *byte == b'~' || !byte.is_ascii())
+        || matches!(name.last(), Some(b'.' | b' '))
+}
+
+/// Most names [`disk_aliases`] looks at for one question; past it the volume is not asked and the answer is unknown
+/// (counted as the same folder): an index crafted with countless such names costs no more.
+const MAX_ALIASES: usize = 64;
+
+/// The `alias` of [`tracked_entry`] for the folder `path` (relative to the project folder of `location`): whether a
+/// name beside the first name of `path` in the project folder is the same folder on disk ([`same_file`], links not
+/// followed). Nothing at either name | not one plain name -> another folder; no UTF-8 | a look that fails otherwise ->
+/// unknown. Each name is looked at once.
+pub fn disk_aliases(location: &RepoLocation, path: &str) -> impl FnMut(&[u8]) -> SameFile {
+    let mut base = location.workdir.clone();
+    base.extend(location.prefix.split('/').filter(|name| !name.is_empty()));
+    let folder = base.join(path.split('/').next().unwrap_or_default());
+    let mut seen: HashMap<Vec<u8>, SameFile> = HashMap::new();
+    move |name| {
+        if let Some(answer) = seen.get(name) {
+            return *answer;
+        }
+        if seen.len() >= MAX_ALIASES {
+            return SameFile::Unknown;
+        }
+        let answer = volume_alias(&base, &folder, name);
+        seen.insert(name.to_vec(), answer);
+        answer
+    }
+}
+
+fn volume_alias(base: &Path, folder: &Path, name: &[u8]) -> SameFile {
+    let Ok(name) = std::str::from_utf8(name) else {
+        return SameFile::Unknown;
     };
-    same && matches!(entry.get(at.len()), None | Some(b'/'))
+    let mut parts = Path::new(name).components();
+    if !matches!(
+        (parts.next(), parts.next()),
+        (Some(Component::Normal(_)), None)
+    ) {
+        return SameFile::Other;
+    }
+    let there = base.join(name);
+    for path in [&there, folder] {
+        match std::fs::symlink_metadata(path) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return SameFile::Other,
+            Err(_) => return SameFile::Unknown,
+        }
+    }
+    same_file(&there, folder)
 }
 
 /// `path` (relative to the working tree) below the project folder `prefix`: the part below it; `None`: outside.

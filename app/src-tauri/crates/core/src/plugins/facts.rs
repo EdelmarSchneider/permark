@@ -202,7 +202,9 @@ pub trait RepoReader: Send + Sync {
     }
     /// Whether the repository's index holds the folder `path` (a project path) or anything below it, i.e. what the
     /// next commit takes whatever `.gitignore` says: a file added with `--force`, an entry marked intent-to-add |
-    /// skip-worktree, a conflict, also before the first commit. Names compare without case in a caseless repository.
+    /// skip-worktree, a conflict, also before the first commit. A submodule | link at a folder above it inside the
+    /// project counts too, and so does another spelling of its first name that the volume resolves to the same folder
+    /// (a Windows short name, a Unicode case fold). Names compare without case in a caseless repository.
     ///
     /// # Errors
     /// [`NoTracking`] says why there is no answer (a reader that does not read the index: `Unavailable`).

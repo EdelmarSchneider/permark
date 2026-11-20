@@ -23,8 +23,8 @@ use serde::{Deserialize, Serialize};
 use crate::builtin::BuiltinGit;
 use crate::config_scan::{Scan, Seen};
 use crate::ops::{
-    blob_or_miss, finish, repo_path, repo_state, tracked_of, versions_of, Baseline, Discovery,
-    GitError, GitOps, RawFile, RawStatus, RepoLocation,
+    blob_or_miss, finish, repo_path, repo_state, tracked_of, tracked_question, versions_of,
+    Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation,
 };
 use crate::system::SystemGit;
 use crate::types::{BackendKind, BaselineInfo, BaselineKind, GitFile, GitSnapshot, WorktreeInfo};
@@ -674,7 +674,8 @@ fn index_stamp(git_dir: &Path) -> Option<IndexStamp> {
 
 /// Answers of [`tracked_of`] kept while the index looks the same ([`IndexStamp`], taken before git is asked): a folder
 /// asked about again and again reads the index once per change of it, also when no refresh ran. Only answers are kept:
-/// a failure, a slow git, another repository below are asked again.
+/// a failure, a slow git are asked again. Another repository below is looked for before a kept answer is used (a few
+/// stats): one made later changes nothing in the index, and a kept "not tracked" must not hide it.
 #[derive(Default)]
 pub(crate) struct TrackedMemo {
     kept: Mutex<HashMap<(PathBuf, String), (IndexStamp, bool)>>,
@@ -688,6 +689,7 @@ impl TrackedMemo {
         location: &RepoLocation,
         path: &str,
     ) -> Result<bool, NoTracking> {
+        tracked_question(location, path)?;
         let key = (location.git_dir.clone(), repo_path(&location.prefix, path));
         let stamp = index_stamp(&location.git_dir);
         if let Some(stamp) = &stamp {
@@ -736,7 +738,8 @@ impl Reader {
 
     /// Why [`Self::place`] found no working tree for a tracked question: with a repository, the worktree named is
     /// none of the project's; without one, what the last look found. Before the first look nothing is known yet:
-    /// answered as slow, so a caller that withholds on doubt does not take it for "no repository".
+    /// answered as slow, so a caller that withholds on doubt does not take it for "no repository" and withholds
+    /// during startup too (fail closed: a folder with no repository is served once the worker has looked).
     fn no_place(&self) -> NoTracking {
         if self
             .shared

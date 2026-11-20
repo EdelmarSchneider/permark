@@ -12,9 +12,9 @@ use std::time::{Duration, Instant};
 use permark_core::plugins::{CommitId, FileVersions};
 
 use crate::ops::{
-    below_prefix, finish, pathspec, prefix_of, repo_path, shallow, too_broad, tracked_entry,
-    Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_RENAME_PATHS,
-    MAX_VERSIONS,
+    below_prefix, disk_aliases, finish, pathspec, prefix_of, repo_path, shallow, too_broad,
+    tracked_entry, Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation,
+    MAX_RENAME_PATHS, MAX_VERSIONS,
 };
 use crate::porcelain::{
     parse_name_status, parse_status, parse_tree_file, parse_untracked, parse_versions_log, Entry,
@@ -99,8 +99,10 @@ const RENAMES_OF: [&str; 8] = [
     "--no-textconv",
 ];
 
-/// Variables that would point git somewhere else than the folder it is asked about.
-const SCRUBBED: [&str; 8] = [
+/// Variables that would point git somewhere else than the folder it is asked about, and the one that turns pathspec
+/// magic (`:(literal)`, `:(glob,icase)`) into plain names: the index listings would then find nothing.
+const SCRUBBED: [&str; 9] = [
+    "GIT_LITERAL_PATHSPECS",
     "GIT_DIR",
     "GIT_WORK_TREE",
     "GIT_INDEX_FILE",
@@ -644,6 +646,63 @@ fn first_line(text: &str) -> String {
     text.lines().next().unwrap_or("").trim().to_owned()
 }
 
+/// The pathspecs of the `ls-files` that lists every index entry [`tracked_entry`] may count for the folder `path`
+/// (relative to the project folder `prefix`); which ones count is decided after, so a spec may list more. Every glob
+/// holds a wildcard: a pathspec without one also lists everything below the folder it names, and a large folder above
+/// would cut the listing ([`MAX_LISTED`]).
+fn tracked_specs(prefix: &str, path: &str) -> Vec<String> {
+    let names: Vec<&str> = path.split('/').collect();
+    let base = if prefix.is_empty() {
+        String::new()
+    } else {
+        format!("{}/", glob_names(&prefix.split('/').collect::<Vec<_>>()))
+    };
+    // the folder and all below it, other cases too: a pathspec ignores `core.ignorecase`
+    let mut specs = vec![format!(":(literal,icase){}", repo_path(prefix, path))];
+    // an entry at a folder above it inside the project (`*` also lists names that only start the same)
+    for depth in 1..names.len() {
+        specs.push(format!(
+            ":(glob,icase){base}{}*",
+            glob_names(&names[..depth])
+        ));
+    }
+    // another spelling of the first name: one holding `~` | a byte beyond printable ASCII, or ending in `.` | a space
+    for alias in ["*[! -}]*", "*[. ]"] {
+        let first = format!(":(glob,icase){base}{alias}");
+        for depth in 1..names.len() {
+            specs.push(format!("{first}/{}", glob_names(&names[1..=depth])));
+        }
+        specs.push(if names.len() > 1 {
+            format!("{first}/{}/**", glob_names(&names[1..]))
+        } else {
+            format!("{first}/**")
+        });
+        specs.push(first);
+    }
+    specs
+}
+
+/// `names` joined by `/` as a glob that matches them as they are: `*`, `?` and `[` in brackets. A backslash does not
+/// survive as an escape (git on Windows reads it as a separator), so it becomes `?`, which lists more.
+fn glob_names(names: &[&str]) -> String {
+    let mut glob = String::new();
+    for (index, name) in names.iter().enumerate() {
+        if index > 0 {
+            glob.push('/');
+        }
+        for c in name.chars() {
+            match c {
+                '*' => glob.push_str("[*]"),
+                '?' => glob.push_str("[?]"),
+                '[' => glob.push_str("[[]"),
+                '\\' => glob.push('?'),
+                c => glob.push(c),
+            }
+        }
+    }
+    glob
+}
+
 fn raw(prefix: &str, entries: Vec<Entry>) -> Vec<RawFile> {
     entries
         .into_iter()
@@ -808,11 +867,11 @@ impl GitOps for SystemGit {
     }
 
     fn tracked_under(&self, location: &RepoLocation, path: &str) -> Result<bool, GitError> {
-        let at = repo_path(&location.prefix, path);
-        // a literal (no pattern) that also matches other cases; which ones count is decided below. A pathspec ignores
-        // `core.ignorecase`, so without `icase` a caseless repository's differently cased entry would not be listed.
-        let spec = format!(":(literal,icase){at}");
-        let args = ["ls-files", "-z", "--cached", "--", spec.as_str()].map(OsStr::new);
+        let specs = tracked_specs(&location.prefix, path);
+        let mut args: Vec<&OsStr> = ["ls-files", "-z", "--cached", "--"]
+            .map(OsStr::new)
+            .to_vec();
+        args.extend(specs.iter().map(OsStr::new));
         let out = match run_until(
             &self.exe,
             &location.workdir,
@@ -833,13 +892,19 @@ impl GitOps for SystemGit {
             .split(|byte| *byte == 0)
             .filter(|entry| !entry.is_empty())
             .collect();
-        if entries.iter().any(|entry| tracked_entry(entry, &at, false)) {
+        let mut alias = disk_aliases(location, path);
+        let mut counts = |caseless: bool| {
+            entries
+                .iter()
+                .any(|entry| tracked_entry(entry, &location.prefix, path, caseless, &mut alias))
+        };
+        if counts(false) {
             return Ok(true);
         }
         if entries.is_empty() {
             return Ok(false);
         }
-        // only other cases listed: they count when the repository is caseless
+        // only other cases | names listed: other cases count when the repository is caseless
         let caseless = self.call(
             &location.workdir,
             &["config", "--bool", "--get", "core.ignorecase"],
@@ -850,7 +915,7 @@ impl GitOps for SystemGit {
             Some(1) => false,
             _ => return Err(GitError::Failed(first_line(&caseless.stderr))),
         };
-        Ok(caseless && entries.iter().any(|entry| tracked_entry(entry, &at, true)))
+        Ok(caseless && counts(true))
     }
 
     fn file_versions(
