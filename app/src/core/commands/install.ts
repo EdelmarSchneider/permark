@@ -1,11 +1,11 @@
-// The window's keyboard and mouse side buttons: the core's commands go into the registry and one listener per input
-// runs them. One call per window.
+// The window's keyboard, mouse side buttons and context menus: the core's commands go into the registry and one
+// listener per input runs them; the webview's own page menu is kept off. One call per window.
 
 import { conditions } from "../conditions/context.svelte";
 import { contributions } from "../plugins/instance.svelte";
 import { ui } from "../shell/ui.svelte";
 import { registerCoreCommands } from "./core";
-import { installButtons, installKeys, isTypingTarget } from "./dispatch";
+import { installButtons, installContextMenuGuard, installKeys, isTypingTarget } from "./dispatch";
 import { keys } from "./state.svelte";
 
 /** A modal dialog is on screen (each is drawn only while open). */
@@ -13,7 +13,7 @@ function dialogOpen(): boolean {
   return document.querySelector('[aria-modal="true"]') !== null;
 }
 
-/** Registers the core's commands and starts listening on `target`; returns the teardown of all three. */
+/** Registers the core's commands and starts listening on `target`; returns the teardown of all four. */
 export function installWindowKeys(
   target: Pick<Window, "addEventListener" | "removeEventListener"> = window,
 ): () => void {
@@ -33,7 +33,9 @@ export function installWindowKeys(
     overlay: ui.overlay,
     dialog: dialogOpen(),
   }));
+  const stopMenus = installContextMenuGuard(target);
   return () => {
+    stopMenus();
     stopButtons();
     stop();
     unregister();

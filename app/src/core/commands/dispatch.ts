@@ -38,8 +38,18 @@ function isReloadKey(event: Pick<KeyEventLike, "key">): boolean {
 }
 
 /** Chords the webview acts on by itself, as `comboFromEvent` writes them: Mod+R | Mod+Shift+R reload the page (the
- * same loss as F5), Mod+P opens the print dialog over the whole window. None is ever text, also in a field. */
-const WEBVIEW_CHORDS: ReadonlySet<string> = new Set(["Mod+r", "Mod+Shift+r", "Mod+p"]);
+ * same loss as F5), Mod+P opens the print dialog over the whole window, Mod+F | F3 | Shift+F3 open its own find bar
+ * over the whole window, F7 asks to turn on caret browsing. None is ever text, also in a field. An editor that handles
+ * one itself (CodeMirror's search panel) takes it first, on its own element. */
+const WEBVIEW_CHORDS: ReadonlySet<string> = new Set([
+  "Mod+r",
+  "Mod+Shift+r",
+  "Mod+p",
+  "Mod+f",
+  "F3",
+  "Shift+F3",
+  "F7",
+]);
 
 /** A key the webview would take for itself when no command runs on it (`isReloadKey` | `WEBVIEW_CHORDS`). */
 function isWebviewKey(event: KeyEventLike, mac: boolean): boolean {
@@ -181,9 +191,9 @@ export function isTextTarget(target: EventTarget | null): boolean {
  * folder again once per repeat would queue one walk of the disk after another. */
 const ONCE_PER_PRESS: ReadonlySet<string> = new Set(["explorer.refresh"]);
 
-/** Listens on `target` until the returned function is called. A reload | print key no command takes is taken all the
- * same, and so is a select-all outside text (a dialog | a box | a question owns the input, the window has no document
- * command, quick open cannot run): none is ever left to the webview. */
+/** Listens on `target` until the returned function is called. A reload | print | find | caret-browsing key no command
+ * takes is taken all the same, and so is a select-all outside text (a dialog | a box | a question owns the input, the
+ * window has no document command, quick open cannot run): none is ever left to the webview. */
 export function installKeys(
   target: Pick<Window, "addEventListener" | "removeEventListener">,
   env: (event: KeyboardEvent) => KeyEnv,
@@ -202,4 +212,19 @@ export function installKeys(
   };
   target.addEventListener("keydown", onKey);
   return () => target.removeEventListener("keydown", onKey);
+}
+
+/** Takes every context menu (right-click | menu key) no feature took, outside text, on `target` until the returned
+ * function is called: the webview would show its own page menu there, whose Reload throws away unsaved edits and what
+ * the window shows (Back, Save as, Print act on the whole window too). Bubble phase on the window: the features' own
+ * menus, on their elements, have taken theirs by then. In a field | an editor the native text menu (cut, copy, paste,
+ * spelling suggestions) stays. */
+export function installContextMenuGuard(
+  target: Pick<Window, "addEventListener" | "removeEventListener">,
+): () => void {
+  const onMenu = (event: Event): void => {
+    if (!event.defaultPrevented && !isTextTarget(event.target)) event.preventDefault();
+  };
+  target.addEventListener("contextmenu", onMenu);
+  return () => target.removeEventListener("contextmenu", onMenu);
 }
