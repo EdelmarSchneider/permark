@@ -167,13 +167,27 @@ const READ_ON_OPEN: [&str; 13] = [
     "shallow",
 ];
 
+/// Folders of a git folder whose every entry git | libgit2 may open at some look (the git folder itself, a ref folder,
+/// an info file, a loose objects folder, a pack): a link (symlink | junction) among them would lead them anywhere, a
+/// share too. Each folder is noted: an entry added | removed changes its stamp.
+const LISTED: [&str; 6] = [
+    "",
+    "info",
+    "refs",
+    "objects",
+    "objects/info",
+    "objects/pack",
+];
+/// Most entries of one listed folder looked at; a fuller folder is refused (git packs loose refs | objects long before).
+const MAX_ENTRIES: usize = 4096;
+
 /// Why a repository git may not open is refused (a member's reason, a backend call's error).
 pub(crate) const NOT_LOCAL: &str =
     "the repository's git folder points outside this computer or through a link";
 
 /// Whether opening the git folder `git_dir` keeps git (the program, libgit2) on this computer: its `commondir`, read
 /// on every open, names no path that could leave it ([`named_path`]), and in the git folder and the common folder
-/// that names, nothing git opens on every look is a link ([`READ_ON_OPEN`]), the config files name only places here
+/// that names, nothing git opens is a link ([`READ_ON_OPEN`], [`LISTED`]), the config files name only places here
 /// and so do the alternates ([`Scan`]). A file there that cannot be read here (a link, a FIFO, too large) is no proof:
 /// git reads it whole, wherever it leads.
 pub(crate) fn git_dir_stays_local(git_dir: &Path) -> bool {
@@ -209,23 +223,53 @@ fn folder_stays_local(folder: &Path, scan: &mut Scan) -> bool {
         }
     });
     no_link
+        && LISTED.iter().all(|name| {
+            let path = name
+                .split('/')
+                .filter(|part| !part.is_empty())
+                .fold(folder.to_path_buf(), |at, part| at.join(part));
+            no_link_in(&path, scan)
+        })
         && ["config", "config.worktree"]
             .iter()
             .all(|name| scan.config_stays_local(folder, &folder.join(name)))
         && scan.alternates_stay_local(&folder.join("objects"))
 }
 
-/// Whether git may open the repository of the folder `root` (the first `.git` walking up) without leaving this
-/// computer: a `.git` file | link | a `commondir` naming a share would make it connect to the server (and offer it the
-/// person's sign-in) before anything is known about the repository.
+/// Whether no entry of the folder `path` is a link ([`LISTED`]); a missing folder | a file there holds none. The
+/// folder itself as a link is [`READ_ON_OPEN`]'s (the git folder may be one: a `.git` link leads there).
+fn no_link_in(path: &Path, scan: &mut Scan) -> bool {
+    match scan.note(path) {
+        Ok(meta) if meta.is_file() => return true,
+        Ok(_) => {}
+        Err(e) => return matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory),
+    }
+    let Ok(mut entries) = std::fs::read_dir(path) else {
+        return false;
+    };
+    let mut looked = 0;
+    entries.all(|entry| {
+        looked += 1;
+        // the entry's own type: a link (symlink | junction) is never followed
+        looked <= MAX_ENTRIES
+            && entry.is_ok_and(|entry| entry.file_type().is_ok_and(|kind| !kind.is_symlink()))
+    })
+}
+
+/// Whether git may open the repository of the folder `root` without leaving this computer: a `.git` file | link | a
+/// `commondir` naming a share would make it connect to the server (and offer it the person's sign-in) before anything
+/// is known about the repository. git and libgit2 pass over a `.git` that is no repository to them (an empty folder)
+/// and open the next one up, so every `.git` walking up must pass, not only the first.
 #[must_use]
 pub(crate) fn opens_locally(root: &Path) -> bool {
     let root = canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-    match root.ancestors().take(MAX_LEVELS).find_map(git_entry) {
-        None => true,
-        Some(Dot::Folder(git_dir) | Dot::File(Some(git_dir))) => git_dir_stays_local(&git_dir),
-        Some(Dot::File(None) | Dot::Unread | Dot::Link) => false,
-    }
+    root.ancestors()
+        .take(MAX_LEVELS)
+        .filter_map(git_entry)
+        .all(|dot| match dot {
+            Dot::Folder(git_dir) | Dot::File(Some(git_dir)) => git_dir_stays_local(&git_dir),
+            Dot::File(None) | Dot::Unread | Dot::Link => false,
+        })
 }
 
 /// Whether the file `path` (relative to the working tree `workdir`, `/`-separated) is inside another repository

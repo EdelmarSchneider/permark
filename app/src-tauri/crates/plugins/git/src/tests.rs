@@ -425,7 +425,8 @@ fn add_config(git_dir: &Path, text: &str) {
 }
 
 /// A repository whose own config names only places on this computer opens as before, on both backends: an include of
-/// a local file, a relative `core.worktree`, a local `core.excludesFile`, alternates relative to its objects folder.
+/// a local file, a relative `core.worktree`, a local `core.excludesFile`, alternates relative to its objects folder,
+/// beside what nearly every config holds (a remote, a branch, `extensions.worktreeConfig`).
 #[test]
 fn a_repository_whose_config_stays_here_still_opens() {
     let fx = Fixture::new();
@@ -439,7 +440,9 @@ fn a_repository_whose_config_stays_here_still_opens() {
     add_config(
         &git,
         &format!(
-            "[include]\n\tpath = ../../local.gitconfig\n[core]\n\tworktree = ..\n\texcludesFile = \"{}\"\n",
+            "[include]\n\tpath = ../../local.gitconfig\n[core]\n\tworktree = ..\n\texcludesFile = {}\n[remote \
+             \"origin\"]\n\turl = https://example.com/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \
+             \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n[extensions]\n\tworktreeConfig = true\n",
             config_path(&base.join("ignore"))
         ),
     );
@@ -602,9 +605,10 @@ fn a_repository_with_a_link_in_its_git_folder_is_never_opened() {
         move |git: &Path, _: &Path| {
             let real = git.join(name);
             std::fs::create_dir_all(&real).unwrap();
-            let aside = spare.join(git.parent().unwrap().file_name().unwrap());
-            std::fs::create_dir_all(&aside).unwrap();
-            let aside = aside.join(name);
+            let aside = spare
+                .join(git.parent().unwrap().file_name().unwrap())
+                .join(name);
+            std::fs::create_dir_all(aside.parent().unwrap()).unwrap();
             std::fs::rename(&real, &aside).unwrap();
             assert!(link_folder(&aside, &real), "{name}");
         }
@@ -613,6 +617,14 @@ fn a_repository_with_a_link_in_its_git_folder_is_never_opened() {
         ("refs", Box::new(folder_link("refs"))),
         ("objects", Box::new(folder_link("objects"))),
         ("info", Box::new(folder_link("info"))),
+        // deeper, and names git reads only at times (a ref folder, packs, a loose objects folder, the folders of a
+        // rebase | of a submodule's repository): case names without a slash, so no case sits in another's folder
+        ("refs heads", Box::new(folder_link("refs/heads"))),
+        ("refs tags", Box::new(folder_link("refs/tags"))),
+        ("objects pack", Box::new(folder_link("objects/pack"))),
+        ("objects ab", Box::new(folder_link("objects/ab"))),
+        ("rebase-merge", Box::new(folder_link("rebase-merge"))),
+        ("modules", Box::new(folder_link("modules"))),
     ];
     if !link_folder(&spare, &base.join("probe")) {
         eprintln!("links could not be made here; skipped");
@@ -647,6 +659,30 @@ fn a_repository_with_a_link_in_its_git_folder_is_never_opened() {
                 }),
             ));
         }
+        // files git reads only at times, at the top of the git folder | one level below `refs`, `info`, the objects
+        // folders
+        for (case, name) in [
+            (
+                "sharedindex",
+                "sharedindex.0123456789abcdef0123456789abcdef01234567",
+            ),
+            ("merge head", "MERGE_HEAD"),
+            ("refs stash", "refs/stash"),
+            ("info grafts", "info/grafts"),
+            ("commit graph", "objects/info/commit-graph"),
+            ("pack", "objects/pack/pack-0.pack"),
+        ] {
+            cases.push((
+                case,
+                Box::new(move |git: &Path, base: &Path| {
+                    let at = git.join(name);
+                    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+                    let target = base.join(format!("target {case}"));
+                    std::fs::write(&target, "").unwrap();
+                    assert!(symlink(&target, &at), "{name}");
+                }),
+            ));
+        }
         // a link to a share: never looked up
         cases.push((
             "config on a share",
@@ -664,6 +700,36 @@ fn a_repository_with_a_link_in_its_git_folder_is_never_opened() {
         .map(|(name, plant)| (*name, plant.as_ref()))
         .collect();
     never_opened(risky_projects(&base, &cases));
+}
+
+/// git and libgit2 pass over a `.git` folder that is no repository to them (an empty one) and open the next one up:
+/// such a decoy below a repository whose config names a place git may not reach opens nothing.
+#[test]
+fn a_decoy_git_folder_below_a_repository_that_names_a_share_opens_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dunce::canonicalize(dir.path()).unwrap();
+    let outer = base.join("t");
+    let project = outer.join("docs");
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    Repository::init(&outer).unwrap();
+    let config = std::fs::read_to_string(outer.join(".git").join("config")).unwrap();
+    // both backends really take the repository above the decoy
+    each(|name, ops| {
+        let found = service::discover_here(ops, &project, None);
+        assert!(
+            matches!(&found, Discovery::Repo(at) if at.workdir == outer),
+            "{name}: {found:?}"
+        );
+    });
+    // a place this side refuses that neither backend looks up off this computer, then a share
+    for include in ["~nobody/x".to_owned(), format!("{SHARE}/c")] {
+        std::fs::write(
+            outer.join(".git").join("config"),
+            format!("{config}[include]\n\tpath = {include}\n"),
+        )
+        .unwrap();
+        never_opened(vec![(include, project.clone())]);
+    }
 }
 
 /// The repository is looked at again before every call of the backend the plugin uses (its files may change while the
