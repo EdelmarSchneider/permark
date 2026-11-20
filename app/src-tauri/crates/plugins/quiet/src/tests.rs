@@ -283,6 +283,28 @@ fn the_marks_of_the_person_are_read_when_the_project_opens() {
     );
 }
 
+/// "Remove data" takes the marks file, which sits straight in the project's state folder (the layout of 0.5).
+#[test]
+fn remove_data_takes_the_marks_file() {
+    let mut h = Harness::new();
+    h.write("docs/a.md", "# A\n");
+    h.open();
+    h.call("set", json!({ "paths": ["docs"], "interest": "quiet" }))
+        .unwrap();
+    let file = h.file();
+    assert!(file.is_file());
+    h.core = None;
+    let root = Root::open(&h.root()).unwrap();
+    permark_core::state::remove_plugin_data_everywhere(
+        &AppDirs::under(h.base.path()),
+        &ID,
+        plugin().root_files(),
+        &[root],
+    )
+    .unwrap();
+    assert!(!file.exists(), "{}", file.display());
+}
+
 #[test]
 fn listening_again_drops_a_mark_that_changes_nothing_and_keeps_an_override() {
     let mut h = Harness::new();

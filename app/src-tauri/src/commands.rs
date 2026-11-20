@@ -1717,11 +1717,13 @@ pub fn plugin_remove_data(handle: AppHandle, plugin: String) -> Result<(), IpcEr
         return Err(IpcError::new(ErrorKind::Unavailable).subject(plugin));
     }
     let roots: Vec<_> = cores.iter().map(|core| core.root().clone()).collect();
+    let found = shell.env.registry.get(&id);
     // what the plugin keeps outside its namespaces first (it reads where from its own state, deleted next)
-    if let Some(found) = shell.env.registry.get(&id) {
+    if let Some(found) = found {
         found.remove_data(&shell.app_store)?;
     }
-    permark_core::state::remove_plugin_data_everywhere(&shell.env.dirs, &id, &roots)?;
+    let root_files = found.map_or(&[][..], |found| found.root_files());
+    permark_core::state::remove_plugin_data_everywhere(&shell.env.dirs, &id, root_files, &roots)?;
     Ok(())
 }
 

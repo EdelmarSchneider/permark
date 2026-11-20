@@ -4,6 +4,7 @@
 //! scalars (`|` and `>`), nested maps (flattened to `parent.child`). Anything fancier (anchors, tags, flow maps,
 //! complex keys) is kept as its raw text rather than failing.
 
+use permark_core::format::config::util::unescape_double;
 use permark_core::format::{Field, FieldValue};
 
 use crate::clip;
@@ -28,15 +29,13 @@ fn strip_comment(text: &str) -> &str {
     text.trim_end()
 }
 
-/// `'it''s'` | `"say \"hi\""` | plain -> the text.
+/// `'it''s'` | `"say \"hi\""` | plain -> the text. Double-quoted escapes are decoded in one left-to-right pass:
+/// chained replaces would read the `\n` left by `\\n` as a line break.
 fn unquote(value: &str) -> String {
     let value = value.trim();
     if value.len() >= 2 {
         if let Some(inner) = value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
-            return inner
-                .replace("\\\"", "\"")
-                .replace("\\\\", "\\")
-                .replace("\\n", "\n");
+            return unescape_double(inner);
         }
         if let Some(inner) = value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')) {
             return inner.replace("''", "'");
@@ -315,6 +314,73 @@ mod tests {
         let fancy = shape("a: &anchor value\nb: *anchor\nc: {x: 1, y: 2}\nd: !!str 5\n");
         assert_eq!(fancy.len(), 4);
         assert_eq!(fancy[2].1, t("{x: 1, y: 2}"));
+    }
+
+    #[test]
+    fn double_quoted_escapes_decode_in_one_pass() {
+        // `\\n` is an escaped backslash followed by `n`, never a line break
+        let got = shape(
+            r#"path: "C:\\new"
+tab: "a\tb"
+quote: "say \"hi\""
+slash: "a\/b"
+odd: "x\qy"
+tags: ["C:\\new", "a\tb"]
+single: 'C:\new'
+"#,
+        );
+        assert_eq!(
+            got,
+            [
+                ("path".into(), t("C:\\new")),
+                ("tab".into(), t("a\tb")),
+                ("quote".into(), t("say \"hi\"")),
+                ("slash".into(), t("a/b")),
+                ("odd".into(), t("x\\qy")),
+                ("tags".into(), l(&["C:\\new", "a\tb"])),
+                ("single".into(), t("C:\\new")),
+            ]
+        );
+    }
+
+    #[test]
+    fn repeated_keys_stay_rows_as_written() {
+        // nothing is merged or dropped: the card shows each row the person wrote
+        assert_eq!(
+            shape("a: 1\na: 2\n"),
+            [("a".into(), t("1")), ("a".into(), t("2"))]
+        );
+        assert_eq!(
+            shape("a:\n  b: 1\na.b: 2\n"),
+            [("a.b".into(), t("1")), ("a.b".into(), t("2"))]
+        );
+    }
+
+    #[test]
+    fn a_model_card_list_of_maps_keeps_every_value() {
+        // Hugging Face model cards list authors as maps; the subset flattens them, so keys repeat
+        let fields = shape(
+            "license: apache-2.0\nlanguage:\n- en\n- pt\nauthors:\n- name: Ana Lima\n  email: ana@example.com\n- name: Bo Chen\n  email: bo@example.com\npipeline_tag: text-generation\n",
+        );
+        let shown: String = fields
+            .iter()
+            .map(|(key, value)| match value {
+                FieldValue::Text { text } => format!("{key}={text}\n"),
+                FieldValue::List { items } => format!("{key}={}\n", items.join(",")),
+            })
+            .collect();
+        for value in [
+            "apache-2.0",
+            "en,pt",
+            "Ana Lima",
+            "ana@example.com",
+            "Bo Chen",
+            "bo@example.com",
+            "text-generation",
+        ] {
+            assert!(shown.contains(value), "{value} missing from {shown}");
+        }
+        assert_eq!(fields.iter().filter(|(key, _)| key == "email").count(), 2);
     }
 
     #[test]

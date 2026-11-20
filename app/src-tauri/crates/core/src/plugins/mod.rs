@@ -194,6 +194,12 @@ pub trait Plugin: Send + Sync {
     fn data_bytes(&self, _app: &StateStore) -> Option<u64> {
         None
     }
+    /// Files the plugin keeps straight in a state folder ([`StateStore::raw_file`]) instead of its namespace, in the
+    /// layout of an earlier version: "Remove data" deletes each name there too. One plain name each
+    /// ([`is_shared_name`]); any other is skipped.
+    fn root_files(&self) -> &'static [&'static str] {
+        &[]
+    }
     /// "Remove data" (plugin off everywhere), before core deletes the plugin's namespaces: removes what the plugin
     /// keeps OUTSIDE them (a folder the person chose), ONLY its own files there.
     ///

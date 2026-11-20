@@ -1146,14 +1146,15 @@ impl StateStore {
         RawFile::private(self.plugin_dir(id).join(name), self.guard.clone())
     }
 
-    /// Deletes a plugin's namespace (state, this install's own folder, cache). Missing = done. A link in its place is
-    /// removed as a link (never followed). Other installs' folders stay as they are. A project's folders are walked
-    /// down from the folder holding them (`.permark/`, else the project's profile | cache folder): a link | junction |
-    /// file on the way leaves the folder as it is ([`remove_below`]).
+    /// Deletes a plugin's namespace (state, this install's own folder, cache) and the files it keeps straight in the
+    /// state folder (`root_files`, [`crate::plugins::Plugin::root_files`]: one plain name each, any other skipped).
+    /// Missing = done. A link in its place is removed as a link (never followed). Other installs' folders stay as they
+    /// are. A project's folders are walked down from the folder holding them (`.permark/`, else the project's profile
+    /// | cache folder): a link | junction | file on the way leaves the folder as it is ([`remove_below`]).
     ///
     /// # Errors
     /// IO failure.
-    pub fn remove_plugin_data(&self, id: &PluginId) -> Result<(), StateError> {
+    pub fn remove_plugin_data(&self, id: &PluginId, root_files: &[&str]) -> Result<(), StateError> {
         // the app-wide store's folders are the profile's and the cache's own, which the person may link elsewhere
         let project = self.root.is_some();
         let zone = |guard: Option<&Guard>, dir: &Path| {
@@ -1162,12 +1163,14 @@ impl StateStore {
         let state = zone(self.guard.as_ref(), &self.dir);
         let cache = zone(self.cache_guard.as_ref(), &self.cache);
         let own = self.machine_plugin_dir(id).map(|dir| (state.clone(), dir));
+        let files = plain_names(root_files).map(|name| (state.clone(), self.dir.join(name)));
         for (zone, dir) in [
             (state.clone(), self.plugin_dir(id)),
             (cache, self.cache.join("plugins").join(id.as_str())),
         ]
         .into_iter()
         .chain(own)
+        .chain(files)
         {
             match &zone {
                 Some(zone) => remove_below(zone, &dir),
@@ -1378,15 +1381,26 @@ fn remove_below(zone: &Path, dir: &Path) -> io::Result<()> {
     }
 }
 
+/// The names of `root_files` that name one file straight in a folder: no folder part, `..` or empty name could take a
+/// removal elsewhere.
+fn plain_names<'a>(root_files: &'a [&'a str]) -> impl Iterator<Item = &'a str> + 'a {
+    root_files
+        .iter()
+        .copied()
+        .filter(|name| crate::plugins::is_shared_name(name))
+}
+
 /// Deletes a plugin's data for the app + every project the profile knows (this install's own folder there too) + the
-/// given open roots. Other installs' folders stay as they are. A known project's folders are walked down from its own
-/// folder in the profile | cache, never through a link ([`remove_below`]).
+/// given open roots, with the files it keeps straight in each state folder (`root_files`). Other installs' folders
+/// stay as they are. A known project's folders are walked down from its own folder in the profile | cache, never
+/// through a link ([`remove_below`]).
 ///
 /// # Errors
 /// First IO failure (others still attempted).
 pub fn remove_plugin_data_everywhere(
     dirs: &AppDirs,
     id: &PluginId,
+    root_files: &[&str],
     open_roots: &[Root],
 ) -> Result<(), StateError> {
     let mut first: Option<StateError> = None;
@@ -1395,7 +1409,7 @@ pub fn remove_plugin_data_everywhere(
             first.get_or_insert(error);
         }
     };
-    keep(StateStore::app(dirs).remove_plugin_data(id));
+    keep(StateStore::app(dirs).remove_plugin_data(id, root_files));
     let machine =
         seal::install(&dirs.install).map(|install| Path::new(Machine::DIR).join(install.iid()));
     for base in [&dirs.profile, &dirs.cache] {
@@ -1409,14 +1423,20 @@ pub fn remove_plugin_data_everywhere(
                 .as_ref()
                 .filter(|_| base == &dirs.profile)
                 .map(|machine| project.join(machine));
-            for home in std::iter::once(project.clone()).chain(own) {
-                let dir = home.join("plugins").join(id.as_str());
-                keep(remove_below(&project, &dir).map_err(|e| StateError::io(&dir, e)));
+            // root files sit in the state folder only, as `raw_file` puts them
+            let files = plain_names(root_files)
+                .filter(|_| base == &dirs.profile)
+                .map(|name| project.join(name));
+            let folders = std::iter::once(project.clone())
+                .chain(own)
+                .map(|home| home.join("plugins").join(id.as_str()));
+            for path in folders.chain(files) {
+                keep(remove_below(&project, &path).map_err(|e| StateError::io(&path, e)));
             }
         }
     }
     for root in open_roots {
-        keep(StateStore::for_project(dirs, root).remove_plugin_data(id));
+        keep(StateStore::for_project(dirs, root).remove_plugin_data(id, root_files));
     }
     first.map_or(Ok(()), Err)
 }

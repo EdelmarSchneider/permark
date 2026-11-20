@@ -117,6 +117,11 @@ impl Plugin for CommentsPlugin {
         &self.manifest
     }
 
+    /// [`FILE`] sits straight in the state folder, in the layout earlier versions wrote.
+    fn root_files(&self) -> &'static [&'static str] {
+        &[FILE]
+    }
+
     #[allow(clippy::too_many_lines)] // one registration per method the window calls
     fn start(&self, cx: &PluginCx) -> Result<Box<dyn Running>, PluginError> {
         let (Some(project), CxWorkspace::Project(_), Some(hub), Some(store)) =

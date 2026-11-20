@@ -323,7 +323,9 @@ fn the_outline_switch_is_kept_in_the_plugins_own_folder() {
     assert!(file.is_file());
     // remove data deletes it and the cache
     drop(again);
-    StateStore::app(&h.dirs).remove_plugin_data(&ID).unwrap();
+    StateStore::app(&h.dirs)
+        .remove_plugin_data(&ID, &[])
+        .unwrap();
     assert!(!file.exists());
 }
 

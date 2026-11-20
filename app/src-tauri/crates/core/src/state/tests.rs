@@ -170,13 +170,13 @@ fn plugin_namespaces_are_separate_and_removable() {
         .save(&sample(2))
         .unwrap();
     assert!(s.plugin_dir(&git).starts_with(s.dir().join("plugins")));
-    s.remove_plugin_data(&git).unwrap();
+    s.remove_plugin_data(&git, &[]).unwrap();
     assert!(!s.plugin_dir(&git).exists());
     assert_eq!(
         s.plugin_file::<Sample>(&tags, "a.json").load(),
         Loaded::Found(sample(2))
     );
-    s.remove_plugin_data(&git).unwrap();
+    s.remove_plugin_data(&git, &[]).unwrap();
 }
 
 /// A plugin's profile folder stays in the profile even when the project keeps its state in `.permark/local/`, and
@@ -202,7 +202,7 @@ fn a_profile_plugin_folder_never_lives_in_the_project() {
     file.save(&sample(1)).unwrap();
     assert_eq!(file.path(), dir.join("session.json"));
     fs::create_dir_all(dir.join("work")).unwrap();
-    remove_plugin_data_everywhere(&f.dirs, &acp, &[]).unwrap();
+    remove_plugin_data_everywhere(&f.dirs, &acp, &[], &[]).unwrap();
     assert!(!dir.exists());
 }
 
@@ -226,7 +226,7 @@ fn remove_everywhere_covers_app_known_projects_and_open_roots() {
         .plugin_file::<Sample>(&git, "a.json")
         .save(&sample(1))
         .unwrap();
-    remove_plugin_data_everywhere(&f.dirs, &git, &[other_root]).unwrap();
+    remove_plugin_data_everywhere(&f.dirs, &git, &[], &[other_root]).unwrap();
     assert!(!StateStore::app(&f.dirs).plugin_dir(&git).exists());
     assert!(!f.store().plugin_dir(&git).exists());
     assert!(!other_store.plugin_dir(&git).exists());
@@ -236,6 +236,58 @@ fn remove_everywhere_covers_app_known_projects_and_open_roots() {
 fn put(path: &Path, bytes: &[u8]) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(path, bytes).unwrap();
+}
+
+/// Files a plugin keeps straight in a state folder (the layout of earlier versions), as it names them.
+const ROOT_FILES: &[&str] = &["own.json", "../escape.json", "inner/own.json", ""];
+
+/// Lays out in a state folder `dir` the plugin's root file (returned first) and what "Remove data" must keep: another
+/// file there, and what the names that are no plain name would reach.
+fn root_files_in(dir: &Path) -> (PathBuf, [PathBuf; 3]) {
+    let own = dir.join("own.json");
+    let kept = [
+        dir.join("other.json"),
+        dir.join("inner").join("own.json"),
+        dir.parent().unwrap().join("escape.json"),
+    ];
+    put(&own, b"mine");
+    for path in &kept {
+        put(path, b"kept");
+    }
+    (own, kept)
+}
+
+fn root_files_swept((own, kept): &(PathBuf, [PathBuf; 3])) {
+    assert!(!own.exists(), "{}", own.display());
+    for path in kept {
+        assert_eq!(fs::read(path).unwrap(), b"kept", "{}", path.display());
+    }
+}
+
+/// "Remove data" takes the files the plugin keeps straight in a state folder: the app's, a folder's in the profile
+/// and in its own `.permark/local`, from the store's own sweep and from the sweep of every folder (open, or known to
+/// the profile only). The rest of each folder stays, and a name that is no plain name removes nothing.
+#[test]
+fn remove_data_takes_the_plugins_root_files_and_leaves_the_rest() {
+    let git = PluginId::of("git");
+    let f = fx();
+    let app = StateStore::app(&f.dirs);
+    let profile = f.store();
+    let in_project = fx();
+    let project = init_project(&in_project.dirs, &in_project.root()).unwrap();
+    assert_eq!(project.dir(), in_project.permark().join("local"));
+    for store in [&app, &profile, &project] {
+        let laid = root_files_in(store.dir());
+        store.remove_plugin_data(&git, ROOT_FILES).unwrap();
+        root_files_swept(&laid);
+    }
+    let laid = [root_files_in(app.dir()), root_files_in(profile.dir())];
+    remove_plugin_data_everywhere(&f.dirs, &git, ROOT_FILES, &[]).unwrap();
+    laid.iter().for_each(root_files_swept);
+    let laid = root_files_in(project.dir());
+    remove_plugin_data_everywhere(&in_project.dirs, &git, ROOT_FILES, &[in_project.root()])
+        .unwrap();
+    root_files_swept(&laid);
 }
 
 /// "Remove data" takes only the plugin's own folders: another plugin's data and what other computers keep for the
@@ -267,7 +319,7 @@ fn remove_data_leaves_other_plugins_and_other_computers_folders_as_they_are() {
         .plugin_file::<Sample>(&git, "a.json")
         .save(&sample(1))
         .unwrap();
-    remove_plugin_data_everywhere(&f.dirs, &git, &[f.root()]).unwrap();
+    remove_plugin_data_everywhere(&f.dirs, &git, &[], &[f.root()]).unwrap();
     assert!(!store.plugin_dir(&git).exists());
     for path in &kept {
         assert_eq!(fs::read(path).unwrap(), b"kept", "{}", path.display());
@@ -307,7 +359,7 @@ fn remove_data_sweeps_this_computers_own_plugin_folders() {
     }
     let own = machine.dir().join("journal.json");
     put(&own, b"core's");
-    remove_plugin_data_everywhere(&f.dirs, &git, &[f.root()]).unwrap();
+    remove_plugin_data_everywhere(&f.dirs, &git, &[], &[f.root()]).unwrap();
     for path in &gone {
         assert!(!path.exists(), "{}", path.display());
     }
@@ -321,7 +373,7 @@ fn remove_data_sweeps_this_computers_own_plugin_folders() {
         .join("git")
         .join("b.json");
     put(&path, b"mine");
-    closed.remove_plugin_data(&git).unwrap();
+    closed.remove_plugin_data(&git, &[]).unwrap();
     assert!(!path.exists());
 }
 
@@ -371,32 +423,38 @@ fn sweep_through_link(
 }
 
 /// "Remove data" never deletes through a link | junction on the way down from `.permark/` (a repository may ship
-/// `local/plugins`, `local/machine`, this install's folder or its cache folder as one pointing elsewhere): the folder
-/// it points to keeps what it holds and nothing below the link is removed. The plugin's own folder as a link is
-/// removed as a link, never followed.
+/// `local`, `local/plugins`, `local/machine`, this install's folder or its cache folder as one pointing elsewhere):
+/// the folder it points to keeps what it holds and nothing below the link is removed. The plugin's own folder | root
+/// file as a link is removed as a link, never followed.
 #[test]
 fn remove_data_never_deletes_through_a_link_in_the_project() {
     let git = PluginId::of("git");
     for link in [
+        "local",
         "local/plugins",
         "local/machine",
         "local/machine/{iid}",
         "local/machine/{iid}/plugins",
         "cache/{iid}",
         "local/plugins/git",
+        "local/own.json",
     ] {
         let f = fx();
         let store = init_project(&f.dirs, &f.root()).unwrap();
         let iid = store.machine().unwrap().iid().to_owned();
         assert_eq!(store.cache_dir(), f.permark().join("cache").join(&iid));
+        if link == "local" {
+            fs::remove_dir_all(f.permark().join("local")).unwrap();
+        }
         let swept = [
             "local/plugins/git".to_owned(),
             format!("local/machine/{iid}/plugins/git"),
             format!("cache/{iid}/plugins/git"),
+            "local/own.json".to_owned(),
         ];
         sweep_through_link(link, &f.permark(), &iid, link, &swept, || {
-            store.remove_plugin_data(&git).unwrap();
-            remove_plugin_data_everywhere(&f.dirs, &git, &[f.root()]).unwrap();
+            store.remove_plugin_data(&git, ROOT_FILES).unwrap();
+            remove_plugin_data_everywhere(&f.dirs, &git, ROOT_FILES, &[f.root()]).unwrap();
         });
     }
 }
@@ -411,6 +469,7 @@ fn remove_data_never_deletes_through_a_link_in_the_profile() {
         ("machine", "machine", false),
         ("own machine folder", "machine/{iid}", false),
         ("cache plugins", "plugins", true),
+        ("root file", "own.json", false),
     ] {
         let f = fx();
         let store = f.store();
@@ -424,10 +483,11 @@ fn remove_data_never_deletes_through_a_link_in_the_profile() {
         let swept = [
             "plugins/git".to_owned(),
             format!("machine/{iid}/plugins/git"),
+            "own.json".to_owned(),
         ];
         sweep_through_link(name, &base, &iid, link, &swept, || {
-            store.remove_plugin_data(&git).unwrap();
-            remove_plugin_data_everywhere(&f.dirs, &git, &[]).unwrap();
+            store.remove_plugin_data(&git, ROOT_FILES).unwrap();
+            remove_plugin_data_everywhere(&f.dirs, &git, ROOT_FILES, &[]).unwrap();
         });
     }
 }

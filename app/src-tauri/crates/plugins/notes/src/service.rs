@@ -426,8 +426,18 @@ impl NotesService {
         if matches!(info.status, FolderStatus::Missing) {
             return (notes, names, false);
         }
-        let Ok(dir) = std::fs::read_dir(ctx.folder()) else {
-            return (notes, names, !ctx.folder().exists() && info.is_default);
+        // a folder that cannot be read lists nothing: the notes may all be there still (a drive back later, a file
+        // in the way), so nothing known about them is dropped and no version is pruned. Only the default folder
+        // truly gone (its parent a folder that is there) counts as listed empty: the app makes it again, its notes
+        // went with it. Windows reports a file in place of a parent as not found too.
+        let dir = match std::fs::read_dir(ctx.folder()) {
+            Ok(dir) => dir,
+            Err(e) => {
+                let gone = e.kind() == std::io::ErrorKind::NotFound
+                    && info.is_default
+                    && ctx.folder().parent().is_some_and(Path::is_dir);
+                return (notes, names, gone);
+            }
         };
         let (pins, shares, copied) =
             ctx.read(|s| (s.pins.clone(), s.shares.clone(), s.copied.clone()));
@@ -516,10 +526,12 @@ impl NotesService {
     ) -> bool {
         let mut made = false;
         for (key, entry) in journal {
+            // an editor of this run still holds the text (its note was deleted under it): it is not lost yet
             if key.starts_with(permark_core::notes::LOOSE_PREFIX)
                 || names.contains(key)
                 || is_blank(&entry.text)
                 || !is_note_name(key)
+                || !self.left_by_a_crash(entry)
             {
                 continue;
             }
@@ -909,7 +921,7 @@ impl NotesService {
             .versions
             .read(&name, id)
             .map_err(|e| IpcError::io(id, &e))?;
-        Ok(String::from_utf8_lossy(&bytes).into_owned())
+        Ok(text_of_file(&bytes))
     }
 
     /// Puts an earlier version back as the note's text. The text the note has now becomes a version first, so the
@@ -1081,6 +1093,12 @@ fn editor_text_of(bytes: &[u8]) -> Option<String> {
     Some(permark_core::edit::lines::normalized(&decoded.text))
 }
 
+/// The text of file bytes as they are written (line endings kept, no byte order mark, UTF-16 read as such); bytes that
+/// are not text are read as UTF-8 with invalid parts replaced.
+fn text_of_file(bytes: &[u8]) -> String {
+    fsx::decode(bytes).map_or_else(|| String::from_utf8_lossy(bytes).into_owned(), |d| d.text)
+}
+
 /// Whether the journal entry holds text the file does not: typed and never saved.
 pub(crate) fn differs_from_file(entry: &JournalEntry, path: &Path) -> bool {
     differs_from_bytes(entry, fsx::read_bytes(path, TEXT_LIMIT).ok().as_deref())
@@ -1177,7 +1195,7 @@ impl NotesService {
         }
         let (_, abs) = Self::existing_note(&ctx, id)?;
         let bytes = fsx::read_bytes(&abs, 6 * 1024 * 1024).map_err(IpcError::from)?;
-        Ok(String::from_utf8_lossy(&bytes).into_owned())
+        Ok(text_of_file(&bytes))
     }
 
     /// Shares a note with `project`, the folder it is now. Only notes, one by one; a loose file never reaches an agent.
