@@ -1740,9 +1740,9 @@ export default {
   "project.initIgnore": "Hält die privaten Ordner aus git heraus.",
   "project.initIntro": "PerMark legt hier einen Ordner .permark an mit:",
   "project.initLocal":
-    "Die privaten Daten zu diesem Projekt (Kommentare, Gelesen-Markierungen) und ihr Cache.",
+    "Die privaten Daten zu diesem Projekt (Kommentare, Gelesen-Markierungen, Rückgängig-Verlauf) und ein Cache, den PerMark jederzeit neu aufbauen kann.",
   "project.initNote":
-    "Die Dateien bleiben unberührt. Vorhandene Tags, Kommentare und Gelesen-Markierungen zu diesem Projekt werden übernommen.",
+    "Die Dateien bleiben unberührt. Vorhandene Tags, Kommentare und Gelesen-Markierungen zu diesem Projekt werden übernommen. Was für diesen Ordner erlaubt wurde, etwa der Zugriff für Agenten, bleibt in den eigenen PerMark-Daten auf diesem Computer.",
   "project.initTitle": "PerMark in {name} einrichten?",
   "project.newTitle": "{name} zum Projekt machen?",
   "project.newWhy":

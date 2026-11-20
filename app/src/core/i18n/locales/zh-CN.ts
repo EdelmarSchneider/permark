@@ -1641,8 +1641,10 @@ export default {
   "project.initFailed": "无法在 {path} 中初始化 PerMark：{message}",
   "project.initIgnore": "让私有文件夹不进入 git。",
   "project.initIntro": "PerMark 会在这里创建 .permark 文件夹，其中包含：",
-  "project.initLocal": "你在此项目中的私有数据（批注、已读标记）及其缓存。",
-  "project.initNote": "你的文件不会被改动。此项目已有的标签、批注和已读标记会被复制进来。",
+  "project.initLocal":
+    "你在此项目中的私有数据（批注、已读标记、撤销记录），以及 PerMark 随时可以重建的缓存。",
+  "project.initNote":
+    "你的文件不会被改动。此项目已有的标签、批注和已读标记会被复制进来。你为此文件夹允许的内容（例如智能体访问）仍保存在这台电脑上你自己的 PerMark 数据中。",
   "project.initTitle": "在 {name} 中初始化 PerMark？",
   "project.newTitle": "将 {name} 设为项目？",
   "project.newWhy":

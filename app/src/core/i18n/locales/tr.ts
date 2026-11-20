@@ -1719,9 +1719,9 @@ export default {
   "project.initIgnore": "Özel klasörleri Git'in dışında tutar.",
   "project.initIntro": "PerMark burada şunları içeren bir .permark klasörü oluşturur:",
   "project.initLocal":
-    "Bu projeye ait özel verileriniz (yorumlar, okundu işaretleri) ve önbelleği.",
+    "Bu projeye ait özel verileriniz (yorumlar, okundu işaretleri, geri alma geçmişi) ve PerMark'ın her an yeniden oluşturabileceği önbellek.",
   "project.initNote":
-    "Dosyalarınıza dokunulmaz. Bu proje için zaten sahip olduğunuz etiketler, yorumlar ve okundu işaretleri içeri kopyalanır.",
+    "Dosyalarınıza dokunulmaz. Bu proje için zaten sahip olduğunuz etiketler, yorumlar ve okundu işaretleri içeri kopyalanır. Bu klasör için verdiğiniz izinler, örneğin ajan erişimi, bu bilgisayardaki kendi PerMark verilerinizde kalır.",
   "project.initTitle": "PerMark, {name} içinde başlatılsın mı?",
   "project.newTitle": "{name} bir proje yapılsın mı?",
   "project.newWhy":

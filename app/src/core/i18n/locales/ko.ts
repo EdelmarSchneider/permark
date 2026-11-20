@@ -1683,9 +1683,10 @@ export default {
   "project.initFailed": "{path}에서 PerMark를 초기화할 수 없습니다: {message}",
   "project.initIgnore": "비공개 폴더를 Git에서 제외합니다.",
   "project.initIntro": "PerMark가 여기에 다음 내용이 담긴 .permark 폴더를 만듭니다:",
-  "project.initLocal": "이 프로젝트에 대한 개인 데이터(댓글, 읽음 표시)와 캐시입니다.",
+  "project.initLocal":
+    "이 프로젝트에 대한 개인 데이터(댓글, 읽음 표시, 실행 취소 기록)와 PerMark가 언제든 다시 만들 수 있는 캐시입니다.",
   "project.initNote":
-    "파일은 건드리지 않습니다. 이 프로젝트에 이미 있는 태그, 댓글, 읽음 표시를 복사해 넣습니다.",
+    "파일은 건드리지 않습니다. 이 프로젝트에 이미 있는 태그, 댓글, 읽음 표시를 복사해 넣습니다. 에이전트 접근처럼 이 폴더에 허용한 항목은 이 컴퓨터에 있는 본인의 PerMark 데이터에 그대로 남습니다.",
   "project.initTitle": "{name}에서 PerMark를 초기화할까요?",
   "project.newTitle": "{name}을(를) 프로젝트로 만들까요?",
   "project.newWhy":

@@ -1723,9 +1723,9 @@ export default {
   "project.initIgnore": "Menjaga folder pribadi tetap di luar git.",
   "project.initIntro": "PerMark membuat folder .permark di sini yang berisi:",
   "project.initLocal":
-    "Data pribadi Anda untuk proyek ini (komentar, tanda sudah dibaca) dan cache-nya.",
+    "Data pribadi Anda untuk proyek ini (komentar, tanda sudah dibaca, riwayat pembatalan) dan cache yang dapat dibangun ulang oleh PerMark kapan saja.",
   "project.initNote":
-    "File Anda tidak diubah. Tag, komentar, dan tanda sudah dibaca yang sudah Anda miliki untuk proyek ini akan disalin ke dalamnya.",
+    "File Anda tidak diubah. Tag, komentar, dan tanda sudah dibaca yang sudah Anda miliki untuk proyek ini akan disalin ke dalamnya. Hal yang Anda izinkan untuk folder ini, seperti akses agen, tetap berada di data PerMark Anda sendiri di komputer ini.",
   "project.initTitle": "Inisialisasi PerMark di {name}?",
   "project.newTitle": "Jadikan {name} sebuah proyek?",
   "project.newWhy":

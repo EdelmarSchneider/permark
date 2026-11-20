@@ -1729,9 +1729,10 @@ export default {
   "project.initFailed": "{path} で PerMark を初期化できませんでした：{message}",
   "project.initIgnore": "非公開のフォルダーを git の対象から外します。",
   "project.initIntro": "PerMark はここに .permark フォルダーを作成し、次のものを置きます：",
-  "project.initLocal": "このプロジェクトの個人データ（コメント、既読の印）とキャッシュ。",
+  "project.initLocal":
+    "このプロジェクトの個人データ（コメント、既読の印、元に戻す履歴）と、PerMark がいつでも作り直せるキャッシュ。",
   "project.initNote":
-    "ファイルには手を加えません。このプロジェクトに既にあるタグ、コメント、既読の印はコピーされます。",
+    "ファイルには手を加えません。このプロジェクトに既にあるタグ、コメント、既読の印はコピーされます。このフォルダーに許可した内容（エージェントのアクセスなど）は、このコンピューター上のあなた自身の PerMark データに残ります。",
   "project.initTitle": "{name} で PerMark を初期化しますか？",
   "project.newTitle": "{name} をプロジェクトにしますか？",
   "project.newWhy":

@@ -1731,9 +1731,9 @@ export default {
   "project.initIgnore": "Manté les carpetes privades fora del Git.",
   "project.initIntro": "El PerMark crea aquí una carpeta .permark amb:",
   "project.initLocal":
-    "Les vostres dades privades d'aquest projecte (comentaris, marques de lectura) i la seva memòria cau.",
+    "Les vostres dades privades d'aquest projecte (comentaris, marques de lectura, historial de desfer) i una memòria cau que el PerMark pot reconstruir en qualsevol moment.",
   "project.initNote":
-    "Els vostres fitxers no es toquen. S'hi copien les etiquetes, els comentaris i les marques de lectura que ja teniu d'aquest projecte.",
+    "Els vostres fitxers no es toquen. S'hi copien les etiquetes, els comentaris i les marques de lectura que ja teniu d'aquest projecte. El que permeteu per a aquesta carpeta, com ara l'accés dels agents, es queda a les vostres pròpies dades del PerMark en aquest ordinador.",
   "project.initTitle": "Voleu inicialitzar el PerMark a {name}?",
   "project.newTitle": "Voleu convertir {name} en un projecte?",
   "project.newWhy":

@@ -1799,9 +1799,9 @@ export default {
   "project.initIgnore": "Ține dosarele private în afara git.",
   "project.initIntro": "PerMark creează aici un dosar .permark cu:",
   "project.initLocal":
-    "Datele tale private pentru acest proiect (comentarii, marcaje de citire) și memoria cache.",
+    "Datele tale private pentru acest proiect (comentarii, marcaje de citire, istoricul anulărilor) și o memorie cache pe care PerMark o poate reconstrui oricând.",
   "project.initNote":
-    "Fișierele tale nu sunt atinse. Etichetele, comentariile și marcajele de citire pe care le ai deja pentru acest proiect sunt copiate acolo.",
+    "Fișierele tale nu sunt atinse. Etichetele, comentariile și marcajele de citire pe care le ai deja pentru acest proiect sunt copiate acolo. Ce permiți pentru acest dosar, de exemplu accesul agenților, rămâne în propriile tale date PerMark de pe acest computer.",
   "project.initTitle": "Inițializezi PerMark în {name}?",
   "project.newTitle": "Faci din {name} un proiect?",
   "project.newWhy":

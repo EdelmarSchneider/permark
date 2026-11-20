@@ -1714,9 +1714,9 @@ export default {
   "project.initIgnore": "Mantiene las carpetas privadas fuera de git.",
   "project.initIntro": "PerMark crea aquí una carpeta .permark con:",
   "project.initLocal":
-    "Tus datos privados de este proyecto (comentarios, marcas de lectura) y su caché.",
+    "Tus datos privados de este proyecto (comentarios, marcas de lectura, historial de deshacer) y una caché que PerMark puede reconstruir en cualquier momento.",
   "project.initNote":
-    "Tus archivos no se tocan. Las etiquetas, los comentarios y las marcas de lectura que ya tienes en este proyecto se copian.",
+    "Tus archivos no se tocan. Las etiquetas, los comentarios y las marcas de lectura que ya tienes en este proyecto se copian. Lo que permites para esta carpeta, como el acceso de los agentes, se queda en tus propios datos de PerMark en este equipo.",
   "project.initTitle": "¿Inicializar PerMark en {name}?",
   "project.newTitle": "¿Convertir {name} en un proyecto?",
   "project.newWhy":

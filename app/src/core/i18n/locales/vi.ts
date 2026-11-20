@@ -1715,9 +1715,9 @@ export default {
   "project.initIgnore": "Giữ các thư mục riêng tư ngoài git.",
   "project.initIntro": "PerMark tạo một thư mục .permark ở đây, gồm:",
   "project.initLocal":
-    "Dữ liệu riêng tư của bạn cho dự án này (nhận xét, dấu đã đọc) và bộ nhớ đệm.",
+    "Dữ liệu riêng tư của bạn cho dự án này (nhận xét, dấu đã đọc, lịch sử hoàn tác) và bộ nhớ đệm mà PerMark có thể dựng lại bất cứ lúc nào.",
   "project.initNote":
-    "Các tệp của bạn không bị động đến. Nhãn, nhận xét và dấu đã đọc bạn đã có cho dự án này sẽ được sao chép vào.",
+    "Các tệp của bạn không bị động đến. Nhãn, nhận xét và dấu đã đọc bạn đã có cho dự án này sẽ được sao chép vào. Những gì bạn cho phép với thư mục này, chẳng hạn quyền truy cập của agent, vẫn nằm trong dữ liệu PerMark của riêng bạn trên máy tính này.",
   "project.initTitle": "Khởi tạo PerMark trong {name}?",
   "project.newTitle": "Biến {name} thành một dự án?",
   "project.newWhy":

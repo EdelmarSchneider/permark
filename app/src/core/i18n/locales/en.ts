@@ -1684,9 +1684,10 @@ const en = {
   "project.initFailed": "Couldn't initialize PerMark in {path}: {message}",
   "project.initIgnore": "Keeps the private folders out of git.",
   "project.initIntro": "PerMark creates a .permark folder here with:",
-  "project.initLocal": "Your private data for this project (comments, read marks) and its cache.",
+  "project.initLocal":
+    "Your private data for this project (comments, read marks, undo history) and a cache that PerMark can rebuild at any time.",
   "project.initNote":
-    "Your files are not touched. Tags, comments and read marks you already have for this project are copied in.",
+    "Your files are not touched. Tags, comments and read marks you already have for this project are copied in. What you allow for this folder, such as agent access, stays in your own PerMark data on this computer.",
   "project.initTitle": "Initialize PerMark in {name}?",
   "project.newTitle": "Make {name} a project?",
   "project.newWhy":

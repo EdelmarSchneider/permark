@@ -1756,9 +1756,9 @@ export default {
   "project.initIgnore": "Garde les dossiers privés hors de Git.",
   "project.initIntro": "PerMark crée ici un dossier .permark contenant :",
   "project.initLocal":
-    "Vos données privées pour ce projet (commentaires, marques de lecture) et son cache.",
+    "Vos données privées pour ce projet (commentaires, marques de lecture, historique d'annulation) et un cache que PerMark peut reconstruire à tout moment.",
   "project.initNote":
-    "Vos fichiers ne sont pas modifiés. Les étiquettes, commentaires et marques de lecture que vous avez déjà pour ce projet y sont copiés.",
+    "Vos fichiers ne sont pas modifiés. Les étiquettes, commentaires et marques de lecture que vous avez déjà pour ce projet y sont copiés. Ce que vous autorisez pour ce dossier, comme l'accès des agents, reste dans vos propres données PerMark sur cet ordinateur.",
   "project.initTitle": "Initialiser PerMark dans {name} ?",
   "project.newTitle": "Faire de {name} un projet ?",
   "project.newWhy":

@@ -1716,9 +1716,9 @@ export default {
   "project.initIgnore": "Mantén os cartafoles privados fóra de Git.",
   "project.initIntro": "PerMark crea aquí un cartafol .permark con:",
   "project.initLocal":
-    "Os seus datos privados deste proxecto (comentarios, marcas de lectura) e a súa caché.",
+    "Os seus datos privados deste proxecto (comentarios, marcas de lectura, historial de desfacer) e unha caché que PerMark pode reconstruír en calquera momento.",
   "project.initNote":
-    "Os seus ficheiros non se tocan. Cópianse as etiquetas, os comentarios e as marcas de lectura que xa ten para este proxecto.",
+    "Os seus ficheiros non se tocan. Cópianse as etiquetas, os comentarios e as marcas de lectura que xa ten para este proxecto. O que permita para este cartafol, como o acceso dos axentes, queda nos seus propios datos de PerMark neste ordenador.",
   "project.initTitle": "Inicializar PerMark en {name}?",
   "project.newTitle": "Converter {name} nun proxecto?",
   "project.newWhy":

@@ -931,6 +931,11 @@ describe("the project settings and Initialize PerMark", () => {
     expect(target.textContent).toContain("Initialize PerMark in permark-docs?");
     expect(target.textContent).toContain(".permark/config.toml");
     expect(target.textContent).toContain("Your files are not touched.");
+    // the undo history moves with the private data; what the person allows for the folder stays behind
+    expect(target.textContent).toContain("(comments, read marks, undo history)");
+    expect(target.textContent).toContain(
+      "such as agent access, stays in your own PerMark data on this computer.",
+    );
     press(target.querySelector(".dialog")!, "Escape");
     byText("button", "Cancel").click();
     byText("button.btn--primary", "Initialize PerMark").click();

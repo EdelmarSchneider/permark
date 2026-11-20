@@ -1729,9 +1729,9 @@ export default {
   "project.initIgnore": "Mantém as pastas privadas fora do Git.",
   "project.initIntro": "O PerMark cria aqui uma pasta .permark com:",
   "project.initLocal":
-    "Os seus dados privados deste projeto (comentários, marcas de leitura) e a respetiva cache.",
+    "Os seus dados privados deste projeto (comentários, marcas de leitura, histórico de anulações) e uma cache que o PerMark pode reconstruir a qualquer momento.",
   "project.initNote":
-    "Os seus ficheiros não são alterados. As etiquetas, os comentários e as marcas de leitura que já tem para este projeto são copiados para lá.",
+    "Os seus ficheiros não são alterados. As etiquetas, os comentários e as marcas de leitura que já tem para este projeto são copiados para lá. O que permite para esta pasta, como o acesso de agentes, fica nos seus próprios dados do PerMark neste computador.",
   "project.initTitle": "Inicializar o PerMark em {name}?",
   "project.newTitle": "Tornar {name} um projeto?",
   "project.newWhy":

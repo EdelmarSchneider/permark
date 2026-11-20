@@ -1655,8 +1655,10 @@ export default {
   "project.initFailed": "無法在 {path} 中初始化 PerMark：{message}",
   "project.initIgnore": "讓私人資料夾不進入 Git。",
   "project.initIntro": "PerMark 會在此建立 .permark 資料夾，內含：",
-  "project.initLocal": "您在此專案中的私人資料（註解、已讀標記）及其快取。",
-  "project.initNote": "不會更動您的檔案。您在此專案中已有的標籤、註解和已讀標記會複製進來。",
+  "project.initLocal":
+    "您在此專案中的私人資料（註解、已讀標記、復原記錄），以及 PerMark 隨時可以重建的快取。",
+  "project.initNote":
+    "不會更動您的檔案。您在此專案中已有的標籤、註解和已讀標記會複製進來。您為此資料夾允許的項目（例如代理程式存取權）仍保存在這台電腦上您自己的 PerMark 資料中。",
   "project.initTitle": "要在 {name} 中初始化 PerMark 嗎？",
   "project.newTitle": "要將 {name} 設為專案嗎？",
   "project.newWhy":

@@ -1730,9 +1730,9 @@ export default {
   "project.initIgnore": "Tiene le cartelle private fuori da git.",
   "project.initIntro": "PerMark crea qui una cartella .permark con:",
   "project.initLocal":
-    "I tuoi dati privati di questo progetto (commenti, segni di lettura) e la sua cache.",
+    "I tuoi dati privati di questo progetto (commenti, segni di lettura, cronologia degli annullamenti) e una cache che PerMark può ricostruire in qualsiasi momento.",
   "project.initNote":
-    "I tuoi file non vengono toccati. I tag, i commenti e i segni di lettura che hai già per questo progetto vengono copiati.",
+    "I tuoi file non vengono toccati. I tag, i commenti e i segni di lettura che hai già per questo progetto vengono copiati. Ciò che consenti per questa cartella, come l'accesso degli agenti, resta nei tuoi dati di PerMark su questo computer.",
   "project.initTitle": "Inizializzare PerMark in {name}?",
   "project.newTitle": "Rendere {name} un progetto?",
   "project.newWhy":

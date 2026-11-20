@@ -1780,9 +1780,9 @@ export default {
   "project.initIgnore": "Utrzymuje prywatne foldery poza gitem.",
   "project.initIntro": "PerMark utworzy tu folder .permark zawierający:",
   "project.initLocal":
-    "Twoje prywatne dane dla tego projektu (komentarze, znaczniki przeczytania) i jego pamięć podręczną.",
+    "Twoje prywatne dane dla tego projektu (komentarze, znaczniki przeczytania, historia cofania) i pamięć podręczną, którą PerMark może w każdej chwili odbudować.",
   "project.initNote":
-    "Twoje pliki pozostaną nietknięte. Tagi, komentarze i znaczniki przeczytania, które już masz dla tego projektu, zostaną skopiowane.",
+    "Twoje pliki pozostaną nietknięte. Tagi, komentarze i znaczniki przeczytania, które już masz dla tego projektu, zostaną skopiowane. To, na co zezwalasz w tym folderze, na przykład dostęp agentów, pozostaje w Twoich własnych danych PerMark na tym komputerze.",
   "project.initTitle": "Zainicjować PerMark w {name}?",
   "project.newTitle": "Zrobić z {name} projekt?",
   "project.newWhy":
