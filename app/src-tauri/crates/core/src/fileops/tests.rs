@@ -1535,6 +1535,64 @@ fn ids_go_on_after_the_journal_is_lost() {
 }
 
 #[test]
+fn a_next_id_written_into_the_journal_file_never_overflows_nor_gives_an_id_twice() {
+    let f = fx(&[("docs/", "")]);
+    f.ops.create("docs", "one", NewKind::Folder).unwrap();
+    // the journal file sits in the project's state folder, where a sync partner can write it
+    let (file, _) = journal_of(&f);
+    let mut journal = file.load().into_value();
+    journal.next = u64::MAX;
+    file.save(&journal).unwrap();
+    f.ops.create("docs", "two", NewKind::Folder).unwrap();
+    f.ops.create("docs", "three", NewKind::Folder).unwrap();
+    let ids: Vec<u64> = file
+        .load()
+        .into_value()
+        .entries
+        .iter()
+        .map(|e| e.id)
+        .collect();
+    assert_eq!(ids, [1, 2, 3]);
+    for name in ["three", "two", "one"] {
+        let out = f.ops.undo().unwrap().unwrap();
+        assert_eq!((out.kind, out.restored), (UndoKind::NewFolder, 1), "{name}");
+        assert!(!exists(&f, &format!("docs/{name}")), "{name}");
+    }
+}
+
+#[test]
+fn an_undo_never_acts_through_a_folder_link_into_a_repository_or_state_folder() {
+    let f = fx(&[
+        ("a.md", "mine"),
+        ("notes/", ""),
+        ("docs/", ""),
+        (".git/x/a.md", "repository data"),
+        ("sub/.permark/y/made.md", ""),
+    ]);
+    mv(&f, &[("a.md", "notes/a.md")]);
+    f.ops.create("docs", "made", NewKind::File).unwrap();
+    // each folder swapped for a link into a protected folder holding the same names
+    let root = f.dir.path();
+    for (folder, target) in [
+        ("notes", root.join(".git").join("x")),
+        ("docs", root.join("sub").join(".permark").join("y")),
+    ] {
+        fs::rename(root.join(folder), root.join(format!("{folder}-was"))).unwrap();
+        if !crate::tree::tests::link_out(&root.join(folder), &target) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+    }
+    let out = f.ops.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::NewFile, 0));
+    let out = f.ops.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::Move, 0));
+    assert_eq!(read(&f, ".git/x/a.md"), "repository data");
+    assert!(exists(&f, "sub/.permark/y/made.md"));
+    assert!(!exists(&f, "a.md"));
+}
+
+#[test]
 fn without_a_usable_install_key_operations_work_and_nothing_is_journaled() {
     let dir = tempfile::tempdir().unwrap();
     fs::create_dir(dir.path().join("docs")).unwrap();

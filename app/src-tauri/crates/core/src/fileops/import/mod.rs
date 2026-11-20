@@ -23,7 +23,7 @@ pub use self::copy::copy_folder;
 use self::copy::{
     count_tree, crosses_volumes, delete_originals, is_link, place_copy, Run, Stop, TICK,
 };
-use super::ops::{is_protected, list_files, locate, os_rename, undoable, MAX_ANNOUNCED};
+use super::ops::{is_protected, list_files, locate_undoable, os_rename, MAX_ANNOUNCED};
 use super::undo::{ImportMoved, Op};
 use super::{
     check_name, count, lock, FileOpError, FileOps, Skip, SkipReason, UndoKind, UndoOutcome,
@@ -675,8 +675,7 @@ impl FileOps {
             let from = PathBuf::from(&item.from);
             let place = VaultPath::parse(&item.to)
                 .ok()
-                .filter(undoable)
-                .and_then(|p| locate(&self.vault, &p).ok());
+                .and_then(|p| locate_undoable(&self.vault, &p));
             let Some(here) = place.filter(|p| fs::symlink_metadata(p).is_ok()) else {
                 skipped.push(skip(SkipReason::Missing));
                 continue;
@@ -707,17 +706,21 @@ impl FileOps {
         let mut bin: Vec<(String, PathBuf)> = Vec::new();
         for path in copied {
             touched.push(path.clone());
-            let Some(rel) = VaultPath::parse(path).ok().filter(undoable) else {
+            let Some(abs) = VaultPath::parse(path)
+                .ok()
+                .and_then(|p| locate_undoable(&self.vault, &p))
+            else {
                 skipped.push(Skip {
                     path: path.clone(),
                     reason: SkipReason::Missing,
                 });
                 continue;
             };
-            match locate(&self.vault, &rel).ok() {
-                Some(abs) if fs::symlink_metadata(&abs).is_ok() => bin.push((path.clone(), abs)),
+            if fs::symlink_metadata(&abs).is_ok() {
+                bin.push((path.clone(), abs));
+            } else {
                 // already gone: nothing left to take back
-                _ => restored += 1,
+                restored += 1;
             }
         }
         if !bin.is_empty() {
@@ -742,11 +745,18 @@ impl FileOps {
     }
 
     /// Where an undo may put back an item an import moved in: an absolute path on a local drive (never a share, a
-    /// device or verbatim path: even a lookup there connects to a server), outside this project and its worktrees
-    /// (an import never moves an item that is already inside), and outside the person's state folders.
+    /// mapped network drive, a device or verbatim path: even a lookup there connects to a server), outside this
+    /// project and its worktrees (an import never moves an item that is already inside), and outside the person's
+    /// state folders.
     fn may_return_to(&self, from: &Path) -> bool {
         let local_drive = match from.components().next() {
-            Some(Component::Prefix(prefix)) => matches!(prefix.kind(), Prefix::Disk(_)),
+            Some(Component::Prefix(prefix)) => match prefix.kind() {
+                #[cfg(windows)]
+                Prefix::Disk(letter) => !network_drive(letter),
+                #[cfg(not(windows))]
+                Prefix::Disk(_) => true,
+                _ => false,
+            },
             _ => !cfg!(windows),
         };
         if !local_drive || !from.is_absolute() || crate::process::is_network_path(from.as_os_str())
@@ -759,6 +769,20 @@ impl FileOps {
                 .into_iter()
                 .any(|root| within(from, root))
     }
+}
+
+/// The drive `letter` is a network drive (a mapped `Z:`, a `subst` of a share): any lookup on it connects to a server.
+// Documented FFI: no std wrapper tells the drive type. The argument is a NUL-terminated wide string owned by this
+// function and alive for the whole call.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn network_drive(letter: u8) -> bool {
+    use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
+    /// `DRIVE_REMOTE` of `GetDriveTypeW` (WinBase.h).
+    const DRIVE_REMOTE: u32 = 4;
+    let root = [u16::from(letter), u16::from(b':'), u16::from(b'\\'), 0];
+    // SAFETY: `root` is a live NUL-terminated buffer that outlives the call.
+    unsafe { GetDriveTypeW(root.as_ptr()) == DRIVE_REMOTE }
 }
 
 /// `path` is `root` or inside it: as spelled, else canonical (links, 8.3 names), on the root's volume only (another

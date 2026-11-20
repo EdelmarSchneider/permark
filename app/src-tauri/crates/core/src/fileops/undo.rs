@@ -213,11 +213,12 @@ impl StateData for Journal {
 }
 
 impl Journal {
-    /// Adds the newest operation; returns its id.
-    pub(crate) fn push(&mut self, at_ms: u64, op: Op) -> u64 {
+    /// Adds the newest operation; returns its id. `None`: no id is left to give (nothing added, never wraps around
+    /// to an id given before).
+    pub(crate) fn push(&mut self, at_ms: u64, op: Op) -> Option<u64> {
         let newest = self.entries.iter().map(|e| e.id).max().unwrap_or(0);
-        let id = self.next.max(newest + 1).max(1);
-        self.next = id + 1;
+        let id = self.next.max(newest.checked_add(1)?);
+        self.next = id.checked_add(1)?;
         self.entries.push(Entry {
             id,
             at_ms,
@@ -226,7 +227,7 @@ impl Journal {
         });
         let extra = self.entries.len().saturating_sub(MAX_ENTRIES);
         self.entries.drain(..extra);
-        id
+        Some(id)
     }
 
     /// Takes out the entry `id` when it can still be taken back: present, and no newer operation touched its paths.
@@ -323,7 +324,9 @@ impl History {
                 && entry.op.paths_usable()
                 && entry.sealed(&self.machine).verify(&entry.seal)
         });
-        journal.next = journal.next.max(row.map_or(0, |row| row.next));
+        // ids come from this install's own marks: the journal file's `next` is not sealed and anyone who can write
+        // the state folder could set it
+        journal.next = row.map_or(0, |row| row.next);
         journal
     }
 
@@ -340,21 +343,24 @@ impl History {
             .map(|entry| entry.id)
             .collect();
         let newest = journal.entries.iter().map(|e| e.id).max().unwrap_or(0);
-        let lowest = journal.next.max(newest + 1).max(1);
-        let mut id = 0;
+        let lowest = journal.next.max(newest.checked_add(1)?);
+        let mut id = None;
         self.marks
             .update(|marks| {
+                id = None;
                 let mut marks = marks.cloned().unwrap_or_default();
                 let row = marks.touch(self.machine.rid());
-                id = row.next.max(lowest);
-                row.next = id + 1;
+                let given = row.next.max(lowest);
+                // no id left: not journaled, never an id given before
+                row.next = given.checked_add(1)?;
                 row.live.retain(|seq| kept.contains(seq));
-                row.live.push(id);
+                row.live.push(given);
+                id = Some(given);
                 Some(marks)
             })
             .ok()?;
-        journal.next = id;
-        let pushed = journal.push(at_ms, op);
+        journal.next = id?;
+        let pushed = journal.push(at_ms, op)?;
         if let Some(entry) = journal.entries.last_mut() {
             entry.seal = entry.seal_with(&self.machine);
         }
@@ -467,18 +473,35 @@ mod tests {
         let mut journal = Journal::default();
         let a = journal.push(1, import(&["a.md"]));
         let b = journal.push(2, import(&["b.md"]));
-        assert_eq!((a, b), (1, 2));
-        assert!(journal.take(b).is_some());
+        assert_eq!((a, b), (Some(1), Some(2)));
+        assert!(journal.take(2).is_some());
         let c = journal.push(3, import(&["c.md"]));
-        assert_eq!(c, 3, "b's id stays used");
-        assert!(journal.take(b).is_none(), "an old notice finds nothing");
+        assert_eq!(c, Some(3), "b's id stays used");
+        assert!(journal.take(2).is_none(), "an old notice finds nothing");
+    }
+
+    #[test]
+    fn the_last_id_is_never_given_and_nothing_wraps_around() {
+        let mut journal = Journal {
+            next: u64::MAX,
+            entries: Vec::new(),
+        };
+        assert_eq!(journal.push(1, import(&["a.md"])), None);
+        assert_eq!(journal.entries.len(), 0);
+        assert_eq!(journal.next, u64::MAX);
+        journal.next = u64::MAX - 1;
+        assert_eq!(journal.push(2, import(&["b.md"])), Some(u64::MAX - 1));
+        assert_eq!(journal.push(3, import(&["c.md"])), None);
+        assert_eq!(journal.entries.len(), 1);
     }
 
     #[test]
     fn an_entry_is_taken_back_out_of_order_only_when_nothing_newer_touched_its_paths() {
         let mut journal = Journal::default();
-        let first = journal.push(1, import(&["docs/a.md", "docs/pics"]));
-        let other = journal.push(2, import(&["notes/x.md"]));
+        let first = journal
+            .push(1, import(&["docs/a.md", "docs/pics"]))
+            .unwrap();
+        let other = journal.push(2, import(&["notes/x.md"])).unwrap();
         let _ = journal.push(
             3,
             Op::Move {
@@ -505,7 +528,7 @@ mod tests {
             journal.take(0).is_none(),
             "an entry without id is never named"
         );
-        assert_eq!(journal.push(6, import(&["y"])), 1);
+        assert_eq!(journal.push(6, import(&["y"])), Some(1));
     }
 
     /// A store of a project folder: its install key, folder id and journal folder are real.

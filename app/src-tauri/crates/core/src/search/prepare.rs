@@ -250,3 +250,48 @@ pub fn head_tags(abs: &Path) -> Option<(Vec<String>, Sig)> {
 }
 
 use crate::organizing::frontmatter::HEAD_BYTES;
+
+#[cfg(test)]
+pub(super) mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::tree::tests::link_out;
+
+    /// `far.md` in `outside`, with a tag, and a link `alias.md` in `dir` leading to it (Unix: a symlink to the file;
+    /// Windows: a junction, which leads to a folder only: to the folder holding it). `None`: no link here.
+    pub(in crate::search) fn linked_document(
+        dir: &Path,
+        outside: &Path,
+    ) -> Option<(PathBuf, PathBuf)> {
+        let far = outside.join("far.md");
+        std::fs::write(&far, "---\ntags: [fartag]\n---\n# F\n\nfarwords\n").ok()?;
+        let target = if cfg!(windows) {
+            outside.to_path_buf()
+        } else {
+            far.clone()
+        };
+        let link = dir.join("alias.md");
+        link_out(&link, &target).then_some((link, far))
+    }
+
+    #[test]
+    fn a_link_is_never_read_for_the_index_nor_for_its_tags() {
+        let (dir, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let Some((link, far)) = linked_document(dir.path(), outside.path()) else {
+            eprintln!("links could not be made here; skipped");
+            return;
+        };
+        let formats = FormatRegistry::core();
+        let tags = Some(vec!["fartag".to_owned()]);
+        // what the link leads to is readable itself
+        let read = read_and_prepare("far.md", &far, Category::Markdown, &formats);
+        assert_eq!(read.and_then(|p| p.fm_tags), tags);
+        assert_eq!(head_tags(&far).map(|(tags, _)| tags), tags);
+        for category in [Category::Markdown, Category::Text] {
+            let read = read_and_prepare("alias.md", &link, category, &formats);
+            assert!(read.is_none(), "{read:?}");
+        }
+        assert_eq!(head_tags(&link), None);
+    }
+}

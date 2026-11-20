@@ -40,7 +40,7 @@ pub use plan::replacement_href;
 
 use self::ops::{
     announced_pairs, check_deletes, check_moves, execute_moves, io_error, is_protected, locate,
-    undoable, ValidMove,
+    locate_undoable, ValidMove,
 };
 use self::plan::{apply_edits, invert_edits, mentions, split_root, DocPlan, Mover, Planner};
 use self::undo::{DocUndo, Entry, History, Journal, Op, UndoEdit, JOURNAL_FILE, MARKS_FILE};
@@ -846,7 +846,11 @@ impl FileOps {
         let mut skipped = Vec::new();
         let mut back = vec![false; moves.len()];
         let mut done: Vec<(VaultPath, VaultPath)> = Vec::new();
-        let usable = |path: &str| VaultPath::parse(path).ok().filter(undoable);
+        let usable = |path: &str| {
+            VaultPath::parse(path)
+                .ok()
+                .filter(|p| locate_undoable(&self.vault, p).is_some())
+        };
         for (at, (from, to)) in moves.iter().enumerate().rev() {
             let (Some(from_p), Some(to_p)) = (usable(from), usable(to)) else {
                 continue;
@@ -936,11 +940,10 @@ impl FileOps {
     }
 
     fn revert_links(&self, place: &str, doc: &DocUndo) -> Result<(), SkipReason> {
-        let path = VaultPath::parse(place)
+        let abs = VaultPath::parse(place)
             .ok()
-            .filter(undoable)
+            .and_then(|path| locate_undoable(&self.vault, &path))
             .ok_or(SkipReason::Missing)?;
-        let abs = locate(&self.vault, &path).map_err(|_| SkipReason::Missing)?;
         let bytes = fs::read(&abs).map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
                 SkipReason::Missing
@@ -986,8 +989,7 @@ impl FileOps {
         let mut restored = 0;
         let removed = VaultPath::parse(path)
             .ok()
-            .filter(undoable)
-            .and_then(|p| locate(&self.vault, &p).ok())
+            .and_then(|p| locate_undoable(&self.vault, &p))
             .map(|abs| match kind {
                 UndoKind::NewFile => match fs::metadata(&abs) {
                     // only a file nobody has written to is taken back
@@ -1018,8 +1020,7 @@ impl FileOps {
         let abs: Vec<PathBuf> = paths
             .iter()
             .filter_map(|p| VaultPath::parse(p).ok())
-            .filter(undoable)
-            .filter_map(|p| locate(&self.vault, &p).ok())
+            .filter_map(|p| locate_undoable(&self.vault, &p))
             .collect();
         let restored = restore_from_bin(&abs);
         self.own.expect_creations(paths);

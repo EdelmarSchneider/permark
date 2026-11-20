@@ -531,3 +531,28 @@ pub fn message_of(batch: &FsBatch) -> Msg {
         reconcile,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::search::prepare::tests::linked_document;
+
+    #[test]
+    fn a_link_is_listed_by_name_only_and_never_gives_its_targets_text_or_tags() {
+        let (dir, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let Some((link, far)) = linked_document(dir.path(), outside.path()) else {
+            eprintln!("links could not be made here; skipped");
+            return;
+        };
+        let formats = FormatRegistry::core();
+        let read = outcome_of("far.md", &far, Category::Markdown, None, &formats);
+        assert!(matches!(read, Outcome::Read(..)), "the target itself reads");
+        match outcome_of("alias.md", &link, Category::Markdown, None, &formats) {
+            Outcome::NameOnly(path, None) => assert_eq!(path, "alias.md"),
+            Outcome::NameOnly(_, Some(tags)) => {
+                panic!("tags read through the link: {:?}", tags.tags)
+            }
+            Outcome::Read(..) | Outcome::Unchanged => panic!("text read through the link"),
+        }
+    }
+}

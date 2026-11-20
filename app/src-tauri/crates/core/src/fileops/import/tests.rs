@@ -1593,3 +1593,17 @@ fn copy_folder_refuses_a_source_that_is_a_link_or_a_file() {
         names(parent.path())
     );
 }
+
+/// A mapped network drive cannot be made on a test machine: only the local answer of the drive check is pinned here.
+#[cfg(windows)]
+#[test]
+fn a_local_drive_is_never_taken_for_a_network_drive() {
+    assert!(!network_drive(b'C'));
+    let temp = std::env::temp_dir();
+    let Some(Component::Prefix(prefix)) = temp.components().next() else {
+        panic!("{}", temp.display());
+    };
+    if let Prefix::Disk(letter) = prefix.kind() {
+        assert!(!network_drive(letter), "{}", temp.display());
+    }
+}
