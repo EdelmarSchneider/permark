@@ -102,11 +102,20 @@ pub enum DataOffer {
     Both,
 }
 
-/// The place a new row takes.
+/// Where a row puts the folder's private data and its caches (a row's answer, or the one a new row takes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct New {
+pub(super) struct Placement {
     pub(super) place: StateLocation,
     pub(super) cache: CachePlace,
+}
+
+impl Row {
+    fn placement(&self) -> Placement {
+        Placement {
+            place: self.place,
+            cache: self.cache,
+        }
+    }
 }
 
 impl Rows {
@@ -147,7 +156,7 @@ impl Rows {
     pub(super) fn settled(
         disk: Option<&Self>,
         current: Option<FolderIdentity>,
-        new: New,
+        new: Placement,
         now: u64,
     ) -> Option<Self> {
         let mut rows = disk.cloned().unwrap_or_default();
@@ -163,7 +172,7 @@ impl Rows {
     /// do not last) takes the new identity, so such a folder writes once, not a row per open; else a row of its own
     /// (a folder of another computer in a roaming profile keeps its row). The person's choice of the newest row, and
     /// its mark of an older profile copy, are carried when the place is the same.
-    fn answering(&mut self, current: Option<FolderIdentity>, new: New, now: u64) -> usize {
+    fn answering(&mut self, current: Option<FolderIdentity>, new: Placement, now: u64) -> usize {
         if let Some(index) = self.matching_index(current) {
             return index;
         }
@@ -221,12 +230,12 @@ fn read(path: &Path) -> Option<Rows> {
     }
 }
 
-/// The place the row of the folder at `root` names (`None`: no row answers for it). One small profile file; the
-/// folder's identity is read only when the file holds rows.
-pub(super) fn place_of(profile_dir: &Path, root: &Root) -> Option<StateLocation> {
+/// Where the row of the folder at `root` puts its data and caches (`None`: no row answers for it). One small profile
+/// file; the folder's identity is read only when the file holds rows.
+pub(super) fn place_of(profile_dir: &Path, root: &Root) -> Option<Placement> {
     let rows = read(&profile_dir.join(FILE))?;
     rows.matching(FolderIdentity::of(root.path()))
-        .map(|row| row.place)
+        .map(Row::placement)
 }
 
 /// The store of a folder being opened (a project window, a project included in one): when no row answers for it
@@ -260,14 +269,14 @@ pub(crate) fn settle_as(dirs: &AppDirs, root: &Root, legacy_link: Link) -> State
 /// that arrived for the place and leave the profile's data unseen).
 pub(super) fn answer(dirs: &AppDirs, root: &Root, legacy_link: Link) -> StateStore {
     let rows = read(row_file(dirs, root).path());
-    let place = rows
+    let placed = rows
         .as_ref()
         .and_then(|rows| rows.matching(FolderIdentity::of(root.path())))
         .map_or_else(
-            || derive(dirs, root, legacy_link, rows.as_ref()).place,
-            |row| row.place,
+            || derive(dirs, root, legacy_link, rows.as_ref()),
+            Row::placement,
         );
-    StateStore::at_place(dirs, root, legacy_link, Some(place))
+    StateStore::at_place(dirs, root, legacy_link, Some(placed))
 }
 
 /// Writes the folder's row: its data at `place`, `decided` by the person (a row for another folder at the path is
@@ -285,7 +294,7 @@ pub(super) fn record(
     moved: bool,
 ) -> Result<(), super::StateError> {
     let current = FolderIdentity::of(root.path());
-    let new = New {
+    let new = Placement {
         place,
         cache: cache_place(root, place, crate::tree::is_link_meta),
     };
@@ -363,7 +372,7 @@ fn row_file(dirs: &AppDirs, root: &Root) -> StateFile<Rows> {
 /// would drop out of view: the profile holds none of the person's current data (none, or only the older copy left
 /// when the data moved into a folder at the path), or earlier versions already kept the data in `local/` and it
 /// holds some.
-fn derive(dirs: &AppDirs, root: &Root, legacy_link: Link, rows: Option<&Rows>) -> New {
+fn derive(dirs: &AppDirs, root: &Root, legacy_link: Link, rows: Option<&Rows>) -> Placement {
     let earlier = StateStore::at_place(dirs, root, legacy_link, None);
     let local = root.path().join(super::PERMARK_DIR).join("local");
     let usable =
@@ -378,7 +387,7 @@ fn derive(dirs: &AppDirs, root: &Root, legacy_link: Link, rows: Option<&Rows>) -
     } else {
         StateLocation::Profile
     };
-    New {
+    Placement {
         place,
         cache: cache_place(root, place, legacy_link),
     }

@@ -1199,6 +1199,7 @@ fn team_readers_take_only_a_real_permark_folder() {
     type Make = fn(&Path, &Path) -> bool;
     let base = tempfile::tempdir().unwrap();
     let dirs = AppDirs::under(base.path());
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut layouts: Vec<(&str, Make, bool)> = vec![
         ("missing", |_, _| true, false),
         ("plain folder", |permark, _| fill(permark), true),

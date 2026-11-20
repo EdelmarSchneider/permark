@@ -34,6 +34,10 @@ impl Fx {
     fn store(&self) -> StateStore {
         StateStore::for_project(&self.dirs, &self.root())
     }
+    /// The store of the folder opened in a window: its row written first.
+    fn settled(&self) -> StateStore {
+        location::settle(&self.dirs, &self.root())
+    }
 }
 
 fn sample(n: u32) -> Sample {
@@ -228,6 +232,99 @@ fn remove_everywhere_covers_app_known_projects_and_open_roots() {
     assert!(!other_store.plugin_dir(&git).exists());
 }
 
+/// `path` made with `bytes`, its folders too.
+fn put(path: &Path, bytes: &[u8]) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, bytes).unwrap();
+}
+
+/// "Remove data" takes only the plugin's own folders: another plugin's data and what other computers keep for the
+/// folder (their own folders in `machine/` and in the cache, in the project and in the profile) stay byte for byte.
+#[test]
+fn remove_data_leaves_other_plugins_and_other_computers_folders_as_they_are() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    let git = PluginId::of("git");
+    let other = "0123456789abcdef";
+    let local = f.permark().join("local");
+    let profile = f
+        .dirs
+        .profile
+        .join("projects")
+        .join(ProjectId::of(&f.root()).as_str());
+    let at = |base: &Path, parts: &[&str]| parts.iter().fold(base.to_path_buf(), |p, n| p.join(n));
+    let kept = [
+        at(&local, &["plugins", "tags", "a.json"]),
+        at(&local, &["machine", other, "plugins", "git", "a.json"]),
+        at(&f.permark(), &["cache", other, "plugins", "git", "a.json"]),
+        at(&profile, &["machine", other, "plugins", "git", "a.json"]),
+        at(&profile, &["plugins", "tags", "a.json"]),
+    ];
+    for path in &kept {
+        put(path, b"kept");
+    }
+    store
+        .plugin_file::<Sample>(&git, "a.json")
+        .save(&sample(1))
+        .unwrap();
+    remove_plugin_data_everywhere(&f.dirs, &git, &[f.root()]).unwrap();
+    assert!(!store.plugin_dir(&git).exists());
+    for path in &kept {
+        assert_eq!(fs::read(path).unwrap(), b"kept", "{}", path.display());
+    }
+}
+
+/// "Remove data" also takes what this computer keeps for the plugin: its folder in this install's own folder of the
+/// state (in an open project and in the profile of a folder no window has open) and in the project's cache; the rest
+/// of this install's folder stays.
+#[test]
+fn remove_data_sweeps_this_computers_own_plugin_folders() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    let git = PluginId::of("git");
+    let machine = store.machine().unwrap();
+    let iid = machine.iid().to_owned();
+    let closed = tempfile::tempdir().unwrap();
+    let closed = StateStore::for_project(&f.dirs, &Root::open(closed.path()).unwrap());
+    let gone = [
+        machine.dir().join("plugins").join("git").join("a.json"),
+        f.permark()
+            .join("cache")
+            .join(&iid)
+            .join("plugins")
+            .join("git")
+            .join("a.json"),
+        closed
+            .machine()
+            .unwrap()
+            .dir()
+            .join("plugins")
+            .join("git")
+            .join("a.json"),
+    ];
+    for path in &gone {
+        put(path, b"mine");
+    }
+    let own = machine.dir().join("journal.json");
+    put(&own, b"core's");
+    remove_plugin_data_everywhere(&f.dirs, &git, &[f.root()]).unwrap();
+    for path in &gone {
+        assert!(!path.exists(), "{}", path.display());
+    }
+    assert_eq!(fs::read(&own).unwrap(), b"core's");
+    // one store's own sweep takes its install folder's plugin folder too (the profile's here)
+    let path = closed
+        .machine()
+        .unwrap()
+        .dir()
+        .join("plugins")
+        .join("git")
+        .join("b.json");
+    put(&path, b"mine");
+    closed.remove_plugin_data(&git).unwrap();
+    assert!(!path.exists());
+}
+
 #[test]
 fn init_project_creates_files_keeps_existing_and_carries_state() {
     let f = fx();
@@ -395,10 +492,14 @@ fn init_project_makes_exactly_these_files() {
 fn uninit_project_takes_back_a_cache_holding_more_files() {
     let f = fx();
     let store = init_project(&f.dirs, &f.root()).unwrap();
-    store
-        .cache_file::<Sample>("index.json")
-        .save(&sample(1))
-        .unwrap();
+    let file = store.cache_file::<Sample>("index.json");
+    file.save(&sample(1)).unwrap();
+    // this install's own folder of `cache/`
+    let iid = store.machine().unwrap().iid().to_owned();
+    assert_eq!(
+        file.path(),
+        f.permark().join("cache").join(iid).join("index.json")
+    );
     fs::write(store.cache_dir().join("extra.bin"), b"x").unwrap();
     assert!(uninit_project(&f.dirs, &f.root()).unwrap());
     assert!(!f.root().path().join(".permark").exists());
@@ -471,7 +572,7 @@ fn the_state_folders_ignore_everything_whatever_the_folder_shipped() {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, text).unwrap();
     }
-    let store = f.store();
+    let store = f.settled();
     store.file::<Sample>("x.json").save(&sample(1)).unwrap();
     store
         .cache_file::<Sample>("index.json")
@@ -523,7 +624,7 @@ fn a_link_in_place_of_an_ignore_file_is_replaced_never_followed() {
     let folder = outside.path().join("folder");
     fs::create_dir(&folder).unwrap();
     std::os::unix::fs::symlink(&folder, cache.join(".gitignore")).unwrap();
-    f.store()
+    f.settled()
         .cache_file::<Sample>("index.json")
         .save(&sample(1))
         .unwrap();
@@ -539,12 +640,13 @@ fn the_cache_folder_carries_a_cache_directory_tag() {
     let f = fx();
     let permark = f.project.path().join(".permark");
     fs::create_dir(&permark).unwrap();
-    let store = f.store();
+    let store = f.settled();
     store.file::<Sample>("x.json").save(&sample(1)).unwrap();
     store
         .cache_file::<Sample>("index.json")
         .save(&sample(2))
         .unwrap();
+    // in `cache/` itself, around every install's own folder
     let tag = permark.join("cache").join("CACHEDIR.TAG");
     let text = fs::read_to_string(&tag).unwrap();
     assert!(text.starts_with("Signature: 8a477f597d28d172789f06886806bc55\n"));
@@ -559,6 +661,61 @@ fn the_cache_folder_carries_a_cache_directory_tag() {
         .save(&sample(3))
         .unwrap();
     assert!(fs::read_to_string(&tag).unwrap().ends_with("# mine\n"));
+}
+
+/// A cache file it cannot use (corrupt, a newer version's, larger than its cap, a link in its place) is left out of
+/// the load and replaced by the next save: nothing set aside beside it, no save refused, nothing behind a link touched.
+#[test]
+fn a_cache_file_it_cannot_use_is_rebuilt_never_kept() {
+    #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+    struct Small {
+        n: u32,
+    }
+    impl StateData for Small {
+        const VERSION: u32 = 1;
+        const MAX_BYTES: u64 = 64;
+    }
+    type Make = fn(&Path, &Path) -> bool;
+    let cases: Vec<(&str, Make)> = vec![
+        ("corrupt", |p, _| fs::write(p, b"{ not json").is_ok()),
+        ("a newer version's", |p, _| {
+            fs::write(p, br#"{"version":2,"data":{"n":1}}"#).is_ok()
+        }),
+        ("larger than its cap", |p, _| {
+            fs::write(
+                p,
+                format!(r#"{{"version":1,"data":{{"n":1}}}}{}"#, " ".repeat(64)),
+            )
+            .is_ok()
+        }),
+        ("a link", |p, out| crate::tree::tests::link_out(p, out)),
+    ];
+    for (name, make) in cases {
+        let f = fx();
+        fs::create_dir(f.permark()).unwrap();
+        let store = location::settle(&f.dirs, &f.root());
+        let file = store.cache_file::<Small>("index/c.json");
+        let dir = file.path().parent().unwrap().to_path_buf();
+        fs::create_dir_all(&dir).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        if !make(file.path(), outside.path()) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        assert_eq!(file.load(), None, "{name}");
+        file.save(&Small { n: 7 }).unwrap();
+        let names: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["c.json"], "{name}: nothing set aside");
+        assert_eq!(file.load(), Some(Small { n: 7 }), "{name}");
+        assert!(file.path().starts_with(f.permark().join("cache")), "{name}");
+        assert!(
+            fs::read_dir(outside.path()).unwrap().next().is_none(),
+            "{name}: nothing behind the link"
+        );
+    }
 }
 
 #[test]
@@ -1679,22 +1836,21 @@ fn store_paths_are_pinned() {
     assert_eq!(s.location(), StateLocation::Profile);
     pinned(&s, &profile, &cache, &profile, &profile);
     assert_eq!(path_of(s.legacy_shared_file("meta.toml")), None);
-    // a real `.permark/`: private state in `local/`, caches in `cache/`, shared files in `.permark/` itself
+    // a real `.permark/`: private state in `local/`, shared files in `.permark/` itself; caches in the app cache until
+    // the folder's row says where they go
     let permark = f.root().path().join(".permark");
     fs::create_dir(&permark).unwrap();
     let s = f.store();
     assert_eq!(s.location(), StateLocation::Project);
-    pinned(
-        &s,
-        &permark.join("local"),
-        &permark.join("cache"),
-        &permark,
-        &profile,
-    );
+    pinned(&s, &permark.join("local"), &cache, &permark, &profile);
     assert_eq!(
         path_of(s.legacy_shared_file("meta.toml")),
         Some(profile.join("meta.toml"))
     );
+    // opened (the row written): caches in this install's own folder of `cache/`
+    let s = f.settled();
+    let own = permark.join("cache").join(s.machine().unwrap().iid());
+    pinned(&s, &permark.join("local"), &own, &permark, &profile);
     // a file in place of `cache/`: caches stay in the profile cache
     fs::write(permark.join("cache"), "x").unwrap();
     assert_eq!(f.store().cache_dir(), cache);
@@ -1754,7 +1910,7 @@ impl Resolved {
         let permark = f.root().path().join(PERMARK_DIR);
         let (dir, cache) = match place {
             Place::Profile | Place::TeamOnly => (profile.clone(), profile_cache),
-            Place::Project => (permark.join("local"), permark.join("cache")),
+            Place::Project => (permark.join("local"), permark.join("cache").join(iid)),
             Place::ProjectStateOnly => (permark.join("local"), profile_cache),
         };
         // shared files in `.permark/` (the profile copy kept apart) whenever it is the team folder
@@ -1784,6 +1940,7 @@ impl Resolved {
 #[derive(Clone, Copy)]
 enum Place {
     Profile,
+    /// In the project, caches in this install's own folder of `cache/` (as the folder's row says).
     Project,
     /// In the project, caches in the profile cache.
     ProjectStateOnly,
@@ -1797,16 +1954,13 @@ impl Fx {
     }
 }
 
-/// Where a project's store sits for each layout its folder can have: `.permark/` a real folder (with `local/` real or
-/// missing) -> `local/`, caches in `cache/` unless something else is there; anything else (no `.permark/`, a file or a
-/// folder link in its place, a file | link as `local/`) -> the profile. Team files follow `.permark/` whenever it is a
-/// real folder, also while the private state stays in the profile. Resolving writes nothing into the folder and
-/// nothing through a link; a second store of the same folder gives the same answer.
-#[test]
-fn every_path_a_store_hands_out_is_pinned_for_each_folder_layout() {
-    // (layout, made in the folder: `false` -> the system cannot make it here, skipped)
-    type Make = fn(&Fx, &Path) -> bool;
-    let mut layouts: Vec<(&str, Make, Place)> = vec![
+/// A folder layout: made in the folder (`false` -> the system cannot make it here, skipped).
+type MakeLayout = fn(&Fx, &Path) -> bool;
+
+/// Every layout a project folder can have, with the place its store gives once the folder is opened.
+fn folder_layouts() -> Vec<(&'static str, MakeLayout, Place)> {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut layouts: Vec<(&str, MakeLayout, Place)> = vec![
         ("no .permark", |_, _| true, Place::Profile),
         (
             "profile state only",
@@ -1870,7 +2024,18 @@ fn every_path_a_store_hands_out_is_pinned_for_each_folder_layout() {
         |f, out| std::os::windows::fs::symlink_dir(out, f.permark()).is_ok(),
         Place::Profile,
     ));
-    for (name, make, place) in layouts {
+    layouts
+}
+
+/// Where a project's store sits for each layout its folder can have: `.permark/` a real folder (with `local/` real or
+/// missing) -> `local/`, caches in this install's own folder of `cache/` once the folder is opened (its row written)
+/// unless something else is there as `cache/`, in the profile cache before; anything else (no `.permark/`, a file or a
+/// folder link in its place, a file | link as `local/`) -> the profile. Team files follow `.permark/` whenever it is a
+/// real folder, also while the private state stays in the profile. Resolving and opening write nothing into the
+/// folder and nothing through a link; a second store of the same folder gives the same answer.
+#[test]
+fn every_path_a_store_hands_out_is_pinned_for_each_folder_layout() {
+    for (name, make, place) in folder_layouts() {
         let f = fx();
         let outside = tempfile::tempdir().unwrap();
         if !make(&f, outside.path()) {
@@ -1886,8 +2051,20 @@ fn every_path_a_store_hands_out_is_pinned_for_each_folder_layout() {
             "{name}: the folder's own answer"
         );
         let iid = s.machine().unwrap().iid().to_owned();
-        assert_eq!(got, Resolved::at(&f, &iid, place), "{name}");
+        // no row yet: the caches stay in the profile cache
+        let unopened = match place {
+            Place::Project => Place::ProjectStateOnly,
+            other => other,
+        };
+        assert_eq!(got, Resolved::at(&f, &iid, unopened), "{name}");
         assert_eq!(Resolved::of(&f.store()), got, "{name}: a second store");
+        let opened = Resolved::of(&f.settled());
+        assert_eq!(opened, Resolved::at(&f, &iid, place), "{name}: opened");
+        assert_eq!(
+            Resolved::of(&f.store()),
+            opened,
+            "{name}: a store after the open"
+        );
         assert_eq!(
             entries_below(f.project.path()),
             before,
@@ -2239,6 +2416,18 @@ fn machine_files_sit_under_the_install_id_in_both_locations() {
         s.machine_raw_file("x.json").unwrap().path(),
         m.dir().join("x.json")
     );
+    let git = PluginId::of("git");
+    let own_plugin = m.dir().join("plugins").join("git");
+    assert_eq!(
+        s.machine_plugin_file::<Sample>(&git, "k.json")
+            .unwrap()
+            .path(),
+        own_plugin.join("k.json")
+    );
+    assert_eq!(
+        s.machine_plugin_raw_file(&git, "r.json").unwrap().path(),
+        own_plugin.join("r.json")
+    );
     assert_eq!(
         s.install_file::<Sample>("marks.json").unwrap().path(),
         f.dirs.install.join("marks.json")
@@ -2264,6 +2453,8 @@ fn machine_files_sit_under_the_install_id_in_both_locations() {
     assert!(app.machine().is_none());
     assert!(app.machine_file::<Sample>("x.json").is_none());
     assert!(app.machine_raw_file("x.json").is_none());
+    assert!(app.machine_plugin_file::<Sample>(&git, "k.json").is_none());
+    assert!(app.machine_plugin_raw_file(&git, "r.json").is_none());
     assert_eq!(
         app.install_file::<Sample>("marks.json").unwrap().path(),
         f.dirs.install.join("marks.json")

@@ -37,6 +37,11 @@ impl Install {
         let iid = hex(&hmac::sign(&key, b"iid").as_ref()[..8]);
         Self { key, iid }
     }
+
+    /// Names this install's own folders (in a project's state, in its cache).
+    pub(super) fn iid(&self) -> &str {
+        &self.iid
+    }
 }
 
 /// The key of the install folder `dir`, read (or made) once per folder in this process. `None`: no usable key (the

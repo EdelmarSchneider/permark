@@ -123,13 +123,14 @@ pub(crate) struct Keeper {
 }
 
 impl Keeper {
-    /// `None`: no usable install key (nothing kept, nothing set aside: the comments work as before).
+    /// Kept in the plugin's folder of this install's own folder of the state, so "Remove data" takes them with the
+    /// rest. `None`: no usable install key (nothing kept, nothing set aside: the comments work as before).
     pub(crate) fn of(store: &StateStore, told: Arc<dyn Fn() + Send + Sync>) -> Option<Self> {
         Some(Self {
             machine: store.machine()?.clone(),
-            kept: store.machine_file(KEPT_FILE)?,
-            kept_raw: store.machine_raw_file(KEPT_FILE)?,
-            asides: store.machine_file(ASIDES_FILE)?,
+            kept: store.machine_plugin_file(&crate::ID, KEPT_FILE)?,
+            kept_raw: store.machine_plugin_raw_file(&crate::ID, KEPT_FILE)?,
+            asides: store.machine_plugin_file(&crate::ID, ASIDES_FILE)?,
             told,
         })
     }

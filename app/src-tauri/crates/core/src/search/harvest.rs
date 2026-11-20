@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::paths::{key_of, WORKTREE_PREFIX};
 use crate::projects::Owners;
-use crate::state::{Loaded, StateData};
+use crate::state::StateData;
 
 /// The cache file, below each owner's cache folder.
 pub const CACHE_FILE: &str = "index/fm-tags.json";
@@ -31,9 +31,9 @@ pub struct DocTags {
 
 /// `fm-tags.json`: owner-relative path -> tags (droppable cache).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-struct CacheFile(BTreeMap<String, DocTags>);
+struct TagsCache(BTreeMap<String, DocTags>);
 
-impl StateData for CacheFile {
+impl StateData for TagsCache {
     const VERSION: u32 = 1;
     /// No writer limit: one entry per document of the project.
     const MAX_BYTES: u64 = 32 * 1024 * 1024;
@@ -170,7 +170,7 @@ impl Harvest {
             let owners = source();
             let mut found: Vec<(String, DocTags)> = Vec::new();
             for (i, slot) in owners.slots().iter().enumerate() {
-                if let Loaded::Found(file) = slot.store.cache_file::<CacheFile>(CACHE_FILE).load() {
+                if let Some(file) = slot.store.cache_file::<TagsCache>(CACHE_FILE).load() {
                     found.extend(
                         file.0
                             .into_iter()
@@ -346,11 +346,11 @@ impl Harvest {
             parts[i].insert(owners.rel(i, path), doc.clone());
         }
         for (slot, part) in owners.slots().iter().zip(parts) {
-            let file = slot.store.cache_file::<CacheFile>(CACHE_FILE);
+            let file = slot.store.cache_file::<TagsCache>(CACHE_FILE);
             if part.is_empty() && !file.path().exists() {
                 continue;
             }
-            let _ = file.save(&CacheFile(part));
+            let _ = file.save(&TagsCache(part));
         }
     }
 }
@@ -402,23 +402,37 @@ mod tests {
         assert_eq!(h.snapshot().len(), 1);
     }
 
+    /// The owners of `root_dir` (no `.permark/`) with the given members, each opened as a window opens it.
+    fn owners_of(dirs: &AppDirs, root_dir: &std::path::Path, members: &[(&str, &str)]) -> Owners {
+        let root = crate::paths::Root::open(root_dir).unwrap();
+        Owners::new(
+            StateStore::for_project(dirs, &root),
+            members
+                .iter()
+                .map(|(uid, rel)| {
+                    let member = crate::paths::Root::open(&root_dir.join(rel)).unwrap();
+                    crate::projects::OwnerSlot::member(
+                        crate::projects::ProjectUid::parse(uid).unwrap(),
+                        rel,
+                        crate::state::location::settle(dirs, &member),
+                    )
+                })
+                .collect(),
+        )
+    }
+
     #[test]
     fn cache_split_by_owner_and_read_back() {
         let base = tempfile::tempdir().unwrap();
         let dirs = AppDirs::under(base.path());
         let root_dir = base.path().join("r");
         std::fs::create_dir_all(root_dir.join("m/.permark")).unwrap();
-        let store = |p: &std::path::Path| {
-            StateStore::for_project(&dirs, &crate::paths::Root::open(p).unwrap())
-        };
-        let owners = Owners::new(
-            store(&root_dir),
-            vec![crate::projects::OwnerSlot::member(
-                crate::projects::ProjectUid::parse("aaaaaaaaaa").unwrap(),
-                "m",
-                store(&root_dir.join("m")),
-            )],
-        );
+        let owners = owners_of(&dirs, &root_dir, &[("aaaaaaaaaa", "m")]);
+        let iid = owners.slots()[1].store.machine().unwrap().iid().to_owned();
+        let member_cache = root_dir
+            .join("m/.permark/cache")
+            .join(&iid)
+            .join("index/fm-tags.json");
         let source: OwnersSource = {
             let owners = owners.clone();
             Arc::new(move || owners.clone())
@@ -433,16 +447,11 @@ mod tests {
             false,
         );
         h.write_cache();
-        assert!(
-            !root_dir
-                .join("m/.permark/cache/index/fm-tags.json")
-                .exists(),
-            "nobody listens: no cache"
-        );
+        assert!(!member_cache.exists(), "nobody listens: no cache");
         let _sub = h.subscribe(|| {});
         h.put(vec![("m/in2.md".into(), doc(&["c"], 3))], false);
         h.write_cache();
-        let member_cache = root_dir.join("m/.permark/cache/index/fm-tags.json");
+        // this computer's own folder of the member's `.permark/cache/`
         let text = std::fs::read_to_string(&member_cache).unwrap();
         assert!(
             text.contains("\"in.md\"") && !text.contains("top.md"),
@@ -454,5 +463,58 @@ mod tests {
         assert_eq!(again.tags_of("m/in.md").unwrap(), ["b"]);
         assert_eq!(again.tags_of("top.md").unwrap(), ["a"]);
         assert!(!again.ready());
+    }
+
+    /// Earlier versions kept the cache straight in `.permark/cache/index/`: this install's first save in a project
+    /// removes that folder (a link in its place is removed, never followed) and leaves the rest of `cache/` as it is;
+    /// the app cache of a folder without `.permark/` keeps its `index/`, where the cache still is.
+    #[test]
+    fn the_first_cache_save_removes_the_earlier_versions_cache_folder() {
+        let base = tempfile::tempdir().unwrap();
+        let dirs = AppDirs::under(base.path());
+        let root_dir = base.path().join("r");
+        let outside = tempfile::tempdir().unwrap();
+        let elsewhere = outside.path().join("kept.json");
+        std::fs::write(&elsewhere, b"not ours").unwrap();
+        let old = |rel: &str| root_dir.join(rel).join(".permark/cache/index");
+        for rel in ["m", "l"] {
+            std::fs::create_dir_all(root_dir.join(rel).join(".permark/cache")).unwrap();
+        }
+        std::fs::create_dir_all(old("m")).unwrap();
+        std::fs::write(old("m").join("fm-tags.json"), b"{}").unwrap();
+        std::fs::write(root_dir.join("m/.permark/cache/other.bin"), b"x").unwrap();
+        let linked = crate::tree::tests::link_out(&old("l"), outside.path());
+        let owners = owners_of(
+            &dirs,
+            &root_dir,
+            &[("aaaaaaaaaa", "m"), ("bbbbbbbbbb", "l")],
+        );
+        let app_index = owners.root().store.cache_dir().join("index");
+        std::fs::create_dir_all(&app_index).unwrap();
+        std::fs::write(app_index.join("other.bin"), b"x").unwrap();
+        let h = Arc::new(Harvest::default());
+        let _sub = h.subscribe(|| {});
+        let source: OwnersSource = Arc::new(move || owners.clone());
+        h.use_cache(Some(source));
+        h.put(
+            vec![
+                ("top.md".into(), doc(&["a"], 1)),
+                ("m/in.md".into(), doc(&["b"], 2)),
+                ("l/in.md".into(), doc(&["c"], 3)),
+            ],
+            false,
+        );
+        h.write_cache();
+        assert!(std::fs::symlink_metadata(old("m")).is_err());
+        assert_eq!(
+            std::fs::read(root_dir.join("m/.permark/cache/other.bin")).unwrap(),
+            b"x"
+        );
+        if linked {
+            assert!(std::fs::symlink_metadata(old("l")).is_err());
+        }
+        assert_eq!(std::fs::read(&elsewhere).unwrap(), b"not ours");
+        assert!(app_index.join("fm-tags.json").is_file());
+        assert_eq!(std::fs::read(app_index.join("other.bin")).unwrap(), b"x");
     }
 }

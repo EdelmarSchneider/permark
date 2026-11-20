@@ -262,6 +262,18 @@ struct EnvelopeIn<T> {
     data: T,
 }
 
+/// The bytes of a state file at `path` holding `data`: `{ version, data }`.
+fn envelope<T: StateData>(path: &Path, data: &T) -> Result<Vec<u8>, StateError> {
+    serde_json::to_vec_pretty(&EnvelopeOut {
+        version: T::VERSION,
+        data,
+    })
+    .map_err(|source| StateError::Encode {
+        path: path.display().to_string(),
+        source,
+    })
+}
+
 /// What a state file's bytes hold.
 enum Parsed<T> {
     Data(T),
@@ -390,14 +402,7 @@ impl<T: StateData> StateFile<T> {
     }
 
     fn encode(&self, data: &T) -> Result<Vec<u8>, StateError> {
-        serde_json::to_vec_pretty(&EnvelopeOut {
-            version: T::VERSION,
-            data,
-        })
-        .map_err(|source| StateError::Encode {
-            path: self.path.display().to_string(),
-            source,
-        })
+        envelope(&self.path, data)
     }
 
     /// Read-change-write for a file several cores write (`shared_write`): under the file's lock, `next` gets the data
@@ -697,7 +702,8 @@ impl StateStore {
     /// Where the folder's row ([`location`]) puts the private state: the profile, or `.permark/local/` while
     /// `.permark/` is a real folder (and `local/` real or missing; else the profile for now, the row untouched). No
     /// row: `.permark/local/` when earlier versions put it there. Shared files follow the team folder
-    /// ([`has_team_folder`]) whatever place holds the state. Writes nothing; a folder being opened gets its row first
+    /// ([`has_team_folder`]) whatever place holds the state. Caches: this install's own folder of `.permark/cache/`
+    /// when the row says so, else the app cache. Writes nothing; a folder being opened gets its row first
     /// ([`location::settle`]).
     #[must_use]
     pub fn for_project(dirs: &AppDirs, root: &Root) -> Self {
@@ -717,13 +723,13 @@ impl StateStore {
         Self::at_place(dirs, root, legacy_link, place)
     }
 
-    /// The store of the folder whose private state a row puts at `place`; `None`: no row, the earlier versions' rule
-    /// decides (with `legacy_link`).
+    /// The store of the folder whose private state and caches a row puts at `placed`; `None`: no row, the earlier
+    /// versions' rule decides the place of the state (with `legacy_link`) and the caches stay in the app cache.
     fn at_place(
         dirs: &AppDirs,
         root: &Root,
         legacy_link: location::Link,
-        place: Option<StateLocation>,
+        placed: Option<location::Placement>,
     ) -> Self {
         let id = ProjectId::of(root);
         let profile_dir = dirs.profile.join("projects").join(id.as_str());
@@ -732,6 +738,7 @@ impl StateStore {
         let local = permark.join("local");
         let cache = permark.join("cache");
         let team = has_team_folder(root).then(|| permark.clone());
+        let place = placed.map(|placed| placed.place);
         // a row was written with std's link test: a cloud placeholder folder is a folder
         let link = if place.is_some() {
             crate::fsx::is_link
@@ -745,7 +752,14 @@ impl StateStore {
             && matches!(entry(&permark), private::Entry::Folder)
             && !matches!(entry(&local), private::Entry::Other);
         if usable {
-            let cache_usable = !matches!(entry(&cache), private::Entry::Other);
+            // this install's own folder of `cache/`, as the row decided where the caches go (a network | cloud folder:
+            // the app cache), while `cache/` is a real folder | missing and the install key is usable: a cache another
+            // computer wrote (a sync partner, a copied folder) is never read
+            let own_cache = placed
+                .filter(|placed| placed.cache == location::CachePlace::Project)
+                .filter(|_| !matches!(entry(&cache), private::Entry::Other))
+                .and_then(|_| seal::install(&dirs.install))
+                .map(|install| cache.join(install.iid()));
             let guard = |state: &Path| Guard {
                 permark: permark.clone(),
                 state: state.to_path_buf(),
@@ -753,16 +767,12 @@ impl StateStore {
             Self {
                 location: StateLocation::Project,
                 dir: local.clone(),
-                cache: if cache_usable {
-                    cache.clone()
-                } else {
-                    profile_cache
-                },
+                cache_guard: own_cache.as_ref().map(|_| guard(&cache)),
+                cache: own_cache.unwrap_or(profile_cache),
                 profile_dir,
                 app_dir: dirs.profile.clone(),
                 team,
                 guard: Some(guard(&local)),
-                cache_guard: cache_usable.then(|| guard(&cache)),
                 roots: dirs.clone(),
                 root: Some(root.clone()),
                 machine: Arc::default(),
@@ -845,6 +855,35 @@ impl StateStore {
             .map(|machine| RawFile::private(machine.dir().join(name), self.guard.clone()))
     }
 
+    /// A plugin's folder in [`StateStore::machine`]'s folder (`machine/<iid>/plugins/<plugin>/`): "Remove data" sweeps
+    /// it with the rest of the plugin's data.
+    fn machine_plugin_dir(&self, id: &PluginId) -> Option<PathBuf> {
+        self.machine()
+            .map(|machine| machine.dir().join("plugins").join(id.as_str()))
+    }
+
+    /// A typed file in the plugin's folder of [`StateStore::machine`]'s folder, guarded like the other state files.
+    #[must_use]
+    pub fn machine_plugin_file<T: StateData>(
+        &self,
+        id: &PluginId,
+        name: &str,
+    ) -> Option<StateFile<T>> {
+        self.machine_plugin_dir(id).map(|dir| StateFile {
+            path: dir.join(name),
+            guard: self.guard.clone(),
+            read: AtomicU8::new(unread::NEVER),
+            _data: PhantomData,
+        })
+    }
+
+    /// A raw file in the plugin's folder of [`StateStore::machine`]'s folder.
+    #[must_use]
+    pub fn machine_plugin_raw_file(&self, id: &PluginId, name: &str) -> Option<RawFile> {
+        self.machine_plugin_dir(id)
+            .map(|dir| RawFile::private(dir.join(name), self.guard.clone()))
+    }
+
     /// A typed file in the install folder (this computer's, for every project); `None`: no usable install key.
     #[must_use]
     pub fn install_file<T: StateData>(&self, name: &str) -> Option<StateFile<T>> {
@@ -872,6 +911,8 @@ impl StateStore {
         &self.dir
     }
 
+    /// Where rebuildable files go: this install's own folder of `.permark/cache/` when the folder's row says so, else
+    /// the app cache (`<cache>/projects/<id>`; the app cache itself for the app-wide store).
     #[must_use]
     pub fn cache_dir(&self) -> &Path {
         &self.cache
@@ -959,13 +1000,22 @@ impl StateStore {
         }
     }
 
-    /// File in a cache folder (rebuildable).
+    /// File in the cache folder ([`StateStore::cache_dir`]): rebuildable, so a file it cannot use is replaced, never
+    /// kept ([`CacheFile`]).
     #[must_use]
-    pub fn cache_file<T: StateData>(&self, name: &str) -> StateFile<T> {
-        StateFile {
+    pub fn cache_file<T: StateData>(&self, name: &str) -> CacheFile<T> {
+        // earlier versions kept a project's caches straight in `.permark/cache/`, under the same first name
+        let earlier =
+            self.cache_guard
+                .as_ref()
+                .and_then(|guard| match Path::new(name).components().next() {
+                    Some(std::path::Component::Normal(first)) => Some(guard.state.join(first)),
+                    _ => None,
+                });
+        CacheFile {
             path: self.cache.join(name),
             guard: self.cache_guard.clone(),
-            read: AtomicU8::new(unread::NEVER),
+            earlier,
             _data: PhantomData,
         }
     }
@@ -1011,17 +1061,82 @@ impl StateStore {
         RawFile::private(self.plugin_dir(id).join(name), self.guard.clone())
     }
 
-    /// Deletes a plugin's namespace (state + cache). Missing = done. A link in its place is removed as a link
-    /// (never followed).
+    /// Deletes a plugin's namespace (state, this install's own folder, cache). Missing = done. A link in its place is
+    /// removed as a link (never followed). Other installs' folders stay as they are.
     ///
     /// # Errors
     /// IO failure.
     pub fn remove_plugin_data(&self, id: &PluginId) -> Result<(), StateError> {
+        let own = self.machine_plugin_dir(id);
         for dir in [
             self.plugin_dir(id),
             self.cache.join("plugins").join(id.as_str()),
-        ] {
+        ]
+        .into_iter()
+        .chain(own)
+        {
             remove_tree(&dir).map_err(|e| StateError::io(&dir, e))?;
+        }
+        Ok(())
+    }
+}
+
+/// A rebuildable file in a cache folder ([`StateStore::cache_file`]). A file it cannot use (corrupt, a newer
+/// version's, larger than its cap, a link in its place, unreadable) is no cache: left out of the load and replaced by
+/// the next save, never set aside or kept from being written as the person's data is ([`StateFile`]).
+#[derive(Debug, Clone)]
+pub struct CacheFile<T> {
+    path: PathBuf,
+    guard: Option<Guard>,
+    /// What earlier versions kept under the same first name straight in `.permark/cache/` (before each install had
+    /// its own folder there): removed by this install's first save of the file.
+    earlier: Option<PathBuf>,
+    _data: PhantomData<fn() -> T>,
+}
+
+impl<T: StateData> CacheFile<T> {
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// The cached data; `None`: no file, or none it can use. Only a plain file of at most [`StateData::MAX_BYTES`],
+    /// never through a link in `.permark/`.
+    #[must_use]
+    pub fn load(&self) -> Option<T> {
+        let zone = self
+            .guard
+            .as_ref()
+            .map_or(Zone::Anywhere, |guard| Zone::Inside(&guard.permark));
+        let bytes = crate::fsx::read_regular(&self.path, T::MAX_BYTES, zone).ok()?;
+        match StateFile::<T>::parse(&bytes) {
+            Parsed::Data(data) => Some(data),
+            Parsed::Newer | Parsed::Bad => None,
+        }
+    }
+
+    /// Atomic write of `{ version, data }` over whatever is there; in `.permark/` a link in its place is removed
+    /// first (never followed: a file cannot be renamed over a folder link on Windows).
+    ///
+    /// # Errors
+    /// Encode | IO failure, a link in place of `.permark/` or of a folder on the way.
+    pub fn save(&self, data: &T) -> Result<(), StateError> {
+        let fail = |e| StateError::io(&self.path, e);
+        let bytes = envelope(&self.path, data)?;
+        if let (Some(guard), Some(dir)) = (&self.guard, self.path.parent()) {
+            private::prepare(&guard.permark, &guard.state, dir).map_err(fail)?;
+        }
+        let there = std::fs::symlink_metadata(&self.path);
+        let first = matches!(&there, Err(e) if e.kind() == io::ErrorKind::NotFound);
+        if self.guard.is_some() && there.is_ok_and(|meta| crate::fsx::is_link(&meta)) {
+            remove_tree(&self.path).map_err(fail)?;
+        }
+        write_atomic(&self.path, &bytes).map_err(fail)?;
+        if first {
+            if let Some(earlier) = &self.earlier {
+                // best effort: a leftover is only a stale cache an earlier version may read again
+                let _ = remove_tree(earlier);
+            }
         }
         Ok(())
     }
@@ -1044,7 +1159,8 @@ fn remove_tree(path: &Path) -> io::Result<()> {
     }
 }
 
-/// Deletes a plugin's data for the app + every project the profile knows + the given open roots.
+/// Deletes a plugin's data for the app + every project the profile knows (this install's own folder there too) + the
+/// given open roots. Other installs' folders stay as they are.
 ///
 /// # Errors
 /// First IO failure (others still attempted).
@@ -1060,10 +1176,21 @@ pub fn remove_plugin_data_everywhere(
         }
     };
     keep(StateStore::app(dirs).remove_plugin_data(id));
+    let machine =
+        seal::install(&dirs.install).map(|install| Path::new(Machine::DIR).join(install.iid()));
     for base in [&dirs.profile, &dirs.cache] {
-        if let Ok(entries) = std::fs::read_dir(base.join("projects")) {
-            for project in entries.flatten() {
-                let dir = project.path().join("plugins").join(id.as_str());
+        let Ok(entries) = std::fs::read_dir(base.join("projects")) else {
+            continue;
+        };
+        for project in entries.flatten() {
+            let project = project.path();
+            // this install's own folder is in the state folder only (the app cache is this computer's already)
+            let own = machine
+                .as_ref()
+                .filter(|_| base == &dirs.profile)
+                .map(|machine| project.join(machine));
+            for home in std::iter::once(project.clone()).chain(own) {
+                let dir = home.join("plugins").join(id.as_str());
                 keep(remove_tree(&dir).map_err(|e| StateError::io(&dir, e)));
             }
         }

@@ -347,6 +347,77 @@ fn the_first_open_settles_where_the_data_already_is() {
     }
 }
 
+/// Caches sit in this computer's own folder of the project's `.permark/cache/` only as the folder's row says (the
+/// data in the project, on a local disk, in a `.permark/` no cloud service keeps as a placeholder) and while this
+/// install has its key and `cache/` is a real folder; else in the app cache under the project's id, as before. A folder
+/// without a row keeps its caches in the app cache.
+#[test]
+fn caches_sit_in_this_computers_folder_of_the_project_only_as_the_row_says() {
+    type Make = fn(&Fx);
+    // (case, layout, earlier versions' link test, caches in the project)
+    let cases: Vec<(&str, Make, Link, bool)> = vec![
+        (
+            "data in the project",
+            Fx::team_folder,
+            crate::tree::is_link_meta,
+            true,
+        ),
+        (
+            "data in the profile",
+            |f| {
+                f.profile_state();
+                f.team_folder();
+            },
+            crate::tree::is_link_meta,
+            false,
+        ),
+        ("cloud folder", Fx::team_folder, |_| true, false),
+        (
+            "a file in place of cache",
+            |f| {
+                f.team_folder();
+                fs::write(f.permark().join("cache"), "x").unwrap();
+            },
+            crate::tree::is_link_meta,
+            false,
+        ),
+        (
+            "no usable install key",
+            |f| {
+                f.team_folder();
+                fs::write(&f.dirs.install, "x").unwrap();
+            },
+            crate::tree::is_link_meta,
+            false,
+        ),
+    ];
+    for (name, make, legacy, in_project) in cases {
+        let f = fx();
+        make(&f);
+        let app = f
+            .dirs
+            .cache
+            .join("projects")
+            .join(ProjectId::of(&f.root()).as_str());
+        assert_eq!(f.store().cache_dir(), app, "{name}: no row yet");
+        let store = settle_as(&f.dirs, &f.root(), legacy);
+        let want = if in_project {
+            f.permark()
+                .join("cache")
+                .join(store.machine().unwrap().iid())
+        } else {
+            app.clone()
+        };
+        assert_eq!(store.cache_dir(), want, "{name}");
+        assert_eq!(
+            store.cache_file::<Rows>("c.json").path(),
+            want.join("c.json"),
+            "{name}"
+        );
+        assert_eq!(f.store().cache_dir(), want, "{name}: every reader agrees");
+    }
+}
+
 /// A `.permark/` that arrives after the first open (a pull, a sync tool) leaves the data in the profile: opened again,
 /// the store still answers the profile, and the team files stay the only files in `.permark/`.
 #[test]
@@ -425,11 +496,11 @@ fn rows(list: Vec<Row>) -> Rows {
     }
 }
 
-const PROFILE: New = New {
+const PROFILE: Placement = Placement {
     place: Profile,
     cache: CachePlace::App,
 };
-const PROJECT: New = New {
+const PROJECT: Placement = Placement {
     place: Project,
     cache: CachePlace::Project,
 };
