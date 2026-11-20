@@ -499,6 +499,84 @@ describe("loose files", () => {
     expect(sent?.[1]).toEqual({ path, seen: row.hash });
   });
 
+  it("a file a crash left text for opens without an editor, and Keep mine writes the text over the version shown", async () => {
+    const { store, api, editing } = await setup();
+    const path = api.probe.plugins.notes.loose({
+      name: "draft.md",
+      folder: "C:/Downloads",
+      text: "# On disk\n",
+      state: "unsaved",
+    });
+    await store.refresh();
+    await store.select(path);
+    await settle();
+    // the bar asks first: typing now would replace the text the crash left
+    expect(editing.path).toBeNull();
+    const row = store.entry;
+    if (row === null) throw new Error("no row");
+    const call = vi.spyOn(api, "pluginCall");
+    await store.keepMine(path);
+    await settle();
+    const sent = call.mock.calls.find(([method]) => method === "notes.keepMine");
+    expect(row.hash).not.toBeNull();
+    expect(sent?.[1]).toEqual({ path, seen: row.hash });
+    expect(store.entry?.state).toBe("clean");
+    // the text is written: the file is the person's to edit again
+    expect(editing.path).toBe(path);
+  });
+
+  it("Keep mine on the file shown lets its editor go when the editor has no conflict of its own", async () => {
+    const { store, api, editing, documents } = await setup();
+    const path = api.probe.plugins.notes.loose({
+      name: "draft.md",
+      folder: "C:/Downloads",
+      text: "# On disk\n",
+      state: "unsaved",
+    });
+    await store.refresh();
+    await store.select(path);
+    await settle();
+    // the person chose Edit anyway (the header's mode switch)
+    await editing.enter("source", path, "markdown", documents.savePolicy);
+    await settle();
+    expect(editing.path).toBe(path);
+    expect(editing.state.s).not.toBe("conflict");
+    const row = store.entry;
+    const call = vi.spyOn(api, "pluginCall");
+    await store.keepMine(path);
+    await settle();
+    const sent = call.mock.calls.find(([method]) => method === "notes.keepMine");
+    expect(sent?.[1]).toEqual({ path, seen: row?.hash });
+    expect(store.entry?.state).toBe("clean");
+  });
+
+  it("an editor's journal never replaces the text a crash left for a file before the person chooses", async () => {
+    const bind = vi.spyOn(EditingSession.prototype, "bindJournal");
+    const { store, api } = await setup();
+    const journal = bind.mock.calls.map(([j]) => j).findLast((j) => j !== null);
+    if (journal === undefined || journal === null) throw new Error("no journal bound");
+    const crashed = api.probe.plugins.notes.loose({
+      name: "draft.md",
+      folder: "C:/Downloads",
+      text: "# On disk\n",
+      state: "unsaved",
+    });
+    api.probe.plugins.notes.journal.set(crashed, "text the crash left");
+    await store.openFiles(["C:/Downloads/sent.md"]);
+    const fresh = store.current ?? "";
+    journal(crashed, "h", "typed over it");
+    journal(crashed, "h", null);
+    journal(fresh, "h", "typed");
+    await settle();
+    expect(api.probe.plugins.notes.journal.get(crashed)).toBe("text the crash left");
+    expect(api.probe.plugins.notes.journal.get(fresh)).toBe("typed");
+    // once the person chose, the file's editor keeps its typing again
+    await store.reloadFile(crashed);
+    journal(crashed, "h", "typed after");
+    await settle();
+    expect(api.probe.plugins.notes.journal.get(crashed)).toBe("typed after");
+  });
+
   it("makes a note of the typed text", async () => {
     const { store, api } = await setup();
     await store.openFiles(["C:/Downloads/sent.md"]);
