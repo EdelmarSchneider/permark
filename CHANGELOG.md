@@ -30,6 +30,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - After switching folders, a late answer for the previous folder could reset the Explorer list; it is now ignored. <!-- f: explorer -->
 - Turning the agent connection on or off while it was also being changed elsewhere could lose one of the two choices. <!-- f: agent-connection -->
 - **Ctrl+R**, **Ctrl+Shift+R** and **Ctrl+P** no longer reload or print the app window when no command uses them. <!-- f: shell -->
+- Right-clicking outside text no longer opens the web view's own menu, whose **Reload** could drop unsaved changes. **Ctrl+F**, **F3**, **Shift+F3** and **F7** no longer open the web view's find bar or caret browsing prompt when no command uses them. <!-- f: shell -->
+- On macOS, **Quit PerMark** (**Cmd+Q**) now asks about unsaved changes, as closing a window does. <!-- f: shell -->
 - A region could refuse a new group of panels when one of its groups held only closed panels. <!-- f: side-panels -->
 - In Edit, the caret now starts where the document opened instead of at the top, **Ctrl+Home**, **Ctrl+End** and **Tab** move past blocks kept as written, and a link to a file line (`file:3`) opens Source and Edit at that line. <!-- f: edit-mode -->
 - **Ctrl+A** and **Ctrl+Z** in the Explorer now work with non-Latin keyboard layouts. <!-- f: explorer -->
