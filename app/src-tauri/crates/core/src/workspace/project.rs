@@ -796,10 +796,11 @@ impl ProjectCore {
     /// the windows.
     ///
     /// # Errors
-    /// The profile's row file cannot be written.
-    pub fn keep_data(&self, env: &CoreEnv) -> Result<(), crate::IpcError> {
-        crate::state::location::keep(&env.dirs, self.vault.main())?;
+    /// The store reads the folder's own `.permark/local/` (a conflict, nothing written); the profile's row file cannot
+    /// be written.
+    pub fn keep_data(&self) -> Result<(), crate::IpcError> {
         let store = self.store();
+        crate::state::location::keep(&store)?;
         *self
             .data_offer
             .write()

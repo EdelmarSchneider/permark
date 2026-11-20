@@ -48,6 +48,7 @@ use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
     PluginScope, RpcRegistration, Running,
 };
+use permark_core::state::StateLocation;
 use permark_core::{ErrorKind, IpcError};
 use serde::Deserialize;
 
@@ -214,10 +215,11 @@ fn saved(result: Result<(), permark_core::state::StateError>) -> Result<(), IpcE
 }
 
 /// Keeps the context file in step with the person's choice: removed while the switch or the `context` group is off
-/// (a script reads it with no check of its own); `write`: the current context written while both are on.
+/// (a script reads it with no check of its own); `write`: the current context written while both are on and the
+/// folder keeps the person's private state in its `.permark/local/`.
 fn sync_context_file(hub: &Hub, write: bool) {
     let store = hub.tools.store();
-    // in the team folder's `local/` (where scripts read it) whatever place holds the private state
+    // in the team folder's `local/` (where scripts read it): removed from there whatever place holds the private state
     let Some(file) = store.local_raw_file(CONTEXT_FILE) else {
         return;
     };
@@ -225,7 +227,8 @@ fn sync_context_file(hub: &Hub, write: bool) {
         let _ = file.remove();
         return;
     }
-    if !write {
+    // data kept on this computer: nothing of it goes into a folder teammates | a sync tool share, no `local/` made there
+    if !write || store.location() != StateLocation::Project {
         return;
     }
     // never waits: before the projects inside are known the file is left as it is

@@ -1178,15 +1178,19 @@ impl WorkspaceRegistry {
     /// on the folder works its offer out again ([`ProjectCore::keep_data`]); no core, only the row is written.
     ///
     /// # Errors
-    /// The profile's row file cannot be written.
+    /// The folder's data is in its own `.permark/local/` (a conflict, nothing written); the profile's row file cannot be
+    /// written.
     pub fn keep_data(&self, root: &crate::paths::Root) -> Result<(), IpcError> {
         match self
             .cores()
             .iter()
             .find(|core| core.root().key() == root.key())
         {
-            Some(core) => core.keep_data(&self.env)?,
-            None => crate::state::location::keep(&self.env.dirs, root)?,
+            Some(core) => core.keep_data()?,
+            None => crate::state::location::keep(&crate::state::StateStore::for_project(
+                &self.env.dirs,
+                root,
+            ))?,
         }
         self.refresh();
         Ok(())

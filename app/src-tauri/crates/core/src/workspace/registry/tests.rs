@@ -1729,6 +1729,33 @@ fn the_view_carries_the_data_offer_worked_out_when_the_folder_opens() {
     assert!(core.store().dir().join("session.json").is_file());
 }
 
+/// Keep of a folder whose data is in the project (open in a window, or closed) is refused as a conflict and writes
+/// nothing: the folder's row stays byte for byte.
+#[test]
+fn keep_of_a_folder_whose_data_is_in_the_project_is_refused() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, &root).unwrap();
+    let row = env
+        .dirs
+        .profile
+        .join("projects")
+        .join(crate::state::ProjectId::of(&root).as_str())
+        .join(crate::state::location::FILE);
+    let bytes = std::fs::read(&row).unwrap();
+    let refused = |result: Result<(), IpcError>| {
+        assert_eq!(result.map_err(|e| e.kind), Err(crate::ErrorKind::Conflict));
+        assert_eq!(std::fs::read(&row).unwrap(), bytes);
+    };
+    refused(f.registry.keep_data(&root));
+    let (core, _) = open_project(&f, dir.path());
+    assert_eq!(core.state_location(), StateLocation::Project);
+    refused(f.registry.keep_data(core.root()));
+    assert_eq!(core.state_location(), StateLocation::Project);
+}
+
 #[test]
 fn a_second_reload_with_nothing_new_still_leaves_the_project_working() {
     let f = fx();

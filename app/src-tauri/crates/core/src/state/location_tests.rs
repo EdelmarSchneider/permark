@@ -1051,7 +1051,7 @@ fn keep_records_the_profile_as_chosen_and_writes_nothing_into_the_folder() {
     f.team_folder();
     let folder = listing(f.project.path());
     assert_eq!(offer(&f.store()), DataOffer::Ask);
-    keep(&f.dirs, &f.root()).unwrap();
+    keep(&f.store()).unwrap();
     let rows = f.rows();
     assert_eq!(rows.len(), 1);
     assert_eq!((rows[0].place, rows[0].decided), (Profile, true));
@@ -1062,7 +1062,7 @@ fn keep_records_the_profile_as_chosen_and_writes_nothing_into_the_folder() {
     assert_eq!(offer(&f.store()), DataOffer::Movable);
     assert_eq!(listing(f.project.path()), folder);
     let row = f.row_bytes();
-    keep(&f.dirs, &f.root()).unwrap();
+    keep(&f.store()).unwrap();
     assert_eq!(f.row_bytes(), row);
 
     let f = fx();
@@ -1072,7 +1072,7 @@ fn keep_records_the_profile_as_chosen_and_writes_nothing_into_the_folder() {
     fs::remove_dir_all(f.permark()).unwrap();
     let fallback = answer(&f.store());
     assert_eq!(offer(&f.store()), DataOffer::Missing);
-    keep(&f.dirs, &f.root()).unwrap();
+    keep(&f.store()).unwrap();
     assert_eq!(answer(&f.store()), fallback);
     assert_eq!(offer(&f.store()), DataOffer::None);
     let rows = f.rows();
@@ -1085,4 +1085,25 @@ fn keep_records_the_profile_as_chosen_and_writes_nothing_into_the_folder() {
         DataOffer::None,
         "local holds data, the profile none"
     );
+}
+
+/// Keep only names the profile for a folder whose store reads the profile: for one whose data is in the project it is
+/// refused and the row stays byte for byte (else the next open would show the older profile copy while the window
+/// writes into the project).
+#[test]
+fn keep_is_refused_while_the_data_is_in_the_project() {
+    let f = fx();
+    f.team_folder();
+    f.local_state();
+    assert_eq!(f.settle().location(), Project);
+    let row = f.row_bytes();
+    assert!(row.is_some());
+    let folder = listing(f.project.path());
+    assert!(matches!(
+        keep(&f.store()),
+        Err(crate::state::StateError::DataInProject { .. })
+    ));
+    assert_eq!(f.row_bytes(), row);
+    assert_eq!(listing(f.project.path()), folder);
+    assert_eq!(f.store().location(), Project);
 }

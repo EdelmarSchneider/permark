@@ -325,6 +325,113 @@ fn remove_data_sweeps_this_computers_own_plugin_folders() {
     assert!(!path.exists());
 }
 
+/// `base` joined with each `/`-separated name of `rel`.
+fn rel_path(base: &Path, rel: &str) -> PathBuf {
+    rel.split('/')
+        .fold(base.to_path_buf(), |path, name| path.join(name))
+}
+
+/// A sweep of "Remove data" meeting a link: `link` (a template below `base`, `{iid}` = this install's id) points to a
+/// folder outside holding what the sweep of `swept` would reach through it.
+fn sweep_through_link(
+    name: &str,
+    base: &Path,
+    iid: &str,
+    link: &str,
+    swept: &[String],
+    sweep: impl Fn(),
+) {
+    let link = link.replace("{iid}", iid);
+    let full = swept
+        .iter()
+        .find(|path| **path == link || path.starts_with(&format!("{link}/")))
+        .unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let last = full.len() == link.len();
+    let theirs = if last {
+        outside.path().join("x")
+    } else {
+        rel_path(outside.path(), &full[link.len() + 1..]).join("x")
+    };
+    put(&theirs, b"theirs");
+    let at = rel_path(base, &link);
+    fs::create_dir_all(at.parent().unwrap()).unwrap();
+    if !crate::tree::tests::link_out(&at, outside.path()) {
+        eprintln!("skipped {name}: no folder links here");
+        return;
+    }
+    sweep();
+    assert_eq!(fs::read(&theirs).unwrap(), b"theirs", "{name}: target kept");
+    // a link on the way stays (nothing removed below it); the plugin's own folder as a link goes, never followed
+    assert_eq!(
+        fs::symlink_metadata(&at).is_ok(),
+        !last,
+        "{name}: the link itself"
+    );
+}
+
+/// "Remove data" never deletes through a link | junction on the way down from `.permark/` (a repository may ship
+/// `local/plugins`, `local/machine`, this install's folder or its cache folder as one pointing elsewhere): the folder
+/// it points to keeps what it holds and nothing below the link is removed. The plugin's own folder as a link is
+/// removed as a link, never followed.
+#[test]
+fn remove_data_never_deletes_through_a_link_in_the_project() {
+    let git = PluginId::of("git");
+    for link in [
+        "local/plugins",
+        "local/machine",
+        "local/machine/{iid}",
+        "local/machine/{iid}/plugins",
+        "cache/{iid}",
+        "local/plugins/git",
+    ] {
+        let f = fx();
+        let store = init_project(&f.dirs, &f.root()).unwrap();
+        let iid = store.machine().unwrap().iid().to_owned();
+        assert_eq!(store.cache_dir(), f.permark().join("cache").join(&iid));
+        let swept = [
+            "local/plugins/git".to_owned(),
+            format!("local/machine/{iid}/plugins/git"),
+            format!("cache/{iid}/plugins/git"),
+        ];
+        sweep_through_link(link, &f.permark(), &iid, link, &swept, || {
+            store.remove_plugin_data(&git).unwrap();
+            remove_plugin_data_everywhere(&f.dirs, &git, &[f.root()]).unwrap();
+        });
+    }
+}
+
+/// The same from a folder's profile folder down (its state and its cache, in a store and in the sweep of the folders
+/// no window has open): a link on the way leaves its target as it is.
+#[test]
+fn remove_data_never_deletes_through_a_link_in_the_profile() {
+    let git = PluginId::of("git");
+    for (name, link, in_cache) in [
+        ("plugins", "plugins", false),
+        ("machine", "machine", false),
+        ("own machine folder", "machine/{iid}", false),
+        ("cache plugins", "plugins", true),
+    ] {
+        let f = fx();
+        let store = f.store();
+        assert_eq!(store.location(), StateLocation::Profile);
+        let iid = store.machine().unwrap().iid().to_owned();
+        let base = if in_cache {
+            store.cache_dir().to_path_buf()
+        } else {
+            store.dir().to_path_buf()
+        };
+        let swept = [
+            "plugins/git".to_owned(),
+            format!("machine/{iid}/plugins/git"),
+        ];
+        sweep_through_link(name, &base, &iid, link, &swept, || {
+            store.remove_plugin_data(&git).unwrap();
+            remove_plugin_data_everywhere(&f.dirs, &git, &[]).unwrap();
+        });
+    }
+}
+
 #[test]
 fn init_project_creates_files_keeps_existing_and_carries_state() {
     let f = fx();
@@ -753,6 +860,74 @@ fn set_sharing_needs_a_real_team_folder_and_file() {
     } else {
         eprintln!("skipped the file link: cannot be made here");
     }
+}
+
+/// A link to nothing in place of `.permark/.gitignore` (a file symlink, or a folder link | junction whose target is
+/// gone) is someone else's file: refused, nothing made at the target, the link left as it is.
+#[test]
+fn set_sharing_refuses_a_dangling_link_in_place_of_the_file() {
+    // (kind, made: `false` -> cannot be made here, skipped)
+    type Make = fn(&Path, &Path) -> bool;
+    let kinds: [(&str, Make); 2] = [
+        ("file symlink", |link, target| file_link(link, target)),
+        ("folder link", |link, target| {
+            fs::create_dir(target).is_ok()
+                && crate::tree::tests::link_out(link, target)
+                && fs::remove_dir(target).is_ok()
+        }),
+    ];
+    for (name, make) in kinds {
+        let f = fx();
+        init_project(&f.dirs, &f.root()).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("gone");
+        let ignore = f.permark().join(".gitignore");
+        fs::remove_file(&ignore).unwrap();
+        if !make(&ignore, &target) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        assert_eq!(sharing(&f.root()), Sharing::Custom, "{name}");
+        for to in [Sharing::Private, Sharing::Shared] {
+            assert!(
+                matches!(set_sharing(&f.root(), to), Err(StateError::Foreign { .. })),
+                "{name}: {to:?}"
+            );
+        }
+        assert!(
+            fs::symlink_metadata(&target).is_err(),
+            "{name}: nothing made"
+        );
+        assert!(
+            fs::symlink_metadata(&ignore).is_ok_and(|m| crate::fsx::is_link(&m)),
+            "{name}: the link stays"
+        );
+    }
+}
+
+/// A hard link in place of `.permark/.gitignore` is a plain file to every reader (nothing tells it from one), so it
+/// reads as the form its bytes hold and the sharing choice goes ahead: the new form is written by an atomic replace of
+/// the name, which takes the name off the shared file, never writing into it; the other name keeps its bytes.
+#[test]
+fn set_sharing_over_a_hard_link_replaces_the_name_and_leaves_the_other_one() {
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let other = outside.path().join("ignore");
+    fs::write(&other, SHARED_IGNORE).unwrap();
+    let ignore = f.permark().join(".gitignore");
+    fs::remove_file(&ignore).unwrap();
+    if fs::hard_link(&other, &ignore).is_err() {
+        eprintln!("skipped: no hard link across these folders");
+        return;
+    }
+    assert_eq!(sharing(&f.root()), Sharing::Shared);
+    assert_eq!(
+        set_sharing(&f.root(), Sharing::Private).unwrap(),
+        Sharing::Private
+    );
+    assert_eq!(fs::read(&ignore).unwrap(), PRIVATE_IGNORE.as_bytes());
+    assert_eq!(fs::read(&other).unwrap(), SHARED_IGNORE.as_bytes());
 }
 
 #[test]
@@ -1522,7 +1697,18 @@ fn uninit_project_never_carries_profile_only_files_back() {
     for name in PROFILE_ONLY.iter().chain(&SHARED_FILES) {
         fs::write(local.join(name), b"from the project").unwrap();
     }
+    // every such file of the profile as it was (the row aside: undo writes it itself)
+    let snapshot = || -> Vec<(&str, Option<Vec<u8>>)> {
+        PROFILE_ONLY
+            .iter()
+            .chain(&SHARED_FILES)
+            .filter(|name| **name != location::FILE)
+            .map(|name| (*name, fs::read(profile.join(name)).ok()))
+            .collect()
+    };
+    let kept = snapshot();
     assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+    assert_eq!(snapshot(), kept);
     assert_eq!(
         fs::read(profile.join("agent.json")).unwrap(),
         b"person's choice"
@@ -2579,6 +2765,85 @@ fn init_project_leaves_profile_pinned_plugin_folders_in_the_profile() {
             .load(),
         Loaded::Found(sample(1))
     );
+}
+
+/// Initialize into a `local/` that already holds a `machine/` folder (another computer's, from a sync partner, or an
+/// empty one a repository ships): this install's own folder in the profile (its undo journal, kept copies) is carried
+/// in beside the others, never over a folder of the same name; another computer's folder stays byte for byte, and a
+/// link | junction inside `local/` is left out of the copy, its target untouched, no temp folder left behind.
+#[test]
+fn initialize_carries_this_computers_folder_beside_the_ones_local_holds() {
+    let f = fx();
+    let before = f.store();
+    before
+        .file::<Sample>("session.json")
+        .save(&sample(5))
+        .unwrap();
+    let iid = before.machine().unwrap().iid().to_owned();
+    before
+        .machine_file::<Sample>("journal.json")
+        .unwrap()
+        .save(&sample(7))
+        .unwrap();
+    let local = f.permark().join("local");
+    let other = local.join("machine").join("0123456789abcdef");
+    put(&other.join("journal.json"), b"theirs");
+    let outside = tempfile::tempdir().unwrap();
+    put(&outside.path().join("x"), b"outside");
+    let escape = other.join("escape");
+    let linked = crate::tree::tests::link_out(&escape, outside.path());
+    let after = init_project(&f.dirs, &f.root()).unwrap();
+    assert_eq!(after.location(), StateLocation::Project);
+    assert_eq!(
+        after.machine().unwrap().dir(),
+        local.join("machine").join(&iid)
+    );
+    assert_eq!(
+        after.machine_file::<Sample>("journal.json").unwrap().load(),
+        Loaded::Found(sample(7))
+    );
+    assert_eq!(
+        after.file::<Sample>("session.json").load(),
+        Loaded::Found(sample(5))
+    );
+    assert_eq!(fs::read(other.join("journal.json")).unwrap(), b"theirs");
+    if linked {
+        assert!(
+            fs::symlink_metadata(&escape).is_err(),
+            "left out of the copy"
+        );
+    } else {
+        eprintln!("skipped the link: cannot be made here");
+    }
+    assert_eq!(entries_below(outside.path()), ["x"]);
+    assert_eq!(fs::read(outside.path().join("x")).unwrap(), b"outside");
+    let top: Vec<String> = entries_below(&f.permark())
+        .into_iter()
+        .filter(|e| !e.trim_end_matches('/').contains('/'))
+        .collect();
+    assert_eq!(top, [".gitignore", "cache/", "config.toml", "local/"]);
+    // a folder of this install already there is never written over (the profile's copy then stays the only one)
+    let f = fx();
+    let before = f.store();
+    before
+        .machine_file::<Sample>("journal.json")
+        .unwrap()
+        .save(&sample(7))
+        .unwrap();
+    before
+        .file::<Sample>("session.json")
+        .save(&sample(5))
+        .unwrap();
+    let iid = before.machine().unwrap().iid().to_owned();
+    let mine = f
+        .permark()
+        .join("local")
+        .join("machine")
+        .join(&iid)
+        .join("journal.json");
+    put(&mine, b"already here");
+    init_project(&f.dirs, &f.root()).unwrap();
+    assert_eq!(fs::read(&mine).unwrap(), b"already here");
 }
 
 /// Undo of an init never carries a profile-only plugin folder back from `local/` (one an earlier version copied

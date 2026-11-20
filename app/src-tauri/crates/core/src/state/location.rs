@@ -313,14 +313,23 @@ pub(super) fn record(
         .map(|_| ())
 }
 
-/// Records the profile as the place the person chose for the folder's data (Keep, also of the copy in use while the
-/// project's `local/` cannot be used): nothing is written into the folder, a `.permark/` arriving later never takes
-/// the data by itself, Move stays possible. Writes nothing when the row already says so.
+/// Records the profile as the place the person chose for the data of `store`'s folder (Keep, also of the copy in use
+/// while the project's `local/` cannot be used): nothing is written into the folder, a `.permark/` arriving later
+/// never takes the data by itself, Move stays possible. Writes nothing when the row already says so.
 ///
 /// # Errors
-/// The row file cannot be written (IO, a newer version's file).
-pub fn keep(dirs: &AppDirs, root: &Root) -> Result<(), super::StateError> {
-    record(dirs, root, StateLocation::Profile, true, false)
+/// The store reads the folder's own `local/` (or is the app-wide one): refused, nothing written, as the row would name
+/// the profile's older copy while the window writes into the folder ([`super::StateError::DataInProject`]); the row
+/// file cannot be written (IO, a newer version's file).
+pub fn keep(store: &StateStore) -> Result<(), super::StateError> {
+    match &store.root {
+        Some(root) if store.location == StateLocation::Profile => {
+            record(&store.roots, root, StateLocation::Profile, true, false)
+        }
+        _ => Err(super::StateError::DataInProject {
+            path: store.dir.display().to_string(),
+        }),
+    }
 }
 
 /// What the window of the folder `store` was made for offers about the place of the person's data, from the folder's
@@ -424,8 +433,8 @@ pub(super) fn profile_holds_data(dir: &Path) -> bool {
 }
 
 /// Whether the project's `local/` holds the person's data: anything but PerMark's own files there (its ignore file,
-/// this computer's folder, the agent context, profile-only files an earlier version copied). Unreadable: none (the
-/// profile's data is never hidden behind it).
+/// the computers' own folders in `machine/`, which Initialize joins this install's folder to, the agent context,
+/// profile-only files an earlier version copied). Unreadable: none (the profile's data is never hidden behind it).
 pub(super) fn local_holds_data(dir: &Path) -> bool {
     holds(dir, false, |name, _| {
         !(PROFILE_ONLY.contains(&name)

@@ -54,9 +54,10 @@ pub fn encode(store: &StateStore, mut context: Map<String, Value>) -> Option<Vec
 
 /// Removes a context file this install did not write for this folder; run when the project opens, before any plugin
 /// starts. Only in the team folder's `local/` ([`StateStore::local_raw_file`]), whatever place holds the private state:
-/// the agent connection writes it there and none in the profile, and a folder from elsewhere may bring one there. Left
-/// as it is when its token cannot be checked: no usable install key, or a read that failed for another reason than
-/// what stands there (the file held by another program). Best effort: a folder that cannot be written still opens.
+/// the agent connection writes it there (only while the private state is there, none in the profile), and a folder from
+/// elsewhere may bring one there. Left as it is when its token cannot be checked: no usable install key, or a read that
+/// failed for another reason than what stands there (the file held by another program). Best effort: a folder that
+/// cannot be written still opens.
 pub fn remove_foreign(store: &StateStore) {
     let Some(file) = store.local_raw_file(FILE) else {
         return;

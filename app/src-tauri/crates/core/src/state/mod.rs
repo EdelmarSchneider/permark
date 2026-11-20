@@ -245,6 +245,10 @@ pub enum StateError {
     /// folder) or changed meanwhile: left as it is.
     #[error("{path} holds what someone else wrote")]
     Foreign { path: String },
+    /// The folder's data is kept in its own `.permark/local/` (`path`), not in the profile: keeping it on this computer
+    /// would name the profile's older copy while the window writes into the folder.
+    #[error("the data of {path} is kept in the folder")]
+    DataInProject { path: String },
 }
 
 impl StateError {
@@ -266,7 +270,9 @@ impl From<StateError> for IpcError {
             StateError::BothHoldData { path } => IpcError::new(ErrorKind::Conflict)
                 .subject(path)
                 .detail(location::BOTH_HOLD_DATA),
-            StateError::Foreign { path } => IpcError::new(ErrorKind::Conflict).subject(path),
+            StateError::Foreign { path } | StateError::DataInProject { path } => {
+                IpcError::new(ErrorKind::Conflict).subject(path)
+            }
         }
     }
 }
@@ -1000,8 +1006,9 @@ impl StateStore {
     }
 
     /// A raw file in the project's `.permark/local/` whatever place holds the private state: for a file programs read
-    /// at that path (the agent context), and one a folder from elsewhere may bring there. Where the state is in
-    /// `local/`, the same file as [`StateStore::raw_file`]. `None`: no team folder, or `local/` a link | file.
+    /// at that path (the agent context: removed from there whatever the place, written only while the state is there),
+    /// and one a folder from elsewhere may bring there. Where the state is in `local/`, the same file as
+    /// [`StateStore::raw_file`]. `None`: no team folder, or `local/` a link | file.
     #[must_use]
     pub fn local_raw_file(&self, name: &str) -> Option<RawFile> {
         let permark = self.team.as_ref()?;
@@ -1127,20 +1134,33 @@ impl StateStore {
     }
 
     /// Deletes a plugin's namespace (state, this install's own folder, cache). Missing = done. A link in its place is
-    /// removed as a link (never followed). Other installs' folders stay as they are.
+    /// removed as a link (never followed). Other installs' folders stay as they are. A project's folders are walked
+    /// down from the folder holding them (`.permark/`, else the project's profile | cache folder): a link | junction |
+    /// file on the way leaves the folder as it is ([`remove_below`]).
     ///
     /// # Errors
     /// IO failure.
     pub fn remove_plugin_data(&self, id: &PluginId) -> Result<(), StateError> {
-        let own = self.machine_plugin_dir(id);
-        for dir in [
-            self.plugin_dir(id),
-            self.cache.join("plugins").join(id.as_str()),
+        // the app-wide store's folders are the profile's and the cache's own, which the person may link elsewhere
+        let project = self.root.is_some();
+        let zone = |guard: Option<&Guard>, dir: &Path| {
+            project.then(|| guard.map_or_else(|| dir.to_path_buf(), |guard| guard.permark.clone()))
+        };
+        let state = zone(self.guard.as_ref(), &self.dir);
+        let cache = zone(self.cache_guard.as_ref(), &self.cache);
+        let own = self.machine_plugin_dir(id).map(|dir| (state.clone(), dir));
+        for (zone, dir) in [
+            (state.clone(), self.plugin_dir(id)),
+            (cache, self.cache.join("plugins").join(id.as_str())),
         ]
         .into_iter()
         .chain(own)
         {
-            remove_tree(&dir).map_err(|e| StateError::io(&dir, e))?;
+            match &zone {
+                Some(zone) => remove_below(zone, &dir),
+                None => remove_tree(&dir),
+            }
+            .map_err(|e| StateError::io(&dir, e))?;
         }
         Ok(())
     }
@@ -1325,8 +1345,29 @@ fn remove_tree(path: &Path) -> io::Result<()> {
     }
 }
 
+/// [`remove_tree`] of `dir` below `zone`, only while no name from `zone` down to `dir` is a link | junction | file,
+/// each looked at top-down ([`crate::fsx::symlink_metadata_below`]): the system resolves the path given to
+/// `remove_dir_all`, so a link on the way (a repository may ship one in `.permark/`) would have it delete wherever the
+/// link points. Such a path removes nothing, nor does a missing one; `dir` itself as a link goes as a link.
+fn remove_below(zone: &Path, dir: &Path) -> io::Result<()> {
+    match crate::fsx::symlink_metadata_below(zone, dir) {
+        Ok(_) => remove_tree(dir),
+        // a link on the way | outside `zone`, nothing there, a file on the way
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::InvalidData | io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
+}
+
 /// Deletes a plugin's data for the app + every project the profile knows (this install's own folder there too) + the
-/// given open roots. Other installs' folders stay as they are.
+/// given open roots. Other installs' folders stay as they are. A known project's folders are walked down from its own
+/// folder in the profile | cache, never through a link ([`remove_below`]).
 ///
 /// # Errors
 /// First IO failure (others still attempted).
@@ -1357,7 +1398,7 @@ pub fn remove_plugin_data_everywhere(
                 .map(|machine| project.join(machine));
             for home in std::iter::once(project.clone()).chain(own) {
                 let dir = home.join("plugins").join(id.as_str());
-                keep(remove_tree(&dir).map_err(|e| StateError::io(&dir, e)));
+                keep(remove_below(&project, &dir).map_err(|e| StateError::io(&dir, e)));
             }
         }
     }
@@ -1438,9 +1479,10 @@ fn make_permark(permark: &Path) -> Result<(), StateError> {
 }
 
 /// Carries the profile folder `from` into the project's `local/` all or nothing: the new `local/` (what it holds, then
-/// what the profile adds, never over an entry it has) is built under a hidden name in `.permark/` and renamed into
-/// place when whole; the earlier `local/` is kept aside until `commit` (the row) is written. A failure removes what
-/// this call made and puts the earlier `local/` back: no half copy is ever taken for the person's data.
+/// what the profile adds, never over an entry it has; each install's folder its `machine/` lacks joins it) is built
+/// under a hidden name in `.permark/` and renamed into place when whole; the earlier `local/` is kept aside until
+/// `commit` (the row) is written. A failure removes what this call made and puts the earlier `local/` back: no half
+/// copy is ever taken for the person's data.
 fn carry_in(
     from: &Path,
     permark: &Path,
@@ -1648,7 +1690,7 @@ fn copy_over(from: &Path, to: &Path, depth: Depth) -> io::Result<()> {
 }
 
 /// Copies files + folders of `from` into `to`, never over an existing entry (links not followed or copied); what
-/// `depth` keeps out stays out.
+/// `depth` keeps out stays out. A state folder's `machine/` already in `to` gets each install's folder it lacks.
 fn copy_missing(from: &Path, to: &Path, depth: Depth) -> io::Result<()> {
     let Ok(entries) = std::fs::read_dir(from) else {
         return Ok(());
@@ -1660,6 +1702,15 @@ fn copy_missing(from: &Path, to: &Path, depth: Depth) -> io::Result<()> {
         }
         let target = to.join(&name);
         if std::fs::symlink_metadata(&target).is_ok() {
+            // one folder per install: another computer's folder (a sync partner's, an empty `machine/` a repository
+            // ships) never keeps this install's journal and kept copies out
+            if depth == Depth::Top
+                && name == Machine::DIR
+                && entry.file_type()?.is_dir()
+                && private::is_real_folder(&target)
+            {
+                copy_missing(&entry.path(), &target, depth.below(&name))?;
+            }
             continue;
         }
         let kind = entry.file_type()?;
