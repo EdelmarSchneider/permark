@@ -3,6 +3,7 @@
 //! Each state folder ignores itself (`.gitignore` = `*`, set back at each write when the folder brought another one):
 //! private whatever the project's own ignore says. The cache folder carries a cache directory tag for backup tools.
 
+use std::fs::Metadata;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -26,10 +27,18 @@ pub(super) enum Entry {
     Other,
 }
 
+/// Any reparse point counts as a link here, a cloud placeholder folder too: this decides where a project's state lives,
+/// so a `.permark` in a synced folder keeps its state in the profile (a move to `.permark/local/` would leave the state
+/// kept there unread).
 pub(super) fn entry(path: &Path) -> Entry {
+    entry_as(path, crate::tree::is_link_meta)
+}
+
+/// What is on disk at a path, `link` telling what counts as a link (never followed).
+fn entry_as(path: &Path, link: fn(&Metadata) -> bool) -> Entry {
     match std::fs::symlink_metadata(path) {
-        // a junction is a directory to `symlink_metadata` on some std versions: the reparse flag counts too
-        Ok(meta) if meta.file_type().is_dir() && !crate::tree::is_link_meta(&meta) => Entry::Folder,
+        // a junction is a directory to `symlink_metadata` on some std versions: `link` looks at it too
+        Ok(meta) if meta.file_type().is_dir() && !link(&meta) => Entry::Folder,
         Err(error) if error.kind() == io::ErrorKind::NotFound => Entry::Missing,
         Ok(_) | Err(_) => Entry::Other,
     }
@@ -94,17 +103,19 @@ fn holds_folder(meta: &std::fs::Metadata) -> bool {
 /// Makes `dir` (a project state folder `.permark/<sub>`, or a folder inside one) ready: never behind a link,
 /// created when missing, its state folder self-ignoring. `permark` = the `.permark` folder, `state` = `local` | `cache`.
 pub(super) fn prepare(permark: &Path, state: &Path, dir: &Path) -> io::Result<()> {
+    // a link as the zone reads see one: a cloud placeholder folder on the way is a folder, so saves go where loads read
+    let walked = |path: &Path| entry_as(path, crate::fsx::is_link);
     // top-down, `.permark` to `dir` (plugin namespaces): a link is refused before anything below it is looked up (a
     // lookup through it could reach a network share); below a missing folder nothing is there yet
     let check = || -> io::Result<()> {
         let below = crate::paths::strip_root(dir, state).ok_or_else(|| refused(dir))?;
-        if matches!(entry(permark), Entry::Other) {
+        if matches!(walked(permark), Entry::Other) {
             return Err(refused(permark));
         }
         let mut walk = state.to_path_buf();
         let mut names = below.into_iter();
         loop {
-            match entry(&walk) {
+            match walked(&walk) {
                 Entry::Other => return Err(refused(&walk)),
                 Entry::Missing => break,
                 Entry::Folder => {}
@@ -116,7 +127,7 @@ pub(super) fn prepare(permark: &Path, state: &Path, dir: &Path) -> io::Result<()
         }
         Ok(())
     };
-    if !matches!(entry(permark), Entry::Folder) {
+    if !matches!(walked(permark), Entry::Folder) {
         return Err(refused(permark));
     }
     check()?;

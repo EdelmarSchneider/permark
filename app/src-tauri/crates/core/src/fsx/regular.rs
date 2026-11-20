@@ -67,16 +67,27 @@ pub fn read_regular(path: &Path, limit: u64, zone: Zone<'_>) -> Result<Vec<u8>, 
     }
 }
 
-/// `symlink_metadata` of `path` below `folder`, never through a link: `folder` and each folder on the way are looked
-/// at first, top-down, and a link (symlink, junction, any reparse point) is refused before anything below it is looked
-/// up. Under a plain file nothing can be: the system answers for the rest, following nothing.
+/// Whether an entry (its own metadata, not followed) is a link a zone walk refuses: only what std reports as one, a
+/// symlink, or on Windows a name-surrogate reparse point (symlink, junction). Not any reparse point: a cloud
+/// placeholder (OneDrive Files On-Demand) carries one too and is a plain folder | file, so the state of a project in a
+/// synced folder stays readable and writable.
+pub(crate) fn is_link(meta: &Metadata) -> bool {
+    meta.file_type().is_symlink()
+}
+
+/// `symlink_metadata` of `path` below `folder`, never through a link ([`is_link`]): `folder` and each folder on the way
+/// are looked at first, top-down, and a link is refused before anything below it is looked up. Under a plain file
+/// nothing can be: the system answers for the rest, following nothing.
 ///
 /// # Errors
 /// `InvalidData` for a link on the way or a path that is not below `folder`; `NotFound` when nothing is there; any
 /// other IO failure.
 pub(crate) fn symlink_metadata_below(folder: &Path, path: &Path) -> io::Result<Metadata> {
-    // the folder itself first, as named: a link there is never resolved below
+    // the folder itself first, as named, before its spelling is resolved: resolving follows a link there
     let mut meta = std::fs::symlink_metadata(folder)?;
+    if is_link(&meta) {
+        return Err(refused("a link on the way"));
+    }
     let (mut at, names) = if let Some(names) = crate::paths::strip_root(path, folder) {
         (folder.to_path_buf(), names)
     } else {
@@ -92,16 +103,15 @@ pub(crate) fn symlink_metadata_below(folder: &Path, path: &Path) -> io::Result<M
     if names.iter().any(|name| *name == "..") {
         return Err(refused("outside its folder"));
     }
-    let mut steps = folders.iter();
-    loop {
-        if crate::tree::is_link_meta(&meta) {
-            return Err(refused("a link on the way"));
-        }
-        let Some(step) = steps.next().filter(|_| meta.is_dir()) else {
+    for step in folders {
+        if !meta.is_dir() {
             break;
-        };
+        }
         at.push(step);
         meta = std::fs::symlink_metadata(&at)?;
+        if is_link(&meta) {
+            return Err(refused("a link on the way"));
+        }
     }
     std::fs::symlink_metadata(path)
 }
@@ -260,6 +270,56 @@ mod tests {
             )),
             Some(io::ErrorKind::InvalidData)
         );
+    }
+
+    /// A zone folder that is a link, named in another spelling than the system's own, is refused before that spelling
+    /// is resolved: resolving it follows the link (a network share: an outbound connection, a long wait). Seen with a
+    /// link to a folder that is gone: resolving it answers "not found", a refusal at the link "invalid data".
+    #[test]
+    fn a_linked_zone_folder_is_refused_before_its_spelling_is_resolved() {
+        let (dir, zone) = zone_dir();
+        let gone = crate::paths::canonicalize(dir.path()).unwrap().join("gone");
+        std::fs::create_dir(&gone).unwrap();
+        let linked = zone.join(".permark");
+        if !crate::tree::tests::link_out(&linked, &gone) {
+            eprintln!("skipped: no folder links here");
+            return;
+        }
+        std::fs::remove_dir(&gone).unwrap();
+        let spelled = zone.join("..").join("zone ação").join(".permark");
+        assert_eq!(
+            refusal(read_regular(
+                &linked.join("f.json"),
+                2,
+                Zone::Inside(&spelled)
+            )),
+            Some(io::ErrorKind::InvalidData)
+        );
+    }
+
+    /// What a zone walk takes for a link: a folder link (junction on Windows) and a file link, never a plain folder or
+    /// file. A cloud placeholder (OneDrive Files On-Demand), which carries a reparse point that std reports as no link,
+    /// cannot be made here: it walks like the plain folder.
+    #[test]
+    fn a_zone_walk_takes_only_what_std_reports_as_a_link() {
+        let (_dir, zone) = zone_dir();
+        let folder = zone.join("plain");
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(zone.join("a.json"), b"{}").unwrap();
+        let meta = |path: &Path| std::fs::symlink_metadata(path).unwrap();
+        assert!(!is_link(&meta(&folder)));
+        assert!(!is_link(&meta(&zone.join("a.json"))));
+        let link = zone.join("link");
+        if crate::tree::tests::link_out(&link, &folder) {
+            assert!(is_link(&meta(&link)));
+            assert!(!meta(&link).is_dir());
+        }
+        #[cfg(unix)]
+        {
+            let file_link = zone.join("file link");
+            std::os::unix::fs::symlink(zone.join("a.json"), &file_link).unwrap();
+            assert!(is_link(&meta(&file_link)));
+        }
     }
 
     /// A file link is never followed in a zone; outside one it is (the profile); a FIFO is refused at once either way.

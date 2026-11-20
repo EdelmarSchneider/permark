@@ -72,14 +72,20 @@ pub fn remove_foreign(store: &StateStore) {
     let Some(machine) = store.machine() else {
         return;
     };
-    let ours = bytes
-        .and_then(|bytes| serde_json::from_slice::<Map<String, Value>>(&bytes).ok())
-        .is_some_and(|mut context| match context.shift_remove(TOKEN) {
-            Some(Value::String(token)) => {
-                seal(machine, &context).is_some_and(|seal| seal.verify(&token))
-            }
-            _ => false,
-        });
+    let ours = bytes.is_some_and(|bytes| {
+        serde_json::from_slice::<Map<String, Value>>(&bytes).is_ok_and(|mut context| {
+            let sealed = match context.shift_remove(TOKEN) {
+                Some(Value::String(token)) => {
+                    seal(machine, &context).is_some_and(|seal| seal.verify(&token))
+                }
+                _ => false,
+            };
+            // and exactly the bytes this install writes: the token seals the object serde reads, while another
+            // parser may read other content from other bytes (a key given twice: serde keeps the last value). Checked
+            // after the token, so a comparison that stops at the first differing byte never tells anything of it.
+            sealed && encode(store, context).is_some_and(|written| written == bytes)
+        })
+    });
     if !ours {
         // removes a link itself; a folder is refused and stays with what it holds
         let _ = file.remove();
@@ -274,6 +280,31 @@ mod tests {
         put(&path, &serde_json::to_vec(&map).unwrap());
         remove_foreign(&store);
         assert!(!path.exists(), "same token, other content: removed");
+    }
+
+    /// Only the exact bytes this install writes stay. A key given twice: serde keeps the last value, which the token
+    /// sealed, while a parser that keeps the first reads other content. The same content with other whitespace goes
+    /// too, on purpose: nothing but this install's own output is kept.
+    #[test]
+    fn only_the_exact_bytes_this_install_writes_stay_at_open() {
+        let f = fx();
+        let store = f.store();
+        let path = file(&store);
+        let token = token(&store, &map()).unwrap();
+        let doubled = format!(r#"{{"v":1,"doc":"x","doc":"docs/plan.md","token":"{token}"}}"#);
+        let read: Map<String, Value> = serde_json::from_slice(doubled.as_bytes()).unwrap();
+        assert_eq!(read["doc"], Value::from("docs/plan.md"), "the sealed value");
+        put(&path, doubled.as_bytes());
+        remove_foreign(&store);
+        assert!(!path.exists(), "a key given twice: removed");
+        let spaced = format!(r#"{{ "v": 1, "doc": "docs/plan.md", "token": "{token}" }}"#);
+        put(&path, spaced.as_bytes());
+        remove_foreign(&store);
+        assert!(!path.exists(), "other whitespace: removed");
+        let ours = ours(&store);
+        put(&path, &ours);
+        remove_foreign(&store);
+        assert_eq!(fs::read(&path).unwrap(), ours, "this install's bytes: kept");
     }
 
     #[test]
