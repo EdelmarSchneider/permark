@@ -96,13 +96,18 @@ enum Dot {
     /// A file `gitdir: <path>`: a linked working tree | a submodule; `None`: a path that may not be looked up
     /// ([`named_path`]).
     File(Option<PathBuf>),
+    /// A file this side cannot read as one `gitdir:` line (too large, not text, another first line). Git cannot open
+    /// it as a repository either (it reads the file whole and drops trailing line ends, so padding could hide a path it
+    /// would follow), and the walk for a repository ends there as it does for git; for the folders around it, it is
+    /// no repository of its own (git's own reading of a folder with a broken `.git` file).
+    Unread,
     /// A link (symlink | junction) git would follow somewhere it may not go: a target that may not be looked up
     /// ([`named_path`]), a second link, nothing, or neither folder nor file. A link to a folder | file that may is that
     /// folder | file.
     Link,
 }
 
-/// What `<dir>/.git` is; `None`: no `.git`, or a file (also one a link leads to) without a `gitdir:` line.
+/// What `<dir>/.git` is; `None`: no `.git`, or something there that is neither folder, file nor link.
 fn git_entry(dir: &Path) -> Option<Dot> {
     let entry = dir.join(".git");
     let meta = std::fs::symlink_metadata(&entry).ok()?;
@@ -128,12 +133,16 @@ fn dot_at(dir: &Path, path: PathBuf, meta: &std::fs::Metadata) -> Option<Dot> {
         return Some(Dot::Folder(path));
     }
     if meta.is_file() {
-        let line = read_line(&path)?;
+        let Some(named) = read_line(&path)
+            .as_deref()
+            .and_then(|line| line.strip_prefix("gitdir:"))
+            .map(str::trim)
+            .map(str::to_owned)
+        else {
+            return Some(Dot::Unread);
+        };
         // relative to the folder of `.git` (also when a link led to the file), as git reads it
-        return Some(Dot::File(named_path(
-            dir,
-            line.strip_prefix("gitdir:")?.trim(),
-        )));
+        return Some(Dot::File(named_path(dir, &named)));
     }
     None
 }
@@ -159,7 +168,7 @@ pub(crate) fn opens_locally(root: &Path) -> bool {
     match root.ancestors().take(MAX_LEVELS).find_map(git_entry) {
         None => true,
         Some(Dot::Folder(git_dir) | Dot::File(Some(git_dir))) => commondir_stays_local(&git_dir),
-        Some(Dot::File(None) | Dot::Link) => false,
+        Some(Dot::File(None) | Dot::Unread | Dot::Link) => false,
     }
 }
 
@@ -180,7 +189,7 @@ pub(crate) fn in_nested_repository(workdir: &Path, path: &str) -> bool {
             return false;
         }
         folder.push(name);
-        if git_entry(&folder).is_some() {
+        if !matches!(git_entry(&folder), None | Some(Dot::Unread)) {
             return true;
         }
     }
@@ -263,7 +272,7 @@ pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
         Dot::Folder(git_dir) => (git_dir, false),
         Dot::File(Some(git_dir)) => (git_dir, true),
         // a `.git` file | link naming a share: a repository git cannot open here
-        Dot::File(None) | Dot::Link => return Vec::new(),
+        Dot::File(None) | Dot::Unread | Dot::Link => return Vec::new(),
     };
     if too_broad(&workdir, &root, home) || !commondir_stays_local(&git_dir) {
         return Vec::new();
@@ -597,6 +606,31 @@ pub(crate) mod tests {
         )
         .unwrap();
         assert_eq!(branch_of(&main.join(".git")), None);
+    }
+
+    /// A `.git` file this side cannot read as one `gitdir:` line still stops the walk, and git may not open it: git
+    /// reads the file whole and drops trailing line ends, so a padded `gitdir:` naming a share would still lead it
+    /// there, while the walk would have gone on to the folders above.
+    #[test]
+    fn a_git_file_that_cannot_be_read_here_is_never_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let padded = format!(
+            "gitdir: {}{}",
+            on_share("a.git").display(),
+            "\n".repeat(8 * 1024)
+        );
+        let cases: [(&str, Vec<u8>); 3] = [
+            ("padded", padded.into_bytes()),
+            ("no gitdir line", b"something else\n".to_vec()),
+            ("not text", b"gitdir: \xff\xfe\n".to_vec()),
+        ];
+        for (name, bytes) in cases {
+            let project = dir.path().join(name);
+            std::fs::create_dir_all(&project).unwrap();
+            std::fs::write(project.join(".git"), bytes).unwrap();
+            assert!(!opens_locally(&project), "{name}");
+            assert!(linked_worktrees(&project, None).is_empty(), "{name}");
+        }
     }
 
     /// A FIFO where git keeps a one-line file (a sync partner | an archive can place one) is refused at once: a read
