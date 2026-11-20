@@ -31,8 +31,12 @@ pub struct ReadFile {
     pub docs: BTreeMap<String, String>,
 }
 
+/// Most bytes `read.json` | `visit.json` are read with: no writer limit (one entry per tracked document).
+const FILE_MAX_BYTES: u64 = 32 * 1024 * 1024;
+
 impl StateData for ReadFile {
     const VERSION: u32 = 1;
+    const MAX_BYTES: u64 = FILE_MAX_BYTES;
 }
 
 /// `visit.json`: what every document held when the project was last closed.
@@ -44,6 +48,7 @@ pub struct VisitFile {
 
 impl StateData for VisitFile {
     const VERSION: u32 = 1;
+    const MAX_BYTES: u64 = FILE_MAX_BYTES;
 }
 
 fn hex_of(hash: u64) -> String {

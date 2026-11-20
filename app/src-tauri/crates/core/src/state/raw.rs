@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use super::shared_write::{lock_within, FileLock, BRIEF_WAIT, WAIT};
-use super::{private, Guard, StateError};
-use crate::fsx::{read_bytes, write_atomic, write_atomic_checked, FsxError};
+use super::{private, unread, Guard, StateError, DEFAULT_MAX_BYTES};
+use crate::fsx::{read_regular, write_atomic, write_atomic_checked, FsxError, Zone};
 
 /// Reads + writes an update tries before it gives up (only a writer without the lock can make it try again).
 pub(super) const UPDATE_ATTEMPTS: usize = 8;
@@ -15,12 +15,31 @@ pub(super) const UPDATE_ATTEMPTS: usize = 8;
 /// one is unreadable rather than taken into memory.
 pub const SHARED_MAX_BYTES: u64 = 1024 * 1024;
 
-/// A file in `.permark/` left unread (`InvalidData`: not transient, never retried).
-fn refused(path: &Path, why: &str) -> io::Error {
-    io::Error::new(
+/// The bytes of a state | raw file, `None` when there is none: only a plain file of at most `limit` bytes, in `zone`
+/// ([`read_regular`]). A refusal (link, FIFO, folder, too large, outside the zone) is `InvalidData` (not transient,
+/// never retried; same as a file that cannot be parsed: never written over by an update) and is logged once per path.
+///
+/// # Errors
+/// That refusal, or any other IO failure (the file may be fine a moment later).
+pub(super) fn read_plain(path: &Path, limit: u64, zone: Zone<'_>) -> io::Result<Option<Vec<u8>>> {
+    let why = match read_regular(path, limit, zone) {
+        Ok(bytes) => return Ok(Some(bytes)),
+        Err(FsxError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
+            return Ok(None)
+        }
+        Err(FsxError::Io { source, .. }) if source.kind() != io::ErrorKind::InvalidData => {
+            return Err(source)
+        }
+        Err(FsxError::Io { source, .. }) => source.to_string(),
+        // no text check is made here: only too large
+        Err(FsxError::TooLarge { limit, .. }) => format!("larger than {limit} bytes"),
+        Err(FsxError::Binary(_)) => "not text".to_owned(),
+    };
+    unread::tell(path, &why);
+    Err(io::Error::new(
         io::ErrorKind::InvalidData,
-        format!("{} {why}", path.display()),
-    )
+        format!("{} is {why}", path.display()),
+    ))
 }
 
 pub(super) fn kept_changing() -> io::Error {
@@ -47,6 +66,9 @@ pub struct RawFile {
     guard: Guarded,
     /// Most time a write waits for the other writers' lock.
     lock_wait: Duration,
+    /// Most bytes it is read with: [`SHARED_MAX_BYTES`] for a file shared with the team, else [`DEFAULT_MAX_BYTES`]
+    /// unless [`RawFile::capped`].
+    limit: u64,
 }
 
 impl RawFile {
@@ -55,6 +77,7 @@ impl RawFile {
             path,
             guard: guard.map_or(Guarded::No, Guarded::State),
             lock_wait: WAIT,
+            limit: DEFAULT_MAX_BYTES,
         }
     }
 
@@ -63,7 +86,16 @@ impl RawFile {
             path,
             guard: Guarded::Shared { permark },
             lock_wait: WAIT,
+            limit: SHARED_MAX_BYTES,
         }
+    }
+
+    /// Read with at most `bytes` (never below the most its writer makes): a larger file is unreadable, never taken
+    /// into memory and never written over by an update.
+    #[must_use]
+    pub fn capped(mut self, bytes: u64) -> Self {
+        self.limit = bytes;
+        self
     }
 
     /// Writes wait at most [`BRIEF_WAIT`] for the other writers' lock: for a file written while a plugin's own lock
@@ -79,40 +111,22 @@ impl RawFile {
         &self.path
     }
 
-    /// The bytes, `None` when there is no file. In a project's `.permark/` (whose content a repository decides) only a
-    /// plain file is read: a link | folder in its place is unreadable, never followed; a file shared with the team is
-    /// unreadable beyond [`SHARED_MAX_BYTES`].
+    /// The bytes, `None` when there is no file. Only a plain file of at most its cap is read (a FIFO never makes the
+    /// read wait). In a project's `.permark/` (whose content a repository decides) a link in its place or on the way
+    /// out of `.permark/` is never followed; a profile file follows links (the person's own setup).
     ///
     /// # Errors
     /// `InvalidData` for those refusals (same as a file that cannot be parsed: never written over by an update); any
     /// other IO failure (the file may be fine a moment later).
     pub fn read(&self) -> io::Result<Option<Vec<u8>>> {
-        let limit = match self.guard {
-            Guarded::No | Guarded::State(_) => u64::MAX,
-            Guarded::Shared { .. } => SHARED_MAX_BYTES,
-        };
-        if !matches!(self.guard, Guarded::No) {
-            match std::fs::symlink_metadata(&self.path) {
-                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-                // a link (Windows: a symbolic link | junction, not a cloud file) | folder in place of the file
-                Ok(meta) if !meta.file_type().is_file() => {
-                    return Err(refused(&self.path, "is a link or not a file"))
-                }
-                // anything else: the read says
-                Ok(_) | Err(_) => {}
-            }
-        }
-        match read_bytes(&self.path, limit) {
-            Ok(bytes) => Ok(Some(bytes)),
-            Err(FsxError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
-                Ok(None)
-            }
-            Err(FsxError::Io { source, .. }) => Err(source),
-            // too large (no text check is made here)
-            Err(other) => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                other.to_string(),
-            )),
+        read_plain(&self.path, self.limit, self.zone())
+    }
+
+    fn zone(&self) -> Zone<'_> {
+        match &self.guard {
+            Guarded::No => Zone::Anywhere,
+            Guarded::State(guard) => Zone::Inside(&guard.permark),
+            Guarded::Shared { permark } => Zone::Inside(permark),
         }
     }
 
@@ -132,11 +146,11 @@ impl RawFile {
     /// The refusal, or the IO failure.
     pub fn write_over(&self, expected: Option<&[u8]>, bytes: &[u8]) -> Result<bool, StateError> {
         self.guarded()?;
-        write_atomic_checked(&self.path, bytes, || match std::fs::read(&self.path) {
-            Ok(now) => Ok(expected == Some(now.as_slice())),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(expected.is_none()),
-            Err(error) => Err(error),
-        })
+        write_atomic_checked(
+            &self.path,
+            bytes,
+            || Ok(self.read()?.as_deref() == expected),
+        )
         .map_err(|e| StateError::io(&self.path, e))
     }
 

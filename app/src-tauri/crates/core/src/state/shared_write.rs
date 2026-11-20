@@ -319,39 +319,58 @@ mod tests {
         const VERSION: u32 = 1;
     }
 
-    #[test]
-    fn state_updates_add_up_and_a_file_of_another_layout_is_set_aside() {
+    /// `count.json` in a fresh app store holding `bytes`, then 4 threads x 20 counting updates: how many went through.
+    fn count_updates(bytes: &[u8]) -> (tempfile::TempDir, super::super::StateFile<Count>, usize) {
         let dir = tempfile::tempdir().unwrap();
         let store = super::super::StateStore::app(&super::super::AppDirs::under(dir.path()));
         let file = store.app_file::<Count>("count.json");
         std::fs::create_dir_all(file.path().parent().unwrap()).unwrap();
-        // a newer version's file: kept beside, never written over
-        std::fs::write(file.path(), br#"{"version":9,"data":{"n":100}}"#).unwrap();
+        std::fs::write(file.path(), bytes).unwrap();
         let threads: Vec<_> = (0..4)
             .map(|_| {
                 let file = file.clone();
                 std::thread::spawn(move || {
-                    for _ in 0..20 {
-                        file.update(|now| {
-                            Some(Count {
-                                n: now.map_or(0, |c| c.n) + 1,
+                    (0..20)
+                        .filter(|_| {
+                            file.update(|now| {
+                                Some(Count {
+                                    n: now.map_or(0, |c| c.n) + 1,
+                                })
                             })
+                            .is_ok()
                         })
-                        .unwrap();
-                    }
+                        .count()
                 })
             })
             .collect();
-        for t in threads {
-            t.join().unwrap();
-        }
-        assert_eq!(file.load(), super::super::Loaded::Found(Count { n: 80 }));
-        let aside = std::fs::read_dir(file.path().parent().unwrap())
+        let done = threads.into_iter().map(|t| t.join().unwrap()).sum();
+        (dir, file, done)
+    }
+
+    fn set_aside(file: &super::super::StateFile<Count>) -> usize {
+        std::fs::read_dir(file.path().parent().unwrap())
             .unwrap()
             .flatten()
             .filter(|e| e.file_name().to_string_lossy().contains(".broken-"))
-            .count();
-        assert_eq!(aside, 1);
+            .count()
+    }
+
+    #[test]
+    fn state_updates_add_up_and_a_corrupt_file_is_set_aside_once() {
+        let (_dir, file, done) = count_updates(b"{ not json");
+        assert_eq!(done, 80);
+        assert_eq!(file.load(), super::super::Loaded::Found(Count { n: 80 }));
+        assert_eq!(set_aside(&file), 1);
+    }
+
+    /// A newer version's file: every update is refused, the file stays in place byte for byte, nothing set aside.
+    #[test]
+    fn state_updates_never_write_over_a_newer_version_s_file() {
+        const NEWER: &[u8] = br#"{"version":9,"data":{"n":100}}"#;
+        let (_dir, file, done) = count_updates(NEWER);
+        assert_eq!(done, 0);
+        assert_eq!(std::fs::read(file.path()).unwrap(), NEWER);
+        assert_eq!(set_aside(&file), 0);
     }
 
     #[test]

@@ -9,7 +9,7 @@ use toml_edit::{Array, DocumentMut, Item, Table, Value};
 use ts_rs::TS;
 
 use super::{
-    edit_file, plugin_tables, read_doc, set_keeping_decor, set_plugin_key, tokenizers_of,
+    edit_file, plugin_tables, read_team_doc, set_keeping_decor, set_plugin_key, tokenizers_of,
     tokenizers_value, valid_tokenizers, SettingsError,
 };
 use crate::paths::Root;
@@ -100,7 +100,7 @@ impl ProjectConfig {
         if !real {
             return Self::default();
         }
-        read_doc(&permark.join("config.toml"))
+        read_team_doc(&permark, "config.toml")
             .map_or_else(Self::default, |doc| Self::from_doc(&doc))
     }
 

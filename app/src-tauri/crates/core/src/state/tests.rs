@@ -2,7 +2,7 @@ use super::*;
 use std::collections::BTreeMap;
 use std::fs;
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 struct Sample {
     items: BTreeMap<String, u32>,
 }
@@ -466,6 +466,273 @@ fn a_raw_file_reads_bytes_exactly_and_tells_a_change_by_its_stamp() {
     assert_eq!(stamp.0, bytes.len() as u64);
     raw.write(b"{}").unwrap();
     assert_ne!(raw.stamp().unwrap().0, stamp.0);
+}
+
+const MIB: usize = 1024 * 1024;
+
+/// State as large as people's gets today keeps reading: a 3 MiB state file (project and profile), a 1.5 MiB
+/// `comments.json`, a 3 MiB profile raw file.
+#[test]
+fn state_files_of_todays_sizes_still_read() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let store = f.store();
+    let big = Sample {
+        items: BTreeMap::from([("k".repeat(3 * MIB), 1)]),
+    };
+    for file in [
+        store.file::<Sample>("big.json"),
+        store.profile_file::<Sample>("big.json"),
+    ] {
+        file.save(&big).unwrap();
+        assert!(fs::metadata(file.path()).unwrap().len() > 3 * MIB as u64);
+        assert_eq!(file.load(), Loaded::Found(big.clone()));
+    }
+    let comments = vec![b' '; 3 * MIB / 2];
+    let raw = store.raw_file("comments.json");
+    raw.write(&comments).unwrap();
+    assert_eq!(raw.read().unwrap(), Some(comments));
+    let profile = vec![b'#'; 3 * MIB];
+    let legacy = store.legacy_shared_file("meta.toml").unwrap();
+    legacy.write(&profile).unwrap();
+    assert_eq!(legacy.read().unwrap(), Some(profile));
+}
+
+/// Names in `dir` that a load moved aside.
+fn broken_in(dir: &Path) -> usize {
+    fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().contains(".broken-"))
+        .count()
+}
+
+/// A valid state file padded past the default cap.
+fn over_cap() -> Vec<u8> {
+    let mut bytes = KEPT.to_vec();
+    bytes.resize(8 * MIB + 1, b' ');
+    bytes
+}
+
+/// A state file larger than its kind's cap is never taken into memory: left as it is (not moved aside), and no handle
+/// writes over it, also one that never loaded it.
+#[test]
+fn a_state_file_over_its_cap_is_left_unread_and_never_written_over() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let store = f.store();
+    let big = over_cap();
+    let file = store.file::<Sample>("x.json");
+    let dir = file.path().parent().unwrap().to_path_buf();
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(file.path(), &big).unwrap();
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert!(file.save(&Sample::default()).is_err());
+    assert!(store.file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert!(store
+        .file::<Sample>("x.json")
+        .update(|_| Some(sample(2)))
+        .is_err());
+    assert_eq!(fs::read(file.path()).unwrap(), big);
+    // a file nobody loaded yet: a handle that never read it is refused all the same
+    let blind = store.file::<Sample>("y.json");
+    fs::write(blind.path(), &big).unwrap();
+    assert!(blind.save(&sample(3)).is_err());
+    assert_eq!(fs::read(blind.path()).unwrap(), big);
+    // raw files in the state folder: the same default cap
+    let raw = store.raw_file("quiet.json");
+    fs::write(raw.path(), &big).unwrap();
+    assert_eq!(
+        raw.read().err().map(|e| e.kind()),
+        Some(std::io::ErrorKind::InvalidData)
+    );
+    assert!(raw.update(|_| Some(b"{}".to_vec())).is_err());
+    assert_eq!(fs::read(raw.path()).unwrap(), big);
+    assert_eq!(broken_in(&dir), 0);
+}
+
+/// A state file a newer version wrote stays where it is (no copy beside it), loads as unreadable every time, and is
+/// never written over: an older build used again never destroys what the newer one keeps.
+#[test]
+fn a_state_file_of_a_newer_version_is_left_in_place_and_never_written_over() {
+    const NEWER: &[u8] = br#"{"version":4,"data":{"items":{"kept":7},"more":[1]}}"#;
+    let f = fx();
+    let store = f.store();
+    let file = store.file::<Sample>("x.json");
+    let dir = file.path().parent().unwrap().to_path_buf();
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(file.path(), NEWER).unwrap();
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert!(file.save(&Sample::default()).is_err());
+    assert!(store.file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert!(store
+        .file::<Sample>("x.json")
+        .update(|_| Some(sample(2)))
+        .is_err());
+    assert_eq!(fs::read(file.path()).unwrap(), NEWER);
+    // never loaded by anyone: a save still leaves it
+    let blind = store.file::<Sample>("y.json");
+    fs::write(blind.path(), NEWER).unwrap();
+    assert!(blind.save(&sample(3)).is_err());
+    assert_eq!(fs::read(blind.path()).unwrap(), NEWER);
+    assert_eq!(broken_in(&dir), 0);
+}
+
+/// Makes `at` a link to the folder `target` (Windows: a junction, no privilege needed); `false`: not possible here.
+fn link_folder(target: &Path, at: &Path) -> bool {
+    #[cfg(windows)]
+    return std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(at)
+        .arg(target)
+        .output()
+        .is_ok_and(|o| o.status.success());
+    #[cfg(unix)]
+    return std::os::unix::fs::symlink(target, at).is_ok();
+}
+
+/// A link on the way to a state file (a junction | folder link inside `.permark/local/`) never leads a read outside
+/// `.permark/`: the file stays unread and nothing is written through the link.
+#[test]
+fn a_link_inside_the_state_folder_never_leads_a_read_outside() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let store = f.store();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("f.json"), KEPT).unwrap();
+    let id = PluginId::of("git");
+    let plugins = store.dir().join("plugins");
+    fs::create_dir_all(&plugins).unwrap();
+    if !link_folder(outside.path(), &plugins.join("git")) {
+        eprintln!("skipped: no folder links here");
+        return;
+    }
+    let file = store.plugin_file::<Sample>(&id, "f.json");
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert!(file.save(&sample(1)).is_err());
+    assert!(store.plugin_raw_file(&id, "f.json").read().is_err());
+    assert_eq!(fs::read(outside.path().join("f.json")).unwrap(), KEPT);
+}
+
+/// Runs `read` on another thread; `None` when it did not answer in time (a read waiting on a FIFO forever).
+#[cfg(unix)]
+fn answered<T: Send + 'static>(read: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(read());
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(10)).ok()
+}
+
+/// Makes a FIFO at `path`.
+#[cfg(unix)]
+fn fifo(path: &Path) {
+    let made = std::process::Command::new("mkfifo").arg(path).status();
+    assert!(made.is_ok_and(|s| s.success()), "mkfifo {}", path.display());
+}
+
+/// A file link in place of a state file is never followed, and a FIFO (in `.permark/` or in the profile) never makes a
+/// read wait: both stay as they are and nothing is written over them.
+#[cfg(unix)]
+#[test]
+fn a_fifo_or_a_file_link_in_place_of_a_state_file_is_never_read_through() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let store = f.store();
+    let outside = tempfile::tempdir().unwrap();
+    let target = outside.path().join("t.json");
+    fs::write(&target, KEPT).unwrap();
+    let file = store.file::<Sample>("x.json");
+    fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&target, file.path()).unwrap();
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert!(fs::symlink_metadata(file.path())
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(store.file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert_eq!(fs::read(&target).unwrap(), KEPT);
+
+    let local = store.file::<Sample>("fifo.json");
+    fifo(local.path());
+    let profile = store.profile_file::<Sample>("fifo.json");
+    fs::create_dir_all(profile.path().parent().unwrap()).unwrap();
+    fifo(profile.path());
+    let legacy = store.legacy_shared_file("fifo.toml").unwrap();
+    fifo(legacy.path());
+    let blind = store.profile_file::<Sample>("blind.json");
+    fifo(blind.path());
+    let paths = [local.path(), profile.path(), legacy.path(), blind.path()].map(Path::to_path_buf);
+    let answers = answered(move || {
+        (
+            local.load(),
+            profile.load(),
+            legacy.read().is_err(),
+            blind.save(&sample(1)).is_err(),
+        )
+    })
+    .expect("a read waited on a FIFO");
+    assert_eq!(answers.0, Loaded::Recovered { backup: None });
+    assert_eq!(answers.1, Loaded::Recovered { backup: None });
+    assert!(answers.2 && answers.3);
+    for path in paths {
+        use std::os::unix::fs::FileTypeExt;
+        assert!(fs::symlink_metadata(&path).unwrap().file_type().is_fifo());
+    }
+}
+
+/// The team's files in `.permark/` (settings, project list, vocabulary, card) arrive with the folder: a link in place of
+/// one is never followed, and a FIFO never makes the read wait.
+#[cfg(unix)]
+#[test]
+fn team_files_are_read_only_as_plain_files_in_permark() {
+    use crate::projects::{card, record, vocabulary};
+    let f = fx();
+    let root = f.root();
+    let permark = root.path().join(PERMARK_DIR);
+    fs::create_dir(&permark).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let target = outside.path().join("config.toml");
+    fs::write(&target, "[agent]\ndeny = [\"notes\"]\n").unwrap();
+    std::os::unix::fs::symlink(&target, permark.join("config.toml")).unwrap();
+    assert_eq!(
+        crate::settings::ProjectConfig::load(&root),
+        crate::settings::ProjectConfig::default()
+    );
+    fs::remove_file(permark.join("config.toml")).unwrap();
+    for name in [
+        "config.toml",
+        record::RECORD_FILE,
+        vocabulary::VOCABULARY_FILE,
+        card::CARD_FILE,
+    ] {
+        fifo(&permark.join(name));
+    }
+    let dirs = f.dirs.clone();
+    let answers = answered(move || {
+        let card = match card::file_of(&dirs, root.path()) {
+            Some(file @ card::CardFile::Project(_)) => file.read(),
+            _ => panic!("the card is the project's"),
+        };
+        (
+            crate::settings::ProjectConfig::load(&root),
+            record::read(root.path()),
+            vocabulary::read(root.path()),
+            card,
+        )
+    })
+    .expect("a read waited on a FIFO");
+    assert_eq!(answers.0, crate::settings::ProjectConfig::default());
+    assert!(matches!(
+        answers.1,
+        crate::projects::RecordRead::Unreadable { .. }
+    ));
+    assert!(matches!(
+        answers.2,
+        crate::projects::VocabRead::Unreadable { .. }
+    ));
+    assert_eq!(answers.3.name, None);
 }
 
 #[test]

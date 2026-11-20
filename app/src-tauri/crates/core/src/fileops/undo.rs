@@ -111,6 +111,8 @@ pub(crate) struct Journal {
 
 impl StateData for Journal {
     const VERSION: u32 = 1;
+    /// No writer limit: a move keeps one entry per document whose links it rewrote.
+    const MAX_BYTES: u64 = 32 * 1024 * 1024;
 }
 
 impl Journal {
@@ -242,6 +244,38 @@ mod tests {
             "an entry without id is never named"
         );
         assert_eq!(journal.push(6, import(&["y"])), 1);
+    }
+
+    /// A move that rewrote links in many documents makes a large journal: one of about 9 MiB still loads.
+    #[test]
+    fn a_large_journal_still_loads() {
+        let base = tempfile::tempdir().unwrap();
+        let store = crate::state::StateStore::app(&crate::state::AppDirs::under(base.path()));
+        let doc = |n: usize| DocUndo {
+            path: format!("docs/{n}.md"),
+            original: format!("docs/{n}.md"),
+            hash_after: "0123456789abcdef".to_owned(),
+            edits: vec![UndoEdit {
+                start: 0,
+                end: 4,
+                old: "x".repeat(4096),
+            }],
+            causes: vec![0],
+            moved_by: None,
+        };
+        let mut journal = Journal::default();
+        journal.push(
+            1,
+            Op::Move {
+                moves: vec![("a".to_owned(), "b".to_owned())],
+                docs: (0..2300).map(doc).collect(),
+            },
+        );
+        let file = store.file::<Journal>(JOURNAL_FILE);
+        file.save(&journal).unwrap();
+        let len = std::fs::metadata(file.path()).unwrap().len();
+        assert!(len > 9 * 1024 * 1024, "{len}");
+        assert_eq!(file.load(), crate::state::Loaded::Found(journal));
     }
 
     #[test]

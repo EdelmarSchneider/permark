@@ -216,7 +216,7 @@ pub fn read(folder: &Path) -> VocabRead {
     if crate::tree::is_link_meta_of(&permark) || crate::tree::is_link_meta_of(&path) {
         return VocabRead::Absent;
     }
-    match crate::fsx::read_bytes(&path, MAX_BYTES) {
+    match crate::fsx::read_regular(&path, MAX_BYTES, crate::fsx::Zone::Inside(&permark)) {
         Ok(bytes) => parse(&bytes),
         Err(crate::fsx::FsxError::Io { source, .. })
             if source.kind() == std::io::ErrorKind::NotFound =>

@@ -2,6 +2,7 @@
 //! transient Windows locks.
 
 mod decode;
+mod regular;
 #[cfg(windows)]
 mod win;
 
@@ -13,6 +14,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 pub use decode::{decode, Decoded, Encoding, LineEnding, BINARY_SNIFF};
+pub use regular::{read_regular, Zone};
 
 use crate::error::{ErrorKind, IpcError};
 

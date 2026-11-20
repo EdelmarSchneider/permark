@@ -1,6 +1,7 @@
 //! Where PerMark keeps its own state: the person's profile, or `.permark/local/` of a project that has `.permark/`.
-//! Versioned JSON files; corrupt -> moved aside, defaults used, caller warns; unreadable (an IO error) -> left as it is,
-//! defaults used, never written over by a handle holding those defaults. Plugins get own namespaces.
+//! Versioned JSON files; corrupt -> moved aside, defaults used, caller warns; unreadable (an IO error, a link | FIFO in
+//! `.permark/`, larger than its cap, written by a newer version) -> left as it is, defaults used, never written over by
+//! a handle holding those defaults. Plugins get own namespaces.
 
 pub mod older;
 mod private;
@@ -20,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::{ErrorKind, IpcError};
-use crate::fsx::write_atomic;
+use crate::fsx::{write_atomic, Zone};
 use crate::paths::Root;
 use crate::plugins::PluginId;
 
@@ -38,6 +39,9 @@ pub const PROFILE_ONLY: [&str; 4] = [
 ];
 /// Per-project files that live in the shared `.permark/` itself (never in `local/`).
 pub const SHARED_FILES: [&str; 1] = ["meta.toml"];
+/// Most bytes a state | raw file is read with unless its kind says otherwise ([`StateData::MAX_BYTES`],
+/// [`RawFile::capped`]): a larger one is left unread, never taken into memory.
+pub const DEFAULT_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
 const PROJECT_GITIGNORE: &str = "# PerMark private state: not shared.\nlocal/\ncache/\n";
 
@@ -184,9 +188,13 @@ impl From<StateError> for IpcError {
     }
 }
 
-/// A state file's content type: declares its format version (other version on disk -> recovered as corrupt).
+/// A state file's content type: declares its format version (an older one on disk -> [`StateData::upgrade`], else
+/// recovered as corrupt; a newer one -> left unread in place, never written over).
 pub trait StateData: Serialize + DeserializeOwned {
     const VERSION: u32;
+    /// Most bytes a file of this kind is read with (never below the most its writer makes): a larger file is left
+    /// unread in place, never taken into memory and never written over.
+    const MAX_BYTES: u64 = DEFAULT_MAX_BYTES;
 
     /// Reads data an older format version (`from` < `VERSION`) wrote; `None` = cannot (the file is moved aside).
     /// A format change ships its upgrade + a fixture test (concept §10: saved data survives updates).
@@ -202,8 +210,9 @@ pub trait StateData: Serialize + DeserializeOwned {
 pub enum Loaded<T> {
     Missing,
     Found(T),
-    /// Corrupt | other version: moved to `backup`. `None`: an IO error kept it from being read (another program
-    /// holds it, no permission), or it could not be moved: left as it is, and a save of it is refused from this
+    /// Corrupt | older version it cannot read: moved to `backup`. `None`: left as it is, unread: an IO error kept it
+    /// from being read (another program holds it, no permission), it is no plain file of at most its cap (a link | FIFO
+    /// in `.permark/`), a newer version wrote it, or it could not be moved; a save of it is refused from this
     /// handle until its own load | update reads it (another handle reading it never unblocks this one), and from
     /// every handle that never read it while it is there, so the defaults a caller uses meanwhile never replace the
     /// person's data. A handle that read the file itself keeps saving: it holds the person's data.
@@ -233,6 +242,15 @@ struct EnvelopeOut<'a, T> {
 struct EnvelopeIn<T> {
     version: u32,
     data: T,
+}
+
+/// What a state file's bytes hold.
+enum Parsed<T> {
+    Data(T),
+    /// A newer version's data: left as it is.
+    Newer,
+    /// Not this layout, or an older version without an upgrade: moved aside.
+    Bad,
 }
 
 /// Guard of a file inside `.permark/`: the `.permark` folder + the state folder it lives in.
@@ -273,31 +291,50 @@ impl<T: StateData> StateFile<T> {
     #[must_use]
     pub fn load(&self) -> Loaded<T> {
         // a file held for a moment (antivirus, sync client) is tried again first
-        let bytes = match crate::fsx::retry(&crate::fsx::RETRY_DELAYS, || std::fs::read(&self.path))
-        {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+        let Ok(found) = self.read_now() else {
+            self.failed();
+            return Loaded::Recovered { backup: None };
+        };
+        let Some(bytes) = found else {
+            self.has_read();
+            return Loaded::Missing;
+        };
+        match Self::parse(&bytes) {
+            Parsed::Data(data) => {
                 self.has_read();
-                return Loaded::Missing;
+                return Loaded::Found(data);
             }
-            Err(_) => {
-                self.failed();
+            Parsed::Newer => {
+                self.newer();
                 return Loaded::Recovered { backup: None };
             }
-        };
-        if let Some(data) = Self::parse(&bytes) {
-            self.has_read();
-            return Loaded::Found(data);
+            Parsed::Bad => {}
         }
         let backup = self.move_aside();
         if backup.is_some() {
             // nothing left to write over: the defaults may be saved
             self.has_read();
         } else {
-            // still in place (newer data, or a file that cannot be moved): never written over either
+            // still in place (a file that cannot be moved): never written over either
             self.failed();
         }
         Loaded::Recovered { backup }
+    }
+
+    /// The bytes on disk now (`None`: no file): a plain file of at most [`StateData::MAX_BYTES`], never through a
+    /// link in `.permark/` (a profile file follows links: the person's own setup).
+    fn read_now(&self) -> io::Result<Option<Vec<u8>>> {
+        let zone = self
+            .guard
+            .as_ref()
+            .map_or(Zone::Anywhere, |guard| Zone::Inside(&guard.permark));
+        raw::read_plain(&self.path, T::MAX_BYTES, zone)
+    }
+
+    /// A newer version wrote the file: left in place for it, never written over by this one.
+    fn newer(&self) {
+        unread::tell(&self.path, &NEWER);
+        self.failed();
     }
 
     /// This handle read the file (or found none, or moved it aside): it holds what is on disk and may save.
@@ -312,15 +349,17 @@ impl<T: StateData> StateFile<T> {
         self.read.store(unread::FAILED, Ordering::SeqCst);
     }
 
-    /// The data of the file's bytes (`None`: not this layout, or a newer version).
-    fn parse(bytes: &[u8]) -> Option<T> {
-        serde_json::from_slice::<EnvelopeIn<serde_json::Value>>(bytes)
-            .ok()
-            .and_then(|envelope| match envelope.version {
-                v if v == T::VERSION => serde_json::from_value(envelope.data).ok(),
-                v if v < T::VERSION => T::upgrade(v, envelope.data),
-                _ => None,
-            })
+    /// What the file's bytes hold.
+    fn parse(bytes: &[u8]) -> Parsed<T> {
+        let Ok(envelope) = serde_json::from_slice::<EnvelopeIn<serde_json::Value>>(bytes) else {
+            return Parsed::Bad;
+        };
+        let data = match envelope.version {
+            v if v == T::VERSION => serde_json::from_value(envelope.data).ok(),
+            v if v < T::VERSION => T::upgrade(v, envelope.data),
+            _ => return Parsed::Newer,
+        };
+        data.map_or(Parsed::Bad, Parsed::Data)
     }
 
     fn encode(&self, data: &T) -> Result<Vec<u8>, StateError> {
@@ -335,14 +374,16 @@ impl<T: StateData> StateFile<T> {
     }
 
     /// Read-change-write for a file several cores write (`shared_write`): under the file's lock, `next` gets the data
-    /// on disk now (`None`: no file; a file this version cannot read is moved aside first, as [`StateFile::load`]
-    /// does) and returns what to write (`None`: nothing). Written only while the file still holds what `next` saw,
-    /// else read again and `next` asked again. Returns the data on disk afterwards. After an `Err`, never save defaults
-    /// in place of what is on disk: the file may hold the person's data (a file it could not read is stamped, so a
-    /// handle that never read it is refused while the file is there; once it is gone, nothing is left to lose).
+    /// on disk now (`None`: no file; a file this version cannot parse is moved aside first, as [`StateFile::load`]
+    /// does; one it must not read, or a newer version's, fails the update untouched) and returns what to write
+    /// (`None`: nothing). Written only while the file still holds what `next` saw, else read again and `next` asked
+    /// again. Returns the data on disk afterwards. After an `Err`, never save defaults in place of what is on disk: the
+    /// file may hold the person's data (a file it could not read is stamped, so a handle that never read it is refused
+    /// while the file is there; once it is gone, nothing is left to lose).
     ///
     /// # Errors
-    /// Encode | IO failure, a link in place of `.permark/`, a file that kept changing under a writer without the lock.
+    /// Encode | IO failure, a link in place of `.permark/`, a file that kept changing under a writer without the lock,
+    /// a file it must not read (link | FIFO in `.permark/`, larger than its cap), a newer version's file.
     pub fn update(
         &self,
         mut next: impl FnMut(Option<&T>) -> Option<T>,
@@ -354,9 +395,8 @@ impl<T: StateData> StateFile<T> {
         let _lock =
             shared_write::lock_for(&self.path).map_err(|e| StateError::io(&self.path, e))?;
         for _ in 0..raw::UPDATE_ATTEMPTS {
-            let bytes = match std::fs::read(&self.path) {
-                Ok(bytes) => Some(bytes),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            let bytes = match self.read_now() {
+                Ok(bytes) => bytes,
                 Err(error) => {
                     // not read: no handle that never read it writes over it; this handle's own state stays (a
                     // handle holding what it read keeps writing)
@@ -366,8 +406,12 @@ impl<T: StateData> StateFile<T> {
             };
             let fresh = match bytes.as_deref().map(Self::parse) {
                 None => None,
-                Some(Some(data)) => Some(data),
-                Some(None) => {
+                Some(Parsed::Data(data)) => Some(data),
+                Some(Parsed::Newer) => {
+                    self.newer();
+                    return Err(StateError::io(&self.path, unread::refused()));
+                }
+                Some(Parsed::Bad) => {
                     // kept beside it, never written over (the next round sees no file)
                     if self.move_aside().is_some() {
                         continue;
@@ -387,15 +431,11 @@ impl<T: StateData> StateFile<T> {
                 return Ok(Some(data));
             }
             let written =
-                crate::fsx::write_atomic_checked(&self.path, &out, || {
-                    match std::fs::read(&self.path) {
-                        Ok(now) => Ok(bytes.as_deref() == Some(now.as_slice())),
-                        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                            Ok(bytes.is_none())
-                        }
-                        Err(error) => Err(error),
-                    }
-                })
+                crate::fsx::write_atomic_checked(
+                    &self.path,
+                    &out,
+                    || Ok(self.read_now()? == bytes),
+                )
                 .map_err(|e| StateError::io(&self.path, e))?;
             if written {
                 return Ok(Some(data));
@@ -406,6 +446,25 @@ impl<T: StateData> StateFile<T> {
 
     fn move_aside(&self) -> Option<PathBuf> {
         move_aside(&self.path)
+    }
+
+    /// For a handle that never read the file: whatever is there may be replaced (none, one this version reads, or a
+    /// corrupt one, as a load would move it aside). Not when no load could read it (a link | FIFO in `.permark/`,
+    /// larger than its cap) or a newer version wrote it: stamped then, as a load would leave it. Any other read error
+    /// says nothing about the file: the write decides, as before.
+    fn replaceable(&self) -> bool {
+        match self.read_now() {
+            Ok(Some(bytes)) if matches!(Self::parse(&bytes), Parsed::Newer) => {
+                unread::tell(&self.path, &NEWER);
+                unread::mark(&self.path);
+                false
+            }
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+                unread::mark(&self.path);
+                false
+            }
+            Ok(_) | Err(_) => true,
+        }
     }
 
     /// Atomic write of `{ version, data }`; saves of one file in this process take turns (`shared_write::save_turn`).
@@ -424,7 +483,11 @@ impl<T: StateData> StateFile<T> {
         }
         let _turn =
             shared_write::save_turn(&self.path).map_err(|e| StateError::io(&self.path, e))?;
-        if !(read == unread::NEVER && unread::is_stamped(&self.path)) {
+        let stamped = unread::is_stamped(&self.path);
+        if read == unread::NEVER && !stamped && !self.replaceable() {
+            return Err(StateError::io(&self.path, unread::refused()));
+        }
+        if !(read == unread::NEVER && stamped) {
             return write_atomic(&self.path, &bytes).map_err(|e| StateError::io(&self.path, e));
         }
         // a file that could not be read once, gone at the check above: still gone right before each rename attempt
@@ -440,6 +503,9 @@ impl<T: StateData> StateFile<T> {
         Ok(())
     }
 }
+
+/// Why a newer version's state file is left unread.
+const NEWER: &str = "written by a newer version of PerMark";
 
 /// `<name>.broken-<ms>` next to `path` (the entry itself: a link is moved, never followed); never overwrites an older
 /// backup.
@@ -529,6 +595,20 @@ mod unread {
 
     pub(super) fn refused() -> std::io::Error {
         std::io::Error::other("not read yet: kept as it is until PerMark can read it")
+    }
+
+    /// Logs why a file is left unread, once per path for the process: the person's data stays as it is, so the reason
+    /// is worth one line, not one per load.
+    pub(super) fn tell(path: &Path, why: &dyn std::fmt::Display) {
+        static TOLD: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+        let first = TOLD
+            .get_or_init(Mutex::default)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key(path));
+        if first {
+            eprintln!("PerMark: {} left as it is: {why}", path.display());
+        }
     }
 }
 

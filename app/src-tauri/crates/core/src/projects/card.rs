@@ -305,7 +305,10 @@ impl CardFile {
                         ..Card::default()
                     };
                 }
-                match crate::fsx::read_bytes(path, MAX_CARD_BYTES) {
+                // the `.permark` folder it was found in (always there: the file is named inside it)
+                let permark = path.parent().unwrap_or(path);
+                let zone = crate::fsx::Zone::Inside(permark);
+                match crate::fsx::read_regular(path, MAX_CARD_BYTES, zone) {
                     Ok(bytes) => parse(&bytes),
                     Err(crate::fsx::FsxError::TooLarge { .. }) => Card {
                         warning: Some(CardWarning::TooLarge),
