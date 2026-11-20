@@ -1997,8 +1997,11 @@ fn the_context_file_holds_the_published_context_and_nothing_else() {
     .unwrap();
     let map = read();
     assert_eq!(keys(&map), ["doc", "mode", "openComments", "token", "v"]);
-    // only this install can make it for this folder: a copy that came with the folder has none it accepts
-    let token = permark_core::state::context::token(&fx.core().store()).unwrap();
+    // only this install can make it for this folder and this content: a copy that came with the folder, or one
+    // changed since, has none it accepts
+    let mut published = map.clone();
+    published.shift_remove("token");
+    let token = permark_core::state::context::token(&fx.core().store(), &published).unwrap();
     assert_eq!(map["token"], json!(token));
     assert_eq!(map["v"], json!(1));
     assert_eq!(map["doc"], json!("docs/plan.md"));

@@ -28,23 +28,11 @@ pub(super) enum Entry {
 
 pub(super) fn entry(path: &Path) -> Entry {
     match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_dir() && !is_reparse(&meta) => Entry::Folder,
+        // a junction is a directory to `symlink_metadata` on some std versions: the reparse flag counts too
+        Ok(meta) if meta.file_type().is_dir() && !crate::tree::is_link_meta(&meta) => Entry::Folder,
         Err(error) if error.kind() == io::ErrorKind::NotFound => Entry::Missing,
         Ok(_) | Err(_) => Entry::Other,
     }
-}
-
-/// Junctions are directories to `symlink_metadata` on some std versions: check the reparse flag explicitly.
-#[cfg(windows)]
-fn is_reparse(meta: &std::fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-    meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-}
-
-#[cfg(not(windows))]
-fn is_reparse(_: &std::fs::Metadata) -> bool {
-    false
 }
 
 pub(super) fn is_real_folder(path: &Path) -> bool {
@@ -75,36 +63,56 @@ pub(super) fn create_if_missing(path: &Path, content: &str) -> io::Result<()> {
 }
 
 /// Makes the file at `path` (below `permark`) hold exactly `content`: written when missing or different. A link or a
-/// FIFO in its place is replaced by the rename, never read or written through; a folder (or a link to one) is left,
-/// as it cannot be replaced without deleting what it holds.
+/// FIFO in its place is replaced by the rename, never followed, read or written through; a folder is left, as it cannot
+/// be replaced without deleting what it holds, and so is a folder link on Windows (a file cannot be renamed over one).
 fn enforce(permark: &Path, path: &Path, content: &str) -> io::Result<()> {
     // the cap is the content's length: anything longer differs without being read
     let limit = content.len() as u64;
     if read_regular(path, limit, Zone::Inside(permark)).is_ok_and(|b| b == content.as_bytes()) {
         return Ok(());
     }
-    if std::fs::metadata(path).is_ok_and(|meta| meta.is_dir()) {
+    // the entry itself: a link followed here could reach a network share
+    if std::fs::symlink_metadata(path).is_ok_and(|meta| holds_folder(&meta)) {
         return Ok(());
     }
     write_atomic(path, content.as_bytes())
 }
 
+/// A folder, or on Windows a folder link | junction: a rename of a file over it fails.
+fn holds_folder(meta: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTypeExt;
+        meta.is_dir() || meta.file_type().is_symlink_dir()
+    }
+    #[cfg(not(windows))]
+    {
+        meta.is_dir()
+    }
+}
+
 /// Makes `dir` (a project state folder `.permark/<sub>`, or a folder inside one) ready: never behind a link,
 /// created when missing, its state folder self-ignoring. `permark` = the `.permark` folder, `state` = `local` | `cache`.
 pub(super) fn prepare(permark: &Path, state: &Path, dir: &Path) -> io::Result<()> {
+    // top-down, `.permark` to `dir` (plugin namespaces): a link is refused before anything below it is looked up (a
+    // lookup through it could reach a network share); below a missing folder nothing is there yet
     let check = || -> io::Result<()> {
-        for folder in [permark, state] {
-            if matches!(entry(folder), Entry::Other) {
-                return Err(refused(folder));
-            }
+        let below = crate::paths::strip_root(dir, state).ok_or_else(|| refused(dir))?;
+        if matches!(entry(permark), Entry::Other) {
+            return Err(refused(permark));
         }
-        // every folder from the state folder down to `dir` (plugin namespaces) is real too
-        let mut walk = dir;
-        while walk != state {
-            if matches!(entry(walk), Entry::Other) {
-                return Err(refused(walk));
+        let mut walk = state.to_path_buf();
+        let mut names = below.into_iter();
+        loop {
+            match entry(&walk) {
+                Entry::Other => return Err(refused(&walk)),
+                Entry::Missing => break,
+                Entry::Folder => {}
             }
-            walk = walk.parent().ok_or_else(|| refused(dir))?;
+            let Some(name) = names.next() else {
+                break;
+            };
+            walk.push(name);
         }
         Ok(())
     };

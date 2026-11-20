@@ -3,6 +3,7 @@
 //! device (a read of one can wait forever), never more than a cap (checked before the bytes are taken in), and in a
 //! zone never through a link.
 
+use std::fs::Metadata;
 use std::io::{self, Read};
 use std::path::Path;
 
@@ -11,8 +12,10 @@ use super::{opened_path, retry, FsxError, RETRY_DELAYS};
 /// Where the file a read opens may really be.
 #[derive(Debug, Clone, Copy)]
 pub enum Zone<'a> {
-    /// Below this folder (a project's `.permark/`): the name read is never a link, and the file the handle opened sits
-    /// below the folder (a link on the way, or one swapped in right before the open, never leads out of it).
+    /// Below this folder (a project's `.permark/`): neither the folder, nor a folder on the way, nor the name read is a
+    /// link, each looked at top-down before anything below it is looked up (a link followed during the lookup could
+    /// reach a network share: an outbound connection, a long wait); and the file the handle opened sits below the
+    /// folder (a link swapped in right before the open never leads out of it).
     Inside(&'a Path),
     /// Wherever links lead: the person's own profile, which dotfile managers and folder redirection link elsewhere.
     Anywhere,
@@ -28,7 +31,7 @@ pub enum Zone<'a> {
 pub fn read_regular(path: &Path, limit: u64, zone: Zone<'_>) -> Result<Vec<u8>, FsxError> {
     let read = retry(&RETRY_DELAYS, || {
         let named = match zone {
-            Zone::Inside(_) => std::fs::symlink_metadata(path)?,
+            Zone::Inside(folder) => symlink_metadata_below(folder, path)?,
             Zone::Anywhere => std::fs::metadata(path)?,
         };
         // before the open: Windows answers a folder's open with access denied, which would be retried
@@ -62,6 +65,45 @@ pub fn read_regular(path: &Path, limit: u64, zone: Zone<'_>) -> Result<Vec<u8>, 
             limit,
         }),
     }
+}
+
+/// `symlink_metadata` of `path` below `folder`, never through a link: `folder` and each folder on the way are looked
+/// at first, top-down, and a link (symlink, junction, any reparse point) is refused before anything below it is looked
+/// up. Under a plain file nothing can be: the system answers for the rest, following nothing.
+///
+/// # Errors
+/// `InvalidData` for a link on the way or a path that is not below `folder`; `NotFound` when nothing is there; any
+/// other IO failure.
+pub(crate) fn symlink_metadata_below(folder: &Path, path: &Path) -> io::Result<Metadata> {
+    // the folder itself first, as named: a link there is never resolved below
+    let mut meta = std::fs::symlink_metadata(folder)?;
+    let (mut at, names) = if let Some(names) = crate::paths::strip_root(path, folder) {
+        (folder.to_path_buf(), names)
+    } else {
+        // a folder named in another spelling than the system's own (an 8.3 name)
+        let canon = crate::paths::canonicalize(folder)?;
+        let names =
+            crate::paths::strip_root(path, &canon).ok_or_else(|| refused("outside its folder"))?;
+        (canon, names)
+    };
+    let Some((_, folders)) = names.split_last() else {
+        return Err(refused("outside its folder"));
+    };
+    if names.iter().any(|name| *name == "..") {
+        return Err(refused("outside its folder"));
+    }
+    let mut steps = folders.iter();
+    loop {
+        if crate::tree::is_link_meta(&meta) {
+            return Err(refused("a link on the way"));
+        }
+        let Some(step) = steps.next().filter(|_| meta.is_dir()) else {
+            break;
+        };
+        at.push(step);
+        meta = std::fs::symlink_metadata(&at)?;
+    }
+    std::fs::symlink_metadata(path)
 }
 
 /// A file left unread on purpose: `InvalidData` (the caller names the file).
@@ -165,16 +207,7 @@ mod tests {
         std::fs::create_dir(&outside).unwrap();
         std::fs::write(outside.join("f.json"), b"{}").unwrap();
         let link = zone.join("sub");
-        #[cfg(windows)]
-        let made = std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(&link)
-            .arg(&outside)
-            .output()
-            .is_ok_and(|o| o.status.success());
-        #[cfg(unix)]
-        let made = std::os::unix::fs::symlink(&outside, &link).is_ok();
-        if !made {
+        if !crate::tree::tests::link_out(&link, &outside) {
             eprintln!("skipped: no folder links here");
             return;
         }
@@ -187,6 +220,44 @@ mod tests {
         // the link itself is no plain file
         assert_eq!(
             refusal(read_regular(&link, 2, Zone::Inside(&zone))),
+            Some(io::ErrorKind::InvalidData)
+        );
+    }
+
+    /// A folder link deeper in a zone is refused before any name below it is looked up: following it could reach a
+    /// network share (an outbound connection, a long wait). Seen here with a link to a folder that is gone: a lookup
+    /// through it answers "not found", a refusal at the link "invalid data".
+    #[test]
+    fn a_link_in_the_middle_is_refused_before_anything_below_it_is_looked_up() {
+        let (dir, zone) = zone_dir();
+        let gone = crate::paths::canonicalize(dir.path()).unwrap().join("gone");
+        std::fs::create_dir(&gone).unwrap();
+        std::fs::create_dir(zone.join("plugins")).unwrap();
+        let link = zone.join("plugins").join("git");
+        if !crate::tree::tests::link_out(&link, &gone) {
+            eprintln!("skipped: no folder links here");
+            return;
+        }
+        std::fs::remove_dir(&gone).unwrap();
+        for path in [link.join("f.json"), link.join("deeper").join("f.json")] {
+            assert_eq!(
+                refusal(read_regular(&path, 2, Zone::Inside(&zone))),
+                Some(io::ErrorKind::InvalidData),
+                "{}",
+                path.display()
+            );
+        }
+        // the zone's own folder is no link either
+        let linked_zone = zone.join("linked zone");
+        std::fs::create_dir(&gone).unwrap();
+        std::fs::write(gone.join("f.json"), b"{}").unwrap();
+        assert!(crate::tree::tests::link_out(&linked_zone, &gone));
+        assert_eq!(
+            refusal(read_regular(
+                &linked_zone.join("f.json"),
+                2,
+                Zone::Inside(&linked_zone)
+            )),
             Some(io::ErrorKind::InvalidData)
         );
     }

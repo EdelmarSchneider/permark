@@ -330,11 +330,14 @@ impl<T: StateData> StateFile<T> {
     /// The bytes on disk now (`None`: no file): a plain file of at most [`StateData::MAX_BYTES`], never through a
     /// link in `.permark/` (a profile file follows links: the person's own setup).
     fn read_now(&self) -> io::Result<Option<Vec<u8>>> {
-        let zone = self
-            .guard
+        raw::read_plain(&self.path, T::MAX_BYTES, self.zone())
+    }
+
+    /// Where the file may really be: below `.permark/` when it lives there, else wherever links lead (the profile).
+    fn zone(&self) -> Zone<'_> {
+        self.guard
             .as_ref()
-            .map_or(Zone::Anywhere, |guard| Zone::Inside(&guard.permark));
-        raw::read_plain(&self.path, T::MAX_BYTES, zone)
+            .map_or(Zone::Anywhere, |guard| Zone::Inside(&guard.permark))
     }
 
     /// A newer version wrote the file: left in place for it, never written over by this one.
@@ -353,6 +356,12 @@ impl<T: StateData> StateFile<T> {
     fn failed(&self) {
         unread::mark(&self.path);
         self.read.store(unread::FAILED, Ordering::SeqCst);
+    }
+
+    /// The bytes are a newer version's envelope: only the version is read (`data` skipped, never built into `T`).
+    fn newer_envelope(bytes: &[u8]) -> bool {
+        serde_json::from_slice::<EnvelopeIn<serde::de::IgnoredAny>>(bytes)
+            .is_ok_and(|envelope| envelope.version > T::VERSION)
     }
 
     /// What the file's bytes hold.
@@ -457,10 +466,11 @@ impl<T: StateData> StateFile<T> {
     /// For a handle that never read the file: whatever is there may be replaced (none, one this version reads, or a
     /// corrupt one, as a load would move it aside). Not when no load could read it (a link | FIFO in `.permark/`,
     /// larger than its cap) or a newer version wrote it: stamped then, as a load would leave it. Any other read error
-    /// says nothing about the file: the write decides, as before.
+    /// says nothing about the file: the write decides, as before. Only the envelope's version is parsed; asked until
+    /// the handle's first write, after which the handle counts as one that read the file.
     fn replaceable(&self) -> bool {
         match self.read_now() {
-            Ok(Some(bytes)) if matches!(Self::parse(&bytes), Parsed::Newer) => {
+            Ok(Some(bytes)) if Self::newer_envelope(&bytes) => {
                 unread::tell(&self.path, &NEWER);
                 unread::mark(&self.path);
                 false
@@ -479,7 +489,7 @@ impl<T: StateData> StateFile<T> {
     /// Encode failure, IO failure, `.permark/` folder replaced by a link, the saves before this one taking too long.
     pub fn save(&self, data: &T) -> Result<(), StateError> {
         let read = self.read.load(Ordering::SeqCst);
-        if !unread::may_write(&self.path, read) {
+        if !unread::may_write(&self.path, read, self.zone()) {
             return Err(StateError::io(&self.path, unread::refused()));
         }
         let bytes = self.encode(data)?;
@@ -494,12 +504,17 @@ impl<T: StateData> StateFile<T> {
             return Err(StateError::io(&self.path, unread::refused()));
         }
         if !(read == unread::NEVER && stamped) {
-            return write_atomic(&self.path, &bytes).map_err(|e| StateError::io(&self.path, e));
+            write_atomic(&self.path, &bytes).map_err(|e| StateError::io(&self.path, e))?;
+            // the file now holds what this handle wrote: its next saves skip the probe above, as those of a handle
+            // that read the file do (a newer version's file written later is not looked for again by a save; an
+            // update reads the file right before each write)
+            self.has_read();
+            return Ok(());
         }
         // a file that could not be read once, gone at the check above: still gone right before each rename attempt
         // (one put back meanwhile is kept, as `update` does); written, it holds only PerMark's own data
         let written = crate::fsx::write_atomic_checked(&self.path, &bytes, || {
-            Ok(unread::may_write(&self.path, read))
+            Ok(unread::may_write(&self.path, read, self.zone()))
         })
         .map_err(|e| StateError::io(&self.path, e))?;
         if !written {
@@ -541,13 +556,16 @@ fn move_aside(path: &Path) -> Option<PathBuf> {
 /// the defaults of another handle, as the session save makes a new handle). A handle that read the file itself
 /// (`READ`) writes even after another handle failed: it holds the person's data. A file that is gone holds nothing to
 /// lose: a `NEVER` handle may write a stamped file while it is not there (only a not-found answer counts as gone; any
-/// other error, and any entry, a folder or a link included, counts as there), and that write clears the stamp: the file
-/// then holds only PerMark's own data. A `FAILED` handle stays refused. One set for the process (other processes do not
-/// see it); otherwise a stamp stays until the process ends.
+/// other error, and any entry, a folder or a link included, counts as there; in `.permark/` a link on the way is never
+/// looked through and counts as there too), and that write clears the stamp: the file then holds only PerMark's own
+/// data. A `FAILED` handle stays refused. One set for the process (other processes do not see it); otherwise a stamp
+/// stays until the process ends.
 mod unread {
     use std::collections::HashSet;
     use std::path::Path;
     use std::sync::{Mutex, OnceLock, PoisonError};
+
+    use crate::fsx::Zone;
 
     pub(super) const NEVER: u8 = 0;
     pub(super) const READ: u8 = 1;
@@ -588,12 +606,17 @@ mod unread {
     /// A handle whose own last load | update made `read` of the file may write it. One that never read it may, unless
     /// the file could not be read once and is still there: a file that is gone holds nothing to lose (the review keeps
     /// a copy again after removing it as unused).
-    pub(super) fn may_write(path: &Path, read: u8) -> bool {
+    pub(super) fn may_write(path: &Path, read: u8, zone: Zone<'_>) -> bool {
         match read {
             READ => true,
             NEVER => {
-                !is_stamped(path)
-                    || matches!(std::fs::symlink_metadata(path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+                !is_stamped(path) || {
+                    let there = match zone {
+                        Zone::Inside(folder) => crate::fsx::symlink_metadata_below(folder, path),
+                        Zone::Anywhere => std::fs::symlink_metadata(path),
+                    };
+                    matches!(there, Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+                }
             }
             _ => false,
         }

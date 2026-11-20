@@ -421,7 +421,7 @@ fn a_state_entry_is_a_folder_only_when_it_is_a_real_folder() {
         private::entry(&base.join("file")),
         private::Entry::Other
     ));
-    if link_folder(&base.join("folder"), &base.join("folder link")) {
+    if crate::tree::tests::link_out(&base.join("folder link"), &base.join("folder")) {
         assert!(matches!(
             private::entry(&base.join("folder link")),
             private::Entry::Other
@@ -516,6 +516,19 @@ fn a_link_in_place_of_an_ignore_file_is_replaced_never_followed() {
     assert!(meta.file_type().is_file());
     assert_eq!(fs::read_to_string(local.join(".gitignore")).unwrap(), "*\n");
     assert_eq!(fs::read_to_string(&target).unwrap(), "!*\n");
+    // a link to a folder is looked at, never followed (it could lead to a network share): replaced the same way
+    let cache = f.project.path().join(".permark").join("cache");
+    fs::create_dir_all(&cache).unwrap();
+    let folder = outside.path().join("folder");
+    fs::create_dir(&folder).unwrap();
+    std::os::unix::fs::symlink(&folder, cache.join(".gitignore")).unwrap();
+    f.store()
+        .cache_file::<Sample>("index.json")
+        .save(&sample(1))
+        .unwrap();
+    let meta = fs::symlink_metadata(cache.join(".gitignore")).unwrap();
+    assert!(meta.file_type().is_file());
+    assert_eq!(fs::read_dir(&folder).unwrap().count(), 0);
 }
 
 /// The cache folder tells backup tools it holds only rebuildable files (<https://bford.info/cachedir/>); a tag already
@@ -821,19 +834,6 @@ fn a_state_file_of_a_newer_version_is_left_in_place_and_never_written_over() {
     assert_eq!(broken_in(&dir), 0);
 }
 
-/// Makes `at` a link to the folder `target` (Windows: a junction, no privilege needed); `false`: not possible here.
-fn link_folder(target: &Path, at: &Path) -> bool {
-    #[cfg(windows)]
-    return std::process::Command::new("cmd")
-        .args(["/C", "mklink", "/J"])
-        .arg(at)
-        .arg(target)
-        .output()
-        .is_ok_and(|o| o.status.success());
-    #[cfg(unix)]
-    return std::os::unix::fs::symlink(target, at).is_ok();
-}
-
 /// A link on the way to a state file (a junction | folder link inside `.permark/local/`) never leads a read outside
 /// `.permark/`: the file stays unread and nothing is written through the link.
 #[test]
@@ -846,7 +846,7 @@ fn a_link_inside_the_state_folder_never_leads_a_read_outside() {
     let id = PluginId::of("git");
     let plugins = store.dir().join("plugins");
     fs::create_dir_all(&plugins).unwrap();
-    if !link_folder(outside.path(), &plugins.join("git")) {
+    if !crate::tree::tests::link_out(&plugins.join("git"), outside.path()) {
         eprintln!("skipped: no folder links here");
         return;
     }
@@ -855,6 +855,48 @@ fn a_link_inside_the_state_folder_never_leads_a_read_outside() {
     assert!(file.save(&sample(1)).is_err());
     assert!(store.plugin_raw_file(&id, "f.json").read().is_err());
     assert_eq!(fs::read(outside.path().join("f.json")).unwrap(), KEPT);
+}
+
+/// A folder link higher in `.permark/local/` is refused before any name below it is looked up (following one could
+/// reach a network share): a read stops at it, and a save names it, never a path behind it.
+#[test]
+fn a_folder_link_on_the_way_is_refused_before_anything_below_it_is_looked_up() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let store = f.store();
+    let id = PluginId::of("git");
+    fs::create_dir_all(store.dir()).unwrap();
+    let plugins = store.dir().join("plugins");
+    let outside = tempfile::tempdir().unwrap();
+    let gone = outside.path().join("gone");
+    fs::create_dir(&gone).unwrap();
+    if !crate::tree::tests::link_out(&plugins, &gone) {
+        eprintln!("skipped: no folder links here");
+        return;
+    }
+    // a lookup through the link would find no file (missing); stopped at the link, the file is left unread
+    fs::remove_dir(&gone).unwrap();
+    let file = store.plugin_file::<Sample>(&id, "f.json");
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    // a save of a file that was never read stops at the link too, even after a read of it was refused
+    assert!(store
+        .plugin_file::<Sample>(&id, "f.json")
+        .save(&sample(1))
+        .is_err());
+    // the link leads to a folder with a file where the plugin's folder would be: a save names the link itself
+    fs::create_dir(&gone).unwrap();
+    fs::write(gone.join("git"), KEPT).unwrap();
+    let error = store
+        .plugin_file::<Sample>(&id, "g.json")
+        .save(&sample(1))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains(&format!("{} is a link", plugins.display())),
+        "{error}"
+    );
+    assert_eq!(fs::read(gone.join("git")).unwrap(), KEPT);
+    assert_eq!(fs::read_dir(&gone).unwrap().count(), 1);
 }
 
 /// Runs `read` on another thread; `None` when it did not answer in time (a read waiting on a FIFO forever).

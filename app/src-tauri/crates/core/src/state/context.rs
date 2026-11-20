@@ -1,42 +1,55 @@
 //! `agent-context.json` in a project's state folder: the live context the agent connection publishes for scripts
-//! without MCP (the path stays: scripts read it there). It carries a token only this install can make for this folder,
-//! so a copy that arrived with the folder (a zip, a clone, a sync partner) is told apart from the one this install
-//! wrote, and is removed when the project opens, whether the agent connection is on or not.
+//! without MCP (the path stays: scripts read it there). It carries a token only this install can make for this folder
+//! and this content, so a copy that arrived with the folder (a zip, a clone, a sync partner), or one whose content
+//! changed since, is told apart from the one this install wrote, and is removed when the project opens, whether the
+//! agent connection is on or not.
 
 use std::io;
 
-use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use super::{StateLocation, StateStore};
+use super::{Machine, Seal, StateLocation, StateStore};
 
 /// Name of the file in the project's state folder (`.permark/local/`).
 pub const FILE: &str = "agent-context.json";
 /// Seal kind of the token: bound to the folder's id under this install's key, never to the install id alone (that one
 /// names a folder inside `.permark/local/` and travels with it).
 const KIND: &str = "agent-context";
-/// Most bytes read: a published context is a few KiB (its selection and headings are cut short).
-const MAX_BYTES: u64 = 64 * 1024;
+/// Key of the token in the context object.
+const TOKEN: &str = "token";
+/// Most bytes the file holds: the open check reads no more (a published context is a few KiB: its selection and
+/// headings are cut short), and the writer keeps no larger file ([`encode`]).
+pub const MAX_BYTES: u64 = 64 * 1024;
 
-/// The part of the file the check reads.
-#[derive(Deserialize)]
-struct Stamped {
-    token: Option<String>,
+/// The seal of `context` (the object without its token) for the folder: its kind, the folder id, then the object as
+/// compact JSON, keys in the object's own order (the writer's order, which a read of the file keeps).
+fn seal(machine: &Machine, context: &Map<String, Value>) -> Option<Seal> {
+    let bytes = serde_json::to_vec(context).ok()?;
+    let mut seal = machine.seal(KIND);
+    seal.field(&bytes);
+    Some(seal)
 }
 
-/// The token this install writes into the file for the store's folder; `None`: no usable install key, or the app-wide
-/// store.
+/// The token this install writes into `context` (the object without its token) for the store's folder; `None`: no
+/// usable install key, or the app-wide store.
 #[must_use]
-pub fn token(store: &StateStore) -> Option<String> {
-    store.machine().map(|machine| machine.seal(KIND).sign())
+pub fn token(store: &StateStore, context: &Map<String, Value>) -> Option<String> {
+    seal(store.machine()?, context).map(|seal| seal.sign())
 }
 
-/// Adds this install's token to the context object about to be written (nothing without a usable install key: such a
-/// file is then left at open, as its token cannot be checked either).
-pub fn stamp(store: &StateStore, context: &mut Map<String, Value>) {
-    if let Some(token) = token(store) {
-        context.insert("token".to_owned(), Value::from(token));
+/// The bytes of the file for `context`: compact JSON with this install's token last (none without a usable install
+/// key: such a file is then left at open, as its token cannot be checked either). `None`: larger than [`MAX_BYTES`],
+/// which the open check would take for a copy that came with the folder; write no file then (none rather than an
+/// older one).
+#[must_use]
+pub fn encode(store: &StateStore, mut context: Map<String, Value>) -> Option<Vec<u8>> {
+    context.shift_remove(TOKEN);
+    if let Some(token) = token(store, &context) {
+        context.insert(TOKEN.to_owned(), Value::from(token));
     }
+    serde_json::to_vec(&context)
+        .ok()
+        .filter(|bytes| bytes.len() as u64 <= MAX_BYTES)
 }
 
 /// Removes a context file this install did not write for this folder; run when the project opens, before any plugin
@@ -55,14 +68,18 @@ pub fn remove_foreign(store: &StateStore) {
         // nothing there, or a read that may work a moment later
         Ok(None) | Err(_) => return,
     };
-    // asked only once a file is there: opening a folder without one never makes the install key
+    // made at every project open anyway (the undo journal asks for it); none usable: nothing can be checked
     let Some(machine) = store.machine() else {
         return;
     };
     let ours = bytes
-        .and_then(|bytes| serde_json::from_slice::<Stamped>(&bytes).ok())
-        .and_then(|stamped| stamped.token)
-        .is_some_and(|token| machine.seal(KIND).verify(&token));
+        .and_then(|bytes| serde_json::from_slice::<Map<String, Value>>(&bytes).ok())
+        .is_some_and(|mut context| match context.shift_remove(TOKEN) {
+            Some(Value::String(token)) => {
+                seal(machine, &context).is_some_and(|seal| seal.verify(&token))
+            }
+            _ => false,
+        });
     if !ours {
         // removes a link itself; a folder is refused and stays with what it holds
         let _ = file.remove();
@@ -110,11 +127,22 @@ mod tests {
         store.dir().join(FILE)
     }
 
-    /// A context as the agent connection writes it, with `token` when given.
-    fn context(token: Option<&str>) -> Vec<u8> {
+    /// A context object as the agent connection publishes it, without a token.
+    fn map() -> Map<String, Value> {
         let mut map = Map::new();
         map.insert("v".to_owned(), Value::from(1));
         map.insert("doc".to_owned(), Value::from("docs/plan.md"));
+        map
+    }
+
+    /// The file `store`'s install writes for [`map`].
+    fn ours(store: &StateStore) -> Vec<u8> {
+        encode(store, map()).unwrap()
+    }
+
+    /// The file of [`map`] with `token` when given, as anyone may write it.
+    fn context(token: Option<&str>) -> Vec<u8> {
+        let mut map = map();
         if let Some(token) = token {
             map.insert("token".to_owned(), Value::from(token));
         }
@@ -127,22 +155,66 @@ mod tests {
     }
 
     #[test]
-    fn the_token_is_bound_to_this_install_and_this_folder() {
+    fn the_token_is_bound_to_this_install_this_folder_and_this_content() {
         let f = fx();
         let store = f.store();
-        let token = token(&store).unwrap();
+        let token = token(&store, &map()).unwrap();
         assert!(token.starts_with("s1:") && token.len() == 35, "{token}");
-        assert_eq!(super::token(&f.store()).as_deref(), Some(token.as_str()));
+        assert_eq!(
+            super::token(&f.store(), &map()).as_deref(),
+            Some(token.as_str())
+        );
         let other = tempfile::tempdir().unwrap();
         let other = StateStore::for_project(&f.dirs, &Root::open(other.path()).unwrap());
-        assert_ne!(super::token(&other).unwrap(), token, "another folder");
+        assert_ne!(
+            super::token(&other, &map()).unwrap(),
+            token,
+            "another folder"
+        );
         let base = tempfile::tempdir().unwrap();
         let elsewhere = StateStore::for_project(&AppDirs::under(base.path()), &f.root());
-        assert_ne!(super::token(&elsewhere).unwrap(), token, "another install");
-        assert!(super::token(&StateStore::app(&f.dirs)).is_none());
-        let mut map = Map::new();
-        stamp(&store, &mut map);
-        assert_eq!(map.get("token"), Some(&Value::from(token)));
+        assert_ne!(
+            super::token(&elsewhere, &map()).unwrap(),
+            token,
+            "another install"
+        );
+        assert!(super::token(&StateStore::app(&f.dirs), &map()).is_none());
+        let mut changed = map();
+        changed.insert("doc".to_owned(), Value::from("docs/other.md"));
+        assert_ne!(
+            super::token(&store, &changed).unwrap(),
+            token,
+            "another content"
+        );
+        // the file: the context as published, its token last; a token already in the object is never sealed
+        let bytes = ours(&store);
+        let written: Map<String, Value> = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(written.keys().collect::<Vec<_>>(), ["v", "doc", "token"]);
+        assert_eq!(written["token"], Value::from(token));
+        let mut stale = map();
+        stale.insert("token".to_owned(), Value::from("s1:0"));
+        assert_eq!(encode(&store, stale), Some(bytes));
+    }
+
+    /// The writer and the open check agree on the most bytes: a file of exactly [`MAX_BYTES`] is written and stays,
+    /// one byte more is never written (the check would take it for a copy that came with the folder).
+    #[test]
+    fn the_writer_keeps_no_file_the_open_check_would_remove() {
+        let f = fx();
+        let store = f.store();
+        let sized = |pad: usize| {
+            let mut map = map();
+            map.insert("selection".to_owned(), Value::from("x".repeat(pad)));
+            map
+        };
+        let short = encode(&store, sized(0)).unwrap().len();
+        let pad = usize::try_from(MAX_BYTES).unwrap() - short;
+        let largest = encode(&store, sized(pad)).unwrap();
+        assert_eq!(largest.len() as u64, MAX_BYTES);
+        put(&file(&store), &largest);
+        remove_foreign(&store);
+        assert_eq!(fs::read(file(&store)).unwrap(), largest, "kept");
+        assert_eq!(encode(&store, sized(pad + 1)), None);
     }
 
     #[test]
@@ -151,7 +223,7 @@ mod tests {
         let store = f.store();
         assert_eq!(store.location(), StateLocation::Project);
         let path = file(&store);
-        let ours = context(token(&store).as_deref());
+        let ours = ours(&store);
         put(&path, &ours);
         remove_foreign(&store);
         assert_eq!(fs::read(&path).unwrap(), ours, "kept as it is");
@@ -164,8 +236,8 @@ mod tests {
         padded.extend(std::iter::repeat_n(b' ', 70 * 1024));
         let foreign: Vec<(&str, Vec<u8>)> = vec![
             ("no token", context(None)),
-            ("another folder", context(token(&other_folder).as_deref())),
-            ("another install", context(token(&other_install).as_deref())),
+            ("another folder", self::ours(&other_folder)),
+            ("another install", self::ours(&other_install)),
             (
                 "a made-up token",
                 context(Some("s1:00000000000000000000000000000000")),
@@ -185,6 +257,23 @@ mod tests {
         put(&path, &context(None));
         remove_foreign(&store);
         assert_eq!(fs::read(store.dir().join("session.json")).unwrap(), b"{}");
+    }
+
+    /// The token seals the content: a copy that kept it but changed what the context says is not this install's.
+    #[test]
+    fn a_copy_whose_content_changed_is_removed_at_open() {
+        let f = fx();
+        let store = f.store();
+        let path = file(&store);
+        let ours = ours(&store);
+        let mut map: Map<String, Value> = serde_json::from_slice(&ours).unwrap();
+        put(&path, &ours);
+        remove_foreign(&store);
+        assert_eq!(fs::read(&path).unwrap(), ours, "unchanged: kept");
+        map.insert("doc".to_owned(), Value::from("docs/other.md"));
+        put(&path, &serde_json::to_vec(&map).unwrap());
+        remove_foreign(&store);
+        assert!(!path.exists(), "same token, other content: removed");
     }
 
     #[test]
@@ -226,7 +315,7 @@ mod tests {
         let store = f.store();
         let outside = tempfile::tempdir().unwrap();
         let target = outside.path().join("context.json");
-        let ours = context(token(&store).as_deref());
+        let ours = ours(&store);
         fs::write(&target, &ours).unwrap();
         fs::create_dir_all(store.dir()).unwrap();
         std::os::unix::fs::symlink(&target, file(&store)).unwrap();
@@ -254,7 +343,7 @@ mod tests {
         put(&path, &context(None));
         drop(ProjectCore::open(f.root(), &env));
         assert!(!path.exists(), "a copy without this install's token goes");
-        let ours = context(token(&f.store()).as_deref());
+        let ours = ours(&f.store());
         put(&path, &ours);
         drop(ProjectCore::open(f.root(), &env));
         assert_eq!(fs::read(&path).unwrap(), ours, "this install's copy stays");
