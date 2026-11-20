@@ -23,6 +23,8 @@ pub struct CopyFile {
 
 impl StateData for CopyFile {
     const VERSION: u32 = 1;
+    /// A text of up to [`MAX_COPY_BYTES`], escaped as JSON (a control character takes 6 bytes).
+    const MAX_BYTES: u64 = 16 * 1024 * 1024;
 }
 
 fn check_of(text: &str) -> String {

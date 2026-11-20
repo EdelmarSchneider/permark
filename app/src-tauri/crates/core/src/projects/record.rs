@@ -637,7 +637,7 @@ pub fn read(root: &Path) -> RecordRead {
             message: "the project list is a link".to_owned(),
         };
     }
-    match crate::fsx::read_bytes(&path, MAX_RECORD_BYTES) {
+    match crate::fsx::read_regular(&path, MAX_RECORD_BYTES, crate::fsx::Zone::Inside(&permark)) {
         Ok(bytes) => parse(&bytes),
         Err(crate::fsx::FsxError::TooLarge { .. }) => RecordRead::Unreadable {
             line: 1,

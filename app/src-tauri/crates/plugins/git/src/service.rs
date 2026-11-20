@@ -2,7 +2,7 @@
 //! baseline) are coalesced (300 ms of quiet, at most 2 s), wait out `index.lock`, and make one snapshot; it is
 //! announced only when its content differs. Discovery runs on the worker too: opening a project never waits for git.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, OnceLock, PoisonError, RwLock};
@@ -23,7 +23,7 @@ use crate::ops::{
 };
 use crate::system::SystemGit;
 use crate::types::{BaselineInfo, BaselineKind, GitFile, GitSnapshot, WorktreeInfo};
-use crate::worktrees::branch_of;
+use crate::worktrees::{branch_of, opens_locally};
 
 /// The person's choice of baseline (`prefs.json`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -211,6 +211,16 @@ pub(crate) fn excluded_path(excluded: &[String], path: &str) -> bool {
     })
 }
 
+/// [`GitOps::discover`] of `folder`, unless opening its repository would make git look up a path that is not on this
+/// computer ([`opens_locally`]: a `.git` file | `commondir` naming a share, which both backends follow): no repository
+/// then.
+pub(crate) fn discover_here(backend: &dyn GitOps, folder: &Path, home: Option<&Path>) -> Discovery {
+    if !opens_locally(folder) {
+        return Discovery::NoRepo;
+    }
+    backend.discover(folder, home)
+}
+
 /// A backend with the working trees it answers for.
 struct Repo {
     backend: Arc<dyn GitOps>,
@@ -267,9 +277,12 @@ pub(crate) struct Visiting {
 }
 
 impl Visiting {
+    /// `stored` comes from a state file of the folder: kept only as a full commit id (lowercase, as git prints it).
     pub(crate) fn new(stored: Option<String>) -> Self {
         Self {
-            stored,
+            stored: stored
+                .and_then(|oid| CommitId::parse(&oid))
+                .map(|commit| commit.as_str().to_owned()),
             session: Session::Unset,
             last_head: None,
         }
@@ -536,13 +549,16 @@ impl RepoReader for Reader {
     }
 
     fn commits_between(&self, old: &str, new: &str) -> Option<u32> {
+        // a caller's text (a stored HEAD) reaches git only as full commit ids
+        let (old, new) = (CommitId::parse(old)?, CommitId::parse(new)?);
         let guard = self
             .shared
             .repo
             .read()
             .unwrap_or_else(PoisonError::into_inner);
         let repo = guard.as_ref()?;
-        repo.backend.commit_count(&repo.main, old, new)
+        repo.backend
+            .commit_count(&repo.main, old.as_str(), new.as_str())
     }
 }
 
@@ -652,14 +668,14 @@ impl Worker {
 
     fn discover(&mut self, backend: &Arc<dyn GitOps>) -> Discovery {
         let home = self.args.home.as_deref();
-        let found = backend.discover(&self.args.root, home);
+        let found = discover_here(backend.as_ref(), &self.args.root, home);
         self.looked = true;
         self.worktree_locations.clear();
         self.main = None;
         if let Discovery::Repo(location) = &found {
             self.main = Some(location.clone());
             for (name, folder) in &self.args.worktrees {
-                if let Discovery::Repo(wt) = backend.discover(folder, home) {
+                if let Discovery::Repo(wt) = discover_here(backend.as_ref(), folder, home) {
                     self.worktree_locations.push((name.clone(), wt));
                 }
             }

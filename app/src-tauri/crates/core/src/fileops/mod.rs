@@ -40,15 +40,15 @@ pub use plan::replacement_href;
 
 use self::ops::{
     announced_pairs, check_deletes, check_moves, execute_moves, io_error, is_protected, locate,
-    ValidMove,
+    locate_undoable, ValidMove,
 };
 use self::plan::{apply_edits, invert_edits, mentions, split_root, DocPlan, Mover, Planner};
-use self::undo::{DocUndo, Entry, Journal, Op, UndoEdit, JOURNAL_FILE};
+use self::undo::{DocUndo, Entry, History, Journal, Op, UndoEdit, JOURNAL_FILE, MARKS_FILE};
 use crate::error::{ErrorKind, IpcError};
 use crate::format::{FormatRegistry, MarkdownFeatures};
 use crate::fsx::{hash, write_atomic_if_unchanged, ContentHash, IDENTITY_UNKNOWN};
 use crate::paths::{Vault, VaultError, VaultPath};
-use crate::state::StateFile;
+use crate::state::{AppDirs, StateError};
 use crate::tree::{Explorer, Renamed};
 use crate::watch::OwnWrites;
 
@@ -292,8 +292,11 @@ pub struct FileOps {
     vault: Vault,
     explorer: Arc<Explorer>,
     own: Arc<OwnWrites>,
-    /// The undo journal; locked for one read-modify-write at a time. Moves with the project's state folder.
-    journal: Mutex<StateFile<Journal>>,
+    /// The undo journal; locked for one read-modify-write at a time. Moves with the project's state folder. `None`:
+    /// no usable install key, nothing journaled.
+    journal: Mutex<Option<History>>,
+    /// The person's state roots: an undo never puts an imported item back into them.
+    roots: AppDirs,
     plans: Mutex<Plans>,
     /// Drop-into-project plans waiting and imports running.
     imports: Mutex<import::Imports>,
@@ -321,7 +324,8 @@ impl FileOps {
             vault,
             explorer,
             own,
-            journal: Mutex::new(store.file::<Journal>(JOURNAL_FILE)),
+            journal: Mutex::new(History::of(store)),
+            roots: store.app_dirs().clone(),
             plans: Mutex::new(Plans::default()),
             imports: Mutex::new(import::Imports::default()),
             activity: None,
@@ -415,23 +419,22 @@ impl FileOps {
 
     /// The project's state folder moved (PerMark was initialized): the journal goes on in the new one.
     pub fn use_store(&self, store: &crate::state::StateStore) {
-        *lock(&self.journal) = store.file::<Journal>(JOURNAL_FILE);
+        *lock(&self.journal) = History::of(store);
     }
 
-    /// Journals an operation; its id. `None`: the journal could not be written (best effort: the operation is done all
-    /// the same, just not undoable).
+    /// Journals an operation; its id. `None`: the journal could not be written, or no install key is usable (best
+    /// effort: the operation is done all the same, just not undoable).
     fn record(&self, op: Op) -> Option<u64> {
         self.note(&op, false);
-        let file = lock(&self.journal);
-        let mut journal = file.load().into_value();
-        let id = journal.push(now_ms(), op);
-        file.save(&journal).ok().map(|()| id)
+        lock(&self.journal).as_ref()?.record(now_ms(), op)
     }
 
     /// Entries the next undo would take back (newest first count).
     #[must_use]
     pub fn undo_depth(&self) -> usize {
-        lock(&self.journal).load().into_value().entries.len()
+        lock(&self.journal)
+            .as_ref()
+            .map_or(0, |history| history.load().entries.len())
     }
 
     // ---- move ------------------------------------------------------------------------------------------------
@@ -806,16 +809,27 @@ impl FileOps {
         &self,
         pick: impl FnOnce(&mut Journal) -> Option<Entry>,
     ) -> Result<Option<UndoOutcome>, FileOpError> {
+        let fail = |name: &str| {
+            let path = name.to_owned();
+            move |e: StateError| FileOpError::Io {
+                path,
+                source: io::Error::other(e.to_string()),
+            }
+        };
         let entry = {
-            let file = lock(&self.journal);
-            let mut journal = file.load().into_value();
+            let history = lock(&self.journal);
+            let Some(history) = history.as_ref() else {
+                return Ok(None);
+            };
+            let mut journal = history.load();
             let Some(entry) = pick(&mut journal) else {
                 return Ok(None);
             };
-            file.save(&journal).map_err(|e| FileOpError::Io {
-                path: JOURNAL_FILE.to_owned(),
-                source: io::Error::other(e.to_string()),
-            })?;
+            // unmarked first: whatever happens next, no copy of the journal can take this step back again
+            if !history.unmark(entry.id).map_err(fail(MARKS_FILE))? {
+                return Ok(None);
+            }
+            history.save(&journal).map_err(fail(JOURNAL_FILE))?;
             entry
         };
         self.note(&entry.op, true);
@@ -832,8 +846,13 @@ impl FileOps {
         let mut skipped = Vec::new();
         let mut back = vec![false; moves.len()];
         let mut done: Vec<(VaultPath, VaultPath)> = Vec::new();
+        let usable = |path: &str| {
+            VaultPath::parse(path)
+                .ok()
+                .filter(|p| locate_undoable(&self.vault, p).is_some())
+        };
         for (at, (from, to)) in moves.iter().enumerate().rev() {
-            let (Ok(from_p), Ok(to_p)) = (VaultPath::parse(from), VaultPath::parse(to)) else {
+            let (Some(from_p), Some(to_p)) = (usable(from), usable(to)) else {
                 continue;
             };
             // the reverse move: `to` goes back to `from`
@@ -921,8 +940,10 @@ impl FileOps {
     }
 
     fn revert_links(&self, place: &str, doc: &DocUndo) -> Result<(), SkipReason> {
-        let path = VaultPath::parse(place).map_err(|_| SkipReason::Missing)?;
-        let abs = locate(&self.vault, &path).map_err(|_| SkipReason::Missing)?;
+        let abs = VaultPath::parse(place)
+            .ok()
+            .and_then(|path| locate_undoable(&self.vault, &path))
+            .ok_or(SkipReason::Missing)?;
         let bytes = fs::read(&abs).map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
                 SkipReason::Missing
@@ -968,7 +989,7 @@ impl FileOps {
         let mut restored = 0;
         let removed = VaultPath::parse(path)
             .ok()
-            .and_then(|p| locate(&self.vault, &p).ok())
+            .and_then(|p| locate_undoable(&self.vault, &p))
             .map(|abs| match kind {
                 UndoKind::NewFile => match fs::metadata(&abs) {
                     // only a file nobody has written to is taken back
@@ -999,7 +1020,7 @@ impl FileOps {
         let abs: Vec<PathBuf> = paths
             .iter()
             .filter_map(|p| VaultPath::parse(p).ok())
-            .filter_map(|p| locate(&self.vault, &p).ok())
+            .filter_map(|p| locate_undoable(&self.vault, &p))
             .collect();
         let restored = restore_from_bin(&abs);
         self.own.expect_creations(paths);

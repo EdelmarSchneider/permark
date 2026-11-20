@@ -426,7 +426,9 @@ impl Shared {
                     state.slots = owners
                         .slots()
                         .iter()
-                        .map(|s| Slot::new(s.store.raw_file(crate::FILE)))
+                        .map(|s| {
+                            Slot::new(s.store.raw_file(crate::FILE).capped(crate::MAX_FILE_BYTES))
+                        })
                         .collect();
                     state.owners = Some((*owners).clone());
                     state.paused = false;
@@ -599,7 +601,7 @@ impl CommentsService {
         let files = owners
             .slots()
             .iter()
-            .map(|s| s.store.raw_file(crate::FILE))
+            .map(|s| s.store.raw_file(crate::FILE).capped(crate::MAX_FILE_BYTES))
             .collect();
         Self::start_with(Some(owners), files, scope, announce)
     }

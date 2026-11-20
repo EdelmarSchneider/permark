@@ -844,6 +844,47 @@ fn hidden_files_never_reach_any_list_or_snippet() {
     assert!(!search.to_string().contains("docs/plan.md"), "{search}");
 }
 
+#[cfg(unix)]
+#[test]
+fn search_never_answers_with_text_behind_a_link() {
+    let fx = fx();
+    fx.on();
+    let tools = fx.tools();
+    std::os::unix::fs::symlink(
+        fx.root.join("private/secret.md"),
+        fx.root.join("docs/alias.md"),
+    )
+    .unwrap();
+    write(&fx.root, "docs/fence.md", "# Fence\n\nfenceword\n");
+    // the watch reports in order: once the later file is found, the link was looked at
+    assert!(wait_for(|| tools
+        .call("search", json!({ "query": "fenceword" }))
+        .is_ok_and(|s| s["hits"]
+            .as_array()
+            .is_some_and(|h| !h.is_empty()))));
+    let search = tools
+        .call("search", json!({ "query": "launch code", "limit": 25 }))
+        .unwrap();
+    let hits = search["hits"].to_string();
+    assert!(
+        !hits.contains("alias") && !hits.contains("launch code"),
+        "{search}"
+    );
+}
+
+#[test]
+fn a_hit_whose_file_is_gone_is_left_out() {
+    let fx = fx();
+    fx.on();
+    let tools = fx.tools();
+    let before = tools.call("search", json!({ "query": "Friday" })).unwrap();
+    assert!(before.to_string().contains("docs/plan.md"), "{before}");
+    // asked before the watch tells the index (it waits for a quiet moment first)
+    std::fs::remove_file(fx.root.join("docs/plan.md")).unwrap();
+    let after = tools.call("search", json!({ "query": "Friday" })).unwrap();
+    assert!(!after.to_string().contains("docs/plan.md"), "{after}");
+}
+
 #[test]
 fn every_text_reaches_the_agent_as_written() {
     let fx = fx();
@@ -1934,6 +1975,71 @@ fn the_context_file_exists_only_while_the_context_group_is_on() {
     std::fs::write(&file, b"{\"v\":1,\"doc\":\"docs/plan.md\"}").unwrap();
     fx.core().restart_plugin(&fx.env, &PluginId::of("agent"));
     assert!(!file.exists(), "stale file removed on start");
+}
+
+#[test]
+fn the_context_file_holds_the_published_context_and_nothing_else() {
+    let fx = fx();
+    let file = fx.root.join(".permark/local").join(crate::CONTEXT_FILE);
+    let read = || -> serde_json::Map<String, Value> {
+        serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap()
+    };
+    let keys = |map: &serde_json::Map<String, Value>| -> Vec<String> {
+        let mut keys: Vec<String> = map.keys().cloned().collect();
+        keys.sort();
+        keys
+    };
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    fx.rpc(
+        "publish",
+        json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+    )
+    .unwrap();
+    let map = read();
+    assert_eq!(keys(&map), ["doc", "mode", "openComments", "token", "v"]);
+    // only this install can make it for this folder and this content: a copy that came with the folder, or one
+    // changed since, has none it accepts
+    let mut published = map.clone();
+    published.shift_remove("token");
+    let token = permark_core::state::context::token(&fx.core().store(), &published).unwrap();
+    assert_eq!(map["token"], json!(token));
+    assert_eq!(map["v"], json!(1));
+    assert_eq!(map["doc"], json!("docs/plan.md"));
+    assert_eq!(map["mode"], json!("view"));
+    // the comment in a file agents never see is not counted
+    assert_eq!(map["openComments"], json!(1));
+    // no open comment: no count
+    fx.comments.0.lock().unwrap().clear();
+    fx.rpc(
+        "publish",
+        json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+    )
+    .unwrap();
+    assert_eq!(keys(&read()), ["doc", "mode", "token", "v"]);
+}
+
+/// A context file that came with the folder (a zip, a clone) is removed when the project opens, even while the
+/// connection is on (the plugin then leaves the file to the next publish); the one this install wrote stays.
+#[test]
+fn a_context_file_that_came_with_the_folder_is_removed_at_open() {
+    let mut fx = fx();
+    let file = fx.root.join(".permark/local").join(crate::CONTEXT_FILE);
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    std::fs::write(&file, b"{\"v\":1,\"doc\":\"docs/plan.md\"}").unwrap();
+    fx.reopen();
+    assert!(!file.exists(), "no token of this install: removed");
+    fx.rpc(
+        "publish",
+        json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+    )
+    .unwrap();
+    let written = std::fs::read(&file).unwrap();
+    fx.reopen();
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        written,
+        "this install's file stays"
+    );
 }
 
 #[test]

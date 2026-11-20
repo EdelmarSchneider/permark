@@ -53,6 +53,11 @@ fn make_with(files: &[&str], native: bool, timing: Timing) -> Fx {
             fs::write(path, "x").unwrap();
         }
     }
+    watch_dir(dir, native, timing)
+}
+
+/// A watch over what `dir` holds now.
+fn watch_dir(dir: tempfile::TempDir, native: bool, timing: Timing) -> Fx {
     let root = Root::open(dir.path()).unwrap();
     let vault = Vault::new(root);
     let explorer = Explorer::new(
@@ -581,6 +586,25 @@ fn dropping_the_watcher_while_events_flow_is_prompt_and_silent_afterwards() {
     std::thread::sleep(Duration::from_millis(400));
     assert_eq!(seen.lock().unwrap().len(), count, "no batch after the drop");
     drop(dir);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn the_watch_never_follows_a_link_out_of_the_project() {
+    let outside = tempfile::tempdir().unwrap();
+    fs::create_dir(outside.path().join("deep")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("keep.md"), "x").unwrap();
+    std::os::unix::fs::symlink(outside.path(), dir.path().join("out")).unwrap();
+    // followed, this one would have the watch walk the whole system
+    std::os::unix::fs::symlink("/", dir.path().join("top")).unwrap();
+    let f = watch_dir(dir, true, FAST);
+    assert_eq!(f.watcher.status(), LiveStatus::Available);
+    fs::write(outside.path().join("far.md"), "outside").unwrap();
+    fs::write(outside.path().join("deep/farther.md"), "outside").unwrap();
+    let all = fence(&f, "after.md");
+    assert!(!all.iter().any(|c| c.path.starts_with("out/")), "{all:?}");
+    assert_eq!(f.watcher.status(), LiveStatus::Available);
 }
 
 #[test]

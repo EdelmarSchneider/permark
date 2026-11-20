@@ -223,7 +223,8 @@ impl Worker {
             // entries known from the cache only (files gone while closed)
             self.shared.harvest.keep_only(&on_disk);
         }
-        // 2. new files join the list
+        // 2. new files join the list; a link (the scan gives it no place on disk) keeps no text, nor tags, from before
+        let mut links = Vec::new();
         for chunk in files.chunks(LIST_BATCH) {
             if self.stopped() {
                 return;
@@ -235,7 +236,14 @@ impl Worker {
                 .unwrap_or_else(PoisonError::into_inner);
             for file in chunk {
                 index.add_file(&file.path, file.category);
+                if file.abs.is_none() && reads_content(file.category) {
+                    index.drop_content(&file.path);
+                    links.push(file.path.as_str());
+                }
             }
+        }
+        for path in links {
+            self.shared.harvest.remove(path, false);
         }
         // 3. documents are read (the ones whose length or time changed)
         let formats = self.formats();
@@ -419,17 +427,38 @@ impl Worker {
     fn learn(&self, path: &str) {
         let name = path.rsplit('/').next().unwrap_or(path);
         let category = category_of(name);
-        let abs = VaultPath::parse(path)
-            .ok()
-            .and_then(|vp| self.vault.resolve(&vp).ok());
-        let Some(abs) = abs else {
+        let Ok(hinted) = VaultPath::parse(path) else {
             return;
         };
-        let Ok(meta) = std::fs::metadata(&abs) else {
+        let Ok(abs) = self.vault.resolve(&hinted) else {
+            return;
+        };
+        let Ok(meta) = std::fs::symlink_metadata(&abs) else {
             // gone before we looked
             self.forget(path, false);
             return;
         };
+        // `resolve` follows links: a real place under another project path means a link on the way (the file | a
+        // folder above it); a link left as is leads nowhere
+        let through_link = meta.file_type().is_symlink()
+            || self
+                .vault
+                .relativize(&abs)
+                .is_none_or(|real| real.key() != hinted.key());
+        if through_link {
+            // listed by name like the scan lists a link; its target is never read
+            {
+                let mut index = self
+                    .shared
+                    .index
+                    .write()
+                    .unwrap_or_else(PoisonError::into_inner);
+                index.add_file(path, category);
+                index.drop_content(path);
+            }
+            self.shared.harvest.remove(path, false);
+            return;
+        }
         if !meta.is_file() {
             return;
         }
@@ -468,7 +497,7 @@ fn outcome_of(
     known: Option<Sig>,
     formats: &FormatRegistry,
 ) -> Outcome {
-    if let (Some(known), Ok(meta)) = (known, std::fs::metadata(abs)) {
+    if let (Some(known), Ok(meta)) = (known, std::fs::symlink_metadata(abs)) {
         if Sig::of(&meta) == known {
             return Outcome::Unchanged;
         }
@@ -500,5 +529,30 @@ pub fn message_of(batch: &FsBatch) -> Msg {
     Msg::Changes {
         changes: batch.changes.clone(),
         reconcile,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::search::prepare::tests::linked_document;
+
+    #[test]
+    fn a_link_is_listed_by_name_only_and_never_gives_its_targets_text_or_tags() {
+        let (dir, outside) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let Some((link, far)) = linked_document(dir.path(), outside.path()) else {
+            eprintln!("links could not be made here; skipped");
+            return;
+        };
+        let formats = FormatRegistry::core();
+        let read = outcome_of("far.md", &far, Category::Markdown, None, &formats);
+        assert!(matches!(read, Outcome::Read(..)), "the target itself reads");
+        match outcome_of("alias.md", &link, Category::Markdown, None, &formats) {
+            Outcome::NameOnly(path, None) => assert_eq!(path, "alias.md"),
+            Outcome::NameOnly(_, Some(tags)) => {
+                panic!("tags read through the link: {:?}", tags.tags)
+            }
+            Outcome::Read(..) | Outcome::Unchanged => panic!("text read through the link"),
+        }
     }
 }

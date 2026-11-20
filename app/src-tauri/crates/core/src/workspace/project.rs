@@ -343,6 +343,9 @@ impl ProjectCore {
         let store = StateStore::for_project(&env.dirs, &root);
         // the person's data 0.5 kept in its own profile folder, taken over once
         crate::state::older::take_over_project(&env.dirs, &root, &store);
+        // a context file for scripts that came with the folder goes before a plugin starts, whatever the agent
+        // connection's state: scripts would take it for the person's live context
+        crate::state::context::remove_foreign(&store);
         let config = ProjectConfig::load(&root);
         // plugins that are on may offer extra roots (linked worktrees) before the project is built
         let (enablement, on) = project_enablement(env, &config, &store);

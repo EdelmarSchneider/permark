@@ -19,7 +19,7 @@ pub const OLDER_FOLDER: &str = "dev.permark.app";
 /// Project files 0.5 kept in its profile that hold the person's data.
 pub const OLDER_PROJECT_FILES: [&str; 3] = ["meta.toml", "comments.json", "quiet.json"];
 /// Marks a project profile folder whose 0.5 data was looked at (copied or absent).
-const TAKEN_OVER: &str = "from-0.5";
+pub(crate) const TAKEN_OVER: &str = "from-0.5";
 /// Largest file copied (a bigger one stays where it is).
 const MAX_FILE: u64 = 64 * 1024 * 1024;
 /// 0.5's last window geometry file, in its profile folder.
@@ -150,6 +150,7 @@ mod tests {
         let dirs = AppDirs {
             profile: base.path().join("data").join("PerMark"),
             cache: base.path().join("cache").join("PerMark"),
+            install: base.path().join("local").join("PerMark").join("install"),
         };
         let project = base.path().join("Pro jeto ü");
         std::fs::create_dir_all(&project).unwrap();
@@ -236,6 +237,7 @@ mod tests {
                 .join("elsewhere")
                 .join("PerMark"),
             cache: dirs.cache.clone(),
+            install: dirs.install.clone(),
         };
         std::fs::remove_dir_all(root.path().join(".permark")).unwrap();
         let store = StateStore::for_project(&none, &root);
@@ -309,6 +311,7 @@ mod tests {
         let dirs = AppDirs {
             profile: data.join("PerMark"),
             cache: base.path().join("cache").join("PerMark"),
+            install: base.path().join("local").join("PerMark").join("install"),
         };
         assert_eq!(older_window(&dirs), None, "no 0.5 folder");
         std::fs::create_dir_all(data.join(OLDER_FOLDER)).unwrap();

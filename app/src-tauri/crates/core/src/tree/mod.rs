@@ -7,7 +7,7 @@ mod filter;
 mod ignore;
 mod model;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;

@@ -99,15 +99,22 @@ fn a_v2_session_round_trips_byte_for_byte() {
 }
 
 #[test]
-fn a_session_of_a_newer_app_is_moved_aside_untouched() {
+fn a_session_of_a_newer_app_is_left_in_place() {
     let (_b, store) = store();
-    write(&store, V3.as_bytes());
+    let path = write(&store, V3.as_bytes());
     let file = app_session_file(&store);
-    assert!(matches!(file.load(), Loaded::Recovered { backup: Some(_) }));
-    let kept = backups(&store);
-    assert_eq!(kept.len(), 1);
-    assert_eq!(std::fs::read(&kept[0]).unwrap(), V3.as_bytes());
-    assert_eq!(file.load(), Loaded::Missing);
+    assert!(matches!(file.load(), Loaded::Recovered { backup: None }));
+    assert_eq!(backups(&store).len(), 0);
+    assert!(
+        matches!(file.load(), Loaded::Recovered { backup: None }),
+        "still there, still unread"
+    );
+    // the session this build saves meanwhile never replaces the newer one
+    assert!(file.save(&AppSession::default()).is_err());
+    assert!(app_session_file(&store)
+        .save(&AppSession::default())
+        .is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), V3.as_bytes());
 }
 
 #[test]

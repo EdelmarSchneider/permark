@@ -40,7 +40,7 @@ use crate::types::{
     FileMeta, IndexEntry, MetaProblem, TagCountView, TagRefView, TagStyleView, TaggedFile,
     TagsIndex, TagsLocation, TagsOverview, TagsStatus,
 };
-use crate::{META_FILE, META_PATH};
+use crate::{META_FILE, META_MAX_BYTES, META_PATH};
 
 /// Files a "files with these tags" answer carries at most.
 const MAX_LISTED: usize = 5000;
@@ -129,7 +129,7 @@ impl Unit {
         });
         Self {
             uid: slot.uid.clone(),
-            file: slot.store.shared_file(META_FILE),
+            file: slot.store.shared_file(META_FILE).capped(META_MAX_BYTES),
             // merged (then deleted): the profile copy from before the folder had `.permark/`
             legacy: slot.store.legacy_shared_file(META_FILE),
             watched,

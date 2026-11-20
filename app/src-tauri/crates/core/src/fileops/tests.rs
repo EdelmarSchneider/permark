@@ -1190,9 +1190,462 @@ fn the_journal_keeps_twenty_and_survives_a_restart() {
         &StateStore::for_project(&AppDirs::under(f.state.path()), &root),
     );
     assert_eq!(again.undo_depth(), 20);
+    // what makes the journal readable again: the install key kept in the install folder
+    assert!(f.state.path().join("install/install.key").is_file());
     let undone = again.undo().unwrap().unwrap();
     assert_eq!(undone.kind, UndoKind::NewFolder);
     assert!(!exists(&f, "start/f24"));
+}
+
+/// A second service on the same project and state folders: the app started again.
+fn restarted(f: &Fx) -> FileOps {
+    let root = Root::open(f.dir.path()).unwrap();
+    FileOps::new(
+        Vault::new(root.clone()),
+        Arc::clone(&f.explorer),
+        Arc::clone(&f.own),
+        &StateStore::for_project(&AppDirs::under(f.state.path()), &root),
+    )
+}
+
+#[test]
+fn every_kind_of_operation_is_undone_after_a_restart() {
+    let f = fx(&[
+        ("a.md", "[b](b.md)\n"),
+        ("b.md", "b"),
+        ("docs/", ""),
+        ("gone.md", "bye"),
+    ]);
+    mv(&f, &[("b.md", "docs/b.md")]);
+    f.ops.create("docs", "new", NewKind::File).unwrap();
+    f.ops.create("docs", "folder", NewKind::Folder).unwrap();
+    let deleted = f.ops.delete(&["gone.md".to_owned()]).is_ok();
+    let again = restarted(&f);
+    assert_eq!(again.undo_depth(), if deleted { 4 } else { 3 });
+    if deleted {
+        let out = again.undo().unwrap().unwrap();
+        assert_eq!(out.kind, UndoKind::Delete);
+        if out.restored == 1 {
+            assert_eq!(read(&f, "gone.md"), "bye");
+        }
+    }
+    let out = again.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::NewFolder, 1));
+    assert!(!exists(&f, "docs/folder"));
+    let out = again.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::NewFile, 1));
+    assert!(!exists(&f, "docs/new.md"));
+    let out = again.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::Move, 1));
+    assert_eq!(read(&f, "b.md"), "b");
+    assert_eq!(read(&f, "a.md"), "[b](b.md)\n");
+    assert!(again.undo().unwrap().is_none());
+}
+
+#[test]
+fn a_journal_kept_in_the_profile_still_undoes_after_initialize() {
+    let f = fx(&[("docs/", "")]);
+    f.ops.create("docs", "made", NewKind::Folder).unwrap();
+    let root = Root::open(f.dir.path()).unwrap();
+    let dirs = AppDirs::under(f.state.path());
+    assert_eq!(
+        StateStore::for_project(&dirs, &root).location(),
+        crate::state::StateLocation::Profile
+    );
+    let store = crate::state::init_project(&dirs, &root).unwrap();
+    assert_eq!(store.location(), crate::state::StateLocation::Project);
+    f.ops.use_store(&store);
+    assert_eq!(f.ops.undo_depth(), 1);
+    let out = f.ops.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::NewFolder, 1));
+    assert!(!exists(&f, "docs/made"));
+}
+
+/// A journal that came with the folder (a zip, a clone, a sync partner): written where PerMark kept its journal.
+fn plant_journal(f: &Fx, json: &str) {
+    let root = Root::open(f.dir.path()).unwrap();
+    let store = StateStore::for_project(&AppDirs::under(f.state.path()), &root);
+    let path = store.dir().join("fileops").join("undo.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, json).unwrap();
+}
+
+/// Undoes until nothing is left (or the journal refuses).
+fn undo_all(ops: &FileOps) {
+    for _ in 0..25 {
+        if !matches!(ops.undo(), Ok(Some(_))) {
+            break;
+        }
+    }
+}
+
+#[test]
+fn a_journal_that_came_with_the_folder_never_moves_a_file_out() {
+    let f = fx(&[("a.md", "mine")]);
+    // stands in for a folder whose files run at sign-in
+    let startup = tempfile::tempdir().unwrap();
+    let evil = startup.path().join("evil.md");
+    let from = serde_json::to_string(&evil.display().to_string()).unwrap();
+    plant_journal(
+        &f,
+        &format!(
+            r#"{{"version":1,"data":{{"next":2,"entries":[{{"id":1,"at_ms":1,"op":{{"op":"import","copied":[],"moved":[{{"from":{from},"to":"a.md"}}]}}}}]}}}}"#
+        ),
+    );
+    let again = restarted(&f);
+    undo_all(&again);
+    assert_eq!(read(&f, "a.md"), "mine");
+    assert!(!evil.exists());
+    // the journal of the earlier version is kept aside under another name, never read
+    let root = Root::open(f.dir.path()).unwrap();
+    let folder = StateStore::for_project(&AppDirs::under(f.state.path()), &root)
+        .dir()
+        .join("fileops");
+    assert!(!folder.join("undo.json").exists());
+    assert!(fs::read_to_string(folder.join("undo.json.pre-1.0"))
+        .unwrap()
+        .contains("evil.md"));
+}
+
+#[test]
+fn the_journal_of_an_earlier_version_is_never_renamed_over_one_kept_before() {
+    let f = fx(&[("a.md", "mine")]);
+    plant_journal(&f, "older");
+    drop(restarted(&f));
+    plant_journal(&f, "newer");
+    drop(restarted(&f));
+    let root = Root::open(f.dir.path()).unwrap();
+    let folder = StateStore::for_project(&AppDirs::under(f.state.path()), &root)
+        .dir()
+        .join("fileops");
+    assert_eq!(read_text(&folder.join("undo.json")), "newer");
+    assert_eq!(read_text(&folder.join("undo.json.pre-1.0")), "older");
+}
+
+fn read_text(path: &Path) -> String {
+    fs::read_to_string(path).unwrap()
+}
+
+/// This install's journal of the fixture's project, and the project's own install data (key + folder id).
+fn journal_of(
+    f: &Fx,
+) -> (
+    crate::state::StateFile<undo::Journal>,
+    crate::state::Machine,
+) {
+    let root = Root::open(f.dir.path()).unwrap();
+    let store = StateStore::for_project(&AppDirs::under(f.state.path()), &root);
+    (
+        store.machine_file(undo::JOURNAL_FILE).unwrap(),
+        store.machine().unwrap().clone(),
+    )
+}
+
+/// Puts `op` in place of the newest entry's operation (its id, so its mark, stays), sealed under `machine` (`None`:
+/// unsealed).
+fn swap_newest(f: &Fx, op: Op, machine: Option<&crate::state::Machine>) {
+    let (file, _) = journal_of(f);
+    let mut journal = file.load().into_value();
+    let entry = journal.entries.last_mut().unwrap();
+    entry.op = op;
+    let seal = machine.map(|m| entry.seal_with(m)).unwrap_or_default();
+    entry.seal = seal;
+    file.save(&journal).unwrap();
+}
+
+fn import_op(copied: &[&str], moved: &[(&str, &str)]) -> Op {
+    Op::Import {
+        copied: copied.iter().map(|p| (*p).to_owned()).collect(),
+        moved: moved
+            .iter()
+            .map(|(from, to)| undo::ImportMoved {
+                from: (*from).to_owned(),
+                to: (*to).to_owned(),
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn an_entry_this_install_did_not_seal_for_this_folder_or_with_a_bad_path_never_moves_a_file() {
+    let f = fx(&[
+        ("a.md", "mine"),
+        (".git/HEAD", "ref"),
+        ("sub/.permark/x.json", "{}"),
+        ("sub/.permark/empty/", ""),
+        ("docs/", ""),
+    ]);
+    // stands in for a folder whose files run at sign-in
+    let startup = tempfile::tempdir().unwrap();
+    let evil = startup.path().join("evil.md").display().to_string();
+    f.ops.create("docs", "made", NewKind::Folder).unwrap();
+    let (_, mine) = journal_of(&f);
+    let other_state = tempfile::tempdir().unwrap();
+    let root = Root::open(f.dir.path()).unwrap();
+    let other_store = StateStore::for_project(&AppDirs::under(other_state.path()), &root);
+    let other = other_store.machine().unwrap();
+    let out = import_op(&[], &[(&evil, "a.md")]);
+    let cases: Vec<(&str, Op, Option<&crate::state::Machine>)> = vec![
+        ("unsealed", out.clone(), None),
+        ("sealed by another install", out, Some(other)),
+        (
+            "a repository folder",
+            import_op(&[".git"], &[]),
+            Some(&mine),
+        ),
+        (
+            "a member's state",
+            import_op(&["sub/.permark/x.json"], &[]),
+            Some(&mine),
+        ),
+        (
+            "a member's state folder",
+            Op::NewFolder {
+                path: "sub/.permark/empty".to_owned(),
+            },
+            Some(&mine),
+        ),
+        (
+            "a link put back into a state folder",
+            Op::Move {
+                moves: vec![("a.md".to_owned(), "docs/a.md".to_owned())],
+                docs: vec![DocUndo {
+                    path: "sub/.permark/x.json".to_owned(),
+                    original: "sub/.permark/x.json".to_owned(),
+                    hash_after: hash(b"{}").hex(),
+                    edits: vec![UndoEdit {
+                        start: 0,
+                        end: 2,
+                        old: "pwned".to_owned(),
+                    }],
+                    causes: Vec::new(),
+                    moved_by: None,
+                }],
+            },
+            Some(&mine),
+        ),
+    ];
+    for (case, op, machine) in cases {
+        swap_newest(&f, op, machine);
+        assert_eq!(f.ops.undo_depth(), 0, "{case}");
+        assert!(f.ops.undo_entry(1).unwrap().is_none(), "{case}");
+        assert!(f.ops.undo().unwrap().is_none(), "{case}");
+        assert!(restarted(&f).undo().unwrap().is_none(), "{case}");
+        assert_eq!(read(&f, "a.md"), "mine", "{case}");
+        assert!(!Path::new(&evil).exists(), "{case}");
+        assert_eq!(read(&f, ".git/HEAD"), "ref", "{case}");
+        assert_eq!(read(&f, "sub/.permark/x.json"), "{}", "{case}");
+        assert!(exists(&f, "sub/.permark/empty"), "{case}");
+    }
+    // the same entry as this install wrote it is still taken back: its mark was live all along
+    swap_newest(
+        &f,
+        Op::NewFolder {
+            path: "docs/made".to_owned(),
+        },
+        Some(&mine),
+    );
+    let out = f.ops.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::NewFolder, 1));
+    assert!(!exists(&f, "docs/made"));
+}
+
+#[test]
+fn a_step_taken_back_once_never_comes_back_with_an_older_copy_of_the_journal() {
+    let f = fx(&[("docs/", "")]);
+    f.ops.create("docs", "made", NewKind::Folder).unwrap();
+    let (file, _) = journal_of(&f);
+    let before = fs::read(file.path()).unwrap();
+    assert!(f.ops.undo().unwrap().is_some());
+    // made again by hand, then the older journal comes back (a sync partner, a restore)
+    fs::create_dir(f.dir.path().join("docs/made")).unwrap();
+    fs::write(file.path(), &before).unwrap();
+    assert_eq!(f.ops.undo_depth(), 0);
+    assert!(f.ops.undo().unwrap().is_none());
+    assert!(f.ops.undo_entry(1).unwrap().is_none());
+    assert!(restarted(&f).undo().unwrap().is_none());
+    assert!(exists(&f, "docs/made"));
+}
+
+#[test]
+fn an_import_is_put_back_only_on_a_local_drive_outside_the_project_and_the_state_folders() {
+    let f = fx(&[("a.md", "mine"), ("docs/", "")]);
+    let dirs = AppDirs::under(f.state.path());
+    let (_, mine) = journal_of(&f);
+    let inside = f.dir.path().join("back.md").display().to_string();
+    let install = dirs.install.join("a.md").display().to_string();
+    let profile = dirs.profile.join("a.md").display().to_string();
+    let refused = [
+        "//127.0.0.1/share/a.md",
+        r"\\127.0.0.1\share\a.md",
+        r"\\?\C:\a.md",
+        r"\\.\C:\a.md",
+        "out/a.md",
+        &inside,
+        &install,
+        &profile,
+    ];
+    for (n, from) in refused.iter().enumerate() {
+        f.ops
+            .create("docs", &format!("m{n}"), NewKind::Folder)
+            .unwrap();
+        swap_newest(&f, import_op(&[], &[(from, "a.md")]), Some(&mine));
+        let out = f.ops.undo().unwrap().unwrap();
+        assert_eq!(out.kind, UndoKind::Import, "{from}");
+        assert_eq!(out.restored, 0, "{from}");
+        assert_eq!(
+            out.skipped,
+            [Skip {
+                path: "a.md".to_owned(),
+                reason: SkipReason::Missing
+            }],
+            "{from}"
+        );
+        assert_eq!(read(&f, "a.md"), "mine", "{from}");
+    }
+    assert!(!Path::new(&inside).exists() && !Path::new(&install).exists());
+    // a place outside all of them: put back
+    let outside = tempfile::tempdir().unwrap();
+    let back = outside.path().join("a.md");
+    f.ops.create("docs", "last", NewKind::Folder).unwrap();
+    let from = back.display().to_string();
+    swap_newest(&f, import_op(&[], &[(&from, "a.md")]), Some(&mine));
+    let out = f.ops.undo().unwrap().unwrap();
+    assert_eq!((out.restored, out.skipped.len()), (1, 0));
+    assert_eq!(read_text(&back), "mine");
+}
+
+#[test]
+fn ids_go_on_after_the_journal_is_lost() {
+    let f = fx(&[("docs/", "")]);
+    f.ops.create("docs", "one", NewKind::Folder).unwrap();
+    f.ops.create("docs", "two", NewKind::Folder).unwrap();
+    let (file, _) = journal_of(&f);
+    fs::remove_file(file.path()).unwrap();
+    assert_eq!(f.ops.undo_depth(), 0);
+    f.ops.create("docs", "three", NewKind::Folder).unwrap();
+    let journal = file.load().into_value();
+    assert_eq!(
+        journal.entries.iter().map(|e| e.id).collect::<Vec<_>>(),
+        [3]
+    );
+    assert!(f.ops.undo_entry(1).unwrap().is_none());
+    assert!(f.ops.undo_entry(3).unwrap().is_some());
+    assert!(!exists(&f, "docs/three"));
+}
+
+#[test]
+fn a_next_id_written_into_the_journal_file_never_overflows_nor_gives_an_id_twice() {
+    let f = fx(&[("docs/", "")]);
+    f.ops.create("docs", "one", NewKind::Folder).unwrap();
+    // the journal file sits in the project's state folder, where a sync partner can write it
+    let (file, _) = journal_of(&f);
+    let mut journal = file.load().into_value();
+    journal.next = u64::MAX;
+    file.save(&journal).unwrap();
+    f.ops.create("docs", "two", NewKind::Folder).unwrap();
+    f.ops.create("docs", "three", NewKind::Folder).unwrap();
+    let ids: Vec<u64> = file
+        .load()
+        .into_value()
+        .entries
+        .iter()
+        .map(|e| e.id)
+        .collect();
+    assert_eq!(ids, [1, 2, 3]);
+    for name in ["three", "two", "one"] {
+        let out = f.ops.undo().unwrap().unwrap();
+        assert_eq!((out.kind, out.restored), (UndoKind::NewFolder, 1), "{name}");
+        assert!(!exists(&f, &format!("docs/{name}")), "{name}");
+    }
+}
+
+#[test]
+fn an_undo_never_acts_through_a_folder_link_into_a_repository_or_state_folder() {
+    let f = fx(&[
+        ("a.md", "mine"),
+        ("notes/", ""),
+        ("docs/", ""),
+        (".git/x/a.md", "repository data"),
+        ("sub/.permark/y/made.md", ""),
+    ]);
+    mv(&f, &[("a.md", "notes/a.md")]);
+    f.ops.create("docs", "made", NewKind::File).unwrap();
+    // each folder swapped for a link into a protected folder holding the same names
+    let root = f.dir.path();
+    for (folder, target) in [
+        ("notes", root.join(".git").join("x")),
+        ("docs", root.join("sub").join(".permark").join("y")),
+    ] {
+        fs::rename(root.join(folder), root.join(format!("{folder}-was"))).unwrap();
+        if !crate::tree::tests::link_out(&root.join(folder), &target) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+    }
+    let out = f.ops.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::NewFile, 0));
+    let out = f.ops.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::Move, 0));
+    assert_eq!(read(&f, ".git/x/a.md"), "repository data");
+    assert!(exists(&f, "sub/.permark/y/made.md"));
+    assert!(!exists(&f, "a.md"));
+}
+
+#[test]
+fn without_a_usable_install_key_operations_work_and_nothing_is_journaled() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("docs")).unwrap();
+    let state = tempfile::tempdir().unwrap();
+    // a file where the install folder should be: no key can be kept
+    let dirs = AppDirs {
+        install: state.path().join("install"),
+        ..AppDirs::under(state.path())
+    };
+    fs::write(&dirs.install, "in the way").unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    let vault = Vault::new(root.clone());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        Arc::new(Recorder::default()),
+        None,
+    ));
+    let store = StateStore::for_project(&dirs, &root);
+    let ops = FileOps::new(vault, explorer, Arc::new(OwnWrites::new()), &store);
+    ops.create("docs", "made", NewKind::Folder).unwrap();
+    assert!(dir.path().join("docs/made").is_dir());
+    assert_eq!(ops.undo_depth(), 0);
+    assert!(ops.undo().unwrap().is_none());
+    assert!(!store.dir().join("machine").exists());
+}
+
+#[test]
+fn an_undo_never_changes_a_root_a_repository_folder_or_any_state_folder() {
+    let undoable = |path: &str| ops::undoable(&VaultPath::parse(path).unwrap());
+    for path in [
+        "a.md",
+        "docs/a.md",
+        "@wt/n/a.md",
+        "permark/x",
+        "sub/.permarks/x",
+    ] {
+        assert!(undoable(path), "{path}");
+    }
+    for path in [
+        "",
+        "@wt/n",
+        ".git",
+        "sub/.git/config",
+        ".permark",
+        ".permark/local/x",
+        "sub/.permark",
+        "sub/.permark/x",
+        "@wt/n/.permark/x",
+        "@wt/n/sub/.permark/x",
+    ] {
+        assert!(!undoable(path), "{path}");
+    }
 }
 
 #[test]

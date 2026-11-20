@@ -451,7 +451,10 @@ fn start_natives(vault: &Vault, tx: &Sender<Msg>) -> Result<Vec<RecommendedWatch
                 let _ = sender.send(Msg::Failed);
             }
         };
-        let watcher = notify::recommended_watcher(handler)
+        // a link inside the project is never followed (inotify | kqueue would watch its target, `/` included); the
+        // other systems never follow one
+        let config = notify::Config::default().with_follow_symlinks(false);
+        let watcher = RecommendedWatcher::new(handler, config)
             .and_then(|mut w| w.watch(&path, RecursiveMode::Recursive).map(|()| w));
         match watcher {
             Ok(watcher) => started.push(watcher),

@@ -290,6 +290,8 @@ pub struct Journal {
 
 impl StateData for Journal {
     const VERSION: u32 = 1;
+    /// Up to [`KEEP_ENTRIES`] entries, each with its own paths and texts.
+    const MAX_BYTES: u64 = 16 * 1024 * 1024;
 }
 
 impl Journal {

@@ -35,6 +35,9 @@ pub use service::{CommentsService, EditTarget, NewComment};
 const ID: PluginId = PluginId::of("comments");
 /// The file in the project's local state.
 pub const FILE: &str = "comments.json";
+/// Most bytes [`FILE`] is read with: up to `MAX_COMMENTS` comments with their quotes and replies, no finite writer
+/// limit below this.
+pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
 struct CommentsPlugin {
     manifest: Manifest,

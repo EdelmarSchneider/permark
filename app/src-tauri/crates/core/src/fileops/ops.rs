@@ -67,12 +67,37 @@ pub(crate) fn is_protected(path: &VaultPath) -> bool {
         || rel.split('/').any(|part| fold(part) == ".git")
 }
 
+/// An undo may change this path: not a root, not protected, nothing inside a `.permark` folder at any depth (a
+/// member project's state too). The forward operations keep [`is_protected`]: a person may still move a member's
+/// `.permark` contents, only an undo never does.
+pub(crate) fn undoable(path: &VaultPath) -> bool {
+    !is_root_path(path)
+        && !is_protected(path)
+        && !below_root(path.as_str())
+            .split('/')
+            .any(|part| fold(part) == ".permark")
+}
+
 /// Absolute place of a project path: its parent folder is resolved (links followed, escape refused), the name joined.
 pub(crate) fn locate(vault: &Vault, path: &VaultPath) -> Result<PathBuf, FileOpError> {
     let (Some(parent), Some(name)) = (path.parent(), path.name()) else {
         return Err(FileOpError::Protected(path.to_string()));
     };
     Ok(vault.resolve(&parent)?.join(name))
+}
+
+/// [`locate`] for an undo: the path as written and the place it leads to both pass [`undoable`]. A folder on the way
+/// swapped for a link into `.git` or a state folder of the project would otherwise turn a sealed entry into a change
+/// there; a place no root holds is refused too.
+pub(crate) fn locate_undoable(vault: &Vault, path: &VaultPath) -> Option<PathBuf> {
+    if !undoable(path) {
+        return None;
+    }
+    let abs = locate(vault, path).ok()?;
+    vault
+        .relativize(&abs)
+        .is_some_and(|real| undoable(&real))
+        .then_some(abs)
 }
 
 /// Last look before the disk is touched: `abs` is a place strictly inside the root `root` is the index of.

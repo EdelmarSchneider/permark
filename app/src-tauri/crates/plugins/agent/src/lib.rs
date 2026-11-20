@@ -60,7 +60,7 @@ use crate::tools::Tools;
 
 const ID: PluginId = PluginId::of("agent");
 /// The last published context, for scripts without MCP (only in a project with `.permark/`).
-pub const CONTEXT_FILE: &str = "agent-context.json";
+pub const CONTEXT_FILE: &str = permark_core::state::context::FILE;
 
 /// Why a tool call gave no answer. The words are what the agent reads.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -238,15 +238,23 @@ fn sync_context_file(hub: &Hub, write: bool) {
         return;
     };
     // compact, no empty fields, versioned like the agent's text answers
-    let mut value = serde_json::to_value(&shared).unwrap_or_default();
-    if let Some(map) = value.as_object_mut() {
-        map.insert("v".to_owned(), serde_json::json!(1));
-        if open > 0 {
-            map.insert("openComments".to_owned(), serde_json::json!(open));
-        }
+    let serde_json::Value::Object(mut map) = serde_json::to_value(&shared).unwrap_or_default()
+    else {
+        return;
+    };
+    map.insert("v".to_owned(), serde_json::json!(1));
+    if open > 0 {
+        map.insert("openComments".to_owned(), serde_json::json!(open));
     }
-    if let Ok(bytes) = serde_json::to_vec(&value) {
-        let _ = file.write(&bytes);
+    // sealed: tells this install's file from one that came with the folder or changed since (removed when the
+    // project opens); a context too large for that check is not kept, nor the older one
+    match permark_core::state::context::encode(store, map) {
+        Some(bytes) => {
+            let _ = file.write(&bytes);
+        }
+        None => {
+            let _ = file.remove();
+        }
     }
 }
 

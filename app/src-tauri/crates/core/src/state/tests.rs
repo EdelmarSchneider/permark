@@ -2,7 +2,7 @@ use super::*;
 use std::collections::BTreeMap;
 use std::fs;
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 struct Sample {
     items: BTreeMap<String, u32>,
 }
@@ -285,7 +285,39 @@ fn init_project_copies_profile_state_except_profile_only_files() {
         .plugin_file::<Sample>(&PluginId::of("tags"), "t.json")
         .save(&sample(4))
         .unwrap();
+    // the person's answers about included projects, the copy ledger, the profile card and the mark of the 0.5
+    // take-over are read from the profile only: a copy in the project would never be read
+    let read_from_profile = [
+        "membership.json",
+        "projects-copied.json",
+        "card.json",
+        "from-0.5",
+    ];
+    for name in read_from_profile {
+        fs::write(before.dir().join(name), b"profile's").unwrap();
+    }
+    assert_eq!(
+        PROFILE_ONLY[..],
+        [
+            "agent.json",
+            "agent-refused.json",
+            "plugins.json",
+            "pictures.json",
+            "membership.json",
+            "projects-copied.json",
+            "card.json",
+            "from-0.5",
+        ]
+    );
     let after = init_project(&f.dirs, &f.root()).unwrap();
+    for name in read_from_profile {
+        assert!(!after.dir().join(name).exists(), "{name} stays out");
+        assert_eq!(
+            fs::read(before.dir().join(name)).unwrap(),
+            b"profile's",
+            "{name} kept in the profile"
+        );
+    }
     assert_eq!(
         after.file::<Sample>("session.json").load(),
         Loaded::Found(sample(5))
@@ -303,6 +335,229 @@ fn init_project_copies_profile_state_except_profile_only_files() {
     );
     let default = fs::read_to_string(f.root().path().join(".permark").join("config.toml")).unwrap();
     assert_eq!(default, DEFAULT_CONFIG_TOML);
+}
+
+/// Every entry below `dir`, relative, `/`-separated, folders ending in `/`, sorted.
+fn entries_below(dir: &Path) -> Vec<String> {
+    fn walk(dir: &Path, prefix: &str, out: &mut Vec<String>) {
+        for entry in fs::read_dir(dir).unwrap().flatten() {
+            let name = format!("{prefix}{}", entry.file_name().to_string_lossy());
+            if entry.file_type().unwrap().is_dir() {
+                out.push(format!("{name}/"));
+                walk(&entry.path(), &format!("{name}/"), out);
+            } else {
+                out.push(name);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, "", &mut out);
+    out.sort();
+    out
+}
+
+#[test]
+fn init_project_makes_exactly_these_files() {
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    let permark = f.root().path().join(".permark");
+    assert_eq!(
+        entries_below(&permark),
+        [
+            ".gitignore",
+            "cache/",
+            "cache/.gitignore",
+            "cache/CACHEDIR.TAG",
+            "config.toml",
+            "local/",
+            "local/.gitignore",
+        ]
+    );
+    assert!(
+        fs::read_to_string(permark.join("cache").join("CACHEDIR.TAG"))
+            .unwrap()
+            .starts_with("Signature: 8a477f597d28d172789f06886806bc55")
+    );
+    for state in ["local", "cache"] {
+        assert_eq!(
+            fs::read_to_string(permark.join(state).join(".gitignore")).unwrap(),
+            "*\n"
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(permark.join(".gitignore")).unwrap(),
+        PROJECT_GITIGNORE
+    );
+}
+
+#[test]
+fn uninit_project_takes_back_a_cache_holding_more_files() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    store
+        .cache_file::<Sample>("index.json")
+        .save(&sample(1))
+        .unwrap();
+    fs::write(store.cache_dir().join("extra.bin"), b"x").unwrap();
+    assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+    assert!(!f.root().path().join(".permark").exists());
+}
+
+#[test]
+fn a_state_entry_is_a_folder_only_when_it_is_a_real_folder() {
+    let f = fx();
+    let base = f.project.path();
+    fs::create_dir(base.join("folder")).unwrap();
+    fs::write(base.join("file"), b"x").unwrap();
+    assert!(matches!(
+        private::entry(&base.join("folder")),
+        private::Entry::Folder
+    ));
+    assert!(matches!(
+        private::entry(&base.join("missing")),
+        private::Entry::Missing
+    ));
+    assert!(matches!(
+        private::entry(&base.join("file")),
+        private::Entry::Other
+    ));
+    if crate::tree::tests::link_out(&base.join("folder link"), &base.join("folder")) {
+        assert!(matches!(
+            private::entry(&base.join("folder link")),
+            private::Entry::Other
+        ));
+    }
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(base.join("file"), base.join("file link")).unwrap();
+        assert!(matches!(
+            private::entry(&base.join("file link")),
+            private::Entry::Other
+        ));
+    }
+}
+
+/// A folder where a state folder's ignore file belongs cannot be replaced without deleting what it holds: it is left
+/// as it is and the save still goes through.
+#[test]
+fn a_folder_in_place_of_the_ignore_file_never_blocks_a_save() {
+    let f = fx();
+    let local = f.project.path().join(".permark").join("local");
+    fs::create_dir_all(local.join(".gitignore")).unwrap();
+    fs::write(local.join(".gitignore").join("kept"), b"x").unwrap();
+    let file = f.store().file::<Sample>("x.json");
+    file.save(&sample(1)).unwrap();
+    assert_eq!(file.load(), Loaded::Found(sample(1)));
+    assert_eq!(
+        fs::read(local.join(".gitignore").join("kept")).unwrap(),
+        b"x"
+    );
+}
+
+/// A folder may arrive with its own ignore files in the state folders: they are set back to "everything" at the next
+/// write, while the repository's ignore file and `.permark/.gitignore` stay as they are.
+#[test]
+fn the_state_folders_ignore_everything_whatever_the_folder_shipped() {
+    let f = fx();
+    let permark = f.project.path().join(".permark");
+    for (path, text) in [
+        (".gitignore", "build/\n"),
+        (".permark/.gitignore", "# the team's own\n"),
+        (".permark/local/.gitignore", "!*\n"),
+        (".permark/cache/.gitignore", ""),
+    ] {
+        let path = f.project.path().join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+    let store = f.store();
+    store.file::<Sample>("x.json").save(&sample(1)).unwrap();
+    store
+        .cache_file::<Sample>("index.json")
+        .save(&sample(2))
+        .unwrap();
+    for state in ["local", "cache"] {
+        assert_eq!(
+            fs::read_to_string(permark.join(state).join(".gitignore")).unwrap(),
+            "*\n",
+            "{state}"
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(f.project.path().join(".gitignore")).unwrap(),
+        "build/\n"
+    );
+    assert_eq!(
+        fs::read_to_string(permark.join(".gitignore")).unwrap(),
+        "# the team's own\n"
+    );
+    // a raw write sets it back too
+    fs::write(permark.join("local").join(".gitignore"), "x\n").unwrap();
+    store.raw_file("comments.json").write(b"{}").unwrap();
+    assert_eq!(
+        fs::read_to_string(permark.join("local").join(".gitignore")).unwrap(),
+        "*\n"
+    );
+}
+
+/// A link in place of a state folder's ignore file is replaced by a plain file, never written through.
+#[cfg(unix)]
+#[test]
+fn a_link_in_place_of_an_ignore_file_is_replaced_never_followed() {
+    let f = fx();
+    let local = f.project.path().join(".permark").join("local");
+    fs::create_dir_all(&local).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let target = outside.path().join("ignore");
+    fs::write(&target, "!*\n").unwrap();
+    std::os::unix::fs::symlink(&target, local.join(".gitignore")).unwrap();
+    f.store().file::<Sample>("x.json").save(&sample(1)).unwrap();
+    let meta = fs::symlink_metadata(local.join(".gitignore")).unwrap();
+    assert!(meta.file_type().is_file());
+    assert_eq!(fs::read_to_string(local.join(".gitignore")).unwrap(), "*\n");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "!*\n");
+    // a link to a folder is looked at, never followed (it could lead to a network share): replaced the same way
+    let cache = f.project.path().join(".permark").join("cache");
+    fs::create_dir_all(&cache).unwrap();
+    let folder = outside.path().join("folder");
+    fs::create_dir(&folder).unwrap();
+    std::os::unix::fs::symlink(&folder, cache.join(".gitignore")).unwrap();
+    f.store()
+        .cache_file::<Sample>("index.json")
+        .save(&sample(1))
+        .unwrap();
+    let meta = fs::symlink_metadata(cache.join(".gitignore")).unwrap();
+    assert!(meta.file_type().is_file());
+    assert_eq!(fs::read_dir(&folder).unwrap().count(), 0);
+}
+
+/// The cache folder tells backup tools it holds only rebuildable files (<https://bford.info/cachedir/>); a tag already
+/// there is kept as it is, and the private state folder never gets one.
+#[test]
+fn the_cache_folder_carries_a_cache_directory_tag() {
+    let f = fx();
+    let permark = f.project.path().join(".permark");
+    fs::create_dir(&permark).unwrap();
+    let store = f.store();
+    store.file::<Sample>("x.json").save(&sample(1)).unwrap();
+    store
+        .cache_file::<Sample>("index.json")
+        .save(&sample(2))
+        .unwrap();
+    let tag = permark.join("cache").join("CACHEDIR.TAG");
+    let text = fs::read_to_string(&tag).unwrap();
+    assert!(text.starts_with("Signature: 8a477f597d28d172789f06886806bc55\n"));
+    assert!(!permark.join("local").join("CACHEDIR.TAG").exists());
+    fs::write(
+        &tag,
+        "Signature: 8a477f597d28d172789f06886806bc55\n# mine\n",
+    )
+    .unwrap();
+    store
+        .cache_file::<Sample>("index.json")
+        .save(&sample(3))
+        .unwrap();
+    assert!(fs::read_to_string(&tag).unwrap().ends_with("# mine\n"));
 }
 
 #[test]
@@ -466,6 +721,302 @@ fn a_raw_file_reads_bytes_exactly_and_tells_a_change_by_its_stamp() {
     assert_eq!(stamp.0, bytes.len() as u64);
     raw.write(b"{}").unwrap();
     assert_ne!(raw.stamp().unwrap().0, stamp.0);
+}
+
+const MIB: usize = 1024 * 1024;
+
+/// State as large as people's gets today keeps reading: a 3 MiB state file (project and profile), a 1.5 MiB
+/// `comments.json`, a 3 MiB profile raw file.
+#[test]
+fn state_files_of_todays_sizes_still_read() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let store = f.store();
+    let big = Sample {
+        items: BTreeMap::from([("k".repeat(3 * MIB), 1)]),
+    };
+    for file in [
+        store.file::<Sample>("big.json"),
+        store.profile_file::<Sample>("big.json"),
+    ] {
+        file.save(&big).unwrap();
+        assert!(fs::metadata(file.path()).unwrap().len() > 3 * MIB as u64);
+        assert_eq!(file.load(), Loaded::Found(big.clone()));
+    }
+    let comments = vec![b' '; 3 * MIB / 2];
+    let raw = store.raw_file("comments.json");
+    raw.write(&comments).unwrap();
+    assert_eq!(raw.read().unwrap(), Some(comments));
+    let profile = vec![b'#'; 3 * MIB];
+    let legacy = store.legacy_shared_file("meta.toml").unwrap();
+    legacy.write(&profile).unwrap();
+    assert_eq!(legacy.read().unwrap(), Some(profile));
+}
+
+/// Names in `dir` that a load moved aside.
+fn broken_in(dir: &Path) -> usize {
+    fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().contains(".broken-"))
+        .count()
+}
+
+/// A valid state file padded past the default cap.
+fn over_cap() -> Vec<u8> {
+    let mut bytes = KEPT.to_vec();
+    bytes.resize(8 * MIB + 1, b' ');
+    bytes
+}
+
+/// A state file larger than its kind's cap is never taken into memory: left as it is (not moved aside), and no handle
+/// writes over it, also one that never loaded it.
+#[test]
+fn a_state_file_over_its_cap_is_left_unread_and_never_written_over() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let store = f.store();
+    let big = over_cap();
+    let file = store.file::<Sample>("x.json");
+    let dir = file.path().parent().unwrap().to_path_buf();
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(file.path(), &big).unwrap();
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert!(file.save(&Sample::default()).is_err());
+    assert!(store.file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert!(store
+        .file::<Sample>("x.json")
+        .update(|_| Some(sample(2)))
+        .is_err());
+    assert_eq!(fs::read(file.path()).unwrap(), big);
+    // a file nobody loaded yet: a handle that never read it is refused all the same
+    let blind = store.file::<Sample>("y.json");
+    fs::write(blind.path(), &big).unwrap();
+    assert!(blind.save(&sample(3)).is_err());
+    assert_eq!(fs::read(blind.path()).unwrap(), big);
+    // raw files in the state folder: the same default cap
+    let raw = store.raw_file("quiet.json");
+    fs::write(raw.path(), &big).unwrap();
+    assert_eq!(
+        raw.read().err().map(|e| e.kind()),
+        Some(std::io::ErrorKind::InvalidData)
+    );
+    assert!(raw.update(|_| Some(b"{}".to_vec())).is_err());
+    assert_eq!(fs::read(raw.path()).unwrap(), big);
+    assert_eq!(broken_in(&dir), 0);
+}
+
+/// A state file a newer version wrote stays where it is (no copy beside it), loads as unreadable every time, and is
+/// never written over: an older build used again never destroys what the newer one keeps.
+#[test]
+fn a_state_file_of_a_newer_version_is_left_in_place_and_never_written_over() {
+    const NEWER: &[u8] = br#"{"version":4,"data":{"items":{"kept":7},"more":[1]}}"#;
+    let f = fx();
+    let store = f.store();
+    let file = store.file::<Sample>("x.json");
+    let dir = file.path().parent().unwrap().to_path_buf();
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(file.path(), NEWER).unwrap();
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert!(file.save(&Sample::default()).is_err());
+    assert!(store.file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert!(store
+        .file::<Sample>("x.json")
+        .update(|_| Some(sample(2)))
+        .is_err());
+    assert_eq!(fs::read(file.path()).unwrap(), NEWER);
+    // never loaded by anyone: a save still leaves it
+    let blind = store.file::<Sample>("y.json");
+    fs::write(blind.path(), NEWER).unwrap();
+    assert!(blind.save(&sample(3)).is_err());
+    assert_eq!(fs::read(blind.path()).unwrap(), NEWER);
+    assert_eq!(broken_in(&dir), 0);
+}
+
+/// A link on the way to a state file (a junction | folder link inside `.permark/local/`) never leads a read outside
+/// `.permark/`: the file stays unread and nothing is written through the link.
+#[test]
+fn a_link_inside_the_state_folder_never_leads_a_read_outside() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let store = f.store();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("f.json"), KEPT).unwrap();
+    let id = PluginId::of("git");
+    let plugins = store.dir().join("plugins");
+    fs::create_dir_all(&plugins).unwrap();
+    if !crate::tree::tests::link_out(&plugins.join("git"), outside.path()) {
+        eprintln!("skipped: no folder links here");
+        return;
+    }
+    let file = store.plugin_file::<Sample>(&id, "f.json");
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert!(file.save(&sample(1)).is_err());
+    assert!(store.plugin_raw_file(&id, "f.json").read().is_err());
+    assert_eq!(fs::read(outside.path().join("f.json")).unwrap(), KEPT);
+}
+
+/// A folder link higher in `.permark/local/` is refused before any name below it is looked up (following one could
+/// reach a network share): a read stops at it, and a save names it, never a path behind it.
+#[test]
+fn a_folder_link_on_the_way_is_refused_before_anything_below_it_is_looked_up() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let store = f.store();
+    let id = PluginId::of("git");
+    fs::create_dir_all(store.dir()).unwrap();
+    let plugins = store.dir().join("plugins");
+    let outside = tempfile::tempdir().unwrap();
+    let gone = outside.path().join("gone");
+    fs::create_dir(&gone).unwrap();
+    if !crate::tree::tests::link_out(&plugins, &gone) {
+        eprintln!("skipped: no folder links here");
+        return;
+    }
+    // a lookup through the link would find no file (missing); stopped at the link, the file is left unread
+    fs::remove_dir(&gone).unwrap();
+    let file = store.plugin_file::<Sample>(&id, "f.json");
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    // a save of a file that was never read stops at the link too, even after a read of it was refused
+    assert!(store
+        .plugin_file::<Sample>(&id, "f.json")
+        .save(&sample(1))
+        .is_err());
+    // the link leads to a folder with a file where the plugin's folder would be: a save names the link itself
+    fs::create_dir(&gone).unwrap();
+    fs::write(gone.join("git"), KEPT).unwrap();
+    let error = store
+        .plugin_file::<Sample>(&id, "g.json")
+        .save(&sample(1))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains(&format!("{} is a link", plugins.display())),
+        "{error}"
+    );
+    assert_eq!(fs::read(gone.join("git")).unwrap(), KEPT);
+    assert_eq!(fs::read_dir(&gone).unwrap().count(), 1);
+}
+
+/// Runs `read` on another thread; `None` when it did not answer in time (a read waiting on a FIFO forever).
+#[cfg(unix)]
+fn answered<T: Send + 'static>(read: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(read());
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(10)).ok()
+}
+
+/// Makes a FIFO at `path`.
+#[cfg(unix)]
+fn fifo(path: &Path) {
+    let made = std::process::Command::new("mkfifo").arg(path).status();
+    assert!(made.is_ok_and(|s| s.success()), "mkfifo {}", path.display());
+}
+
+/// A file link in place of a state file is never followed, and a FIFO (in `.permark/` or in the profile) never makes a
+/// read wait: both stay as they are and nothing is written over them.
+#[cfg(unix)]
+#[test]
+fn a_fifo_or_a_file_link_in_place_of_a_state_file_is_never_read_through() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let store = f.store();
+    let outside = tempfile::tempdir().unwrap();
+    let target = outside.path().join("t.json");
+    fs::write(&target, KEPT).unwrap();
+    let file = store.file::<Sample>("x.json");
+    fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&target, file.path()).unwrap();
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert!(fs::symlink_metadata(file.path())
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(store.file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert_eq!(fs::read(&target).unwrap(), KEPT);
+
+    let local = store.file::<Sample>("fifo.json");
+    fifo(local.path());
+    let profile = store.profile_file::<Sample>("fifo.json");
+    fs::create_dir_all(profile.path().parent().unwrap()).unwrap();
+    fifo(profile.path());
+    let legacy = store.legacy_shared_file("fifo.toml").unwrap();
+    fifo(legacy.path());
+    let blind = store.profile_file::<Sample>("blind.json");
+    fifo(blind.path());
+    let paths = [local.path(), profile.path(), legacy.path(), blind.path()].map(Path::to_path_buf);
+    let answers = answered(move || {
+        (
+            local.load(),
+            profile.load(),
+            legacy.read().is_err(),
+            blind.save(&sample(1)).is_err(),
+        )
+    })
+    .expect("a read waited on a FIFO");
+    assert_eq!(answers.0, Loaded::Recovered { backup: None });
+    assert_eq!(answers.1, Loaded::Recovered { backup: None });
+    assert!(answers.2 && answers.3);
+    for path in paths {
+        use std::os::unix::fs::FileTypeExt;
+        assert!(fs::symlink_metadata(&path).unwrap().file_type().is_fifo());
+    }
+}
+
+/// The team's files in `.permark/` (settings, project list, vocabulary, card) arrive with the folder: a link in place of
+/// one is never followed, and a FIFO never makes the read wait.
+#[cfg(unix)]
+#[test]
+fn team_files_are_read_only_as_plain_files_in_permark() {
+    use crate::projects::{card, record, vocabulary};
+    let f = fx();
+    let root = f.root();
+    let permark = root.path().join(PERMARK_DIR);
+    fs::create_dir(&permark).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let target = outside.path().join("config.toml");
+    fs::write(&target, "[agent]\ndeny = [\"notes\"]\n").unwrap();
+    std::os::unix::fs::symlink(&target, permark.join("config.toml")).unwrap();
+    assert_eq!(
+        crate::settings::ProjectConfig::load(&root),
+        crate::settings::ProjectConfig::default()
+    );
+    fs::remove_file(permark.join("config.toml")).unwrap();
+    for name in [
+        "config.toml",
+        record::RECORD_FILE,
+        vocabulary::VOCABULARY_FILE,
+        card::CARD_FILE,
+    ] {
+        fifo(&permark.join(name));
+    }
+    let dirs = f.dirs.clone();
+    let answers = answered(move || {
+        let card = match card::file_of(&dirs, root.path()) {
+            Some(file @ card::CardFile::Project(_)) => file.read(),
+            _ => panic!("the card is the project's"),
+        };
+        (
+            crate::settings::ProjectConfig::load(&root),
+            record::read(root.path()),
+            vocabulary::read(root.path()),
+            card,
+        )
+    })
+    .expect("a read waited on a FIFO");
+    assert_eq!(answers.0, crate::settings::ProjectConfig::default());
+    assert!(matches!(
+        answers.1,
+        crate::projects::RecordRead::Unreadable { .. }
+    ));
+    assert!(matches!(
+        answers.2,
+        crate::projects::VocabRead::Unreadable { .. }
+    ));
+    assert_eq!(answers.3.name, None);
 }
 
 #[test]
@@ -1069,4 +1620,257 @@ fn an_update_that_cannot_read_the_file_keeps_fresh_handles_from_saving_defaults(
     assert_eq!(fs::read(healthy.path()).unwrap(), KEPT);
     healthy.save(&sample(2)).unwrap();
     assert_eq!(healthy.load(), Loaded::Found(sample(2)));
+}
+
+/// Every path a store hands out, in both locations and for the app-wide store: new state roots never move the files
+/// earlier versions wrote.
+#[test]
+fn store_paths_are_pinned() {
+    let f = fx();
+    let git = PluginId::of("git");
+    let id = ProjectId::of(&f.root());
+    let profile = f.dirs.profile.join("projects").join(id.as_str());
+    let cache = f.dirs.cache.join("projects").join(id.as_str());
+    let path_of = |file: Option<RawFile>| file.map(|raw| raw.path().to_path_buf());
+    let pinned = |s: &StateStore, dir: &Path, cache: &Path, shared: &Path, own: &Path| {
+        assert_eq!(s.dir(), dir);
+        assert_eq!(s.cache_dir(), cache);
+        assert_eq!(s.file::<Sample>("x.json").path(), dir.join("x.json"));
+        assert_eq!(s.raw_file("quiet.json").path(), dir.join("quiet.json"));
+        assert_eq!(s.shared_file("meta.toml").path(), shared.join("meta.toml"));
+        assert_eq!(
+            s.profile_file::<Sample>("agent.json").path(),
+            own.join("agent.json")
+        );
+        assert_eq!(s.app_dir(), f.dirs.profile);
+        assert_eq!(
+            s.app_file::<Sample>("a.json").path(),
+            f.dirs.profile.join("a.json")
+        );
+        assert_eq!(
+            s.cache_file::<Sample>("c.json").path(),
+            cache.join("c.json")
+        );
+        let plugin = dir.join("plugins").join("git");
+        assert_eq!(s.plugin_dir(&git), plugin);
+        assert_eq!(
+            s.plugin_file::<Sample>(&git, "p.json").path(),
+            plugin.join("p.json")
+        );
+        assert_eq!(
+            s.plugin_raw_file(&git, "r.json").path(),
+            plugin.join("r.json")
+        );
+        let own_plugin = own.join("plugins").join("git");
+        assert_eq!(s.profile_plugin_dir(&git), own_plugin);
+        assert_eq!(
+            s.profile_plugin_file::<Sample>(&git, "s.json").path(),
+            own_plugin.join("s.json")
+        );
+    };
+    // no `.permark/`: everything in the profile, keyed by the project id
+    let s = f.store();
+    assert_eq!(s.location(), StateLocation::Profile);
+    pinned(&s, &profile, &cache, &profile, &profile);
+    assert_eq!(path_of(s.legacy_shared_file("meta.toml")), None);
+    // a real `.permark/`: private state in `local/`, caches in `cache/`, shared files in `.permark/` itself
+    let permark = f.root().path().join(".permark");
+    fs::create_dir(&permark).unwrap();
+    let s = f.store();
+    assert_eq!(s.location(), StateLocation::Project);
+    pinned(
+        &s,
+        &permark.join("local"),
+        &permark.join("cache"),
+        &permark,
+        &profile,
+    );
+    assert_eq!(
+        path_of(s.legacy_shared_file("meta.toml")),
+        Some(profile.join("meta.toml"))
+    );
+    // a file in place of `cache/`: caches stay in the profile cache
+    fs::write(permark.join("cache"), "x").unwrap();
+    assert_eq!(f.store().cache_dir(), cache);
+    // app-wide: the profile folder itself
+    let app = StateStore::app(&f.dirs);
+    assert_eq!(app.location(), StateLocation::Profile);
+    pinned(
+        &app,
+        &f.dirs.profile,
+        &f.dirs.cache,
+        &f.dirs.profile,
+        &f.dirs.profile,
+    );
+}
+
+#[test]
+fn app_dirs_under_layout_is_pinned() {
+    let base = Path::new("base");
+    let dirs = AppDirs::under(base);
+    assert_eq!(dirs.profile, base.join("profile"));
+    assert_eq!(dirs.cache, base.join("cache"));
+    let Some(system) = AppDirs::system() else {
+        return;
+    };
+    // debug builds (the tests) never touch the person's real state
+    let name = if cfg!(debug_assertions) {
+        "PerMark-dev"
+    } else {
+        "PerMark"
+    };
+    assert!(system.profile.ends_with(name));
+    assert!(system.cache.ends_with(name));
+}
+
+#[test]
+fn the_install_folder_stays_apart_and_a_snap_keeps_it_across_revisions() {
+    let base = Path::new("base");
+    assert_eq!(AppDirs::under(base).install, base.join("install"));
+    if let Some(system) = AppDirs::system() {
+        if std::env::var_os("SNAP").is_none() {
+            let name = if cfg!(debug_assertions) {
+                "PerMark-dev"
+            } else {
+                "PerMark"
+            };
+            assert!(system.install.ends_with(Path::new(name).join("install")));
+        }
+    }
+    let snap = Some(std::ffi::OsStr::new("/snap/permark/12"));
+    let common = Some(std::ffi::OsStr::new("/home/a/snap/permark/common"));
+    assert_eq!(
+        snap_install(snap, common),
+        Some(Path::new("/home/a/snap/permark/common").join("install"))
+    );
+    assert_eq!(snap_install(Some(std::ffi::OsStr::new("")), common), None);
+    assert_eq!(snap_install(None, common), None);
+    assert_eq!(snap_install(snap, None), None);
+    assert_eq!(
+        snap_install(snap, Some(std::ffi::OsStr::new("snap/permark/common"))),
+        None
+    );
+}
+
+#[test]
+fn machine_files_sit_under_the_install_id_in_both_locations() {
+    let f = fx();
+    let journal = |dir: &Path| dir.join("fileops").join("journal.json");
+    // no `.permark/`: the project's profile folder
+    let s = f.store();
+    let m = s.machine().unwrap();
+    assert_eq!(m.iid().len(), 16);
+    assert!(m.iid().bytes().all(|b| b.is_ascii_hexdigit()));
+    assert_eq!(m.dir(), s.dir().join("machine").join(m.iid()));
+    let file = s.machine_file::<Sample>("fileops/journal.json").unwrap();
+    assert_eq!(file.path(), journal(m.dir()));
+    file.save(&sample(1)).unwrap();
+    assert_eq!(file.load(), Loaded::Found(sample(1)));
+    assert_eq!(
+        s.machine_raw_file("x.json").unwrap().path(),
+        m.dir().join("x.json")
+    );
+    assert_eq!(
+        s.install_file::<Sample>("marks.json").unwrap().path(),
+        f.dirs.install.join("marks.json")
+    );
+    assert_eq!(s.app_dirs(), &f.dirs);
+    // a real `.permark/`: inside `local/`, same install id, same folder id
+    let permark = f.root().path().join(".permark");
+    fs::create_dir(&permark).unwrap();
+    let p = f.store();
+    let pm = p.machine().unwrap();
+    assert_eq!((pm.iid(), pm.rid()), (m.iid(), m.rid()));
+    assert_eq!(
+        pm.dir(),
+        permark.join("local").join("machine").join(pm.iid())
+    );
+    p.machine_file::<Sample>("x.json")
+        .unwrap()
+        .save(&sample(2))
+        .unwrap();
+    assert!(pm.dir().join("x.json").is_file());
+    // app-wide: no folder to bind data to; the install folder is still there
+    let app = StateStore::app(&f.dirs);
+    assert!(app.machine().is_none());
+    assert!(app.machine_file::<Sample>("x.json").is_none());
+    assert!(app.machine_raw_file("x.json").is_none());
+    assert_eq!(
+        app.install_file::<Sample>("marks.json").unwrap().path(),
+        f.dirs.install.join("marks.json")
+    );
+}
+
+#[test]
+fn a_machine_file_is_guarded_like_the_other_state_files() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let s = f.store();
+    let file = s.machine_file::<Sample>("x.json").unwrap();
+    let local = f.root().path().join(".permark").join("local");
+    fs::write(&local, "now a file").unwrap();
+    assert!(file.save(&sample(1)).is_err());
+    assert!(s.machine_raw_file("y.json").unwrap().write(b"y").is_err());
+    assert_eq!(fs::read_to_string(&local).unwrap(), "now a file");
+}
+
+#[test]
+fn the_folder_id_follows_the_folder_and_the_install_and_is_never_stored() {
+    let f = fx();
+    let store = f.store();
+    let rid = store.machine().unwrap().rid().to_owned();
+    assert_eq!(rid.len(), 32);
+    assert!(rid.bytes().all(|b| b.is_ascii_hexdigit()));
+    // the same folder opened again: the same id
+    assert_eq!(f.store().machine().unwrap().rid(), rid);
+    // another folder: another id under the same install id
+    let other = tempfile::tempdir().unwrap();
+    let o = StateStore::for_project(&f.dirs, &Root::open(other.path()).unwrap());
+    assert_ne!(o.machine().unwrap().rid(), rid);
+    assert_eq!(o.machine().unwrap().iid(), store.machine().unwrap().iid());
+    // a folder made again at the same path: another id wherever the disk tells the two apart
+    let again = other.path().join("again");
+    fs::create_dir(&again).unwrap();
+    let first = crate::fsx::FolderIdentity::of(&again);
+    let before = StateStore::for_project(&f.dirs, &Root::open(&again).unwrap());
+    let before = before.machine().unwrap().rid().to_owned();
+    fs::remove_dir(&again).unwrap();
+    fs::create_dir(&again).unwrap();
+    let after = StateStore::for_project(&f.dirs, &Root::open(&again).unwrap());
+    let told_apart = matches!(
+        (first, crate::fsx::FolderIdentity::of(&again)),
+        (Some(a), Some(b)) if !a.same(b)
+    );
+    if told_apart {
+        assert_ne!(after.machine().unwrap().rid(), before);
+    }
+    // another install (another key): other ids for the same folder
+    let base = tempfile::tempdir().unwrap();
+    let elsewhere = StateStore::for_project(&AppDirs::under(base.path()), &f.root());
+    let em = elsewhere.machine().unwrap();
+    assert_ne!(em.rid(), rid);
+    assert_ne!(em.iid(), store.machine().unwrap().iid());
+    // only the key is kept: the folder id is worked out again at each open
+    let kept: Vec<String> = fs::read_dir(&f.dirs.install)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(kept, ["install.key"]);
+}
+
+#[test]
+fn clones_of_a_store_share_one_machine_and_no_key_means_none() {
+    let f = fx();
+    let s = f.store();
+    let copy = s.clone();
+    assert!(std::ptr::eq(s.machine().unwrap(), copy.machine().unwrap()));
+    // an install folder that cannot be made (a file in the way): no key, no machine data, no install files
+    let base = tempfile::tempdir().unwrap();
+    let mut dirs = AppDirs::under(base.path());
+    fs::write(base.path().join("blocked"), "x").unwrap();
+    dirs.install = base.path().join("blocked").join("install");
+    let blocked = StateStore::for_project(&dirs, &f.root());
+    assert!(blocked.machine().is_none());
+    assert!(blocked.machine_file::<Sample>("x.json").is_none());
+    assert!(blocked.install_file::<Sample>("marks.json").is_none());
 }

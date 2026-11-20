@@ -35,6 +35,8 @@ struct CacheFile(BTreeMap<String, DocTags>);
 
 impl StateData for CacheFile {
     const VERSION: u32 = 1;
+    /// No writer limit: one entry per document of the project.
+    const MAX_BYTES: u64 = 32 * 1024 * 1024;
 }
 
 /// The documents with their front matter tags, by root-relative path (main root only).

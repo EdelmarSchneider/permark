@@ -27,7 +27,7 @@ pub use region::system_region;
 
 use crate::error::IpcError;
 use crate::fileops::{check_name, NameProblem};
-use crate::fsx::{read_bytes, write_atomic, FsxError};
+use crate::fsx::{read_bytes, read_regular, write_atomic, FsxError, Zone};
 use crate::plugins::PluginId;
 use crate::state::AppDirs;
 use crate::tree::extension_of;
@@ -868,17 +868,39 @@ pub(crate) fn read_doc(path: &Path) -> Option<DocumentMut> {
     read_settings_text(path).ok()??.parse::<DocumentMut>().ok()
 }
 
+/// [`read_doc`] of the file `name` the team shares in `permark` (a project's `.permark/`, which arrives with the
+/// folder): only a plain file there is read, never through a link, and a FIFO never makes the read wait.
+pub(crate) fn read_team_doc(permark: &Path, name: &str) -> Option<DocumentMut> {
+    let path = permark.join(name);
+    let read = read_regular(&path, MAX_SETTINGS_BYTES, Zone::Inside(permark));
+    settings_text(&path, read)
+        .ok()??
+        .parse::<DocumentMut>()
+        .ok()
+}
+
 /// The text of a settings file; `None`: there is none.
 ///
 /// # Errors
 /// `Unreadable`: larger than [`MAX_SETTINGS_BYTES`] | not UTF-8 | locked past the retries; `Io`: denied, any other
 /// failure.
 fn read_settings_text(path: &Path) -> Result<Option<String>, SettingsError> {
+    settings_text(path, read_bytes(path, MAX_SETTINGS_BYTES))
+}
+
+/// The text of a settings file from the outcome of its `read`; `None`: there is none.
+///
+/// # Errors
+/// See [`read_settings_text`].
+fn settings_text(
+    path: &Path,
+    read: Result<Vec<u8>, FsxError>,
+) -> Result<Option<String>, SettingsError> {
     let unreadable = |why| SettingsError::Unreadable {
         path: path.display().to_string(),
         why,
     };
-    let bytes = match read_bytes(path, MAX_SETTINGS_BYTES) {
+    let bytes = match read {
         Ok(bytes) => bytes,
         Err(FsxError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
             return Ok(None);

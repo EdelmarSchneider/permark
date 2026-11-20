@@ -1,16 +1,20 @@
 //! Where PerMark keeps its own state: the person's profile, or `.permark/local/` of a project that has `.permark/`.
-//! Versioned JSON files; corrupt -> moved aside, defaults used, caller warns; unreadable (an IO error) -> left as it is,
-//! defaults used, never written over by a handle holding those defaults. Plugins get own namespaces.
+//! Versioned JSON files; corrupt -> moved aside, defaults used, caller warns; unreadable (an IO error, a link | FIFO in
+//! `.permark/`, larger than its cap, written by a newer version) -> left as it is, defaults used, never written over by
+//! a handle holding those defaults. Plugins get own namespaces.
 
+pub mod context;
 pub mod older;
 mod private;
 mod raw;
+mod seal;
 pub mod shared_write;
 
 use std::io;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::de::DeserializeOwned;
@@ -18,23 +22,32 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::{ErrorKind, IpcError};
-use crate::fsx::write_atomic;
+use crate::fsx::{write_atomic, Zone};
 use crate::paths::Root;
 use crate::plugins::PluginId;
 
 pub use raw::{RawFile, SHARED_MAX_BYTES};
+pub use seal::{Machine, Seal};
 pub use shared_write::{merge3, FileLock};
 
 pub const PERMARK_DIR: &str = ".permark";
-/// Per-project files that ALWAYS stay in the profile (a project's files must never switch them).
-pub const PROFILE_ONLY: [&str; 4] = [
+/// Per-project files that ALWAYS stay in the profile (a project's files must never switch them). Initialize never
+/// copies them into `.permark/local/` (a copy there would never be read) and undoing it never carries one back.
+pub const PROFILE_ONLY: [&str; 8] = [
     "agent.json",
     "agent-refused.json",
     "plugins.json",
     "pictures.json",
+    crate::projects::fsm::MEMBERSHIP_FILE,
+    crate::projects::migrate::LEDGER_FILE,
+    crate::projects::card::PROFILE_CARD,
+    older::TAKEN_OVER,
 ];
 /// Per-project files that live in the shared `.permark/` itself (never in `local/`).
 pub const SHARED_FILES: [&str; 1] = ["meta.toml"];
+/// Most bytes a state | raw file is read with unless its kind says otherwise ([`StateData::MAX_BYTES`],
+/// [`RawFile::capped`]): a larger one is left unread, never taken into memory.
+pub const DEFAULT_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
 const PROJECT_GITIGNORE: &str = "# PerMark private state: not shared.\nlocal/\ncache/\n";
 
@@ -66,6 +79,8 @@ pub const DEFAULT_CONFIG_TOML: &str = "\
 pub struct AppDirs {
     pub profile: PathBuf,
     pub cache: PathBuf,
+    /// This computer's own folder (the install key): never in a roaming profile on Windows.
+    pub install: PathBuf,
 }
 
 impl AppDirs {
@@ -80,17 +95,42 @@ impl AppDirs {
         Some(Self {
             profile: dirs::data_dir()?.join(name),
             cache: dirs::cache_dir()?.join(name),
+            install: install_dir(name)?,
         })
     }
 
-    /// `base/profile` + `base/cache` (tests, portable setups).
+    /// `base/profile` + `base/cache` + `base/install` (tests, portable setups).
     #[must_use]
     pub fn under(base: &Path) -> Self {
         Self {
             profile: base.join("profile"),
             cache: base.join("cache"),
+            install: base.join("install"),
         }
     }
+}
+
+/// `<local data>/<name>/install`; in a Snap, the common folder (the data folder changes with each revision).
+fn install_dir(name: &str) -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    if let Some(dir) = snap_install(
+        std::env::var_os("SNAP").as_deref(),
+        std::env::var_os("SNAP_USER_COMMON").as_deref(),
+    ) {
+        return Some(dir);
+    }
+    Some(dirs::data_local_dir()?.join(name).join("install"))
+}
+
+/// `$SNAP_USER_COMMON/install` when running as a Snap (`SNAP` set) and the common folder is absolute.
+#[cfg(any(target_os = "linux", test))]
+fn snap_install(
+    snap: Option<&std::ffi::OsStr>,
+    common: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
+    let common = Path::new(common?);
+    // `has_root`: an absolute path as Linux writes it, also on the computers the tests run on
+    (snap.is_some_and(|s| !s.is_empty()) && common.has_root()).then(|| common.join("install"))
 }
 
 /// Stable id of a project folder: xxh3 of its `RootKey` as saved ([`crate::paths::RootKey::saved_spelling`]: shares
@@ -154,9 +194,13 @@ impl From<StateError> for IpcError {
     }
 }
 
-/// A state file's content type: declares its format version (other version on disk -> recovered as corrupt).
+/// A state file's content type: declares its format version (an older one on disk -> [`StateData::upgrade`], else
+/// recovered as corrupt; a newer one -> left unread in place, never written over).
 pub trait StateData: Serialize + DeserializeOwned {
     const VERSION: u32;
+    /// Most bytes a file of this kind is read with (never below the most its writer makes): a larger file is left
+    /// unread in place, never taken into memory and never written over.
+    const MAX_BYTES: u64 = DEFAULT_MAX_BYTES;
 
     /// Reads data an older format version (`from` < `VERSION`) wrote; `None` = cannot (the file is moved aside).
     /// A format change ships its upgrade + a fixture test (concept §10: saved data survives updates).
@@ -172,8 +216,9 @@ pub trait StateData: Serialize + DeserializeOwned {
 pub enum Loaded<T> {
     Missing,
     Found(T),
-    /// Corrupt | other version: moved to `backup`. `None`: an IO error kept it from being read (another program
-    /// holds it, no permission), or it could not be moved: left as it is, and a save of it is refused from this
+    /// Corrupt | older version it cannot read: moved to `backup`. `None`: left as it is, unread: an IO error kept it
+    /// from being read (another program holds it, no permission), it is no plain file of at most its cap (a link | FIFO
+    /// in `.permark/`), a newer version wrote it, or it could not be moved; a save of it is refused from this
     /// handle until its own load | update reads it (another handle reading it never unblocks this one), and from
     /// every handle that never read it while it is there, so the defaults a caller uses meanwhile never replace the
     /// person's data. A handle that read the file itself keeps saving: it holds the person's data.
@@ -203,6 +248,15 @@ struct EnvelopeOut<'a, T> {
 struct EnvelopeIn<T> {
     version: u32,
     data: T,
+}
+
+/// What a state file's bytes hold.
+enum Parsed<T> {
+    Data(T),
+    /// A newer version's data: left as it is.
+    Newer,
+    /// Not this layout, or an older version without an upgrade: moved aside.
+    Bad,
 }
 
 /// Guard of a file inside `.permark/`: the `.permark` folder + the state folder it lives in.
@@ -243,31 +297,53 @@ impl<T: StateData> StateFile<T> {
     #[must_use]
     pub fn load(&self) -> Loaded<T> {
         // a file held for a moment (antivirus, sync client) is tried again first
-        let bytes = match crate::fsx::retry(&crate::fsx::RETRY_DELAYS, || std::fs::read(&self.path))
-        {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+        let Ok(found) = self.read_now() else {
+            self.failed();
+            return Loaded::Recovered { backup: None };
+        };
+        let Some(bytes) = found else {
+            self.has_read();
+            return Loaded::Missing;
+        };
+        match Self::parse(&bytes) {
+            Parsed::Data(data) => {
                 self.has_read();
-                return Loaded::Missing;
+                return Loaded::Found(data);
             }
-            Err(_) => {
-                self.failed();
+            Parsed::Newer => {
+                self.newer();
                 return Loaded::Recovered { backup: None };
             }
-        };
-        if let Some(data) = Self::parse(&bytes) {
-            self.has_read();
-            return Loaded::Found(data);
+            Parsed::Bad => {}
         }
         let backup = self.move_aside();
         if backup.is_some() {
             // nothing left to write over: the defaults may be saved
             self.has_read();
         } else {
-            // still in place (newer data, or a file that cannot be moved): never written over either
+            // still in place (a file that cannot be moved): never written over either
             self.failed();
         }
         Loaded::Recovered { backup }
+    }
+
+    /// The bytes on disk now (`None`: no file): a plain file of at most [`StateData::MAX_BYTES`], never through a
+    /// link in `.permark/` (a profile file follows links: the person's own setup).
+    fn read_now(&self) -> io::Result<Option<Vec<u8>>> {
+        raw::read_plain(&self.path, T::MAX_BYTES, self.zone())
+    }
+
+    /// Where the file may really be: below `.permark/` when it lives there, else wherever links lead (the profile).
+    fn zone(&self) -> Zone<'_> {
+        self.guard
+            .as_ref()
+            .map_or(Zone::Anywhere, |guard| Zone::Inside(&guard.permark))
+    }
+
+    /// A newer version wrote the file: left in place for it, never written over by this one.
+    fn newer(&self) {
+        unread::tell(&self.path, &NEWER);
+        self.failed();
     }
 
     /// This handle read the file (or found none, or moved it aside): it holds what is on disk and may save.
@@ -282,15 +358,23 @@ impl<T: StateData> StateFile<T> {
         self.read.store(unread::FAILED, Ordering::SeqCst);
     }
 
-    /// The data of the file's bytes (`None`: not this layout, or a newer version).
-    fn parse(bytes: &[u8]) -> Option<T> {
-        serde_json::from_slice::<EnvelopeIn<serde_json::Value>>(bytes)
-            .ok()
-            .and_then(|envelope| match envelope.version {
-                v if v == T::VERSION => serde_json::from_value(envelope.data).ok(),
-                v if v < T::VERSION => T::upgrade(v, envelope.data),
-                _ => None,
-            })
+    /// The bytes are a newer version's envelope: only the version is read (`data` skipped, never built into `T`).
+    fn newer_envelope(bytes: &[u8]) -> bool {
+        serde_json::from_slice::<EnvelopeIn<serde::de::IgnoredAny>>(bytes)
+            .is_ok_and(|envelope| envelope.version > T::VERSION)
+    }
+
+    /// What the file's bytes hold.
+    fn parse(bytes: &[u8]) -> Parsed<T> {
+        let Ok(envelope) = serde_json::from_slice::<EnvelopeIn<serde_json::Value>>(bytes) else {
+            return Parsed::Bad;
+        };
+        let data = match envelope.version {
+            v if v == T::VERSION => serde_json::from_value(envelope.data).ok(),
+            v if v < T::VERSION => T::upgrade(v, envelope.data),
+            _ => return Parsed::Newer,
+        };
+        data.map_or(Parsed::Bad, Parsed::Data)
     }
 
     fn encode(&self, data: &T) -> Result<Vec<u8>, StateError> {
@@ -305,14 +389,16 @@ impl<T: StateData> StateFile<T> {
     }
 
     /// Read-change-write for a file several cores write (`shared_write`): under the file's lock, `next` gets the data
-    /// on disk now (`None`: no file; a file this version cannot read is moved aside first, as [`StateFile::load`]
-    /// does) and returns what to write (`None`: nothing). Written only while the file still holds what `next` saw,
-    /// else read again and `next` asked again. Returns the data on disk afterwards. After an `Err`, never save defaults
-    /// in place of what is on disk: the file may hold the person's data (a file it could not read is stamped, so a
-    /// handle that never read it is refused while the file is there; once it is gone, nothing is left to lose).
+    /// on disk now (`None`: no file; a file this version cannot parse is moved aside first, as [`StateFile::load`]
+    /// does; one it must not read, or a newer version's, fails the update untouched) and returns what to write
+    /// (`None`: nothing). Written only while the file still holds what `next` saw, else read again and `next` asked
+    /// again. Returns the data on disk afterwards. After an `Err`, never save defaults in place of what is on disk: the
+    /// file may hold the person's data (a file it could not read is stamped, so a handle that never read it is refused
+    /// while the file is there; once it is gone, nothing is left to lose).
     ///
     /// # Errors
-    /// Encode | IO failure, a link in place of `.permark/`, a file that kept changing under a writer without the lock.
+    /// Encode | IO failure, a link in place of `.permark/`, a file that kept changing under a writer without the lock,
+    /// a file it must not read (link | FIFO in `.permark/`, larger than its cap), a newer version's file.
     pub fn update(
         &self,
         mut next: impl FnMut(Option<&T>) -> Option<T>,
@@ -324,9 +410,8 @@ impl<T: StateData> StateFile<T> {
         let _lock =
             shared_write::lock_for(&self.path).map_err(|e| StateError::io(&self.path, e))?;
         for _ in 0..raw::UPDATE_ATTEMPTS {
-            let bytes = match std::fs::read(&self.path) {
-                Ok(bytes) => Some(bytes),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            let bytes = match self.read_now() {
+                Ok(bytes) => bytes,
                 Err(error) => {
                     // not read: no handle that never read it writes over it; this handle's own state stays (a
                     // handle holding what it read keeps writing)
@@ -336,8 +421,12 @@ impl<T: StateData> StateFile<T> {
             };
             let fresh = match bytes.as_deref().map(Self::parse) {
                 None => None,
-                Some(Some(data)) => Some(data),
-                Some(None) => {
+                Some(Parsed::Data(data)) => Some(data),
+                Some(Parsed::Newer) => {
+                    self.newer();
+                    return Err(StateError::io(&self.path, unread::refused()));
+                }
+                Some(Parsed::Bad) => {
                     // kept beside it, never written over (the next round sees no file)
                     if self.move_aside().is_some() {
                         continue;
@@ -357,15 +446,11 @@ impl<T: StateData> StateFile<T> {
                 return Ok(Some(data));
             }
             let written =
-                crate::fsx::write_atomic_checked(&self.path, &out, || {
-                    match std::fs::read(&self.path) {
-                        Ok(now) => Ok(bytes.as_deref() == Some(now.as_slice())),
-                        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                            Ok(bytes.is_none())
-                        }
-                        Err(error) => Err(error),
-                    }
-                })
+                crate::fsx::write_atomic_checked(
+                    &self.path,
+                    &out,
+                    || Ok(self.read_now()? == bytes),
+                )
                 .map_err(|e| StateError::io(&self.path, e))?;
             if written {
                 return Ok(Some(data));
@@ -374,27 +459,28 @@ impl<T: StateData> StateFile<T> {
         Err(StateError::io(&self.path, raw::kept_changing()))
     }
 
-    /// `<name>.broken-<ms>` next to it; never overwrites an older backup.
     fn move_aside(&self) -> Option<PathBuf> {
-        let name = self.path.file_name()?.to_string_lossy().into_owned();
-        let ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_millis());
-        for n in 0..100u32 {
-            let suffix = if n == 0 {
-                String::new()
-            } else {
-                format!("-{n}")
-            };
-            let backup = self
-                .path
-                .with_file_name(format!("{name}.broken-{ms}{suffix}"));
-            if std::fs::symlink_metadata(&backup).is_ok() {
-                continue;
+        move_aside(&self.path)
+    }
+
+    /// For a handle that never read the file: whatever is there may be replaced (none, one this version reads, or a
+    /// corrupt one, as a load would move it aside). Not when no load could read it (a link | FIFO in `.permark/`,
+    /// larger than its cap) or a newer version wrote it: stamped then, as a load would leave it. Any other read error
+    /// says nothing about the file: the write decides, as before. Only the envelope's version is parsed; asked until
+    /// the handle's first write, after which the handle counts as one that read the file.
+    fn replaceable(&self) -> bool {
+        match self.read_now() {
+            Ok(Some(bytes)) if Self::newer_envelope(&bytes) => {
+                unread::tell(&self.path, &NEWER);
+                unread::mark(&self.path);
+                false
             }
-            return std::fs::rename(&self.path, &backup).ok().map(|()| backup);
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+                unread::mark(&self.path);
+                false
+            }
+            Ok(_) | Err(_) => true,
         }
-        None
     }
 
     /// Atomic write of `{ version, data }`; saves of one file in this process take turns (`shared_write::save_turn`).
@@ -403,7 +489,7 @@ impl<T: StateData> StateFile<T> {
     /// Encode failure, IO failure, `.permark/` folder replaced by a link, the saves before this one taking too long.
     pub fn save(&self, data: &T) -> Result<(), StateError> {
         let read = self.read.load(Ordering::SeqCst);
-        if !unread::may_write(&self.path, read) {
+        if !unread::may_write(&self.path, read, self.zone()) {
             return Err(StateError::io(&self.path, unread::refused()));
         }
         let bytes = self.encode(data)?;
@@ -413,13 +499,22 @@ impl<T: StateData> StateFile<T> {
         }
         let _turn =
             shared_write::save_turn(&self.path).map_err(|e| StateError::io(&self.path, e))?;
-        if !(read == unread::NEVER && unread::is_stamped(&self.path)) {
-            return write_atomic(&self.path, &bytes).map_err(|e| StateError::io(&self.path, e));
+        let stamped = unread::is_stamped(&self.path);
+        if read == unread::NEVER && !stamped && !self.replaceable() {
+            return Err(StateError::io(&self.path, unread::refused()));
+        }
+        if !(read == unread::NEVER && stamped) {
+            write_atomic(&self.path, &bytes).map_err(|e| StateError::io(&self.path, e))?;
+            // the file now holds what this handle wrote: its next saves skip the probe above, as those of a handle
+            // that read the file do (a newer version's file written later is not looked for again by a save; an
+            // update reads the file right before each write)
+            self.has_read();
+            return Ok(());
         }
         // a file that could not be read once, gone at the check above: still gone right before each rename attempt
         // (one put back meanwhile is kept, as `update` does); written, it holds only PerMark's own data
         let written = crate::fsx::write_atomic_checked(&self.path, &bytes, || {
-            Ok(unread::may_write(&self.path, read))
+            Ok(unread::may_write(&self.path, read, self.zone()))
         })
         .map_err(|e| StateError::io(&self.path, e))?;
         if !written {
@@ -430,19 +525,47 @@ impl<T: StateData> StateFile<T> {
     }
 }
 
+/// Why a newer version's state file is left unread.
+const NEWER: &str = "written by a newer version of PerMark";
+
+/// `<name>.broken-<ms>` next to `path` (the entry itself: a link is moved, never followed); never overwrites an older
+/// backup.
+fn move_aside(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    let ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis());
+    for n in 0..100u32 {
+        let suffix = if n == 0 {
+            String::new()
+        } else {
+            format!("-{n}")
+        };
+        let backup = path.with_file_name(format!("{name}.broken-{ms}{suffix}"));
+        if std::fs::symlink_metadata(&backup).is_ok() {
+            continue;
+        }
+        return std::fs::rename(path, &backup).ok().map(|()| backup);
+    }
+    None
+}
+
 /// The state files a load | update could not read (or parse and move aside) and left in place (board item 15): a save
 /// that writes the defaults a caller got over the person's data is refused. Refused: a handle whose own last load |
 /// update left the file unread (`FAILED`), and a handle that never read a file stamped here (`NEVER`: it may carry
 /// the defaults of another handle, as the session save makes a new handle). A handle that read the file itself
 /// (`READ`) writes even after another handle failed: it holds the person's data. A file that is gone holds nothing to
 /// lose: a `NEVER` handle may write a stamped file while it is not there (only a not-found answer counts as gone; any
-/// other error, and any entry, a folder or a link included, counts as there), and that write clears the stamp: the file
-/// then holds only PerMark's own data. A `FAILED` handle stays refused. One set for the process (other processes do not
-/// see it); otherwise a stamp stays until the process ends.
+/// other error, and any entry, a folder or a link included, counts as there; in `.permark/` a link on the way is never
+/// looked through and counts as there too), and that write clears the stamp: the file then holds only PerMark's own
+/// data. A `FAILED` handle stays refused. One set for the process (other processes do not see it); otherwise a stamp
+/// stays until the process ends.
 mod unread {
     use std::collections::HashSet;
     use std::path::Path;
     use std::sync::{Mutex, OnceLock, PoisonError};
+
+    use crate::fsx::Zone;
 
     pub(super) const NEVER: u8 = 0;
     pub(super) const READ: u8 = 1;
@@ -483,12 +606,17 @@ mod unread {
     /// A handle whose own last load | update made `read` of the file may write it. One that never read it may, unless
     /// the file could not be read once and is still there: a file that is gone holds nothing to lose (the review keeps
     /// a copy again after removing it as unused).
-    pub(super) fn may_write(path: &Path, read: u8) -> bool {
+    pub(super) fn may_write(path: &Path, read: u8, zone: Zone<'_>) -> bool {
         match read {
             READ => true,
             NEVER => {
-                !is_stamped(path)
-                    || matches!(std::fs::symlink_metadata(path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+                !is_stamped(path) || {
+                    let there = match zone {
+                        Zone::Inside(folder) => crate::fsx::symlink_metadata_below(folder, path),
+                        Zone::Anywhere => std::fs::symlink_metadata(path),
+                    };
+                    matches!(there, Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+                }
             }
             _ => false,
         }
@@ -496,6 +624,20 @@ mod unread {
 
     pub(super) fn refused() -> std::io::Error {
         std::io::Error::other("not read yet: kept as it is until PerMark can read it")
+    }
+
+    /// Logs why a file is left unread, once per path for the process: the person's data stays as it is, so the reason
+    /// is worth one line, not one per load.
+    pub(super) fn tell(path: &Path, why: &dyn std::fmt::Display) {
+        static TOLD: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+        let first = TOLD
+            .get_or_init(Mutex::default)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key(path));
+        if first {
+            eprintln!("PerMark: {} left as it is: {why}", path.display());
+        }
     }
 }
 
@@ -513,6 +655,12 @@ pub struct StateStore {
     shared: PathBuf,
     guard: Option<Guard>,
     cache_guard: Option<Guard>,
+    /// The person's state roots this store was made from.
+    roots: AppDirs,
+    /// The project folder; `None`: the app-wide store.
+    root: Option<Root>,
+    /// This install's data for the project, worked out at first use; clones share it.
+    machine: Arc<OnceLock<Option<Machine>>>,
 }
 
 impl StateStore {
@@ -528,6 +676,9 @@ impl StateStore {
             shared: dirs.profile.clone(),
             guard: None,
             cache_guard: None,
+            roots: dirs.clone(),
+            root: None,
+            machine: Arc::default(),
         }
     }
 
@@ -561,6 +712,9 @@ impl StateStore {
                 shared: permark.clone(),
                 guard: Some(guard(&local)),
                 cache_guard: cache_usable.then(|| guard(&cache)),
+                roots: dirs.clone(),
+                root: Some(root.clone()),
+                machine: Arc::default(),
             }
         } else {
             Self {
@@ -572,8 +726,60 @@ impl StateStore {
                 app_dir: dirs.profile.clone(),
                 guard: None,
                 cache_guard: None,
+                roots: dirs.clone(),
+                root: Some(root.clone()),
+                machine: Arc::default(),
             }
         }
+    }
+
+    /// The person's state roots (profile, cache, install) this store was made from.
+    #[must_use]
+    pub fn app_dirs(&self) -> &AppDirs {
+        &self.roots
+    }
+
+    /// This install's own data for the project: read only by this install, sealed with its key and bound to the
+    /// folder, in `<state dir>/machine/<iid>/`. `None`: the app-wide store, or no usable install key (keep no such
+    /// data: fail closed).
+    #[must_use]
+    pub fn machine(&self) -> Option<&Machine> {
+        self.machine
+            .get_or_init(|| {
+                let root = self.root.as_ref()?;
+                let install = seal::install(&self.roots.install)?;
+                Some(Machine::new(&install, root, &self.dir))
+            })
+            .as_ref()
+    }
+
+    /// A typed file in [`StateStore::machine`]'s folder, guarded like the other state files.
+    #[must_use]
+    pub fn machine_file<T: StateData>(&self, name: &str) -> Option<StateFile<T>> {
+        self.machine().map(|machine| StateFile {
+            path: machine.dir().join(name),
+            guard: self.guard.clone(),
+            read: AtomicU8::new(unread::NEVER),
+            _data: PhantomData,
+        })
+    }
+
+    /// A raw file in [`StateStore::machine`]'s folder.
+    #[must_use]
+    pub fn machine_raw_file(&self, name: &str) -> Option<RawFile> {
+        self.machine()
+            .map(|machine| RawFile::private(machine.dir().join(name), self.guard.clone()))
+    }
+
+    /// A typed file in the install folder (this computer's, for every project); `None`: no usable install key.
+    #[must_use]
+    pub fn install_file<T: StateData>(&self, name: &str) -> Option<StateFile<T>> {
+        seal::install(&self.roots.install).map(|_| StateFile {
+            path: self.roots.install.join(name),
+            guard: None,
+            read: AtomicU8::new(unread::NEVER),
+            _data: PhantomData,
+        })
     }
 
     #[must_use]

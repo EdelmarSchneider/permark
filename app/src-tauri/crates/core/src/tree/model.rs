@@ -108,6 +108,9 @@ impl Node {
 struct Found {
     name: String,
     is_dir: bool,
+    /// A symlink | junction: listed, its target never read. std's tag-based test, so a cloud placeholder file (another
+    /// reparse point) stays a plain file.
+    link: bool,
     /// Size and modified time (ms since the epoch) of a file, when the caller asked for them.
     stat: Option<(u64, i64)>,
 }
@@ -203,7 +206,12 @@ fn read_entries(
         let stat = (want_stat && !is_dir)
             .then(|| entry.metadata().ok().map(|m| (m.len(), modified_ms(&m))))
             .flatten();
-        found.push(Found { name, is_dir, stat });
+        found.push(Found {
+            name,
+            is_dir,
+            link: file_type.is_symlink(),
+            stat,
+        });
     }
     Some((found, hints))
 }
@@ -716,7 +724,7 @@ pub struct ScanFile {
     pub path: String,
     pub category: super::Category,
     /// Where it is on disk; a root scan gives it only for the categories whose content is read (Markdown | Text |
-    /// Config), a folder scan for every file.
+    /// Config) and never for a link (listed by name, its target never read), a folder scan for every file.
     pub abs: Option<PathBuf>,
     /// Size in bytes (a folder scan only; 0 otherwise).
     pub size: u64,
@@ -843,7 +851,7 @@ fn scan_dir(
                 let file = ScanFile {
                     path,
                     category,
-                    abs: reads_content.then_some(abs),
+                    abs: (reads_content && !entry.link).then_some(abs),
                     size,
                     modified_ms,
                 };

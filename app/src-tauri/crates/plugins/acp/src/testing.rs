@@ -61,6 +61,7 @@ pub(crate) fn app_store(profile: &Path) -> StateStore {
     StateStore::app(&AppDirs {
         profile: profile.to_path_buf(),
         cache: profile.join("cache"),
+        install: profile.join("install"),
     })
 }
 

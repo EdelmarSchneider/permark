@@ -56,6 +56,24 @@ pub(super) fn free_space(folder: &Path) -> io::Result<u64> {
     }
 }
 
+/// Whether the drive `letter` is a disk of this computer: `GetDriveTypeW` of its root answers fixed | removable | RAM
+/// disk. A network drive (a mapped `Z:`, a `subst` of a share) connects to a server on any lookup; a CD drive may wait
+/// for media; an unknown drive | one without a root folder tells nothing.
+// Documented FFI: no std wrapper tells the drive type. The argument is a NUL-terminated wide string owned by this
+// function and alive for the whole call.
+#[allow(unsafe_code)]
+pub(super) fn local_drive(letter: u8) -> bool {
+    use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
+    // drive types of `GetDriveTypeW` (WinBase.h)
+    const DRIVE_REMOVABLE: u32 = 2;
+    const DRIVE_FIXED: u32 = 3;
+    const DRIVE_RAMDISK: u32 = 6;
+    let root = [u16::from(letter), u16::from(b':'), u16::from(b'\\'), 0];
+    // SAFETY: `root` is a live NUL-terminated buffer that outlives the call.
+    let kind = unsafe { GetDriveTypeW(root.as_ptr()) };
+    matches!(kind, DRIVE_REMOVABLE | DRIVE_FIXED | DRIVE_RAMDISK)
+}
+
 /// `(volume serial, file index)` of `path`; a link | junction is opened itself (`OPEN_REPARSE_POINT`). The handle
 /// (no access asked, every share mode) lives for this call only: never in the way of a rename.
 // Documented FFI: GetFileInformationByHandle has no stable std wrapper (`MetadataExt::file_index` is unstable). The
