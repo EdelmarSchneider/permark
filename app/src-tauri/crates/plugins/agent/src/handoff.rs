@@ -690,6 +690,9 @@ pub struct OutsideView {
 pub enum HandOffPreview {
     /// S5: nothing since the last hand-off (no dialog).
     Nothing,
+    /// Git tracks the folder's private folder, where the journal lives: its activity is not handed to agents (the
+    /// dialog says why; nothing to confirm).
+    Withheld,
     #[serde(rename_all = "camelCase")]
     Ready {
         case: Case,
@@ -763,17 +766,18 @@ fn refused() -> ToolError {
     )
 }
 
-/// The hand-off dialog's content (`checked`: the person's choice of sessions, else the default).
+/// The hand-off dialog's content (`checked`: the person's choice of sessions, else the default);
+/// [`HandOffPreview::Withheld`] while the activity is withheld from agents (nothing built).
 ///
 /// # Errors
-/// `Invalid` while the activity is withheld from agents.
+/// None: a withheld activity is an answer the dialog shows, not a failure.
 pub fn preview(
     tools: &Tools,
     guard: &Guard,
     checked: Option<&[u32]>,
 ) -> Result<HandOffPreview, ToolError> {
     if withheld(tools) {
-        return Err(refused());
+        return Ok(HandOffPreview::Withheld);
     }
     let activity = &tools.services().activity;
     let journal = activity.snapshot();
@@ -849,7 +853,8 @@ pub fn prompt_line(rows: u32, outside_only: bool) -> String {
 /// Confirms a hand-off: the package of what the preview showed is frozen, the checkpoint set.
 ///
 /// # Errors
-/// `Invalid` when nothing is left to hand off, or while the activity is withheld from agents.
+/// `Invalid` when nothing is left to hand off, while the activity is withheld from agents, or when the journal could
+/// not note the hand-off (nothing frozen, no checkpoint: no line to paste).
 pub fn confirm(
     tools: &Tools,
     guard: &Guard,
@@ -878,7 +883,14 @@ pub fn confirm(
         .services
         .get::<RepoHandle>()
         .and_then(|r| r.0.head());
-    let _ = activity.hand_off(scope.upto, head, text.clone(), rows);
+    if activity
+        .hand_off(scope.upto, head, text.clone(), rows)
+        .is_none()
+    {
+        return Err(ToolError::Invalid(
+            "the activity journal could not note the hand-off".to_owned(),
+        ));
+    }
     Ok(HandOffDone {
         line: prompt_line(rows, scope.case == Case::OutsideOnly),
         full: text,

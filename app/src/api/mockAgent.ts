@@ -2,6 +2,7 @@
 // published context and a status that a probe can fill (a connected client, requests). In memory.
 
 import type { HandOffSessionView } from "./generated/HandOffSessionView";
+import { MockPluginError } from "./mockOrganizing";
 import type {
   AgentRequest,
   AgentSession,
@@ -49,6 +50,8 @@ export type AgentProbe = {
   status(): AgentStatus;
   /** The hand-offs confirmed, as `{ upto, checked }`. */
   handedOff: { upto: number; checked: number[] }[];
+  /** Git tracks the folder's private folder (off at start): the activity is not handed off. */
+  withhold(on: boolean): void;
 };
 
 const HOUR = 3_600_000;
@@ -113,6 +116,7 @@ export function createMockAgent(
   const published: AgentWindowContext[] = [];
   let focused = 0;
   const handedOff: { upto: number; checked: number[] }[] = [];
+  let withheld = false;
   const status = (): AgentStatus => ({
     enabled,
     replaced,
@@ -163,6 +167,7 @@ export function createMockAgent(
     },
     "agent.setup": () => "C:\\Program Files\\PerMark\\PerMark.exe",
     "agent.handOffPreview": ({ checked }): HandOffPreview => {
+      if (withheld) return { state: "withheld" };
       if (handedOff.length > 0) return { state: "nothing" };
       const sessions = sessionsNow(Date.now(), checked);
       const inside = sessions.filter((s) => s.checked);
@@ -181,6 +186,7 @@ export function createMockAgent(
       };
     },
     "agent.handOffConfirm": ({ upto, checked }) => {
+      if (withheld) throw new MockPluginError("unavailable");
       handedOff.push({ upto, checked });
       const rows = sessionsNow(Date.now(), checked)
         .filter((s) => s.checked)
@@ -236,6 +242,9 @@ export function createMockAgent(
       },
       status,
       handedOff,
+      withhold: (on) => {
+        withheld = on;
+      },
     },
   };
 }

@@ -1613,6 +1613,8 @@ export default {
   "agent.handoff.done.other":
     "S'han traspassat {n} accions: s'han copiat i estan a punt per a enganxar-les al prompt.",
   "agent.handoff.failed": "El traspàs no ha funcionat. Torneu-ho a provar.",
+  "agent.handoff.withheld":
+    "El repositori git d'aquesta carpeta fa el seguiment de la carpeta privada del PerMark (.permark/local), per això la seva activitat no es traspassa als agents.",
   "agent.handoff.copyFailed": "S'ha fet el traspàs, però no s'ha pogut copiar.",
   "config.sheet": "Paràmetres d'aquest fitxer",
   "config.root": "Nivell superior",

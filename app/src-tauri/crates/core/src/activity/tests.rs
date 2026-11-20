@@ -610,8 +610,9 @@ fn kept_aside(path: &std::path::Path) -> bool {
         .any(|e| e.file_name().to_string_lossy().contains(".broken-"))
 }
 
-/// Any seq-bearing number above what a journal reaches (a planted file): moved aside like another format version, a
-/// fresh journal starts and gives seqs from 1 (no panic, no wrap).
+/// Any seq-bearing number above what a journal reaches (a planted file), or a `next` | row that leaves no seq for a
+/// new row (every later push would be refused: the journal would record nothing again): moved aside like another
+/// format version, a fresh journal starts and gives seqs from 1 (no panic, no wrap).
 #[test]
 fn a_journal_with_a_number_past_the_highest_seq_is_kept_aside_and_a_fresh_one_starts() {
     let big = MAX_SEQ + 1;
@@ -619,6 +620,10 @@ fn a_journal_with_a_number_past_the_highest_seq_is_kept_aside_and_a_fresh_one_st
     let cases = [
         serde_json::json!({ "next": u64::MAX, "entries": [row(1)] }),
         serde_json::json!({ "next": big, "entries": [row(1)] }),
+        serde_json::json!({ "next": MAX_SEQ, "entries": [] }),
+        serde_json::json!({ "next": MAX_SEQ, "entries": [row(1)] }),
+        serde_json::json!({ "next": 3, "entries": [row(1), row(MAX_SEQ)] }),
+        serde_json::json!({ "next": 3, "entries": [row(1), row(MAX_SEQ - 1)] }),
         serde_json::json!({ "next": 3, "entries": [row(1), row(big)] }),
         serde_json::json!({ "next": 3, "entries": [row(1)], "trimmed_through": big }),
         serde_json::json!({ "next": 3, "entries": [row(1)], "checkpoint": { "seq": big, "at": T0 } }),
@@ -640,29 +645,35 @@ fn a_journal_with_a_number_past_the_highest_seq_is_kept_aside_and_a_fresh_one_st
     }
 }
 
-/// At the highest seq a new row is refused (the person's action, a change outside, a hand-off): nothing wraps, the
-/// journal stays one that loads.
+/// Once the last seq is given a new row is refused (a change outside, a hand-off): nothing wraps, no checkpoint |
+/// package is noted without its marker. The next load starts a fresh journal (the file kept aside), so the journal
+/// records again.
 #[test]
-fn a_journal_at_the_highest_seq_refuses_new_rows_and_still_loads() {
+fn a_journal_out_of_seqs_refuses_new_rows_then_starts_fresh_at_the_next_load() {
     let (_dir, store) = store();
-    plant(
+    let path = plant(
         &store,
-        &serde_json::json!({ "next": MAX_SEQ, "entries": [] }),
+        &serde_json::json!({ "next": MAX_SEQ - 1, "entries": [] }),
     );
     let time = Time::new();
     {
         let log = ActivityLog::open(&store, time.clock());
         log.person(save("a.md", &["A"]));
         log.outside(&batch(vec![change("b.md", ChangeKind::Created, false)]));
-        let _ = log.hand_off(0, None, "rows".to_owned(), 1);
+        assert_eq!(log.hand_off(MAX_SEQ - 1, None, "rows".to_owned(), 1), None);
         let journal = log.snapshot();
-        assert!(journal.entries.is_empty(), "{journal:?}");
+        let seqs: Vec<u64> = journal.entries.iter().map(|e| e.seq).collect();
+        assert_eq!(seqs, [MAX_SEQ - 1], "{journal:?}");
         assert_eq!(journal.next, MAX_SEQ);
         assert_eq!(journal.checkpoint, None);
         assert_eq!(journal.package, None);
     }
-    let journal = journal_of(&store);
-    assert_eq!(journal.next, MAX_SEQ);
+    let time = Time::new();
+    let log = ActivityLog::open(&store, time.clock());
+    assert_eq!(log.snapshot(), Journal::default());
+    assert!(kept_aside(&path));
+    log.person(save("a.md", &["A"]));
+    assert_eq!(log.snapshot().entries[0].seq, 1);
 }
 
 /// Every seq a journal gives is checked: from `next` at the top of `u64` or at the highest seq nothing is added (no
@@ -732,6 +743,28 @@ fn a_checkpoint_ahead_of_the_rows_is_brought_back_and_new_rows_follow_it() {
     let journal = log.snapshot();
     assert_eq!(journal.since_checkpoint().len(), 1);
     assert_eq!(scope(&journal, log.now()).case, Case::One);
+}
+
+/// A trimmed mark ahead of every seq the journal gave (a planted file) is brought back to the last one given: rows
+/// after the hand-off never count as dropped by retention.
+#[test]
+fn a_trimmed_mark_ahead_of_the_rows_is_brought_back() {
+    let (_dir, store) = store();
+    let far = 1_000_000_000_000_u64;
+    plant(
+        &store,
+        &serde_json::json!({
+            "next": 3,
+            "entries": [planted_row(1), planted_row(2)],
+            "trimmed_through": far,
+            "checkpoint": { "seq": 2, "at": T0 }
+        }),
+    );
+    let time = Time::new();
+    let log = ActivityLog::open(&store, time.clock());
+    assert_eq!(log.snapshot().trimmed_through, 2);
+    log.person(save("b.md", &["B"]));
+    assert!(!scope(&log.snapshot(), log.now()).trimmed);
 }
 
 /// A journal file over the journal's cap is never read, not even for its version: unreadable, left in place, never

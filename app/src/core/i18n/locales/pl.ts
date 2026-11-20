@@ -1662,6 +1662,8 @@ export default {
   "agent.handoff.done.few": "Przekazano {n} akcje — skopiowano, gotowe do wklejenia w prompt.",
   "agent.handoff.done.other": "Przekazano {n} akcji — skopiowano, gotowe do wklejenia w prompt.",
   "agent.handoff.failed": "Przekazanie nie powiodło się. Spróbuj ponownie.",
+  "agent.handoff.withheld":
+    "Repozytorium git tego folderu śledzi prywatny folder PerMark (.permark/local), więc jego aktywność nie jest przekazywana agentom.",
   "agent.handoff.copyFailed": "Przekazano, ale kopiowanie nie powiodło się.",
   "config.sheet": "Ustawienia w tym pliku",
   "config.root": "Najwyższy poziom",

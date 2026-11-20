@@ -277,7 +277,7 @@ pub struct Package {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Journal {
     /// The next entry's seq (from 1).
-    #[serde(default, deserialize_with = "seq_in_range")]
+    #[serde(default, deserialize_with = "next_in_range")]
     pub next: u64,
     #[serde(default, deserialize_with = "entries_in_range")]
     pub entries: Vec<Entry>,
@@ -305,14 +305,27 @@ fn seq_in_range<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u64
     Ok(seq)
 }
 
-/// The rows of the file, each seq checked as [`seq_in_range`] does.
+/// `next` of the file: at [`MAX_SEQ`] or above no new row fits (every push would be refused and the journal would
+/// record nothing again), so the load moves the file aside as [`seq_in_range`] does.
+fn next_in_range<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    let next = u64::deserialize(deserializer)?;
+    if next >= MAX_SEQ {
+        return Err(serde::de::Error::custom(
+            "no seq left for a new row of the journal",
+        ));
+    }
+    Ok(next)
+}
+
+/// The rows of the file: each leaves a seq for a new row (the load raises `next` past the last one, see
+/// [`next_in_range`]); a row past that fails the parse as in [`seq_in_range`].
 fn entries_in_range<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<Entry>, D::Error> {
     let entries = Vec::<Entry>::deserialize(deserializer)?;
-    if entries.iter().any(|e| e.seq > MAX_SEQ) {
+    if entries.iter().any(|e| e.seq.saturating_add(1) >= MAX_SEQ) {
         return Err(serde::de::Error::custom(
-            "a row past the highest seq a journal reaches",
+            "a row that leaves no seq for a new one",
         ));
     }
     Ok(entries)
@@ -334,7 +347,8 @@ impl Journal {
     }
 
     /// Adds a row with the next seq; `None` (nothing added) once the seqs are used up: `next` never passes
-    /// [`MAX_SEQ`] (the journal written stays one that loads) and never wraps.
+    /// [`MAX_SEQ`] and never wraps. A journal written with no seq left is moved aside at its next load (a fresh one
+    /// starts), so it never stays one that records nothing.
     fn push(&mut self, at: u64, by: By, fact: Fact) -> Option<u64> {
         let seq = self.next.max(1);
         self.next = seq.checked_add(1).filter(|next| *next <= MAX_SEQ)?;
@@ -344,13 +358,15 @@ impl Journal {
 
     /// Puts the numbers of a journal read from disk in order (a file from elsewhere may hold any): `next` is raised
     /// past the last row (a new row never repeats a seq); a checkpoint | package past the last seq given is brought
-    /// back to it (else every new row would count as handed off already). Each number is at most [`MAX_SEQ`] here:
+    /// back to it (else every new row would count as handed off already), and so is the trimmed mark (else every
+    /// hand-off would say older rows were dropped). Each number is at most [`MAX_SEQ`] here, `next` stays below it:
     /// a larger one fails the parse.
     fn order_seqs(&mut self) {
         if let Some(last) = self.entries.iter().map(|e| e.seq).max() {
             self.next = self.next.max(last.saturating_add(1));
         }
         let given = self.next.saturating_sub(1);
+        self.trimmed_through = self.trimmed_through.min(given);
         if let Some(checkpoint) = &mut self.checkpoint {
             checkpoint.seq = checkpoint.seq.min(given);
         }

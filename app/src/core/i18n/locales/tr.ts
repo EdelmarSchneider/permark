@@ -1602,6 +1602,8 @@ export default {
   "agent.handoff.done.one": "{n} işlem devredildi — kopyalandı, isteminize yapıştırılmaya hazır.",
   "agent.handoff.done.other": "{n} işlem devredildi — kopyalandı, isteminize yapıştırılmaya hazır.",
   "agent.handoff.failed": "Devretme işlemi başarısız oldu. Yeniden deneyin.",
+  "agent.handoff.withheld":
+    "Bu klasörün git deposu PerMark'ın özel klasörünü (.permark/local) izliyor, bu yüzden etkinliği ajanlara devredilmez.",
   "agent.handoff.copyFailed": "Devredildi, ancak kopyalama başarısız oldu.",
   "config.sheet": "Bu dosyadaki ayarlar",
   "config.root": "Üst düzey",

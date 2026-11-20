@@ -1597,6 +1597,8 @@ export default {
   "agent.handoff.done.one": "{n} ação passada: copiada, pronta para colar no seu prompt.",
   "agent.handoff.done.other": "{n} ações passadas: copiadas, prontas para colar no seu prompt.",
   "agent.handoff.failed": "A passagem não funcionou. Tente de novo.",
+  "agent.handoff.withheld":
+    "O repositório git desta pasta rastreia a pasta privada do PerMark (.permark/local), por isso a atividade dela não é passada aos agentes.",
   "agent.handoff.copyFailed": "Passado, mas a cópia não funcionou.",
   "config.sheet": "Configurações deste arquivo",
   "config.root": "Nível principal",

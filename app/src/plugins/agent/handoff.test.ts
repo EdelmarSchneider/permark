@@ -173,6 +173,34 @@ describe("hand-off flow", () => {
     target.remove();
   });
 
+  it("says why when git tracks the private folder: its own note, no confirm, nothing handed off", async () => {
+    const { api, store, said } = await setup();
+    api.probe.plugins.agent.withhold(true);
+    await store.open();
+    expect(store.state.status).toBe("withheld");
+    handOff.state = store.state;
+    const target = document.createElement("div");
+    document.body.append(target);
+    const view = mount(HandOffDialog, { target });
+    await settle();
+    const dialog = target.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(target.textContent).toContain(
+      "This folder's git repository tracks PerMark's private folder (.permark/local)",
+    );
+    const buttons = [...target.querySelectorAll("button")].map((b) => b.textContent.trim());
+    expect(buttons).not.toContain("Hand off and copy");
+    expect(buttons).toContain("Close");
+    expect(target.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(said).toEqual([]);
+    dialog?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await settle();
+    expect(handOff.state.status).toBe("closed");
+    expect(api.probe.plugins.agent.handedOff).toEqual([]);
+    void unmount(view);
+    target.remove();
+  });
+
   it("owns the keyboard while open: focus in, Tab stays inside, Escape closes, focus goes back", async () => {
     const { store } = await setup();
     await store.open();

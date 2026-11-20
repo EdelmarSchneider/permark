@@ -1635,6 +1635,8 @@ export default {
   "agent.handoff.done.other":
     "{n} actions transmises : copiées, prêtes à coller dans votre prompt.",
   "agent.handoff.failed": "La transmission a échoué. Réessayez.",
+  "agent.handoff.withheld":
+    "Le dépôt git de ce dossier suit le dossier privé de PerMark (.permark/local) : son activité n'est donc pas transmise aux agents.",
   "agent.handoff.copyFailed": "Transmis, mais la copie a échoué.",
   "config.sheet": "Paramètres de ce fichier",
   "config.root": "Niveau supérieur",

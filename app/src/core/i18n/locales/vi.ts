@@ -1595,6 +1595,8 @@ export default {
   "agent.handoff.done.other":
     "Đã chuyển giao {n} thao tác — đã sao chép, sẵn sàng để dán vào lời nhắc của bạn.",
   "agent.handoff.failed": "Chuyển giao không thành công. Hãy thử lại.",
+  "agent.handoff.withheld":
+    "Kho git của thư mục này đang theo dõi thư mục riêng của PerMark (.permark/local), nên hoạt động của nó không được chuyển giao cho agent.",
   "agent.handoff.copyFailed": "Đã chuyển giao, nhưng không sao chép được.",
   "config.sheet": "Các cài đặt trong tệp này",
   "config.root": "Cấp trên cùng",

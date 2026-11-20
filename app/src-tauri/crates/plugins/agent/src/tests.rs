@@ -3108,9 +3108,14 @@ fn activity_and_the_hand_off_are_withheld_while_git_tracks_the_root_s_private_fo
             "this folder's repository tracks PerMark's private files; activity is not given to agents"
                 .to_owned(),
         );
+        // the person's dialog learns why (its own answer), with nothing to confirm
         assert_eq!(
             crate::handoff::preview(&tools, &guard, None),
-            Err(refusal.clone())
+            Ok(crate::handoff::HandOffPreview::Withheld)
+        );
+        assert_eq!(
+            fx.rpc("handOffPreview", json!({})).unwrap(),
+            json!({ "state": "withheld" })
         );
         let before = activity.snapshot();
         assert_eq!(
@@ -3134,8 +3139,56 @@ fn activity_and_the_hand_off_are_withheld_while_git_tracks_the_root_s_private_fo
         let (value, text) = unlabeled(&value, &text);
         assert_eq!(value, json!({ "frozen": done.full }));
         assert_eq!(text, done.full);
-        assert!(crate::handoff::preview(&tools, &guard, None).is_ok());
+        assert!(matches!(
+            crate::handoff::preview(&tools, &guard, None),
+            Ok(crate::handoff::HandOffPreview::Ready { .. })
+        ));
     }
+}
+
+/// A journal with no seq left for the hand-off marker notes nothing: the confirm says it failed instead of handing the
+/// person a line for a package that was never frozen.
+#[test]
+fn a_hand_off_the_journal_cannot_note_fails_and_writes_nothing() {
+    use permark_core::activity::{Journal, JOURNAL_FILE, MAX_SEQ};
+    use permark_core::state::StateData as _;
+    let mut fx = fx();
+    let path = fx
+        .core()
+        .store()
+        .file::<Journal>(JOURNAL_FILE)
+        .path()
+        .to_path_buf();
+    // the project closed, its journal replaced by one with a single seq left, then opened again
+    fx.core.take();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        json!({ "version": Journal::VERSION, "data": { "next": MAX_SEQ - 1, "entries": [] } })
+            .to_string(),
+    )
+    .unwrap();
+    fx.core = Some(ProjectCore::open(Root::open(&fx.root).unwrap(), &fx.env));
+    let tools = fx.tools();
+    let activity = &fx.core().services().activity;
+    activity.person(permark_core::activity::Fact::Save {
+        path: "docs/plan.md".to_owned(),
+        sections: vec!["Plan > Rollout".to_owned()],
+        blocks: 1,
+    });
+    let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
+    let crate::handoff::HandOffPreview::Ready { upto, sessions, .. } =
+        crate::handoff::preview(&tools, &guard, None).unwrap()
+    else {
+        panic!("a preview");
+    };
+    let checked: Vec<u32> = sessions.iter().map(|s| s.id).collect();
+    let before = activity.snapshot();
+    assert!(matches!(
+        crate::handoff::confirm(&tools, &guard, upto, &checked),
+        Err(ToolError::Invalid(_))
+    ));
+    assert_eq!(activity.snapshot(), before, "nothing written");
 }
 
 #[test]

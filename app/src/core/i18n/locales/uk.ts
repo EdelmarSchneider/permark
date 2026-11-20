@@ -1662,6 +1662,8 @@ export default {
   "agent.handoff.done.few": "Передано {n} дії — скопійовано, можна вставити у ваш промпт.",
   "agent.handoff.done.other": "Передано {n} дій — скопійовано, можна вставити у ваш промпт.",
   "agent.handoff.failed": "Передача не вдалася. Спробуйте ще раз.",
+  "agent.handoff.withheld":
+    "Git-репозиторій цієї папки відстежує приватну папку PerMark (.permark/local), тому її активність не передається агентам.",
   "agent.handoff.copyFailed": "Передано, але скопіювати не вдалося.",
   "config.sheet": "Налаштування в цьому файлі",
   "config.root": "Верхній рівень",

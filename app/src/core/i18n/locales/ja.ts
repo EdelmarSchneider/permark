@@ -1612,6 +1612,8 @@ export default {
   "agent.handoff.done.other":
     "{n} 件の操作を引き継ぎました — コピー済みなので、プロンプトに貼り付けられます。",
   "agent.handoff.failed": "引き継ぎに失敗しました。もう一度お試しください。",
+  "agent.handoff.withheld":
+    "このフォルダーの git リポジトリが PerMark の非公開フォルダー (.permark/local) を追跡しているため、アクティビティはエージェントに引き継がれません。",
   "agent.handoff.copyFailed": "引き継ぎましたが、コピーに失敗しました。",
   "config.sheet": "このファイルの設定",
   "config.root": "最上位",

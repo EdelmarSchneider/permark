@@ -1599,6 +1599,8 @@ export default {
   "agent.handoff.done.other":
     "Entregáronse {n} accións: copiadas e listas para pegar no seu prompt.",
   "agent.handoff.failed": "A entrega non funcionou. Ténteo de novo.",
+  "agent.handoff.withheld":
+    "O repositorio git deste cartafol segue o cartafol privado de PerMark (.permark/local), así que a súa actividade non se entrega aos axentes.",
   "agent.handoff.copyFailed": "Entregouse, pero non foi posíbel copiar.",
   "config.sheet": "Configuración deste ficheiro",
   "config.root": "Nivel superior",

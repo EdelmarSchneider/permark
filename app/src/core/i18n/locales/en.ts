@@ -1570,6 +1570,8 @@ const en = {
   "agent.handoff.done.one": "Handed off {n} action — copied, ready to paste in your prompt.",
   "agent.handoff.done.other": "Handed off {n} actions — copied, ready to paste in your prompt.",
   "agent.handoff.failed": "The hand-off didn't work. Try again.",
+  "agent.handoff.withheld":
+    "This folder's git repository tracks PerMark's private folder (.permark/local), so its activity is not handed to agents.",
   "agent.handoff.copyFailed": "Handed off, but copying didn't work.",
   "config.sheet": "Settings in this file",
   "config.root": "Top level",
