@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
-use permark_core::plugins::{CommitId, FileVersions, NoVersions};
+use permark_core::plugins::{CommitId, FileVersions, NoTracking, NoVersions};
 use permark_core::state::{AppDirs, StateStore};
 
 use super::*;
@@ -374,6 +374,11 @@ impl GitOps for FakeCall {
         Err(GitError::Timeout)
     }
 
+    /// Never answers in time.
+    fn tracked_under(&self, _: &RepoLocation, _: &str) -> Result<bool, GitError> {
+        Err(GitError::Timeout)
+    }
+
     fn commit_exists(&self, _: &RepoLocation, _: &str) -> bool {
         true
     }
@@ -523,6 +528,25 @@ fn a_backend_that_times_out_on_the_versions_of_a_file_is_too_slow_for_the_reader
     // a file of another repository below this one is not asked for at all
     std::fs::create_dir_all(dir.path().join("inner").join(".git")).unwrap();
     assert_eq!(versions("inner/a.md"), Err(NoVersions::OtherRepository));
+}
+
+#[test]
+fn a_backend_that_times_out_on_the_index_is_too_slow_for_the_reader() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = RepoLocation {
+        workdir: dir.path().to_path_buf(),
+        git_dir: dir.path().join(".git"),
+        prefix: String::new(),
+    };
+    let backend = fake_backend(&Fake::new(Duration::ZERO));
+    let tracked = |path: &str| crate::ops::tracked_of(backend.as_ref(), &location, path);
+    assert_eq!(tracked(".permark/local"), Err(NoTracking::Slow));
+    // a folder of another repository below this one is not asked for at all
+    std::fs::create_dir_all(dir.path().join("inner").join(".git")).unwrap();
+    assert_eq!(
+        tracked("inner/.permark/local"),
+        Err(NoTracking::OtherRepository)
+    );
 }
 
 // ---- the pool ------------------------------------------------------------------------------------------------------
@@ -900,7 +924,7 @@ fn lookups_member_work_and_callers_reads_never_run_more_than_two_at_a_time() {
         .map(|n| {
             let members = Arc::clone(&members);
             let backend = Arc::clone(&backend);
-            let location = members.location(&list[n].uid).unwrap();
+            let location = members.location(&list[n].uid).unwrap().unwrap();
             std::thread::spawn(move || {
                 for _ in 0..5 {
                     let blob = members

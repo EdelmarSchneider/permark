@@ -146,6 +146,7 @@ fn comment(
         edited: false,
         done: false,
         reply: None,
+        withheld: false,
     }
 }
 
@@ -400,7 +401,7 @@ fn hand_off(fx: &Budget, tools: &Tools) {
     }
     let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
     let crate::handoff::HandOffPreview::Ready { upto, sessions, .. } =
-        crate::handoff::preview(tools, &guard, None)
+        crate::handoff::preview(tools, &guard, None).unwrap()
     else {
         panic!("a preview");
     };

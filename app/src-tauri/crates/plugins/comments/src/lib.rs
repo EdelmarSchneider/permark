@@ -7,6 +7,9 @@
 #![cfg_attr(test, allow(clippy::assert_is_empty))]
 
 pub mod anchor;
+mod kept;
+#[cfg(test)]
+mod kept_tests;
 pub mod model;
 #[cfg(test)]
 mod owners_tests;
@@ -15,22 +18,22 @@ mod service;
 mod tests;
 
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use permark_core::activity::{ActivityLog, CommentOp, Fact};
 use permark_core::conditions::Requirement;
 use permark_core::organizing::{CommentBook, CommentFilter, CommentItem, CommentsApi};
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
-    RpcRegistration, Running, ServiceLease,
+    RepoHandle, RpcRegistration, Running, ServiceLease, Services,
 };
 use permark_core::projects::OwnersChange;
 use permark_core::watch::Subscription;
 use permark_core::IpcError;
 use serde::Deserialize;
 
-pub use model::{Comment, CommentScope, CommentView, PassageState};
-pub use service::{CommentsService, EditTarget, NewComment};
+pub use model::{Comment, CommentAside, CommentScope, CommentView, PassageState};
+pub use service::{Announce, CommentsService, EditTarget, NewComment, Withheld};
 
 const ID: PluginId = PluginId::of("comments");
 /// The file in the project's local state.
@@ -38,6 +41,10 @@ pub const FILE: &str = "comments.json";
 /// Most bytes [`FILE`] is read with: up to `MAX_COMMENTS` comments with their quotes and replies, no finite writer
 /// limit below this.
 pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+/// Event `comments:changed`: the comments changed.
+pub const CHANGED_EVENT: &str = "changed";
+/// Event `comments:aside`: comments an outside write removed were set aside, or an aside went away.
+pub const ASIDE_EVENT: &str = "aside";
 
 struct CommentsPlugin {
     manifest: Manifest,
@@ -127,7 +134,7 @@ impl Plugin for CommentsPlugin {
         let service = Arc::new(CommentsService::start_owners(
             started.clone(),
             project.documents.scope().clone(),
-            Arc::new(move || events.emit("changed", serde_json::Value::Null)),
+            Arc::new(move |name: &str| events.emit(name, serde_json::Value::Null)),
         ));
         if early {
             service.start_paused();
@@ -220,6 +227,19 @@ impl Plugin for CommentsPlugin {
                 Ok(())
             }),
         ));
+        // comments an outside write removed: listed, restored (only those the file lacks), let go
+        let s = Arc::clone(&service);
+        registrations.extend(cx.rpc(
+            "asides",
+            typed(move |_: serde_json::Value, _| Ok(s.asides())),
+        ));
+        let s = Arc::clone(&service);
+        registrations.extend(cx.rpc("restore", typed(move |args: IdArgs, _| s.restore(&args.id))));
+        let s = Arc::clone(&service);
+        registrations.extend(cx.rpc(
+            "dismissAside",
+            typed(move |args: IdArgs, _| s.dismiss_aside(&args.id)),
+        ));
         // a text change is not a journal fact: the journal's comment ops are read by older versions too
         let s = Arc::clone(&service);
         registrations.extend(cx.rpc(
@@ -231,7 +251,10 @@ impl Plugin for CommentsPlugin {
         ));
         let lease = project
             .services
-            .provide(Arc::new(CommentsApi(Arc::new(Book(Arc::clone(&service))))));
+            .provide(Arc::new(CommentsApi(Arc::new(Book {
+                service: Arc::clone(&service),
+                services: Arc::downgrade(&project.services),
+            }))));
         Ok(Box::new(CommentsRunning {
             subscription: Some(subscription),
             owners,
@@ -264,7 +287,24 @@ impl Drop for CommentsRunning {
 }
 
 /// What the agent connection asks of the comments.
-struct Book(Arc<CommentsService>);
+struct Book {
+    service: Arc<CommentsService>,
+    /// The project's services, for the repository reader the `git` plugin offers while it runs (weak: this book is
+    /// one of those services).
+    services: Weak<Services>,
+}
+
+impl Book {
+    /// The owners whose private folder git tracks now: their comments may have come with a clone | checkout.
+    fn withheld(&self) -> Withheld {
+        let repo = self
+            .services
+            .upgrade()
+            .and_then(|services| services.get::<RepoHandle>());
+        self.service
+            .withheld(|slot| slot.private_tracked(repo.as_deref()))
+    }
+}
 
 impl CommentBook for Book {
     fn list(&self, which: CommentFilter) -> Result<Vec<CommentItem>, IpcError> {
@@ -273,8 +313,9 @@ impl CommentBook for Book {
             CommentFilter::Done => CommentScope::Done,
             CommentFilter::All => CommentScope::All,
         };
+        let withheld = self.withheld();
         Ok(self
-            .0
+            .service
             .list(None, scope)?
             .into_iter()
             .map(|view| CommentItem {
@@ -284,6 +325,7 @@ impl CommentBook for Book {
                     PassageState::PassageChanged => "passageChanged",
                     PassageState::DocumentMissing => "documentMissing",
                 },
+                withheld: withheld.holds(&view.path),
                 id: view.id,
                 path: view.path,
                 quote: view.quote,
@@ -299,7 +341,7 @@ impl CommentBook for Book {
     }
 
     fn resolve(&self, id: &str, reply: Option<&str>) -> Result<(), IpcError> {
-        self.0.resolve_by_agent(id, reply)
+        self.service.resolve_by_agent(id, reply, &self.withheld())
     }
 }
 

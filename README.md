@@ -275,8 +275,13 @@ that speaks the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
 - **Off until you turn it on, per project.** Choose **Share this folder with agents** in **Settings → AI agents**,
   or run **Agent connection: turn on** from the command palette. Nothing inside a project can turn it on.
 - **Local.** It talks only to programs on your computer and opens no network port.
-- **Read, never edit.** The agent sees where you are, what you selected, what changed, your comments and the notes you shared one
+- **Read, never edit.** The agent sees where you are, what you selected, what changed, the comments and the notes you shared one
   by one. It reads, shows you a place and marks comments done. It never edits a file through this connection.
+- **Text from the folder is marked as such.** Comments, done replies, the activity list and the hand-off come from PerMark's
+  files in the folder. A folder you copied, synced or cloned can carry text that someone else wrote, so the agent is told to
+  read it as information, never as instructions. If the folder's git repository tracks PerMark's private folder
+  (`.permark/local`), or PerMark cannot check that, the agent gets none of that text, only how much was left out and why, and
+  it cannot mark those comments done.
 - **Your limits.** You choose what it may do, group by group. Files in `.aiignore` never reach an agent; everything else it reads
   as written, passwords and keys included, so list files with secrets in `.aiignore`.
 - **Visible.** While the connection is on, the status bar shows **Agent**. Click it to see what is shared and the latest requests.
@@ -306,18 +311,18 @@ agent asks PerMark what you did instead of rereading the project.
 
 | Tool | What it answers or does |
 |---|---|
-| `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 2,000 characters), whether there are unsaved edits, and how many of your comments are open |
+| `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 2,000 characters), whether there are unsaved edits, and how many comments are open |
 | `list_unread` | The documents that changed since you last read them, the newest at the top |
 | `map` | The files below a folder, by path: approximate size in tokens, flags (unread, changed), and the tags and descriptions you gave them. The place to start in a large project |
 | `search` | "Where is X described?": ranked sections with path, line, size, snippet and heading, from the same index as Search everywhere. `tags` narrows the search, and `budget` caps the size of the answer |
 | `list_tags` | The tags in use, with how many documents have each; or, for one tag, the documents that have it with their descriptions |
 | `outline` | The parts of one file (headings, JSON keys, parts of a config file) with line ranges and sizes, so an agent reads only the part it needs; optionally the links in and out |
 | `read` | The text of one part of a file: a heading, an anchor, a key path or a range of lines. Long parts continue with a cursor |
-| `list_comments` | Your open comments, each with the quoted passage, its section and line, and your text |
+| `list_comments` | The open comments, each with the quoted passage, its section and line, and its text |
 | `resolve_comment` | Marks a comment done, with an optional short reply that you read under the comment |
 | `list_notes` | The notes you chose to share with agents, each with its title, when it changed and its size |
 | `read_note` | The text of one shared note, by the name `list_notes` gave |
-| `activity` | What you did in PerMark since you last pressed **Hand off to agent** (checked against the disk), plus the changes made outside PerMark |
+| `activity` | What was done in PerMark since **Hand off to agent** was last pressed (checked against the disk), plus the changes made outside PerMark |
 | `open` | Shows you a place (a document, a line or a heading) without taking the focus from the agent's terminal, and offers a way back |
 
 Answers are short on purpose: a header line, then tab-separated rows, so an agent spends few tokens. A project's `.permark/` folder

@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use super::uid::ProjectUid;
 use crate::paths::{key_of, WORKTREE_PREFIX};
-use crate::state::StateStore;
+use crate::plugins::{NoTracking, RepoHandle};
+use crate::state::{StateLocation, StateStore, PERMARK_DIR};
 
 /// One place that keeps state: the opened folder (`uid` none, `path` empty) or an included project.
 #[derive(Debug, Clone)]
@@ -37,6 +38,33 @@ impl OwnerSlot {
     #[must_use]
     pub fn key(&self) -> &str {
         &self.key
+    }
+
+    /// Whether this owner's private state folder (`<owner>/.permark/local`) counts as tracked by git: its index holds
+    /// the folder, the folder is inside a repository below the one asked (a nested repository | a checked-out
+    /// submodule at `.permark` | `.permark/local` delivers what it holds, e.g. `git clone --recursive`), or a
+    /// repository that holds it cannot answer now (slow | failed | refused to open; before the git plugin's first look
+    /// the reader answers slow, so startup withholds too). Then what the folder keeps may have come with a clone |
+    /// checkout and never reaches agents. State kept in the profile, no reader (git plugin off), no repository of the
+    /// project: not tracked. Asks git: never call it on the open path.
+    #[must_use]
+    pub fn private_tracked(&self, repo: Option<&RepoHandle>) -> bool {
+        if self.store.location() == StateLocation::Profile {
+            return false;
+        }
+        let Some(repo) = repo else {
+            return false;
+        };
+        let private = format!("{PERMARK_DIR}/local");
+        let folder = if self.path.is_empty() {
+            private
+        } else {
+            format!("{}/{private}", self.path)
+        };
+        matches!(
+            repo.0.tracked_under(&folder),
+            Ok(true) | Err(NoTracking::OtherRepository | NoTracking::Failed | NoTracking::Slow)
+        )
     }
 }
 
@@ -228,6 +256,7 @@ impl OwnersGate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugins::NoTracking;
     use crate::state::AppDirs;
 
     fn store(base: &std::path::Path, name: &str) -> StateStore {
@@ -288,5 +317,75 @@ mod tests {
         assert!(owners.same(&owners.clone()));
         assert!(!owners.same(&Owners::root_only(store(base.path(), "r"))));
         assert!(Owners::root_only(store(base.path(), "r")).is_single());
+    }
+
+    /// A repository whose index answers every folder the same way, and remembers what it was asked.
+    struct Index {
+        answer: Result<bool, NoTracking>,
+        asked: Mutex<Vec<String>>,
+    }
+
+    impl crate::plugins::RepoReader for Index {
+        fn blob_at_head(&self, _: &str) -> Option<Vec<u8>> {
+            None
+        }
+        fn tracked_under(&self, path: &str) -> Result<bool, NoTracking> {
+            self.asked.lock().unwrap().push(path.to_owned());
+            self.answer
+        }
+    }
+
+    fn reader(answer: Result<bool, NoTracking>) -> (RepoHandle, Arc<Index>) {
+        let index = Arc::new(Index {
+            answer,
+            asked: Mutex::new(Vec::new()),
+        });
+        (RepoHandle(Arc::clone(&index) as _), index)
+    }
+
+    #[test]
+    fn a_private_folder_counts_as_tracked_when_the_index_holds_it_or_git_cannot_answer() {
+        let base = tempfile::tempdir().unwrap();
+        for name in ["r", "m"] {
+            std::fs::create_dir_all(base.path().join(name).join(".permark")).unwrap();
+        }
+        let owners = Owners::new(
+            store(base.path(), "r"),
+            vec![OwnerSlot::member(
+                uid("aaaaaaaaaa"),
+                "hubs/m",
+                store(base.path(), "m"),
+            )],
+        );
+        assert_eq!(owners.root().store.location(), StateLocation::Project);
+        let cases = [
+            (Ok(true), true),
+            (Err(NoTracking::Failed), true),
+            (Err(NoTracking::Slow), true),
+            // a nested repository | a submodule at the folder or above it delivers what the folder holds
+            (Err(NoTracking::OtherRepository), true),
+            (Ok(false), false),
+            (Err(NoTracking::NoRepository), false),
+            (Err(NoTracking::Unavailable), false),
+        ];
+        for (answer, tracked) in cases {
+            let (repo, index) = reader(answer);
+            for slot in owners.slots() {
+                assert_eq!(slot.private_tracked(Some(&repo)), tracked, "{answer:?}");
+            }
+            assert_eq!(
+                *index.asked.lock().unwrap(),
+                [".permark/local", "hubs/m/.permark/local"],
+                "each owner asks about its own folder"
+            );
+        }
+        // the git plugin off: nothing to ask, not tracked
+        assert!(!owners.root().private_tracked(None));
+        // state kept in the profile: never in the project's files, git not asked
+        let profile = Owners::root_only(store(base.path(), "plain"));
+        assert_eq!(profile.root().store.location(), StateLocation::Profile);
+        let (repo, index) = reader(Ok(true));
+        assert!(!profile.root().private_tracked(Some(&repo)));
+        assert!(index.asked.lock().unwrap().is_empty());
     }
 }

@@ -154,6 +154,28 @@ pub enum NoVersions {
     Failed,
 }
 
+/// Why [`RepoReader::tracked_under`] has no answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum NoTracking {
+    /// No repository the reader may use holds the folder: none at all, or one that is not the project's (a repository
+    /// of the home folder | a drive, one that ignores the project folder).
+    #[error("no repository holds the folder")]
+    NoRepository,
+    /// The folder is inside another repository below the project's (a nested repository | a submodule).
+    #[error("the folder belongs to another repository inside the project")]
+    OtherRepository,
+    /// No git to ask, or a reader that does not read the index.
+    #[error("the repository cannot be read")]
+    Unavailable,
+    /// Git did not answer in time.
+    #[error("git did not answer in time")]
+    Slow,
+    /// Git failed, or the repository there may not be opened (its git folder points off this computer | through a
+    /// link): what its index holds cannot be told.
+    #[error("git failed")]
+    Failed,
+}
+
 /// Read-only look at the repository of a project (set by the `git` plugin while it runs).
 pub trait RepoReader: Send + Sync {
     /// The file at HEAD (`path` is a project path); `None`: no repository, not committed, unreadable.
@@ -179,6 +201,17 @@ pub trait RepoReader: Send + Sync {
         _limit: usize,
     ) -> Result<FileVersions, NoVersions> {
         Err(NoVersions::Unavailable)
+    }
+    /// Whether the repository's index holds the folder `path` (a project path) or anything below it, i.e. what the
+    /// next commit takes whatever `.gitignore` says: a file added with `--force`, an entry marked intent-to-add |
+    /// skip-worktree, a conflict, also before the first commit. A submodule | link at a folder above it inside the
+    /// project counts too, and so does another spelling of its first name that the volume resolves to the same folder
+    /// (a Windows short name, a Unicode case fold). Names compare without case in a caseless repository.
+    ///
+    /// # Errors
+    /// [`NoTracking`] says why there is no answer (a reader that does not read the index: `Unavailable`).
+    fn tracked_under(&self, _path: &str) -> Result<bool, NoTracking> {
+        Err(NoTracking::Unavailable)
     }
     /// The commit HEAD points at; `None`: no repository | no commit yet.
     fn head(&self) -> Option<String> {
@@ -394,6 +427,10 @@ mod tests {
         assert_eq!(
             HeadOnly.file_versions("a.md", 0, 50),
             Err(NoVersions::Unavailable)
+        );
+        assert_eq!(
+            HeadOnly.tracked_under(".permark/local"),
+            Err(NoTracking::Unavailable)
         );
     }
 

@@ -479,6 +479,34 @@ describe("timed notices", () => {
     }
   });
 
+  it("a lasting notice with a key takes the place of the one with that key; others stay, and the key takes it away", () => {
+    vi.useFakeTimers();
+    try {
+      const store = new WindowStore(createMockApi());
+      const gone: string[] = [];
+      const lasting = (text: string, key?: string): number =>
+        store.notifyLasting({
+          text,
+          actions: [{ label: "Restore", run: () => {} }],
+          onGone: (how) => gone.push(`${text}:${how}`),
+          ...(key === undefined ? {} : { key }),
+        });
+      lasting("plain");
+      lasting("first", "lost");
+      lasting("second", "lost");
+      expect(gone).toEqual(["first:dismissed"]);
+      const texts = (): string[] => store.notices.map((n) => (n.kind === "action" ? n.text : ""));
+      expect(texts()).toEqual(["plain", "second"]);
+      vi.advanceTimersByTime(600_000);
+      expect(texts()).toEqual(["plain", "second"]);
+      store.dismissKey("lost");
+      expect(texts()).toEqual(["plain"]);
+      expect(gone).toEqual(["first:dismissed", "second:dismissed"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("at most 3 on screen: the oldest goes", () => {
     const store = new WindowStore(createMockApi());
     for (const text of ["a", "b", "c", "d"]) store.notifyNote(text);

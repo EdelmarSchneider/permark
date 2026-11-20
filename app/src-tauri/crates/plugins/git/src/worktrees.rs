@@ -2,11 +2,13 @@
 //! the project before it is built. `<common>/worktrees/<name>/gitdir` names each linked working tree, which names
 //! that admin folder back in its `.git` file.
 
+use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
 
 use permark_core::fsx::{is_local_path, read_regular, Zone};
 use permark_core::paths::canonicalize;
 
+use crate::config_scan::Scan;
 use crate::ops::too_broad;
 
 /// Most worktrees offered.
@@ -147,29 +149,144 @@ fn dot_at(dir: &Path, path: PathBuf, meta: &std::fs::Metadata) -> Option<Dot> {
     None
 }
 
+/// Names of a git folder that git | libgit2 open on every look at the repository, parents before what they hold: a
+/// link (symlink | junction) there would lead them anywhere, a share too.
+const READ_ON_OPEN: [&str; 13] = [
+    "config",
+    "config.worktree",
+    "HEAD",
+    "info",
+    "info/exclude",
+    "info/attributes",
+    "objects",
+    "objects/info",
+    "objects/info/alternates",
+    "refs",
+    "packed-refs",
+    "index",
+    "shallow",
+];
+
+/// Folders of a git folder whose every entry git | libgit2 may open at some look (the git folder itself, a ref folder,
+/// an info file, a loose objects folder, a pack): a link (symlink | junction) among them would lead them anywhere, a
+/// share too. Each folder is noted: an entry added | removed changes its stamp. With each, the most entries looked at;
+/// a fuller folder is refused.
+const LISTED: [(&str, usize); 6] = [
+    ("", MAX_ENTRIES),
+    ("info", MAX_ENTRIES),
+    ("refs", MAX_ENTRIES),
+    ("objects", MAX_ENTRIES),
+    ("objects/info", MAX_ENTRIES),
+    ("objects/pack", MAX_PACK_ENTRIES),
+];
+/// Most entries of a listed folder (git packs loose refs | objects long before).
+const MAX_ENTRIES: usize = 4096;
+/// Most entries of `objects/pack`: a partial clone keeps a pack, its index and a promisor file per fetch.
+const MAX_PACK_ENTRIES: usize = 100_000;
+/// Entries of the git folder itself that are never followed, so a link there is no risk: `hooks` (every call of the
+/// installed git points `core.hooksPath` elsewhere, the built-in backend runs no hook), `lfs` (Git LFS's own store,
+/// which git does not read).
+const NOT_READ: [&str; 2] = ["hooks", "lfs"];
+
+/// Why a repository git may not open is refused (a member's reason, a backend call's error).
+pub(crate) const NOT_LOCAL: &str =
+    "the repository's git folder points outside this computer or through a link";
+
 /// Whether opening the git folder `git_dir` keeps git (the program, libgit2) on this computer: its `commondir`, read
-/// on every open, names no path that could leave it ([`named_path`]). One there that cannot be read here (a link, a
-/// FIFO, too large) is no proof: git reads it whole, wherever it leads.
-pub(crate) fn commondir_stays_local(git_dir: &Path) -> bool {
-    let file = git_dir.join("commondir");
-    match read_line(&file) {
-        Some(named) => named_path(git_dir, &named).is_some(),
-        None => std::fs::symlink_metadata(&file)
-            .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound),
-    }
+/// on every open, names no path that could leave it ([`named_path`]), and in the git folder and the common folder
+/// that names, nothing git opens is a link ([`READ_ON_OPEN`], [`LISTED`]), the config files name only places here
+/// and so do the alternates ([`Scan`]). A file there that cannot be read here (a link, a FIFO, too large) is no proof:
+/// git reads it whole, wherever it leads.
+pub(crate) fn git_dir_stays_local(git_dir: &Path) -> bool {
+    git_dir_scan(git_dir, &mut Scan::new())
 }
 
-/// Whether git may open the repository of the folder `root` (the first `.git` walking up) without leaving this
-/// computer: a `.git` file | link | a `commondir` naming a share would make it connect to the server (and offer it the
-/// person's sign-in) before anything is known about the repository.
+/// [`git_dir_stays_local`], every path looked at kept in `scan` (their stamps keep the answer).
+pub(crate) fn git_dir_scan(git_dir: &Path, scan: &mut Scan) -> bool {
+    // a git folder swapped for a file | link while the project is open: both backends would follow what it names
+    // (git, started in the working tree, finds that `.git` again); a missing one opens nothing
+    if scan.note(git_dir).is_ok_and(|meta| !meta.is_dir()) {
+        return false;
+    }
+    let file = git_dir.join("commondir");
+    let noted = scan.note(&file);
+    let common = match read_line(&file) {
+        Some(named) => match scan.resolve(git_dir, &named) {
+            Some(common) => Some(common),
+            None => return false,
+        },
+        None if noted.is_err_and(|e| e.kind() == ErrorKind::NotFound) => None,
+        None => return false,
+    };
+    std::iter::once(git_dir.to_path_buf())
+        .chain(common)
+        .all(|folder| folder_stays_local(&folder, scan))
+}
+
+/// [`git_dir_stays_local`] for one folder (the git folder | the common folder).
+fn folder_stays_local(folder: &Path, scan: &mut Scan) -> bool {
+    let no_link = READ_ON_OPEN.iter().all(|name| {
+        let path = name
+            .split('/')
+            .fold(folder.to_path_buf(), |at, part| at.join(part));
+        match scan.note(&path) {
+            Ok(meta) => !meta.file_type().is_symlink(),
+            Err(e) => matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory),
+        }
+    });
+    no_link
+        && LISTED.iter().all(|&(name, cap)| {
+            let path = name
+                .split('/')
+                .filter(|part| !part.is_empty())
+                .fold(folder.to_path_buf(), |at, part| at.join(part));
+            let skipped: &[&str] = if name.is_empty() { &NOT_READ } else { &[] };
+            no_link_in(&path, scan, cap, skipped)
+        })
+        && ["config", "config.worktree"]
+            .iter()
+            .all(|name| scan.config_stays_local(folder, &folder.join(name)))
+        && scan.alternates_stay_local(&folder.join("objects"))
+}
+
+/// Whether no entry of the folder `path` but those named in `skipped` is a link, within its first `cap` entries
+/// ([`LISTED`]); a missing folder | a file there holds none. The folder itself as a link is [`READ_ON_OPEN`]'s (the git
+/// folder may be one: a `.git` link leads there).
+fn no_link_in(path: &Path, scan: &mut Scan, cap: usize, skipped: &[&str]) -> bool {
+    match scan.note(path) {
+        Ok(meta) if meta.is_file() => return true,
+        Ok(_) => {}
+        Err(e) => return matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory),
+    }
+    let Ok(mut entries) = std::fs::read_dir(path) else {
+        return false;
+    };
+    let mut looked = 0;
+    entries.all(|entry| {
+        looked += 1;
+        // the entry's own type: a link (symlink | junction) is never followed
+        looked <= cap
+            && entry.is_ok_and(|entry| {
+                skipped.iter().any(|name| entry.file_name() == *name)
+                    || entry.file_type().is_ok_and(|kind| !kind.is_symlink())
+            })
+    })
+}
+
+/// Whether git may open the repository of the folder `root` without leaving this computer: a `.git` file | link | a
+/// `commondir` naming a share would make it connect to the server (and offer it the person's sign-in) before anything
+/// is known about the repository. git and libgit2 pass over a `.git` that is no repository to them (an empty folder)
+/// and open the next one up, so every `.git` walking up must pass, not only the first.
 #[must_use]
 pub(crate) fn opens_locally(root: &Path) -> bool {
     let root = canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-    match root.ancestors().take(MAX_LEVELS).find_map(git_entry) {
-        None => true,
-        Some(Dot::Folder(git_dir) | Dot::File(Some(git_dir))) => commondir_stays_local(&git_dir),
-        Some(Dot::File(None) | Dot::Unread | Dot::Link) => false,
-    }
+    root.ancestors()
+        .take(MAX_LEVELS)
+        .filter_map(git_entry)
+        .all(|dot| match dot {
+            Dot::Folder(git_dir) | Dot::File(Some(git_dir)) => git_dir_stays_local(&git_dir),
+            Dot::File(None) | Dot::Unread | Dot::Link => false,
+        })
 }
 
 /// Whether the file `path` (relative to the working tree `workdir`, `/`-separated) is inside another repository
@@ -218,7 +335,7 @@ pub(crate) fn common_dir(git_dir: &Path) -> PathBuf {
 /// the folder: a planted `gitdir` | a tree that belongs to another admin folder -> `None`. So is a tree git could not
 /// open without leaving this computer (the admin folder's `commondir`).
 fn named_back(admin: &Path) -> Option<PathBuf> {
-    if !commondir_stays_local(admin) {
+    if !git_dir_stays_local(admin) {
         return None;
     }
     let dot_git = named_path(admin, &read_line(&admin.join("gitdir"))?)?;
@@ -274,7 +391,7 @@ pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
         // a `.git` file | link naming a share: a repository git cannot open here
         Dot::File(None) | Dot::Unread | Dot::Link => return Vec::new(),
     };
-    if too_broad(&workdir, &root, home) || !commondir_stays_local(&git_dir) {
+    if too_broad(&workdir, &root, home) || !git_dir_stays_local(&git_dir) {
         return Vec::new();
     }
     // the project's own `.git` file is content too: one its admin folder does not name back leads nowhere
@@ -681,6 +798,41 @@ pub(crate) mod tests {
         assert_eq!(unborn, Some((true, None)));
     }
 
+    /// A partial clone keeps a pack, its index and a promisor file per fetch: a pack folder with more entries than
+    /// any other listed folder may hold still stays local.
+    #[test]
+    fn a_pack_folder_with_many_entries_stays_local() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = dir.path().join(".git");
+        let pack = git.join("objects").join("pack");
+        std::fs::create_dir_all(&pack).unwrap();
+        for n in 0..=MAX_ENTRIES {
+            std::fs::write(pack.join(format!("pack-{n}.promisor")), "").unwrap();
+        }
+        assert!(git_dir_stays_local(&git));
+    }
+
+    /// While the project is open, its git folder may be swapped for a `.git` file naming a share, or for a link: both
+    /// backends read the git folder again on their next call (git, started in the working tree, finds that `.git`
+    /// again), so the git folder must still be a folder.
+    #[test]
+    fn a_git_folder_swapped_for_a_file_or_a_link_no_longer_stays_local() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = dir.path().join(".git");
+        std::fs::create_dir_all(git.join("objects")).unwrap();
+        std::fs::create_dir_all(git.join("refs")).unwrap();
+        std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        assert!(git_dir_stays_local(&git));
+        let aside = dir.path().join("aside");
+        std::fs::rename(&git, &aside).unwrap();
+        std::fs::write(&git, "gitdir: //192.0.2.1/s/r\n").unwrap();
+        assert!(!git_dir_stays_local(&git));
+        std::fs::remove_file(&git).unwrap();
+        if link_folder(&aside, &git) {
+            assert!(!git_dir_stays_local(&git));
+        }
+    }
+
     /// A folder link at `link` leading to `target` (unix: symlink; Windows: junction, which needs no privilege);
     /// `false`: links cannot be made here.
     pub(crate) fn link_folder(target: &Path, link: &Path) -> bool {
@@ -818,6 +970,52 @@ pub(crate) mod tests {
         assert_eq!(unborn, Some(true));
         assert!(refused);
         assert_eq!(opens, [false, false, true]);
+    }
+
+    /// A git folder whose config names a share (the common one | a linked tree's own `config.worktree`) is no
+    /// repository git may open: its trees are not attached, a member there is refused, and nothing is looked up.
+    #[test]
+    fn a_git_folder_whose_config_names_a_share_opens_and_attaches_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("main");
+        let git = main.join(".git");
+        std::fs::create_dir_all(&git).unwrap();
+        for name in ["a", "b"] {
+            make_worktree(&git, name, &dir.path().join(name));
+        }
+        let far = format!(
+            "[core]\n\texcludesFile = {}\n",
+            on_share("x").display().to_string().replace('\\', "/")
+        );
+        // the linked tree `b` reads its own config too
+        std::fs::write(
+            git.join("worktrees").join("b").join("config.worktree"),
+            &far,
+        )
+        .unwrap();
+        let other = dir.path().join("other");
+        std::fs::create_dir_all(other.join(".git")).unwrap();
+        make_worktree(&other.join(".git"), "c", &dir.path().join("c"));
+        std::fs::write(other.join(".git").join("config"), &far).unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (tree_b, tree_c) = (dir.path().join("b"), dir.path().join("c"));
+        std::thread::spawn(move || {
+            let _ = tx.send((
+                names(linked_worktrees(&main, None)),
+                [&main, &tree_b, &other, &tree_c].map(|folder| opens_locally(folder)),
+                names(linked_worktrees(&other, None)),
+                crate::cheap::member_location(&other).is_err(),
+                crate::cheap::member_location(&main).is_ok(),
+            ));
+        });
+        let (from_main, opens, from_other, refused, member) = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("a path on a share was looked up");
+        assert_eq!(from_main, ["a"]);
+        assert_eq!(opens, [true, false, false, false]);
+        assert!(from_other.is_empty(), "{from_other:?}");
+        assert!(refused);
+        assert!(member);
     }
 
     /// A relative path a git file names stays where that file is (also when the project itself sits on a share the
@@ -1003,20 +1201,24 @@ pub(crate) mod tests {
             "gitdir",
             &format!("{}\n", tree_b.join(".git").display()),
         ));
-        assert!(replace(&git.join("HEAD"), "HEAD", "ref: refs/heads/main\n"));
         assert!(replace(
             &git.join("refs").join("heads").join("c"),
             "ref",
             &format!("{A}\n"),
         ));
+        assert_eq!(names(linked_worktrees(&main, None)), ["c"]);
+        assert!(!opens_locally(&dir.path().join("a")));
+        assert!(opens_locally(&dir.path().join("c")));
+        // git opens `HEAD` and `packed-refs` of the common folder on every look, through a link too: the whole
+        // repository is refused then
+        assert!(replace(&git.join("HEAD"), "HEAD", "ref: refs/heads/main\n"));
         assert!(replace(
             &git.join("packed-refs"),
             "packed-refs",
             &format!("{A} refs/heads/c\n"),
         ));
-        assert_eq!(names(linked_worktrees(&main, None)), ["c"]);
-        assert!(!opens_locally(&dir.path().join("a")));
-        assert!(opens_locally(&dir.path().join("c")));
+        assert!(linked_worktrees(&main, None).is_empty());
+        assert!(!opens_locally(&dir.path().join("c")));
         assert_eq!(branch_of(&git), None);
         assert_eq!(crate::cheap::cheap_facts(&git), None);
         let c = crate::cheap::cheap_facts(&git.join("worktrees").join("c")).unwrap();

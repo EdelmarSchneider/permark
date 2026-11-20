@@ -1292,6 +1292,17 @@ export default {
   "comments.replyPlaceholder": "Écrivez une réponse…",
   "comments.deleteConfirm": "Supprimer le commentaire ?",
   "comments.copyFailed": "Impossible de copier dans le Presse-papiers.",
+  "comments.aside.line.one": "{n} commentaire a été supprimé en dehors de PerMark.",
+  "comments.aside.line.other": "{n} commentaires ont été supprimés en dehors de PerMark.",
+  "comments.aside.restore": "Restaurer",
+  "comments.aside.dismiss": "Abandonner",
+  "comments.aside.dismissHint":
+    "Abandonne ces commentaires. Ils ne pourront plus être restaurés ensuite.",
+  "comments.aside.restored.one": "{n} commentaire restauré.",
+  "comments.aside.restored.other": "{n} commentaires restaurés.",
+  "comments.aside.nothing": "Ces commentaires sont déjà revenus.",
+  "comments.aside.restoreFailed": "Impossible de restaurer les commentaires : {message}",
+  "comments.aside.dismissFailed": "Impossible d'abandonner les commentaires supprimés : {message}",
   "brokenLinks.title": "Liens rompus",
   "brokenLinks.checking": "Analyse des documents…",
   "brokenLinks.none": "Aucun lien rompu",
@@ -1624,6 +1635,8 @@ export default {
   "agent.handoff.done.other":
     "{n} actions transmises : copiées, prêtes à coller dans votre prompt.",
   "agent.handoff.failed": "La transmission a échoué. Réessayez.",
+  "agent.handoff.withheld":
+    "PerMark ne transmet pas l'activité de ce dossier aux agents : son dépôt git suit le dossier privé de PerMark (.permark/local), ou PerMark n'a pas pu le vérifier.",
   "agent.handoff.copyFailed": "Transmis, mais la copie a échoué.",
   "config.sheet": "Paramètres de ce fichier",
   "config.root": "Niveau supérieur",

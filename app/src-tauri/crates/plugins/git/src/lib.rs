@@ -7,6 +7,7 @@
 
 mod builtin;
 mod cheap;
+mod config_scan;
 mod members;
 #[cfg(test)]
 mod members_real_tests;
@@ -34,9 +35,9 @@ use std::time::Duration;
 use permark_core::conditions::{GitCondition, Requirement};
 use permark_core::paths::{Root, VaultPath, WORKTREE_PREFIX};
 use permark_core::plugins::{
-    typed, CommitId, CxWorkspace, FileVersions, Manifest, NoArgs, NoBlob, NoVersions, Plugin,
-    PluginCx, PluginError, PluginId, PluginKind, PluginScope, ProjectFacts, RepoHandle, RepoReader,
-    RpcRegistration, Running, ServiceLease,
+    typed, CommitId, CxWorkspace, FileVersions, Manifest, NoArgs, NoBlob, NoTracking, NoVersions,
+    Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope, ProjectFacts, RepoHandle,
+    RepoReader, RpcRegistration, Running, ServiceLease,
 };
 use permark_core::projects::{ProjectMap, ProjectUid, Projects, ProjectsSubscription};
 use permark_core::settings::GitBackendPref;
@@ -51,6 +52,7 @@ pub use members::{
 };
 use ops::{blob_or_miss, versions_of};
 pub use ops::{Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_FILES};
+use service::TrackedMemo;
 pub use service::{
     BackendCell, BackendChoice, ExcludedAtStart, GitService, Prefs, ServiceArgs, Timings, Visit,
     Why,
@@ -235,15 +237,19 @@ struct Routed {
     members: Weak<Members>,
     projects: Option<Weak<Projects>>,
     backends: Arc<BackendCell>,
+    /// Index answers of members' repositories (the root's reader keeps its own).
+    tracked: TrackedMemo,
 }
 
 impl Routed {
     /// Reads the file `path` where it belongs: inside an included project with its own repository -> `member`
     /// (backend, that repository, the path below the project); anything else -> `root` (the root's reader).
-    /// `None`: the member's repository cannot be asked (its file is never read from the root's instead).
+    /// `refused`: the answer when that member's repository may not be used (refused, its `.git` unreadable). `None`:
+    /// the member's repository cannot be asked (its file is never read from the root's instead).
     fn read<T>(
         &self,
         path: &str,
+        refused: T,
         member: impl FnOnce(&dyn GitOps, &RepoLocation, &str) -> T,
         root: impl FnOnce(&dyn RepoReader) -> T,
     ) -> Option<T> {
@@ -254,7 +260,9 @@ impl Routed {
                 let map = projects.snapshot();
                 if let Some(holder) = git_owner(&map, path) {
                     let members = self.members.upgrade()?;
-                    let location = members.location(holder.uid.as_str())?;
+                    let Ok(location) = members.location(holder.uid.as_str())? else {
+                        return Some(refused);
+                    };
                     let depth = holder.path.segments().count();
                     let rel = path.split('/').skip(depth).collect::<Vec<_>>().join("/");
                     let backend = self.backends.get()?;
@@ -271,6 +279,7 @@ impl RepoReader for Routed {
     fn blob_at_head(&self, path: &str) -> Option<Vec<u8>> {
         self.read(
             path,
+            None,
             |git, location, rel| git.blob_at_head(location, rel).ok().flatten(),
             |root| root.blob_at_head(path),
         )
@@ -280,6 +289,7 @@ impl RepoReader for Routed {
     fn blob_at(&self, commit: CommitId, path: &str) -> Result<Vec<u8>, NoBlob> {
         self.read(
             path,
+            Err(NoBlob::Unavailable),
             |git, location, rel| blob_or_miss(git.blob_at(location, commit, rel)),
             |root| root.blob_at(commit, path),
         )
@@ -294,10 +304,22 @@ impl RepoReader for Routed {
     ) -> Result<FileVersions, NoVersions> {
         self.read(
             path,
+            Err(NoVersions::Unavailable),
             |git, location, rel| versions_of(git, location, rel, after, limit),
             |root| root.file_versions(path, after, limit),
         )
         .unwrap_or(Err(NoVersions::Unavailable))
+    }
+
+    fn tracked_under(&self, path: &str) -> Result<bool, NoTracking> {
+        // a refused repository cannot tell what its index holds: never "not tracked"
+        self.read(
+            path,
+            Err(NoTracking::Failed),
+            |git, location, rel| self.tracked.tracked(git, location, rel),
+            |root| root.tracked_under(path),
+        )
+        .unwrap_or(Err(NoTracking::Unavailable))
     }
 
     fn head(&self) -> Option<String> {
@@ -499,6 +521,7 @@ impl Plugin for GitPlugin {
                 members: Arc::downgrade(&members),
                 projects: weak_projects,
                 backends: service.backends(),
+                tracked: TrackedMemo::default(),
             }))));
         Ok(Box::new(GitRunning {
             facts: Arc::clone(&project.facts),

@@ -2,28 +2,33 @@
 //! baseline) are coalesced (300 ms of quiet, at most 2 s), wait out `index.lock`, and make one snapshot; it is
 //! announced only when its content differs. Discovery runs on the worker too: opening a project never waits for git.
 
+use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, OnceLock, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use permark_core::conditions::GitCondition;
 use permark_core::paths::WORKTREE_PREFIX;
-use permark_core::plugins::{CommitId, FileVersions, NoBlob, NoVersions, ProjectFacts, RepoReader};
+use permark_core::plugins::{
+    CommitId, FileVersions, NoBlob, NoTracking, NoVersions, ProjectFacts, RepoReader,
+};
 use permark_core::settings::GitBackendPref;
 use permark_core::state::{StateData, StateFile};
 use serde::{Deserialize, Serialize};
 
 use crate::builtin::BuiltinGit;
+use crate::config_scan::{Scan, Seen};
 use crate::ops::{
-    blob_or_miss, finish, repo_state, versions_of, Baseline, Discovery, GitError, GitOps, RawFile,
-    RepoLocation,
+    blob_or_miss, finish, repo_path, repo_state, tracked_of, tracked_question, versions_of,
+    Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation,
 };
 use crate::system::SystemGit;
-use crate::types::{BaselineInfo, BaselineKind, GitFile, GitSnapshot, WorktreeInfo};
-use crate::worktrees::{branch_of, opens_locally};
+use crate::types::{BackendKind, BaselineInfo, BaselineKind, GitFile, GitSnapshot, WorktreeInfo};
+use crate::worktrees::{branch_of, git_dir_scan, opens_locally, NOT_LOCAL};
 
 /// The person's choice of baseline (`prefs.json`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,10 +140,154 @@ struct Shared {
     excluded: RwLock<Option<Vec<String>>>,
     /// The baseline in use (members measure against the same kind).
     baseline: RwLock<Option<BaselineKind>>,
+    /// What the reader answers a tracked question with while no repository is held, from the worker's last look
+    /// (`None`: no look yet): "no repository here" is told from "not looked at yet" and from "one is there that cannot
+    /// answer".
+    looked: RwLock<Option<NoTracking>>,
+    /// Index answers of the reader.
+    tracked: TrackedMemo,
+}
+
+/// Most git folders a [`LocalMemo`] keeps an answer for (a project's root, its worktrees, its members).
+const MAX_LOCAL: usize = 64;
+
+/// Answers of [`git_dir_scan`] kept while every path the look went by looks the same ([`Seen::unchanged`]): a few
+/// stats per call instead of reading the config files again.
+#[derive(Default)]
+pub(crate) struct LocalMemo {
+    kept: Mutex<HashMap<PathBuf, (Seen, bool)>>,
+}
+
+impl LocalMemo {
+    /// Whether git may open the git folder `git_dir` now ([`git_dir_scan`]).
+    pub(crate) fn stays_local(&self, git_dir: &Path) -> bool {
+        // taken out while it is checked: the lock is not held during the stats (another caller looks for itself)
+        let held = self
+            .kept
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(git_dir);
+        let (seen, answer) = match held {
+            Some((seen, answer)) if seen.unchanged() => (seen, answer),
+            _ => {
+                let mut scan = Scan::new();
+                let answer = git_dir_scan(git_dir, &mut scan);
+                (scan.seen, answer)
+            }
+        };
+        let mut kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
+        if kept.len() >= MAX_LOCAL {
+            kept.clear();
+        }
+        kept.insert(git_dir.to_path_buf(), (seen, answer));
+        answer
+    }
+}
+
+/// A backend that asks nothing of a repository git may not open without leaving this computer ([`git_dir_scan`]),
+/// looked at again before every call: the files of its git folder may change while the project is open, and both
+/// backends read them again on every open. Discovery is not looked at here: [`discover_here`] looks before.
+pub(crate) struct LocalOnly {
+    inner: Arc<dyn GitOps>,
+    memo: Arc<LocalMemo>,
+}
+
+impl LocalOnly {
+    fn wrap(inner: Arc<dyn GitOps>, memo: Arc<LocalMemo>) -> Arc<dyn GitOps> {
+        Arc::new(Self { inner, memo })
+    }
+
+    fn check(&self, location: &RepoLocation) -> Result<(), GitError> {
+        if self.memo.stays_local(&location.git_dir) {
+            Ok(())
+        } else {
+            Err(GitError::Failed(NOT_LOCAL.to_owned()))
+        }
+    }
+}
+
+impl GitOps for LocalOnly {
+    fn kind(&self) -> BackendKind {
+        self.inner.kind()
+    }
+
+    fn discover(&self, root: &Path, home: Option<&Path>) -> Discovery {
+        self.inner.discover(root, home)
+    }
+
+    fn status(&self, location: &RepoLocation, baseline: &Baseline) -> Result<RawStatus, GitError> {
+        self.check(location)?;
+        self.inner.status(location, baseline)
+    }
+
+    fn blob_at_head(
+        &self,
+        location: &RepoLocation,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        self.check(location)?;
+        self.inner.blob_at_head(location, path)
+    }
+
+    fn blob_at(
+        &self,
+        location: &RepoLocation,
+        commit: CommitId,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        self.check(location)?;
+        self.inner.blob_at(location, commit, path)
+    }
+
+    fn file_versions(
+        &self,
+        location: &RepoLocation,
+        path: &str,
+        after: usize,
+        limit: usize,
+    ) -> Result<FileVersions, GitError> {
+        self.check(location)?;
+        self.inner.file_versions(location, path, after, limit)
+    }
+
+    fn tracked_under(&self, location: &RepoLocation, path: &str) -> Result<bool, GitError> {
+        self.check(location)?;
+        self.inner.tracked_under(location, path)
+    }
+
+    fn commit_exists(&self, location: &RepoLocation, oid: &str) -> bool {
+        self.check(location).is_ok() && self.inner.commit_exists(location, oid)
+    }
+
+    fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32> {
+        self.check(location).ok()?;
+        self.inner.commit_count(location, old, new)
+    }
+
+    fn ahead_behind(&self, location: &RepoLocation) -> Result<Option<(u32, u32)>, GitError> {
+        self.check(location)?;
+        self.inner.ahead_behind(location)
+    }
+
+    fn last_commit(&self, location: &RepoLocation) -> Result<Option<(i64, String)>, GitError> {
+        self.check(location)?;
+        self.inner.last_commit(location)
+    }
+
+    fn root_commit(&self, location: &RepoLocation) -> Result<Option<String>, GitError> {
+        self.check(location)?;
+        self.inner.root_commit(location)
+    }
+
+    fn cancellable(&self, flag: &Arc<AtomicBool>) -> Option<Arc<dyn GitOps>> {
+        let inner = self.inner.cancellable(flag)?;
+        Some(Self::wrap(inner, Arc::clone(&self.memo)))
+    }
 }
 
 /// The backend of a project, chosen once (the installed git answers `--version`, or the built-in one) and shared by
-/// the root worker and the member pool: one `git --version` per plugin start.
+/// the root worker and the member pool: one `git --version` per plugin start. Every call of it looks at the
+/// repository's git folder first ([`LocalOnly`]).
 pub struct BackendCell {
     choice: BackendChoice,
     chosen: OnceLock<Option<Arc<dyn GitOps>>>,
@@ -169,14 +318,16 @@ impl BackendCell {
             .get_or_init(|| {
                 let system = || SystemGit::find().map(|s| Arc::new(s) as Arc<dyn GitOps>);
                 let builtin = || Arc::new(BuiltinGit) as Arc<dyn GitOps>;
-                match &self.choice {
+                let chosen = match &self.choice {
                     BackendChoice::Fixed(backend) => Some(Arc::clone(backend)),
                     BackendChoice::Pref(GitBackendPref::Builtin) => Some(builtin()),
                     BackendChoice::Pref(GitBackendPref::System) => system(),
                     BackendChoice::Pref(GitBackendPref::Automatic) => {
                         Some(system().unwrap_or_else(builtin))
                     }
-                }
+                };
+                let memo = Arc::new(LocalMemo::default());
+                chosen.map(|backend| LocalOnly::wrap(backend, memo))
             })
             .clone()
     }
@@ -212,11 +363,10 @@ pub(crate) fn excluded_path(excluded: &[String], path: &str) -> bool {
 }
 
 /// [`GitOps::discover`] of `folder`, unless opening its repository would make git look up a path that is not on this
-/// computer ([`opens_locally`]: a `.git` file | `commondir` naming a share, which both backends follow): no repository
-/// then.
+/// computer ([`opens_locally`]: a `.git` file | `commondir` naming a share, which both backends follow): refused then.
 pub(crate) fn discover_here(backend: &dyn GitOps, folder: &Path, home: Option<&Path>) -> Discovery {
     if !opens_locally(folder) {
-        return Discovery::NoRepo;
+        return Discovery::Refused;
     }
     backend.discover(folder, home)
 }
@@ -491,6 +641,75 @@ impl Drop for GitService {
     }
 }
 
+/// Most answers a [`TrackedMemo`] keeps (a few folders per project are asked about).
+const MAX_TRACKED: usize = 64;
+
+/// How the files an index answer comes from look: name, size and modification time (ns) of the git folder's `index`,
+/// every `sharedindex.*` (a split index) and `HEAD`, sorted. Nanoseconds: an index written again at the same size
+/// within the same millisecond is told apart.
+type IndexStamp = Vec<(OsString, u64, u128)>;
+
+/// The [`IndexStamp`] of `git_dir`, links taken as they are (never followed); `None`: the folder cannot be listed |
+/// a time cannot be read (nothing is kept then).
+fn index_stamp(git_dir: &Path) -> Option<IndexStamp> {
+    let mut stamp = Vec::new();
+    for entry in std::fs::read_dir(git_dir).ok()? {
+        let entry = entry.ok()?;
+        let name = entry.file_name();
+        let wanted = name == "index"
+            || name == "HEAD"
+            || name
+                .to_str()
+                .is_some_and(|name| name.starts_with("sharedindex."));
+        if !wanted {
+            continue;
+        }
+        let meta = entry.metadata().ok()?;
+        let time = meta.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
+        stamp.push((name, meta.len(), time.as_nanos()));
+    }
+    stamp.sort();
+    Some(stamp)
+}
+
+/// Answers of [`tracked_of`] kept while the index looks the same ([`IndexStamp`], taken before git is asked): a folder
+/// asked about again and again reads the index once per change of it, also when no refresh ran. Only answers are kept:
+/// a failure, a slow git are asked again. Another repository below is looked for before a kept answer is used (a few
+/// stats): one made later changes nothing in the index, and a kept "not tracked" must not hide it.
+#[derive(Default)]
+pub(crate) struct TrackedMemo {
+    kept: Mutex<HashMap<(PathBuf, String), (IndexStamp, bool)>>,
+}
+
+impl TrackedMemo {
+    /// [`tracked_of`], kept per (git folder, path below the working tree).
+    pub(crate) fn tracked(
+        &self,
+        backend: &dyn GitOps,
+        location: &RepoLocation,
+        path: &str,
+    ) -> Result<bool, NoTracking> {
+        tracked_question(location, path)?;
+        let key = (location.git_dir.clone(), repo_path(&location.prefix, path));
+        let stamp = index_stamp(&location.git_dir);
+        if let Some(stamp) = &stamp {
+            let kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some((_, answer)) = kept.get(&key).filter(|(held, _)| held == stamp) {
+                return Ok(*answer);
+            }
+        }
+        let answer = tracked_of(backend, location, path)?;
+        if let Some(stamp) = stamp {
+            let mut kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
+            if kept.len() >= MAX_TRACKED && !kept.contains_key(&key) {
+                kept.clear();
+            }
+            kept.insert(key, (stamp, answer));
+        }
+        Ok(answer)
+    }
+}
+
 struct Reader {
     shared: Arc<Shared>,
 }
@@ -516,6 +735,27 @@ impl Reader {
         };
         Some((Arc::clone(&repo.backend), location.clone(), rest))
     }
+
+    /// Why [`Self::place`] found no working tree for a tracked question: with a repository, the worktree named is
+    /// none of the project's; without one, what the last look found. Before the first look nothing is known yet:
+    /// answered as slow, so a caller that withholds on doubt does not take it for "no repository" and withholds
+    /// during startup too (fail closed: a folder with no repository is served once the worker has looked).
+    fn no_place(&self) -> NoTracking {
+        if self
+            .shared
+            .repo
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
+        {
+            return NoTracking::NoRepository;
+        }
+        self.shared
+            .looked
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .unwrap_or(NoTracking::Slow)
+    }
 }
 
 impl RepoReader for Reader {
@@ -537,6 +777,13 @@ impl RepoReader for Reader {
     ) -> Result<FileVersions, NoVersions> {
         let (backend, location, rest) = self.place(path).ok_or(NoVersions::Unavailable)?;
         versions_of(backend.as_ref(), &location, rest, after, limit)
+    }
+
+    fn tracked_under(&self, path: &str) -> Result<bool, NoTracking> {
+        let (backend, location, rest) = self.place(path).ok_or_else(|| self.no_place())?;
+        self.shared
+            .tracked
+            .tracked(backend.as_ref(), &location, rest)
     }
 
     fn head(&self) -> Option<String> {
@@ -666,6 +913,26 @@ impl Worker {
         }
     }
 
+    /// What a look found, told to the windows (the project's facts) and to the reader. `refused`: the repository there
+    /// may not be opened ([`Discovery::Refused`]): the windows see none, as for no repository, while the reader cannot
+    /// tell what its index holds.
+    fn tell(&self, condition: GitCondition, refused: bool) {
+        let unplaced = match &condition {
+            GitCondition::Unavailable => NoTracking::Unavailable,
+            GitCondition::NoRepo if !refused => NoTracking::NoRepository,
+            // a repository is there, refused | its status failed: it cannot answer now
+            GitCondition::NoRepo | GitCondition::Error { .. } | GitCondition::Repo { .. } => {
+                NoTracking::Failed
+            }
+        };
+        *self
+            .shared
+            .looked
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = Some(unplaced);
+        self.args.facts.set_git(condition);
+    }
+
     fn discover(&mut self, backend: &Arc<dyn GitOps>) -> Discovery {
         let home = self.args.home.as_deref();
         let found = discover_here(backend.as_ref(), &self.args.root, home);
@@ -688,7 +955,7 @@ impl Worker {
             self.backend = self.backends.get();
         }
         let Some(backend) = self.backend.clone() else {
-            self.args.facts.set_git(GitCondition::Unavailable);
+            self.tell(GitCondition::Unavailable, false);
             self.publish(None);
             return;
         };
@@ -703,13 +970,13 @@ impl Worker {
             }
             match self.discover(&backend) {
                 Discovery::Repo(_) => {}
-                Discovery::NoRepo => {
-                    self.args.facts.set_git(GitCondition::NoRepo);
+                found @ (Discovery::NoRepo | Discovery::Refused) => {
+                    self.tell(GitCondition::NoRepo, found == Discovery::Refused);
                     self.publish(None);
                     return;
                 }
                 Discovery::Error(reason) => {
-                    self.args.facts.set_git(GitCondition::Error { reason });
+                    self.tell(GitCondition::Error { reason }, false);
                     self.publish(None);
                     return;
                 }
@@ -729,15 +996,21 @@ impl Worker {
                     main,
                     worktrees: self.worktree_locations.clone(),
                 });
-                self.args.facts.set_git(GitCondition::Repo {
-                    state: snapshot.state,
-                });
+                self.tell(
+                    GitCondition::Repo {
+                        state: snapshot.state,
+                    },
+                    false,
+                );
                 self.publish(Some(snapshot));
             }
             Err(error) => {
-                self.args.facts.set_git(GitCondition::Error {
-                    reason: error.to_string(),
-                });
+                self.tell(
+                    GitCondition::Error {
+                        reason: error.to_string(),
+                    },
+                    false,
+                );
                 self.publish(None);
             }
         }

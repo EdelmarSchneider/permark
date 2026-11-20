@@ -1,7 +1,8 @@
 // Comments as lists and marks (pure): what the Comments tab groups, which blocks of the page carry a bar, where a
-// selection sits (the headings above it, its lines), and the prompt that hands comments to an agent.
+// selection sits (the headings above it, its lines), the comments an outside write removed, and the prompt that hands
+// comments to an agent.
 
-import type { Block, CommentView, OutlineItem } from "../../api";
+import type { Block, CommentAside, CommentView, OutlineItem } from "../../api";
 
 export type CommentGroup = { path: string; comments: CommentView[] };
 
@@ -81,6 +82,36 @@ export function documentTitle(path: string): { name: string; folder: string } {
   return slash < 0
     ? { name: path, folder: "" }
     : { name: path.slice(slash + 1), folder: path.slice(0, slash) };
+}
+
+// ---- removed outside the app -------------------------------------------------------------------------------------
+
+/** The comments an outside write removed from one project's file (the opened folder | an included project), as one line
+ *  of the Comments tab. */
+export type AsideLine = {
+  /** `""`: the opened folder's comments; otherwise the included project's id (the part of an aside id before `:`). */
+  project: string;
+  /** Its asides, each restored | dismissed by its own id. */
+  ids: readonly string[];
+  /** Comments its file lacks, over all its asides. */
+  count: number;
+  /** Its asides that took a large part of the comments (each told once in a notice). */
+  big: readonly string[];
+};
+
+/** One line per project, in the order the backend lists them (the opened folder first). */
+export function asideLines(asides: readonly CommentAside[]): AsideLine[] {
+  const lines = new Map<string, { ids: string[]; count: number; big: string[] }>();
+  for (const aside of asides) {
+    const cut = aside.id.indexOf(":");
+    const project = cut < 0 ? "" : aside.id.slice(0, cut);
+    const line = lines.get(project) ?? { ids: [], count: 0, big: [] };
+    line.ids.push(aside.id);
+    line.count += aside.count;
+    if (aside.big) line.big.push(aside.id);
+    lines.set(project, line);
+  }
+  return [...lines].map(([project, line]) => ({ project, ...line }));
 }
 
 // ---- the page --------------------------------------------------------------------------------------------------

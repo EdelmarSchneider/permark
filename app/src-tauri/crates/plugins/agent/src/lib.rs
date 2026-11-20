@@ -418,7 +418,8 @@ impl Plugin for AgentPlugin {
                     .tools
                     .guard_now(tools::PROJECTS_WAIT)
                     .map_err(|e| IpcError::new(ErrorKind::Unavailable).detail(e.to_string()))?;
-                Ok(handoff::preview(&h.tools, &guard, args.checked.as_deref()))
+                handoff::preview(&h.tools, &guard, args.checked.as_deref())
+                    .map_err(|e| IpcError::new(ErrorKind::Unavailable).detail(e.to_string()))
             }),
         ));
         let h = Arc::clone(&hub);

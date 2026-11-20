@@ -6,7 +6,7 @@ import type { HandOffSessionView } from "./HandOffSessionView";
 /**
  * What the hand-off dialog shows.
  */
-export type HandOffPreview = { "state": "nothing" } | { "state": "ready", case: HandOffCase, first: boolean, sessions: Array<HandOffSessionView>, outside: HandOffOutside, 
+export type HandOffPreview = { "state": "nothing" } | { "state": "withheld" } | { "state": "ready", case: HandOffCase, first: boolean, sessions: Array<HandOffSessionView>, outside: HandOffOutside, 
 /**
  * Every session is stale: the latest is checked, older work is not.
  */

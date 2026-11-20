@@ -1,6 +1,7 @@
 <script lang="ts">
   // The Comments tab of the sidebar: the open comments grouped by document, then the ones that are done. A comment
-  // shown from the margin scrolls into view and is marked for a moment.
+  // shown from the margin scrolls into view and is marked for a moment. Comments an outside write removed get one line
+  // per project (the opened folder, an included project) with Restore and Dismiss.
   import Send from "@lucide/svelte/icons/send";
   import { t, tn } from "../../core/i18n";
   import OnlyProject from "../../core/projects/OnlyProject.svelte";
@@ -60,6 +61,24 @@
   {#if comments.only !== null}
     <OnlyProject name={comments.only.name} clear={() => comments.showOnly(null)} />
   {/if}
+
+  {#each comments.lines as line (line.project)}
+    {@const text = tn("comments.aside.line", line.count)}
+    <div class="aside" role="group" aria-label={text} data-aside={line.project}>
+      <span class="aside-text">{text}</span>
+      <button type="button" class="btn btn--sm" onclick={() => void comments.restore(line.project)}>
+        {t("comments.aside.restore")}
+      </button>
+      <button
+        type="button"
+        class="btn btn--ghost btn--sm"
+        title={t("comments.aside.dismissHint")}
+        onclick={() => void comments.dismissAside(line.project)}
+      >
+        {t("comments.aside.dismiss")}
+      </button>
+    </div>
+  {/each}
 
   <div class="body" bind:this={list}>
     {#if !comments.ready}
@@ -140,6 +159,23 @@
   }
   .send:hover {
     background: var(--hover);
+  }
+  /* the buttons wrap under the text, right-aligned, once they would squeeze it into a narrow column */
+  .aside {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+    font-size: var(--fs-ui-sm);
+  }
+  .aside-text {
+    flex: 1 1 14em;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .body {
     flex: 1;

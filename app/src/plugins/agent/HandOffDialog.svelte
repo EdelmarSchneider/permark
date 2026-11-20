@@ -1,7 +1,9 @@
 <script lang="ts">
   // The hand-off preview: the sessions of the person's work since the last hand-off (day, hours, age, actions,
   // approximate tokens; stale ones unchecked), the changes made outside PerMark, the notes of the case, the total.
-  // Confirm sets the checkpoint and copies one line for the prompt (or the full list). Cancel changes nothing.
+  // Confirm sets the checkpoint and copies one line for the prompt (or the full list). Cancel changes nothing. While
+  // git tracks the private folder the journal lives in (or that could not be checked), the dialog only says why:
+  // nothing to confirm.
   import X from "@lucide/svelte/icons/x";
   import { formatLocale, t, tn } from "../../core/i18n";
   import { dialogFocus } from "../../core/shell/dialogFocus";
@@ -17,7 +19,7 @@
   const now = Date.now();
 </script>
 
-{#if open !== null && preview !== null}
+{#if s.status === "open" || s.status === "withheld"}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div
     class="backdrop"
@@ -47,86 +49,97 @@
           <X size={16} />
         </button>
       </header>
-      <p id="handoff-intro" class="intro">{t("agent.handoff.intro")}</p>
+      {#if open === null || preview === null}
+        <p id="handoff-intro">{t("agent.handoff.withheld")}</p>
+        <footer>
+          <button type="button" class="btn" onclick={() => handOff.close()}>
+            {t("common.close")}
+          </button>
+        </footer>
+      {:else}
+        <p id="handoff-intro" class="intro">{t("agent.handoff.intro")}</p>
 
-      {#if preview.sessions.length > 0}
-        <p class="label">{t("agent.handoff.sessions")}</p>
-        <ul class="sessions">
-          {#each preview.sessions as session (session.id)}
-            {@const at = when(session, formatLocale())}
-            <li class:off={!session.checked || session.dropped}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={session.checked}
-                  disabled={open.phase === "busy"}
-                  onchange={() => void handOff.toggle(session.id)}
-                />
-                <span class="when">{t("agent.handoff.session", at)}</span>
-                <span class="age">{relativeTime(session.end, now, formatLocale())}</span>
-                <span class="count">{tn("agent.handoff.actions", session.rows)}</span>
-                <span class="size"
-                  >{t("agent.handoff.tokens", { n: approx(session.tokens, formatLocale()) })}</span
-                >
-                {#if session.stale}<span class="badge">{t("agent.handoff.stale")}</span>{/if}
-                {#if session.dropped}<span class="badge warn">{t("agent.handoff.dropped")}</span
-                  >{/if}
-              </label>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-
-      <p class="outside">
-        {#if preview.outside.files > 0}
-          {tn("agent.handoff.outside", preview.outside.files)}
-          {#if preview.outside.byFolder}<span class="badge">{t("agent.handoff.byFolder")}</span
-            >{/if}
-          {#if preview.outside.git}<code>{preview.outside.git}</code>{/if}
-        {:else}
-          {t("agent.handoff.outsideNone")}
+        {#if preview.sessions.length > 0}
+          <p class="label">{t("agent.handoff.sessions")}</p>
+          <ul class="sessions">
+            {#each preview.sessions as session (session.id)}
+              {@const at = when(session, formatLocale())}
+              <li class:off={!session.checked || session.dropped}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={session.checked}
+                    disabled={open.phase === "busy"}
+                    onchange={() => void handOff.toggle(session.id)}
+                  />
+                  <span class="when">{t("agent.handoff.session", at)}</span>
+                  <span class="age">{relativeTime(session.end, now, formatLocale())}</span>
+                  <span class="count">{tn("agent.handoff.actions", session.rows)}</span>
+                  <span class="size"
+                    >{t("agent.handoff.tokens", {
+                      n: approx(session.tokens, formatLocale()),
+                    })}</span
+                  >
+                  {#if session.stale}<span class="badge">{t("agent.handoff.stale")}</span>{/if}
+                  {#if session.dropped}<span class="badge warn">{t("agent.handoff.dropped")}</span
+                    >{/if}
+                </label>
+              </li>
+            {/each}
+          </ul>
         {/if}
-      </p>
 
-      {#each notes(preview) as note (note)}
-        <p class="note">{t(note)}</p>
-      {/each}
+        <p class="outside">
+          {#if preview.outside.files > 0}
+            {tn("agent.handoff.outside", preview.outside.files)}
+            {#if preview.outside.byFolder}<span class="badge">{t("agent.handoff.byFolder")}</span
+              >{/if}
+            {#if preview.outside.git}<code>{preview.outside.git}</code>{/if}
+          {:else}
+            {t("agent.handoff.outsideNone")}
+          {/if}
+        </p>
 
-      <p class="total" role="status">
-        {t("agent.handoff.total", {
-          actions: tn("agent.handoff.actions", actions),
-          tokens: t("agent.handoff.tokens", { n: approx(preview.tokens, formatLocale()) }),
-        })}
-      </p>
-      {#if !canConfirm(preview)}
-        <p class="note">{t("agent.handoff.pick")}</p>
+        {#each notes(preview) as note (note)}
+          <p class="note">{t(note)}</p>
+        {/each}
+
+        <p class="total" role="status">
+          {t("agent.handoff.total", {
+            actions: tn("agent.handoff.actions", actions),
+            tokens: t("agent.handoff.tokens", { n: approx(preview.tokens, formatLocale()) }),
+          })}
+        </p>
+        {#if !canConfirm(preview)}
+          <p class="note">{t("agent.handoff.pick")}</p>
+        {/if}
+        {#if open.phase === "failed"}
+          <p class="note warn" role="alert">{t("agent.handoff.failed")}</p>
+        {/if}
+
+        <label class="full">
+          <input
+            type="checkbox"
+            checked={open.full}
+            onchange={(e) => handOff.setFull(e.currentTarget.checked)}
+          />
+          {t("agent.handoff.full")}
+        </label>
+
+        <footer>
+          <button type="button" class="btn" onclick={() => handOff.close()}>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="button"
+            class="btn btn--primary"
+            disabled={open.phase === "busy" || !canConfirm(preview)}
+            onclick={() => void handOff.confirm()}
+          >
+            {t("agent.handoff.confirm")}
+          </button>
+        </footer>
       {/if}
-      {#if open.phase === "failed"}
-        <p class="note warn" role="alert">{t("agent.handoff.failed")}</p>
-      {/if}
-
-      <label class="full">
-        <input
-          type="checkbox"
-          checked={open.full}
-          onchange={(e) => handOff.setFull(e.currentTarget.checked)}
-        />
-        {t("agent.handoff.full")}
-      </label>
-
-      <footer>
-        <button type="button" class="btn" onclick={() => handOff.close()}>
-          {t("common.cancel")}
-        </button>
-        <button
-          type="button"
-          class="btn btn--primary"
-          disabled={open.phase === "busy" || !canConfirm(preview)}
-          onclick={() => void handOff.confirm()}
-        >
-          {t("agent.handoff.confirm")}
-        </button>
-      </footer>
     </div>
   </div>
 {/if}

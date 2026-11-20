@@ -8,12 +8,15 @@ use std::time::Duration;
 
 use permark_core::conditions::Distribution;
 use permark_core::events::NoEvents;
-use permark_core::organizing::CommentsApi;
+use permark_core::organizing::{CommentFilter, CommentItem, CommentsApi};
 use permark_core::paths::Root;
-use permark_core::plugins::{PluginRegistry, RpcCall};
+use permark_core::plugins::{
+    NoTracking, PluginRegistry, RepoHandle, RepoReader, RpcCall, ServiceLease,
+};
 use permark_core::settings::AppSettings;
 use permark_core::state::AppDirs;
 use permark_core::workspace::{CoreEnv, ProjectCore};
+use permark_core::ErrorKind;
 use serde_json::{json, Value};
 
 use super::*;
@@ -587,4 +590,250 @@ fn verify_comment_added_before_owners_known_stays_listed() {
         lost.is_empty(),
         "comments hidden: {lost:?} of {early} early adds"
     );
+}
+
+// ---- comments kept in a private folder git tracks: withheld from agents, per owner -----------------------------------
+
+/// A repository whose index answers every folder by `answer` (the `git` plugin's reader, played).
+struct Index(fn(&str) -> Result<bool, NoTracking>);
+
+impl RepoReader for Index {
+    fn blob_at_head(&self, _: &str) -> Option<Vec<u8>> {
+        None
+    }
+    fn tracked_under(&self, path: &str) -> Result<bool, NoTracking> {
+        (self.0)(path)
+    }
+}
+
+fn offer_repo(core: &ProjectCore, answer: fn(&str) -> Result<bool, NoTracking>) -> ServiceLease {
+    core.services()
+        .services
+        .provide(Arc::new(RepoHandle(Arc::new(Index(answer)))))
+}
+
+fn agent_list(core: &ProjectCore) -> Vec<CommentItem> {
+    core.services()
+        .services
+        .get::<CommentsApi>()
+        .unwrap()
+        .0
+        .list(CommentFilter::All)
+        .unwrap()
+}
+
+fn done_in(file: &Path) -> bool {
+    let book: Value = serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
+    !book["comments"][0]["done"].is_null()
+}
+
+#[test]
+fn a_repository_that_tracks_no_private_folder_leaves_the_agent_s_comments_as_before() {
+    let (_dir, root) = setup();
+    let base = tempfile::tempdir().unwrap();
+    let core = opened(&root, &env(base.path()));
+    wait_until("owners", || core.projects().owners().slots().len() == 2);
+    let _repo = offer_repo(&core, |_| Ok(false));
+    let prefixed = format!("{UID}:same");
+    let mut seen: Vec<(String, String, String)> = agent_list(&core)
+        .into_iter()
+        .map(|c| (c.id, c.path, c.text))
+        .collect();
+    seen.sort();
+    assert_eq!(
+        seen,
+        [
+            (
+                prefixed.clone(),
+                format!("{MEMBER}/doc.md"),
+                "member one".to_owned()
+            ),
+            (
+                "same".to_owned(),
+                "top.md".to_owned(),
+                "root one".to_owned()
+            ),
+        ]
+    );
+    let api = core.services().services.get::<CommentsApi>().unwrap();
+    api.0.resolve("same", Some("ok")).unwrap();
+    api.0.resolve(&prefixed, None).unwrap();
+    assert!(done_in(&root.join(".permark/local/comments.json")));
+    assert!(done_in(
+        &root.join(MEMBER).join(".permark/local/comments.json")
+    ));
+}
+
+fn withheld_ids(core: &ProjectCore) -> Vec<String> {
+    let mut ids: Vec<String> = agent_list(core)
+        .into_iter()
+        .filter(|c| c.withheld)
+        .map(|c| c.id)
+        .collect();
+    ids.sort();
+    ids
+}
+
+#[test]
+fn a_tracked_private_folder_withholds_only_its_owner_s_comments_from_agents() {
+    let (_dir, root) = setup();
+    let base = tempfile::tempdir().unwrap();
+    let core = opened(&root, &env(base.path()));
+    wait_until("owners", || core.projects().owners().slots().len() == 2);
+    let prefixed = format!("{UID}:same");
+    let root_file = root.join(".permark/local/comments.json");
+    let member_file = root.join(MEMBER).join(".permark/local/comments.json");
+    let api = core.services().services.get::<CommentsApi>().unwrap();
+
+    // the member's private folder tracked, the root's not: only the member's comments, never inherited upward
+    let repo = offer_repo(&core, |p| Ok(p == "sub a/.permark/local"));
+    assert_eq!(withheld_ids(&core), std::slice::from_ref(&prefixed));
+    let before = std::fs::read(&member_file).unwrap();
+    assert_eq!(
+        api.0.resolve(&prefixed, Some("x")).unwrap_err().kind,
+        ErrorKind::Denied
+    );
+    assert_eq!(
+        std::fs::read(&member_file).unwrap(),
+        before,
+        "nothing written"
+    );
+    // the window still lists every comment: withholding is for agents only
+    assert_eq!(list(&core).len(), 2);
+    drop(repo);
+
+    // the root's tracked, the member's not: only the root's, never inherited downward
+    let repo = offer_repo(&core, |p| Ok(p == ".permark/local"));
+    assert_eq!(withheld_ids(&core), ["same".to_owned()]);
+    let before = std::fs::read(&root_file).unwrap();
+    assert_eq!(
+        api.0.resolve("same", None).unwrap_err().kind,
+        ErrorKind::Denied
+    );
+    assert_eq!(
+        std::fs::read(&root_file).unwrap(),
+        before,
+        "nothing written"
+    );
+    api.0.resolve(&prefixed, Some("ok")).unwrap();
+    assert!(done_in(&member_file));
+    drop(repo);
+
+    // a repository that cannot answer now: withheld (fail closed); the member's folder inside a repository below the
+    // root's (a nested repository | a submodule): withheld too, that repository delivers what the folder holds
+    let repo = offer_repo(&core, |p| {
+        if p == ".permark/local" {
+            Err(NoTracking::Slow)
+        } else {
+            Err(NoTracking::OtherRepository)
+        }
+    });
+    let mut both = vec!["same".to_owned(), prefixed.clone()];
+    both.sort();
+    assert_eq!(withheld_ids(&core), both);
+    drop(repo);
+
+    // the git plugin off: nothing to ask, every comment served
+    assert!(withheld_ids(&core).is_empty());
+    api.0.resolve("same", None).unwrap();
+    assert!(done_in(&root_file));
+}
+
+#[test]
+fn comments_kept_in_the_profile_are_never_withheld() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dunce::canonicalize(dir.path()).unwrap().join("plain");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("doc.md"), "alpha\n").unwrap();
+    let base = tempfile::tempdir().unwrap();
+    let core = opened(&root, &env(base.path()));
+    call(
+        &core,
+        "add",
+        json!({ "path": "doc.md", "quote": "alpha", "text": "note" }),
+    )
+    .unwrap();
+    assert!(!root.join(".permark").exists());
+    let _repo = offer_repo(&core, |_| Ok(true));
+    let items = agent_list(&core);
+    assert_eq!(items.len(), 1);
+    assert!(!items[0].withheld);
+}
+
+// ---- comments an outside write removed: set aside per owner -------------------------------------------------------
+
+#[test]
+fn each_project_sets_aside_and_restores_only_its_own_comments() {
+    let (_dir, root) = setup();
+    let base = tempfile::tempdir().unwrap();
+    let core = opened(&root, &env(base.path()));
+    wait_until("owners", || core.projects().owners().slots().len() == 2);
+    let root_file = root.join(".permark/local/comments.json");
+    let member_file = root.join(MEMBER).join(".permark/local/comments.json");
+    for (path, text) in [
+        ("top.md", "root two"),
+        (&*format!("{MEMBER}/doc.md"), "member two"),
+    ] {
+        call(
+            &core,
+            "add",
+            json!({ "path": path, "quote": "alpha", "text": text }),
+        )
+        .unwrap();
+    }
+    // another program removes the member's first comment
+    let mut book: Value = serde_json::from_slice(&std::fs::read(&member_file).unwrap()).unwrap();
+    book["comments"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|c| c["text"] != "member one");
+    std::fs::write(&member_file, serde_json::to_vec_pretty(&book).unwrap()).unwrap();
+    let root_before = std::fs::read(&root_file).unwrap();
+    let found = call(&core, "asides", Value::Null).unwrap();
+    let found = found.as_array().unwrap();
+    assert_eq!(found.len(), 1, "{found:?}");
+    let id = found[0]["id"].as_str().unwrap();
+    assert!(
+        id.strip_prefix(&format!("{UID}:"))
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())),
+        "{id}"
+    );
+    assert_eq!(found[0]["count"], json!(1));
+    assert_eq!(
+        call(&core, "restore", json!({ "id": id })).unwrap(),
+        json!(1)
+    );
+    let book: Value = serde_json::from_slice(&std::fs::read(&member_file).unwrap()).unwrap();
+    let texts: Vec<&str> = book["comments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(texts, ["member two", "member one"]);
+    assert_eq!(
+        book["comments"][1]["id"],
+        json!("same"),
+        "its own id, unprefixed"
+    );
+    assert_eq!(
+        std::fs::read(&root_file).unwrap(),
+        root_before,
+        "the root's file untouched"
+    );
+    assert!(call(&core, "asides", Value::Null)
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .is_empty());
+    // the opened folder's ids carry no prefix
+    let mut book: Value = serde_json::from_slice(&root_before).unwrap();
+    book["comments"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|c| c["text"] != "root one");
+    std::fs::write(&root_file, serde_json::to_vec_pretty(&book).unwrap()).unwrap();
+    let found = call(&core, "asides", Value::Null).unwrap();
+    let id = found[0]["id"].as_str().unwrap();
+    assert!(id.bytes().all(|b| b.is_ascii_digit()), "{id}");
 }

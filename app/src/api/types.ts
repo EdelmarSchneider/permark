@@ -202,6 +202,7 @@ import type { RepairArgs } from "./generated/RepairArgs";
 import type { RepairRefusal } from "./generated/RepairRefusal";
 import type { RepairResult } from "./generated/RepairResult";
 import type { By } from "./generated/By";
+import type { CommentAside } from "./generated/CommentAside";
 import type { CommentScope } from "./generated/CommentScope";
 import type { CommentView } from "./generated/CommentView";
 import type { FileMeta } from "./generated/FileMeta";
@@ -645,6 +646,12 @@ export interface PluginMethods {
   "comments.reply": { args: { id: string; text: string }; result: null };
   /** `reply`: the index of the person's reply to change; absent: the comment's own text. */
   "comments.edit": { args: { id: string; reply?: number | null; text: string }; result: null };
+  /** Comments an outside write removed, per aside, while the file still lacks some of them. */
+  "comments.asides": { args: Record<string, never>; result: CommentAside[] };
+  /** Adds back the comments of an aside the file lacks; the number added (0: nothing left to add). Refused
+   *  `unavailable` while the file cannot be written (the aside stays). */
+  "comments.restore": { args: { id: string }; result: number };
+  "comments.dismissAside": { args: { id: string }; result: null };
   "quiet.rules": { args: Record<string, never>; result: QuietMarks };
   "quiet.set": { args: { paths: string[]; interest: Interest }; result: QuietMarks };
   "broken-links.list": { args: Record<string, never>; result: BrokenReport };
@@ -945,6 +952,8 @@ export interface PluginEvents {
   "unread:changed": UnreadList;
   "tags:changed": null;
   "comments:changed": null;
+  /** Comments an outside write removed were set aside, or an aside went away. */
+  "comments:aside": null;
   "quiet:changed": QuietMarks;
   "broken-links:changed": BrokenSummary;
   "agent:status": AgentStatus;
@@ -1129,6 +1138,7 @@ export type {
   RepairRefusal,
   RepairResult,
   By,
+  CommentAside,
   CommentScope,
   CommentView,
   FileMeta,

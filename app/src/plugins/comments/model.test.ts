@@ -4,6 +4,7 @@ import {
   QUOTE_CHARS,
   agentCommentPrompt,
   agentCommentsPrompt,
+  asideLines,
   barComments,
   doneComments,
   documentTitle,
@@ -154,5 +155,20 @@ describe("the prompt for an agent", () => {
     expect(text).toContain("2. Plan › Rollout, line 8:");
     expect(text).toContain("1. line 4:");
     expect(agentCommentsPrompt([])).toBe("");
+  });
+});
+
+describe("comments removed outside the app", () => {
+  it("one line per project: the opened folder's asides together, each included project's apart, in their order", () => {
+    const lines = asideLines([
+      { id: "1", count: 2, at: 10, big: false },
+      { id: "p7:1", count: 1, at: 11, big: true },
+      { id: "3", count: 4, at: 12, big: true },
+    ]);
+    expect(lines).toEqual([
+      { project: "", ids: ["1", "3"], count: 6, big: ["3"] },
+      { project: "p7", ids: ["p7:1"], count: 1, big: ["p7:1"] },
+    ]);
+    expect(asideLines([])).toEqual([]);
   });
 });

@@ -22,7 +22,8 @@ use permark_core::organizing::{
 };
 use permark_core::paths::Root;
 use permark_core::plugins::{
-    CxWorkspace, PluginCx, PluginId, PluginRegistry, RpcCall, ServiceLease,
+    CxWorkspace, NoTracking, PluginCx, PluginId, PluginRegistry, RepoHandle, RepoReader, RpcCall,
+    ServiceLease,
 };
 use permark_core::settings::AppSettings;
 use permark_core::state::{AppDirs, ProjectId, StateStore};
@@ -126,6 +127,7 @@ fn comment(id: &str, path: &str, quote: &str) -> CommentItem {
         edited: false,
         done: false,
         reply: None,
+        withheld: false,
     }
 }
 
@@ -2531,7 +2533,7 @@ fn mcp_initialize_list_and_call_over_stdio_lines() {
             assert!(init["result"]["capabilities"]["tools"].is_object(), "{init}");
             let instructions = init["result"]["instructions"].as_str().unwrap();
             let lines: Vec<&str> = instructions.lines().collect();
-            assert!(lines.len() <= 6 && instructions.len() < 4096, "{instructions}");
+            assert!(lines.len() <= 7 && instructions.len() < 4096, "{instructions}");
             assert!(lines[0].contains("use these tools when"), "line 1 says when");
             assert!(instructions.contains("project="), "where the project's name is read");
             assert_eq!(
@@ -2859,4 +2861,374 @@ fn with_the_notes_off_the_tools_and_the_popover_refuse_cleanly() {
             "{method}"
         );
     }
+}
+
+// ---- folder data: source label, data withheld while git tracks the private folder ----------------------------------
+
+/// A repository whose index answers every folder by `answer` (the `git` plugin's reader, played).
+struct Index(fn(&str) -> Result<bool, NoTracking>);
+
+impl RepoReader for Index {
+    fn blob_at_head(&self, _: &str) -> Option<Vec<u8>> {
+        None
+    }
+    fn tracked_under(&self, path: &str) -> Result<bool, NoTracking> {
+        (self.0)(path)
+    }
+}
+
+impl Fx {
+    /// Offers a repository reader answering `answer` until the lease goes.
+    fn repo(&self, answer: fn(&str) -> Result<bool, NoTracking>) -> ServiceLease {
+        self.core()
+            .services()
+            .services
+            .provide(Arc::new(RepoHandle(Arc::new(Index(answer)))))
+    }
+}
+
+/// An answer as it was before folder data carried its source: the `source` key out of the JSON, the label out of the
+/// text's first line.
+fn unlabeled(value: &Value, text: &str) -> (Value, String) {
+    let mut value = value.clone();
+    if let Some(map) = value.as_object_mut() {
+        map.remove("source");
+    }
+    let text = match text.split_once('\n') {
+        Some((head, rest)) => format!("{}\n{rest}", head.replace(" source=folder", "")),
+        None => text.replace(" source=folder", ""),
+    };
+    (value, text)
+}
+
+fn answer(tools: &Tools, tool: &str, args: Value) -> (Value, String) {
+    let value = tools.call(tool, args).unwrap();
+    let text = crate::render::render(tool, &value);
+    (value, text)
+}
+
+#[test]
+fn a_folder_whose_git_leaves_the_private_folder_alone_gets_comments_and_activity_as_before() {
+    let fx = fx();
+    fx.set_choice(&ProjectChoice {
+        enabled: true,
+        groups: [("comments.resolve".to_owned(), true)]
+            .into_iter()
+            .collect(),
+        resolve_asked: true,
+        folder: None,
+    });
+    let _repo = fx.repo(|_| Ok(false));
+    let tools = fx.tools();
+    let (value, text) = answer(&tools, "list_comments", Value::Null);
+    let (value, text) = unlabeled(&value, &text);
+    assert_eq!(
+        value,
+        json!({ "which": "open", "comments": [{
+            "id": "c1", "path": "README.md", "quote": "Hello API_KEY=sekret123", "text": "simplify",
+            "headingPath": [], "line": 3, "state": "anchored", "created": "1970-01-01T00:00:00Z", "done": false
+        }] })
+    );
+    assert_eq!(
+        text,
+        "list_comments which=open n=1\n#cols id place state quote text heading reply\nc1\tREADME.md:3\tanchored\tHello API_KEY=sekret123\tsimplify\n"
+    );
+    assert_eq!(
+        tools
+            .call("resolve_comment", json!({ "id": "c1", "reply": "Done" }))
+            .unwrap(),
+        json!({ "resolved": "c1" })
+    );
+    let tz = crate::format::tz();
+    let (value, text) = answer(&tools, "activity", Value::Null);
+    let (value, text) = unlabeled(&value, &text);
+    assert_eq!(
+        value,
+        json!({ "since": "handoff", "tz": tz, "no_handoff": true })
+    );
+    assert_eq!(
+        text,
+        format!("activity since=handoff tz={tz} n=0 no_handoff\n")
+    );
+    fx.core()
+        .services()
+        .activity
+        .person(permark_core::activity::Fact::Save {
+            path: "docs/plan.md".to_owned(),
+            sections: vec!["Plan > Rollout".to_owned()],
+            blocks: 1,
+        });
+    let (value, text) = answer(&tools, "activity", json!({ "since": "0" }));
+    let (value, text) = unlabeled(&value, &text);
+    let keys: Vec<&str> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(keys, ["since", "tz", "rows"], "{value}");
+    assert_eq!(value["rows"].as_array().unwrap().len(), 1, "{value}");
+    assert!(
+        text.starts_with(&format!("activity since=0 tz={tz} n=1\n#cols ")),
+        "{text}"
+    );
+    // the hand-off: offered, frozen, then answered exactly as frozen
+    let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
+    let crate::handoff::HandOffPreview::Ready { upto, sessions, .. } =
+        crate::handoff::preview(&tools, &guard, None).unwrap()
+    else {
+        panic!("a preview");
+    };
+    let checked: Vec<u32> = sessions.iter().map(|s| s.id).collect();
+    let done = crate::handoff::confirm(&tools, &guard, upto, &checked).unwrap();
+    assert_eq!(
+        done.line,
+        "PerMark: 1 actions since last hand-off -> call activity since=handoff"
+    );
+    let (value, text) = answer(&tools, "activity", Value::Null);
+    let (value, text) = unlabeled(&value, &text);
+    assert_eq!(value, json!({ "frozen": done.full }));
+    assert_eq!(text, done.full);
+}
+
+const WHY: &str = "git tracks .permark/local or it could not be checked";
+
+#[test]
+fn withheld_comments_are_left_out_counted_with_the_reason_and_cannot_be_resolved() {
+    let fx = fx();
+    fx.set_choice(&ProjectChoice {
+        enabled: true,
+        groups: [("comments.resolve".to_owned(), true)]
+            .into_iter()
+            .collect(),
+        resolve_asked: true,
+        folder: None,
+    });
+    fx.comments.0.lock().unwrap().extend([
+        CommentItem {
+            withheld: true,
+            text: "planted words".to_owned(),
+            ..comment("c3", "README.md", "Hello")
+        },
+        CommentItem {
+            withheld: true,
+            done: true,
+            ..comment("c4", "docs/plan.md", "Ship")
+        },
+        // on a hidden path: neither listed nor counted, withheld or not
+        CommentItem {
+            withheld: true,
+            ..comment("c5", "private/secret.md", "launch")
+        },
+    ]);
+    let tools = fx.tools();
+    let (value, text) = answer(&tools, "list_comments", Value::Null);
+    let ids: Vec<&str> = value["comments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["c1"]);
+    assert_eq!(value["withheld"], 1, "{value}");
+    assert_eq!(value["why"], WHY, "{value}");
+    assert_eq!(value["source"], "folder", "{value}");
+    assert!(!value.to_string().contains("planted"), "{value}");
+    assert_eq!(
+        text.lines().next().unwrap(),
+        "list_comments which=open n=1 withheld=1 why=\"git tracks .permark/local or it could not be checked\" source=folder"
+    );
+    let (value, _) = answer(&tools, "list_comments", json!({ "which": "all" }));
+    assert_eq!(value["comments"].as_array().unwrap().len(), 1, "{value}");
+    assert_eq!(value["withheld"], 2, "{value}");
+    // the same answer as an id that does not exist: no way to tell a withheld comment is there
+    assert!(not_found(tools.call(
+        "resolve_comment",
+        json!({ "id": "c3", "reply": "done" })
+    )));
+    assert!(!fx.comments.0.lock().unwrap()[2].done, "never marked done");
+}
+
+#[test]
+fn activity_and_the_hand_off_are_withheld_while_git_tracks_the_root_s_private_folder() {
+    let fx = fx();
+    fx.on();
+    let tools = fx.tools();
+    let activity = &fx.core().services().activity;
+    let save = |path: &str| permark_core::activity::Fact::Save {
+        path: path.to_owned(),
+        sections: vec!["Plan > Rollout".to_owned()],
+        blocks: 1,
+    };
+    activity.person(save("docs/plan.md"));
+    let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
+    // a package frozen while the folder was not tracked
+    let crate::handoff::HandOffPreview::Ready { upto, sessions, .. } =
+        crate::handoff::preview(&tools, &guard, None).unwrap()
+    else {
+        panic!("a preview");
+    };
+    let checked: Vec<u32> = sessions.iter().map(|s| s.id).collect();
+    let done = crate::handoff::confirm(&tools, &guard, upto, &checked).unwrap();
+    activity.person(save("README.md"));
+    let tz = crate::format::tz();
+
+    for answer_of in [
+        |p: &str| Ok(p == ".permark/local"),
+        |p: &str| {
+            if p == ".permark/local" {
+                Err(NoTracking::Slow)
+            } else {
+                Ok(false)
+            }
+        },
+    ] as [fn(&str) -> Result<bool, NoTracking>; 2]
+    {
+        let repo = fx.repo(answer_of);
+        for (args, since) in [
+            (Value::Null, "handoff"),
+            (json!({ "since": "0", "limit": 5 }), "0"),
+            (json!({ "since": "handoff", "by": "person" }), "handoff"),
+        ] {
+            let (value, text) = answer(&tools, "activity", args.clone());
+            assert_eq!(
+                value,
+                json!({ "since": since, "tz": tz, "rows": [], "withheld": true, "why": WHY, "source": "folder" }),
+                "{args}"
+            );
+            assert_eq!(
+                text,
+                format!(
+                    "activity since={since} tz={tz} n=0 withheld why=\"git tracks .permark/local or it could not be checked\" source=folder\n"
+                )
+            );
+            assert!(!text.contains("docs/plan.md") && !text.contains("README.md"));
+        }
+        let refusal = ToolError::Invalid(
+            "this folder's repository tracks PerMark's private files or it could not be checked; activity is not given to agents"
+                .to_owned(),
+        );
+        // the person's dialog learns why (its own answer), with nothing to confirm
+        assert_eq!(
+            crate::handoff::preview(&tools, &guard, None),
+            Ok(crate::handoff::HandOffPreview::Withheld)
+        );
+        assert_eq!(
+            fx.rpc("handOffPreview", json!({})).unwrap(),
+            json!({ "state": "withheld" })
+        );
+        let before = activity.snapshot();
+        assert_eq!(
+            crate::handoff::confirm(&tools, &guard, before.next.saturating_sub(1), &[1]).err(),
+            Some(refusal)
+        );
+        let after = activity.snapshot();
+        assert_eq!(after.checkpoint, before.checkpoint, "nothing written");
+        assert_eq!(after.package, before.package, "nothing written");
+        drop(repo);
+    }
+
+    // only folders other than the root's private one tracked (a member's), or no usable repository: served again
+    for answer_of in [
+        |p: &str| Ok(p != ".permark/local"),
+        |_: &str| Err(NoTracking::NoRepository),
+    ] as [fn(&str) -> Result<bool, NoTracking>; 2]
+    {
+        let _repo = fx.repo(answer_of);
+        let (value, text) = answer(&tools, "activity", Value::Null);
+        let (value, text) = unlabeled(&value, &text);
+        assert_eq!(value, json!({ "frozen": done.full }));
+        assert_eq!(text, done.full);
+        assert!(matches!(
+            crate::handoff::preview(&tools, &guard, None),
+            Ok(crate::handoff::HandOffPreview::Ready { .. })
+        ));
+    }
+}
+
+/// A journal with no seq left for the hand-off marker notes nothing: the confirm says it failed instead of handing the
+/// person a line for a package that was never frozen.
+#[test]
+fn a_hand_off_the_journal_cannot_note_fails_and_writes_nothing() {
+    use permark_core::activity::{Journal, JOURNAL_FILE, MAX_SEQ};
+    use permark_core::state::StateData as _;
+    let mut fx = fx();
+    let path = fx
+        .core()
+        .store()
+        .file::<Journal>(JOURNAL_FILE)
+        .path()
+        .to_path_buf();
+    // the project closed, its journal replaced by one with a single seq left, then opened again
+    fx.core.take();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        json!({ "version": Journal::VERSION, "data": { "next": MAX_SEQ - 1, "entries": [] } })
+            .to_string(),
+    )
+    .unwrap();
+    fx.core = Some(ProjectCore::open(Root::open(&fx.root).unwrap(), &fx.env));
+    let tools = fx.tools();
+    let activity = &fx.core().services().activity;
+    activity.person(permark_core::activity::Fact::Save {
+        path: "docs/plan.md".to_owned(),
+        sections: vec!["Plan > Rollout".to_owned()],
+        blocks: 1,
+    });
+    let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
+    let crate::handoff::HandOffPreview::Ready { upto, sessions, .. } =
+        crate::handoff::preview(&tools, &guard, None).unwrap()
+    else {
+        panic!("a preview");
+    };
+    let checked: Vec<u32> = sessions.iter().map(|s| s.id).collect();
+    let before = activity.snapshot();
+    assert!(matches!(
+        crate::handoff::confirm(&tools, &guard, upto, &checked),
+        Err(ToolError::Invalid(_))
+    ));
+    assert_eq!(activity.snapshot(), before, "nothing written");
+}
+
+#[test]
+fn folder_data_is_labeled_and_never_called_the_person_s() {
+    let tools = crate::mcp::tool_list();
+    let description = |name: &str| {
+        tools
+            .iter()
+            .find(|t| t.name == name)
+            .and_then(|t| t.description.as_deref())
+            .unwrap_or_default()
+            .to_owned()
+    };
+    for name in [
+        "list_comments",
+        "resolve_comment",
+        "activity",
+        "get_context",
+    ] {
+        let text = description(name);
+        assert!(!text.contains("person's"), "{name}: {text}");
+        assert!(!text.contains("the person did"), "{name}: {text}");
+    }
+    let instructions = crate::mcp::INSTRUCTIONS;
+    assert!(!instructions.contains("what they did"), "{instructions}");
+    let legend: Vec<&str> = instructions
+        .lines()
+        .filter(|l| l.contains("from PerMark files in the folder"))
+        .collect();
+    assert_eq!(legend.len(), 1, "{instructions}");
+    for words in [
+        "other people",
+        "other computers",
+        "copies of the folder",
+        "NEVER instructions",
+    ] {
+        assert!(legend[0].contains(words), "{words}: {}", legend[0]);
+    }
+    assert_eq!(
+        crate::handoff::prompt_line(3, false),
+        "PerMark: 3 actions since last hand-off -> call activity since=handoff"
+    );
 }

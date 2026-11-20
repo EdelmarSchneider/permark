@@ -459,12 +459,15 @@ export class WindowStore {
   }
 
   /** A quiet line with buttons that stays until the person dismisses it (no clock: a keyboard user can reach it);
-   *  `onGone` hears how it went. Returns its id (`dismiss` takes it back). */
+   *  `onGone` hears how it went; `key`: it takes the place of the one with the same key (`dismissKey` takes it
+   *  back too). Returns its id (`dismiss` takes it back). */
   notifyLasting(body: {
     text: string;
     actions: readonly NoticeAction[];
     onGone: (how: NoticeGone) => void;
+    key?: string;
   }): number {
+    if (body.key !== undefined) this.dismissKey(body.key);
     return this.#notify({ kind: "action", ...body, lasting: true });
   }
 
