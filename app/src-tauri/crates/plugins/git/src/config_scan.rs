@@ -942,8 +942,9 @@ mod tests {
         assert!(!look.config_stays_local(&top, &config));
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
         assert!(look.seen.0.len() < 8, "{}", look.seen.0.len());
-        // a whole path under unix's longest (4096 bytes) too
-        let names = 1000;
+        // a whole path under the shortest path limit of the systems the app runs on (macOS: 1024 bytes) too: a
+        // longer one is refused at its first look, before the cap is reached
+        let names = 250;
         let climb = format!("[core]\n\texcludesFile = {}x\n", "../".repeat(names));
         std::fs::write(&config, climb.repeat(MAX_SEEN / names + 2)).unwrap();
         let mut look = scan(&[]);
