@@ -17,7 +17,7 @@ use crate::watch::{Change, ChangeKind, OwnWrites};
 struct Fx {
     dir: tempfile::TempDir,
     outside: tempfile::TempDir,
-    _state: tempfile::TempDir,
+    state: tempfile::TempDir,
     ops: FileOps,
     own: Arc<OwnWrites>,
 }
@@ -56,7 +56,7 @@ fn fx(inside: &[(&str, &str)], outside: &[(&str, &str)]) -> Fx {
     Fx {
         dir,
         outside: out,
-        _state: state,
+        state,
         ops,
         own,
     }
@@ -1262,6 +1262,59 @@ fn the_undo_of_an_import_takes_back_that_import_not_the_newest_operation() {
     assert_eq!(read(&f, "b.md"), "b", "the newer one stays");
     assert!(f.ops.undo_entry(one).unwrap().is_none(), "once only");
     assert!(f.ops.undo_entry(two).unwrap().is_some());
+}
+
+#[test]
+fn undo_of_a_middle_import_leaves_the_newest_and_the_oldest_undoable() {
+    let f = fx(&[], &[("a.md", "a"), ("b.md", "b"), ("c.md", "c")]);
+    let ids: Vec<u64> = ["a.md", "b.md", "c.md"]
+        .iter()
+        .map(|name| copy_all(&f, "", &[name]).undo.unwrap())
+        .collect();
+    assert!(f.ops.undo_entry(ids[1]).unwrap().is_some());
+    assert!(!exists(f.dir.path(), "b.md"));
+    assert_eq!(f.ops.undo_depth(), 2);
+    assert!(f.ops.undo().unwrap().is_some());
+    assert!(!exists(f.dir.path(), "c.md"));
+    assert!(f.ops.undo().unwrap().is_some());
+    assert!(!exists(f.dir.path(), "a.md"));
+    assert!(f.ops.undo().unwrap().is_none());
+}
+
+/// A second service on the same project and state folders: the app started again.
+fn restarted(f: &Fx) -> FileOps {
+    let root = Root::open(f.dir.path()).unwrap();
+    let vault = Vault::new(root.clone());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        Arc::new(Recorder::default()),
+        None,
+    ));
+    explorer.open_view("w", Some(TreeFilter::default()));
+    let store = StateStore::for_project(&AppDirs::under(f.state.path()), &root);
+    FileOps::new(vault, explorer, Arc::clone(&f.own), &store)
+}
+
+#[test]
+fn copies_and_moves_are_undone_after_a_restart() {
+    let f = fx(&[], &[("a.md", "a"), ("note.md", "n")]);
+    copy_all(&f, "", &["a.md"]);
+    let p = plan(&f, "", &["note.md"]);
+    apply(&f, &p, ImportMode::Move, ConflictChoice::Skip);
+    assert!(!exists(f.outside.path(), "note.md"));
+    let again = restarted(&f);
+    assert_eq!(again.undo_depth(), 2);
+    let moved = again.undo().unwrap().unwrap();
+    assert_eq!((moved.kind, moved.restored), (UndoKind::Import, 1));
+    assert_eq!(
+        fs::read_to_string(f.outside.path().join("note.md")).unwrap(),
+        "n"
+    );
+    let copied = again.undo().unwrap().unwrap();
+    assert_eq!((copied.kind, copied.restored), (UndoKind::Import, 1));
+    assert!(!exists(f.dir.path(), "a.md") && exists(f.outside.path(), "a.md"));
+    assert!(again.undo().unwrap().is_none());
 }
 
 #[test]
