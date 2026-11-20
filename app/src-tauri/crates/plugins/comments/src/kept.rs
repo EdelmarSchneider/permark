@@ -24,6 +24,16 @@ const ASIDE_SEAL: &str = "comments-aside";
 const MAX_ASIDES: usize = 3;
 /// How long an aside is kept (30 days).
 const ASIDE_MS: u64 = 30 * 24 * 60 * 60 * 1000;
+/// Largest comments file a kept copy is made of. A kept copy | aside is read whole before its seal can be checked, and
+/// whoever can write to the folder (a sync partner, a copied folder) can plant one, so its cap stays small: a larger
+/// comments file gets no kept copy, and removals are not seen while it is that large.
+pub(crate) const MAX_KEPT_TEXT: u64 = 4 * 1024 * 1024;
+/// Room for the state envelope, the seal and the indentation around the data.
+const ENVELOPE: u64 = 64 * 1024;
+/// Most bytes of the kept copy's file: the comments file as one JSON string (escaping can double it).
+pub(crate) const KEPT_CAP: u64 = 2 * MAX_KEPT_TEXT + ENVELOPE;
+/// Most bytes of the asides file: [`MAX_ASIDES`] asides of at most a kept copy's size each.
+pub(crate) const ASIDES_CAP: u64 = MAX_ASIDES as u64 * KEPT_CAP;
 
 #[derive(Default, Serialize, Deserialize)]
 struct Kept {
@@ -34,8 +44,7 @@ struct Kept {
 
 impl StateData for Kept {
     const VERSION: u32 = 1;
-    /// The comments file as one JSON string: escaping can double it.
-    const MAX_BYTES: u64 = 2 * crate::MAX_FILE_BYTES + 1024 * 1024;
+    const MAX_BYTES: u64 = KEPT_CAP;
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -55,7 +64,12 @@ struct Records {
 
 impl StateData for Records {
     const VERSION: u32 = 1;
-    const MAX_BYTES: u64 = MAX_ASIDES as u64 * Kept::MAX_BYTES;
+    const MAX_BYTES: u64 = ASIDES_CAP;
+}
+
+/// `data` written as a state file stays within `cap`: a larger file would never be read back (left unread in place).
+fn fits(data: &impl Serialize, cap: u64) -> bool {
+    serde_json::to_vec_pretty(data).is_ok_and(|bytes| bytes.len() as u64 + ENVELOPE <= cap)
 }
 
 /// Comments an outside write removed from the file.
@@ -146,6 +160,12 @@ impl Keeper {
 
     /// Keeps `text` as the file's.
     pub(crate) fn keep(&self, text: &str) {
+        // too large to keep (or, as one JSON string, over the kept copy's cap: control characters take six bytes
+        // each): an older kept copy goes too, as it would show this install's later changes as removals
+        if text.len() as u64 > MAX_KEPT_TEXT || !fits(&text, KEPT_CAP) {
+            let _ = self.kept_raw.remove();
+            return;
+        }
         let kept = Kept {
             text: text.to_owned(),
             seal: self.kept_seal(text).sign(),
@@ -241,9 +261,17 @@ impl Keeper {
             record.seal = self.aside_seal(&record).sign();
             list.push(record);
             let extra = list.len().saturating_sub(MAX_ASIDES);
-            list.drain(..extra);
+            let pushed_out: Vec<Record> = list.drain(..extra).collect();
+            let next = Records { asides: list };
+            if !fits(&next, ASIDES_CAP) {
+                // a file over its cap is never read back: this aside is not made, the older ones stay
+                let mut list = pushed_out;
+                list.extend(next.asides);
+                list.pop();
+                return (list.len() != old.len()).then_some(Records { asides: list });
+            }
             made = true;
-            Some(Records { asides: list })
+            Some(next)
         })?;
         if made {
             (self.told)();

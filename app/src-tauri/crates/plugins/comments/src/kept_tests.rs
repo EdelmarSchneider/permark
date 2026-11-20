@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use permark_core::conditions::Distribution;
 use permark_core::events::{CoreEvent, EventSink};
@@ -18,8 +18,9 @@ use permark_core::ErrorKind;
 use serde_json::{json, Value};
 
 use super::*;
+use crate::kept::{ASIDES_CAP, KEPT_CAP, MAX_KEPT_TEXT};
 use crate::model::{Anchor, Book};
-use crate::service::merge_book;
+use crate::service::{merge_book, now_ms};
 
 // ---- the merge, as it is ---------------------------------------------------------------------------------------
 
@@ -666,4 +667,140 @@ fn an_aside_older_than_thirty_days_is_dropped() {
     let stored =
         std::fs::read_to_string(kept_file(&core).with_file_name("comments-asides.json")).unwrap();
     assert!(!stored.contains("gone long ago"), "{stored}");
+}
+
+// ---- sizes and the writers' lock -------------------------------------------------------------------------------
+
+#[test]
+fn a_planted_kept_copy_or_asides_file_over_its_cap_is_refused_by_size_and_left_in_place() {
+    let fx = Fx::new();
+    let core = fx.open();
+    add(&core, "mine");
+    let kept = kept_file(&core);
+    let asides_file = kept.with_file_name("comments-asides.json");
+    drop(core);
+    // not JSON: a file that was read would be found corrupt and moved aside; one refused by its size stays as it is
+    let planted = [(&kept, KEPT_CAP + 1), (&asides_file, ASIDES_CAP + 1)];
+    for (path, len) in planted {
+        std::fs::write(path, vec![b'x'; usize::try_from(len).unwrap()]).unwrap();
+    }
+    let core = fx.open();
+    assert!(asides(&core).is_empty());
+    assert_eq!(texts(&core), strings(&["mine"]));
+    add(&core, "second");
+    assert_eq!(texts(&core), strings(&["mine", "second"]));
+    for (path, len) in planted {
+        assert_eq!(
+            std::fs::metadata(path).unwrap().len(),
+            len,
+            "{}",
+            path.display()
+        );
+    }
+    const { assert!(KEPT_CAP < 9 * 1024 * 1024 && ASIDES_CAP < 25 * 1024 * 1024) };
+}
+
+/// Another program pads the comments file to exactly `len` bytes (a key the comments keep beside them).
+fn pad_to(file: &Path, len: u64) {
+    let mut book: Value = serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
+    book["pad"] = json!("");
+    let bare = serde_json::to_vec_pretty(&book).unwrap().len();
+    book["pad"] = json!("x".repeat(usize::try_from(len).unwrap() - bare));
+    let bytes = serde_json::to_vec_pretty(&book).unwrap();
+    assert_eq!(bytes.len() as u64, len);
+    std::fs::write(file, bytes).unwrap();
+}
+
+/// The text of the kept copy; `None`: no kept copy.
+fn kept_text(core: &ProjectCore) -> Option<String> {
+    let bytes = std::fs::read(kept_file(core)).ok()?;
+    let envelope: Value = serde_json::from_slice(&bytes).unwrap();
+    Some(envelope["data"]["text"].as_str().unwrap().to_owned())
+}
+
+#[test]
+fn a_comments_file_over_four_mib_gets_no_kept_copy_and_its_comments_still_work() {
+    let fx = Fx::new();
+    let core = fx.open();
+    add(&core, "first");
+    add(&core, "second");
+    let file = file_of(&core);
+    // at the limit: kept as before
+    pad_to(&file, MAX_KEPT_TEXT);
+    assert_eq!(texts(&core), strings(&["first", "second"]));
+    assert_eq!(
+        kept_text(&core).map(String::into_bytes),
+        Some(std::fs::read(&file).unwrap())
+    );
+    // one byte more: the kept copy goes, the comments work as before
+    pad_to(&file, MAX_KEPT_TEXT + 1);
+    assert_eq!(texts(&core), strings(&["first", "second"]));
+    assert_eq!(kept_text(&core), None);
+    add(&core, "third");
+    assert!(std::fs::metadata(&file).unwrap().len() > MAX_KEPT_TEXT);
+    assert_eq!(kept_text(&core), None);
+    // removals are not seen while the file is that large
+    outside(&file, without(&["first"]));
+    assert!(asides(&core).is_empty());
+    assert_eq!(texts(&core), strings(&["second", "third"]));
+    // smaller again: kept from this install's next write on
+    let mut book: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    book.as_object_mut().unwrap().remove("pad");
+    std::fs::write(&file, serde_json::to_vec_pretty(&book).unwrap()).unwrap();
+    add(&core, "fourth");
+    assert!(kept_text(&core).is_some());
+    outside(&file, without(&["second"]));
+    assert_eq!(asides(&core).len(), 1);
+}
+
+#[test]
+fn an_aside_that_would_take_the_asides_file_over_its_cap_is_not_made_and_older_ones_stay() {
+    let fx = Fx::new();
+    let core = fx.open();
+    add(&core, "kept");
+    let keeper = crate::kept::Keeper::of(&core.store(), Arc::new(|| {})).unwrap();
+    let now = now_ms();
+    // a quote is escaped twice (in the list of comments, then in the asides file): four bytes each
+    let big = |id: &str| comment(id, &"\"".repeat(usize::try_from(ASIDES_CAP / 7).unwrap()));
+    assert!(keeper.set_aside(now, &[big("one")], false).unwrap());
+    assert!(
+        !keeper.set_aside(now + 1, &[big("two")], false).unwrap(),
+        "over the cap: not made"
+    );
+    assert!(keeper
+        .set_aside(now + 2, &[comment("small", "small")], false)
+        .unwrap());
+    let ids: Vec<u64> = keeper.asides(now + 2).iter().map(|a| a.id).collect();
+    assert_eq!(ids, [now, now + 2]);
+    let stored = kept_file(&core).with_file_name("comments-asides.json");
+    assert!(std::fs::metadata(stored).unwrap().len() <= ASIDES_CAP);
+}
+
+#[test]
+fn a_look_while_another_writer_holds_the_lock_waits_briefly_and_the_next_look_compares() {
+    let fx = Fx::new();
+    let core = fx.open();
+    for n in 1..=3 {
+        add(&core, &format!("c{n}"));
+    }
+    let file = file_of(&core);
+    let held = permark_core::state::shared_write::lock_for(&file)
+        .unwrap()
+        .expect("lock");
+    outside(&file, without(&["c1"]));
+    let started = Instant::now();
+    assert!(
+        asides(&core).is_empty(),
+        "not compared while another writer holds the lock"
+    );
+    assert!(
+        started.elapsed() < Duration::from_millis(1500),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(texts(&core), strings(&["c2", "c3"]));
+    drop(held);
+    let found = asides(&core);
+    assert_eq!(found.len(), 1, "compared at the next look: {found:?}");
+    assert_eq!(found[0]["count"], json!(1));
 }

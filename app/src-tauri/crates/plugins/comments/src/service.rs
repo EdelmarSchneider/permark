@@ -39,8 +39,8 @@ const MAX_DOC_BYTES: u64 = 5 * 1024 * 1024;
 /// How long changes of documents are gathered before the passages are looked for again.
 const QUIET: Duration = Duration::from_millis(150);
 /// Most time a look at a changed file waits for the writers' lock before it compares the file with the kept copy
-/// (busy longer: compared at the next look | write instead).
-const LOOK_WAIT: Duration = Duration::from_secs(2);
+/// (busy longer: compared at the next look | write instead). Short: the look holds every comments call meanwhile.
+const LOOK_WAIT: Duration = Duration::from_millis(200);
 
 /// Tells the windows: `changed` (the comments) | `aside` (the comments set aside).
 pub type Announce = Arc<dyn Fn(&str) + Send + Sync>;
@@ -83,7 +83,8 @@ struct Slot {
     damaged: bool,
     /// The file could not be read just now (it may be fine a moment later).
     unreadable: Option<String>,
-    /// The file was read since the slot was made (the first look compares a missing file with the kept copy too).
+    /// The file was read since the slot was made (the first look compares a missing file with the kept copy too); a
+    /// look that found the writers' lock busy leaves it unset, so the next look reads and compares again.
     looked: bool,
 }
 
@@ -166,6 +167,7 @@ impl Slot {
             .as_ref()
             .map(|_| lock_within(self.file.path(), LOOK_WAIT));
         let read = self.file.read();
+        let busy = matches!(lock, Some(Err(_)));
         if let (Some(keeper), Some(Ok(_)), Ok(bytes)) = (&self.keeper, &lock, &read) {
             if !self.looked {
                 // expired asides go when the comments start
@@ -174,7 +176,7 @@ impl Slot {
             keeper.follow(bytes.as_deref(), now_ms());
         }
         drop(lock);
-        self.looked = true;
+        self.looked = !busy;
         match read {
             Ok(Some(bytes)) => {
                 if let Some(book) = book_of(&bytes) {
