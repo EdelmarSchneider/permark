@@ -199,10 +199,11 @@ The Windows installers may also download Microsoft's WebView2 component while th
 **"Where does PerMark keep my data?"**<br>
 Your settings, recent folders and your choices about each folder (for example whether an agent may read it) stay in your user
 profile. What belongs to a project goes in a `.permark/` folder inside it: its shared settings and tags, your comments and read
-marks, and caches PerMark can rebuild. PerMark creates that folder only when you choose **Initialize PerMark**; a folder without
-one keeps its data in your profile, and a `.permark/` folder that arrives later does not take your data unless you choose
-**Move**. Git never sees `.permark/local` and `.permark/cache`; choose **Settings → This folder** to keep the whole `.permark/`
-folder out of git. A `.permark/` folder can only narrow what PerMark or an agent may do, never widen it.
+marks, and caches PerMark can rebuild. PerMark creates that folder only when you ask for it, for example with **Initialize
+PerMark**; a folder without one keeps its data in your profile, and a `.permark/` folder that arrives later does not take your
+data unless you choose **Move into the folder**. Git never sees `.permark/local` and `.permark/cache`; choose **Settings → This
+folder** to keep the whole `.permark/` folder out of git. A `.permark/` folder can only narrow what PerMark or an agent may do,
+never widen it.
 
 ## What PerMark is not
 

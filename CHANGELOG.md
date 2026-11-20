@@ -15,8 +15,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - File moves, renames and deletions made before this update can no longer be undone: the undo history starts empty once. <!-- f: file-ops -->
 - Closing a panel now leaves its own notice with **Undo**, so closing two panels gives you two ways back. The **Panels** menu stays open while you tick several panels, and it groups them by where they sit. <!-- f: side-panels -->
 - **Where PerMark keeps your data for a folder is now chosen once.** When a `.permark` folder arrives later in a folder whose data PerMark keeps in your user profile, for example from a git pull or a sync tool, your comments and read marks stay where they are, and PerMark offers to move them; before, they could seem to disappear. <!-- f: project-folder -->
-- Caches in a project's `.permark/cache` folder now sit in a folder for each computer; PerMark rebuilds them once after this update. For a folder on a network drive or in a cloud-synced folder, caches stay on this computer. <!-- f: project-folder -->
-- Files PerMark creates in `.permark` now start with "Commit the .permark folder to share these settings with your team." Existing files are left as they are. <!-- f: project-folder -->
+- Caches in a project's `.permark/cache` folder now sit in a folder for each computer; PerMark rebuilds them once after this update. On Windows, for a folder on a network drive or in a cloud-synced folder such as OneDrive, caches stay on this computer. <!-- f: project-folder -->
+- New `config.toml` and `meta.toml` files in `.permark` now start with "Commit the .permark folder to share these settings with your team." Existing files are left as they are. <!-- f: project-folder -->
 - **Remove data** for a plugin now also removes what the plugin kept for this computer in each open project. <!-- f: plugins -->
 
 ### Removed
