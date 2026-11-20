@@ -4,6 +4,8 @@
 
 use std::path::{Component, Path, PathBuf};
 
+use permark_core::fsx::{read_regular, Zone};
+
 use crate::ops::too_broad;
 
 /// Most worktrees offered.
@@ -12,6 +14,9 @@ const MAX_WORKTREES: usize = 32;
 const MAX_SCANNED: usize = 256;
 /// Most folders walked up looking for `.git`.
 const MAX_LEVELS: usize = 40;
+/// Most bytes of a one-line file of a git folder (`.git` file, `gitdir`, `commondir`, `HEAD`, a loose ref): the
+/// folder came with the project, so a bigger one is unreadable rather than taken in whole.
+const MAX_LINE_FILE: u64 = 4 * 1024;
 
 /// A working tree of the same repository as the project.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,8 +26,11 @@ pub struct Linked {
     pub folder: PathBuf,
 }
 
+/// The first line of a small file of a git folder; `None`: missing, empty, too large, not UTF-8, or not a plain file
+/// (the read of a FIFO would wait for a writer forever).
 pub(crate) fn read_line(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let bytes = read_regular(path, MAX_LINE_FILE, Zone::Anywhere).ok()?;
+    let text = String::from_utf8(bytes).ok()?;
     let line = text.lines().next()?.trim();
     (!line.is_empty()).then(|| line.to_owned())
 }
@@ -71,20 +79,24 @@ pub(crate) fn in_nested_repository(workdir: &Path, path: &str) -> bool {
     false
 }
 
-/// Where the objects and refs live: the git folder itself, or the one named by `commondir` (linked worktree).
+/// Where the objects and refs live: the git folder itself, or the one its `commondir` names when the git folder is a
+/// linked tree's admin folder there (`<common>/worktrees/<name>`, git's own layout). A `commondir` anywhere else came
+/// with the folder and names nothing.
 pub(crate) fn common_dir(git_dir: &Path) -> PathBuf {
-    let found = match read_line(&git_dir.join("commondir")) {
-        Some(relative) => {
-            let relative = PathBuf::from(relative);
-            if relative.is_absolute() {
-                relative
-            } else {
-                git_dir.join(relative)
-            }
-        }
-        None => git_dir.to_path_buf(),
+    let own =
+        || permark_core::paths::canonicalize(git_dir).unwrap_or_else(|_| git_dir.to_path_buf());
+    let Some(named) = read_line(&git_dir.join("commondir")).map(PathBuf::from) else {
+        return own();
     };
-    permark_core::paths::canonicalize(&found).unwrap_or(found)
+    let named = if named.is_absolute() {
+        named
+    } else {
+        git_dir.join(named)
+    };
+    match (git_dir.parent(), permark_core::paths::canonicalize(&named)) {
+        (Some(admins), Ok(common)) if same_folder(admins, &common.join("worktrees")) => common,
+        _ => own(),
+    }
 }
 
 /// The working tree the admin folder `admin` (`<common>/worktrees/<name>`) stands for, when that tree names it back.
@@ -138,12 +150,33 @@ pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
         .strip_prefix(&workdir)
         .unwrap_or(Path::new(""))
         .to_path_buf();
-    let common = common_dir(&git_dir);
+    // a main tree's `.git` folder is the common folder (git writes no `commondir` there); a linked tree's admin
+    // folder sits in `<common>/worktrees`, else its `commondir` could name any repository above the project
+    let common = if linked {
+        let common = common_dir(&git_dir);
+        if !git_dir
+            .parent()
+            .is_some_and(|admins| same_folder(admins, &common.join("worktrees")))
+        {
+            return Vec::new();
+        }
+        common
+    } else {
+        permark_core::paths::canonicalize(&git_dir).unwrap_or(git_dir)
+    };
     let mut found: Vec<Linked> = Vec::new();
     let mut add = |name: String, tree: PathBuf| {
         let folder = permark_core::paths::simplified(&tree.join(&prefix)).into_owned();
+        // the same rule as the project's own tree (no drive root, no home folder), and never a tree that is the
+        // project or holds it: that would offer the project's surroundings as one more root
+        let holds_root = |path: &Path| {
+            permark_core::paths::canonicalize(path).is_ok_and(|path| root.starts_with(path))
+        };
         if folder.is_dir()
-            && permark_core::paths::canonicalize(&folder).ok() != Some(root.clone())
+            && !holds_root(&tree)
+            && !holds_root(&folder)
+            && !too_broad(&tree, &root, home)
+            && !too_broad(&folder, &root, home)
             && found.len() < MAX_WORKTREES
         {
             found.push(Linked { name, folder });
@@ -344,6 +377,141 @@ mod tests {
                 target.display()
             );
         }
+    }
+
+    fn names(found: Vec<Linked>) -> Vec<String> {
+        found.into_iter().map(|l| l.name).collect()
+    }
+
+    /// A linked project's `commondir` is content too: its admin folder must sit in `<common>/worktrees`, so a project
+    /// that carries its own admin folder cannot name a parent repository (a dotfiles repository in the home folder)
+    /// as its common folder and get that repository's main tree attached.
+    #[test]
+    fn a_commondir_beside_the_project_attaches_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(home.join(".git")).unwrap();
+        make_worktree(&home.join(".git"), "w", &dir.path().join("w"));
+        let project = home.join("evil");
+        let admin = project.join("x").join("a");
+        std::fs::create_dir_all(&admin).unwrap();
+        std::fs::write(project.join(".git"), "gitdir: x/a\n").unwrap();
+        std::fs::write(admin.join("gitdir"), "../../.git\n").unwrap();
+        std::fs::write(admin.join("commondir"), "../../../.git\n").unwrap();
+        assert!(linked_worktrees(&project, None).is_empty());
+        assert!(linked_worktrees(&project, Some(&home)).is_empty());
+    }
+
+    /// git never writes a `commondir` into a main tree's `.git`: one there came with the folder and names nothing.
+    #[test]
+    fn a_main_tree_never_follows_a_commondir() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = dir.path().join("other");
+        std::fs::create_dir_all(other.join(".git")).unwrap();
+        make_worktree(&other.join(".git"), "w", &dir.path().join("w"));
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        for named in [
+            format!("{}\n", other.join(".git").display()),
+            "../../other/.git\n".to_owned(),
+        ] {
+            std::fs::write(project.join(".git").join("commondir"), &named).unwrap();
+            assert!(linked_worktrees(&project, None).is_empty(), "{named}");
+        }
+    }
+
+    /// Every attached tree passes the same rule as the project's own: never the home folder, never a folder that
+    /// holds the project.
+    #[test]
+    fn a_tree_that_is_the_home_folder_or_holds_the_project_is_not_attached() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(home.join(".git")).unwrap();
+        make_worktree(&home.join(".git"), "a", &dir.path().join("a"));
+        make_worktree(&home.join(".git"), "b", &dir.path().join("b"));
+        assert_eq!(
+            names(linked_worktrees(&dir.path().join("a"), None)),
+            ["home", "b"]
+        );
+        assert_eq!(
+            names(linked_worktrees(&dir.path().join("a"), Some(&home))),
+            ["b"]
+        );
+        // a linked tree inside the main one: the main tree holds the project
+        let main = dir.path().join("main");
+        std::fs::create_dir_all(main.join(".git")).unwrap();
+        let nested = main.join("trees").join("feat");
+        make_worktree(&main.join(".git"), "feat", &nested);
+        make_worktree(&main.join(".git"), "side", &dir.path().join("side"));
+        assert_eq!(names(linked_worktrees(&nested, None)), ["side"]);
+    }
+
+    /// Files of a git folder come with the folder: one too large for a line is unreadable, not taken in whole.
+    #[test]
+    fn an_oversized_git_file_is_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("repo");
+        std::fs::create_dir_all(main.join(".git")).unwrap();
+        make_worktree(&main.join(".git"), "w", &dir.path().join("w"));
+        assert_eq!(names(linked_worktrees(&main, None)), ["w"]);
+        let gitdir = main.join(".git").join("worktrees").join("w").join("gitdir");
+        let mut text = std::fs::read_to_string(&gitdir).unwrap();
+        text.push_str(&" ".repeat(8 * 1024));
+        std::fs::write(&gitdir, text).unwrap();
+        assert!(linked_worktrees(&main, None).is_empty());
+        let head = main.join(".git").join("HEAD");
+        std::fs::write(
+            &head,
+            format!("ref: refs/heads/main\n{}", " ".repeat(8 * 1024)),
+        )
+        .unwrap();
+        assert_eq!(branch_of(&main.join(".git")), None);
+    }
+
+    /// A FIFO where git keeps a one-line file (a sync partner | an archive can place one) is refused at once: a read
+    /// would wait for a writer forever while the project opens.
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_in_a_git_folder_never_holds_the_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("repo");
+        let git = main.join(".git");
+        std::fs::create_dir_all(&git).unwrap();
+        make_worktree(&git, "a", &dir.path().join("a"));
+        make_worktree(&git, "b", &dir.path().join("b"));
+        let other = dir.path().join("other.git");
+        std::fs::create_dir_all(other.join("refs").join("heads")).unwrap();
+        std::fs::write(other.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        for fifo in [
+            git.join("worktrees").join("b").join("gitdir"),
+            git.join("worktrees").join("a").join("commondir"),
+            git.join("HEAD"),
+            other.join("refs").join("heads").join("main"),
+            other.join("packed-refs"),
+        ] {
+            let _ = std::fs::remove_file(&fifo);
+            let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+            assert!(made.is_ok_and(|s| s.success()), "{}", fifo.display());
+        }
+        let tree_a = dir.path().join("a");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send((
+                names(linked_worktrees(&main, None)),
+                names(linked_worktrees(&tree_a, None)),
+                branch_of(&git),
+                crate::cheap::cheap_facts(&git),
+                crate::cheap::cheap_facts(&other).map(|c| (c.head.unborn, c.head.oid)),
+            ));
+        });
+        let (from_main, from_a, branch, head, unborn) = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("a read waited on a FIFO");
+        assert_eq!(from_main, ["a"]);
+        assert!(from_a.is_empty(), "{from_a:?}");
+        assert_eq!(branch, None);
+        assert_eq!(head, None);
+        assert_eq!(unborn, Some((true, None)));
     }
 
     #[test]

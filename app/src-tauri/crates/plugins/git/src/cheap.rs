@@ -2,16 +2,17 @@
 //! process, no libgit2: where it is (`.git` folder | gitfile), HEAD (branch | detached commit | no commit yet) and the
 //! repository state from marker files. A few small reads per repository.
 
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use permark_core::conditions::RepoState;
+use permark_core::fsx::{read_regular, Zone};
+use permark_core::plugins::CommitId;
 
 use crate::ops::{repo_state, RepoLocation};
 use crate::types::HeadInfo;
 use crate::worktrees::{common_dir, read_line};
 
-/// Most bytes of `packed-refs` read looking for one ref (a huge file is not read to its end).
+/// Most bytes of `packed-refs` read looking for one ref (a bigger file is not read: the ref counts as missing).
 const MAX_PACKED: u64 = 8 * 1024 * 1024;
 
 #[cfg(test)]
@@ -67,10 +68,6 @@ pub fn member_location(folder: &Path) -> Result<RepoLocation, String> {
     })
 }
 
-fn is_hex_oid(text: &str) -> bool {
-    (4..=64).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_hexdigit())
-}
-
 /// Whether HEAD may name `name`: a ref below `refs/` made of plain segments only. Anything else (`..`, an absolute
 /// path, a drive `C:`, a `\`) would read outside the git folder: HEAD is invalid then.
 fn valid_ref(name: &str) -> bool {
@@ -90,24 +87,19 @@ fn resolve_ref(common: &Path, git_dir: &Path, name: &str) -> Option<String> {
     if !valid_ref(name) {
         return None;
     }
-    for dir in [git_dir, common] {
-        if let Some(line) = read_line(&dir.join(name)) {
-            if is_hex_oid(&line) {
-                return Some(line.to_ascii_lowercase());
-            }
-        }
-    }
-    let file = std::fs::File::open(common.join("packed-refs")).ok()?;
-    let reader = BufReader::new(std::io::Read::take(file, MAX_PACKED));
-    for line in reader.lines() {
-        let Ok(line) = line else { break };
-        if let Some((oid, refname)) = line.split_once(' ') {
-            if refname.trim() == name && is_hex_oid(oid) {
-                return Some(oid.to_ascii_lowercase());
-            }
-        }
-    }
-    None
+    let loose = [git_dir, common]
+        .into_iter()
+        .find_map(|dir| CommitId::parse(&read_line(&dir.join(name))?));
+    // a plain file only (a FIFO would hold the read forever)
+    let id = loose.or_else(|| {
+        let packed = read_regular(&common.join("packed-refs"), MAX_PACKED, Zone::Anywhere).ok()?;
+        String::from_utf8_lossy(&packed)
+            .lines()
+            .filter_map(|line| line.split_once(' '))
+            .filter(|(_, refname)| refname.trim() == name)
+            .find_map(|(oid, _)| CommitId::parse(oid))
+    })?;
+    Some(id.as_str().to_owned())
 }
 
 /// HEAD + state of the repository at `git_dir`; `None`: HEAD unreadable (not a repository any more).
@@ -132,15 +124,13 @@ pub fn cheap_facts(git_dir: &Path) -> Option<Cheap> {
             oid,
             detached: false,
         }
-    } else if is_hex_oid(&line) {
+    } else {
         HeadInfo {
             branch: None,
-            oid: Some(line.to_ascii_lowercase()),
+            oid: Some(CommitId::parse(&line)?.as_str().to_owned()),
             detached: true,
             unborn: false,
         }
-    } else {
-        return None;
     };
     Some(Cheap {
         head,
@@ -183,6 +173,15 @@ mod tests {
         let detached = cheap_facts(git).unwrap();
         assert!(detached.head.detached && detached.head.branch.is_none());
         assert_eq!(detached.head.oid.as_deref(), Some(A));
+        // only a full commit id names a commit: SHA-1 | SHA-256, never a short one
+        let sha256 = B.repeat(2)[..64].to_owned();
+        std::fs::write(git.join("HEAD"), format!("{sha256}\n")).unwrap();
+        assert_eq!(cheap_facts(git).unwrap().head.oid, Some(sha256));
+        std::fs::write(git.join("HEAD"), "0123abcd\n").unwrap();
+        assert_eq!(cheap_facts(git), None);
+        std::fs::write(git.join("refs/heads/short"), "0123abcd\n").unwrap();
+        std::fs::write(git.join("HEAD"), "ref: refs/heads/short\n").unwrap();
+        assert!(cheap_facts(git).unwrap().head.unborn, "a short id in a ref");
         std::fs::write(git.join("HEAD"), "garbage\n").unwrap();
         assert_eq!(cheap_facts(git), None);
         // a HEAD naming anything outside the git folder is invalid: nothing read there (verifier N1)

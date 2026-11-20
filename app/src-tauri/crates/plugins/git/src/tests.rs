@@ -1978,8 +1978,14 @@ fn stale_index_after_two_commits(fx: &Fixture) -> String {
     let first = fx.commit("first");
     fx.write("b.md", "b changed\n");
     fx.commit("second");
-    std::thread::sleep(Duration::from_millis(1100));
     fx.write("a.md", "a\n");
+    // a time the index did not record for the file, without waiting for the clock to pass the recorded one
+    std::fs::File::options()
+        .write(true)
+        .open(fx.root.join("a.md"))
+        .unwrap()
+        .set_modified(std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000))
+        .unwrap();
     first
 }
 
@@ -2015,19 +2021,24 @@ fn no_hook_of_the_repository_ever_runs() {
     let config_marker = fx.dir.path().join("config hook ran.txt");
     let unix_text = |path: &Path| path.to_string_lossy().replace('\\', "/");
     let script = format!("#!/bin/sh\necho ran >> \"{}\"\n", unix_text(&file_marker));
-    let mut hook_files = vec![fx.root.join(".git").join("hooks").join("post-index-change")];
+    let own_hook = fx.root.join(".git").join("hooks").join("post-index-change");
     // where a null-device spelling would lead git on Windows: folders of the working tree (`NUL` only through `\\?\`)
     #[cfg(windows)]
-    {
+    let hook_files = {
         let verbatim = PathBuf::from(format!(r"\\?\{}", fx.root.display()));
-        hook_files.push(verbatim.join("NUL").join("post-index-change"));
-        hook_files.push(verbatim.join("dev").join("null").join("post-index-change"));
         std::fs::write(
             fx.root.join(".git").join("info").join("exclude"),
             "/NUL/\n/dev/\n",
         )
         .unwrap();
-    }
+        [
+            own_hook,
+            verbatim.join("NUL").join("post-index-change"),
+            verbatim.join("dev").join("null").join("post-index-change"),
+        ]
+    };
+    #[cfg(not(windows))]
+    let hook_files = [own_hook];
     for hook in &hook_files {
         std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
         std::fs::write(hook, &script).unwrap();
