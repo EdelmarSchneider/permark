@@ -35,7 +35,13 @@ fn dev_override(name: &str) -> Option<String> {
 
 impl Driver {
     fn updater(&self) -> Result<tauri_plugin_updater::Updater, String> {
-        let mut builder = self.handle.updater_builder();
+        let handle = self.handle.clone();
+        // Windows: the installer starts, then the process ends at once (no exit event, no destructors), so the
+        // activity journals write what they hold first. This replaces the plugin's own hook: its cleanup runs here.
+        let mut builder = self.handle.updater_builder().on_before_exit(move || {
+            shell::state(&handle).flush_activity();
+            handle.cleanup_before_exit();
+        });
         if let Some(endpoint) = dev_override("PERMARK_UPDATER_ENDPOINT") {
             let url = endpoint.parse().map_err(|e| format!("{e}"))?;
             builder = builder.endpoints(vec![url]).map_err(|e| e.to_string())?;
