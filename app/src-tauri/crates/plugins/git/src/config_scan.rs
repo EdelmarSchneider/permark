@@ -5,10 +5,12 @@
 //!
 //! A config file without any of the watched names is fine as it is (no parsing, so nothing git could read
 //! differently). Otherwise it is read with the part of git's grammar libgit2 reads alike: a backslash anywhere (an
-//! escape, a continued line: libgit2 goes on past a comment line, and takes `\\"#` as a comment), a quote in any value,
-//! `\v` | `\f` (libgit2's whitespace, not git's) or a lone `\r` refuses the repository, as do a watched key without a
-//! value and any line git itself would refuse. A harmless value can hide a watched key from one of them, so every
-//! value counts, not only the watched ones.
+//! escape, a continued line: libgit2 goes on past a comment line, takes `\\"#` as a comment and miscounts a quote right
+//! after a backslash), a quote left open in any value, `\v` | `\f` (libgit2's whitespace, not git's) or a lone `\r`
+//! refuses the repository, as do a watched key without a value, a watched value the two read differently and any line
+//! git itself would refuse. Without a backslash both count quotes alike, so a comment starts at the same place for
+//! both, also around a quoted value (git quotes a value holding `#` | `;`). A harmless value can hide a watched key
+//! from one of them, so every value counts, not only the watched ones.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -329,6 +331,9 @@ struct Entry {
     key: Vec<u8>,
     /// `None`: the key alone (git takes it as true).
     value: Option<Vec<u8>>,
+    /// libgit2 reads the same value (it keeps the spaces after an empty pair of quotes and a tab as it is, where git
+    /// drops them | writes a space).
+    alike: bool,
 }
 
 impl Entry {
@@ -343,8 +348,11 @@ impl Entry {
         }
     }
 
-    /// The value as text: present, UTF-8.
+    /// The value as text: present, read alike by both, UTF-8.
     fn plain_value(&self) -> Option<&str> {
+        if !self.alike {
+            return None;
+        }
         std::str::from_utf8(self.value.as_deref()?).ok()
     }
 }
@@ -387,8 +395,8 @@ const fn is_key_char(c: u8) -> bool {
 }
 
 /// The entries of a config file, read with the part of git's grammar libgit2 reads alike (sections `[name]`,
-/// `[name "subsection"]`, `[name.sub]`, a key on the header's own line, `;` | `#` comments); `None`: a line git refuses
-/// | a byte libgit2 reads otherwise ([`Chars::odd`]) | a quote in a value.
+/// `[name "subsection"]`, `[name.sub]`, a key on the header's own line, `;` | `#` comments, quoted values); `None`: a
+/// line git refuses | a byte libgit2 reads otherwise ([`Chars::odd`]) | a quote left open in a value.
 fn entries(bytes: &[u8]) -> Option<Vec<Entry>> {
     let mut chars = Chars {
         bytes: bytes.strip_prefix(BOM).unwrap_or(bytes),
@@ -491,10 +499,11 @@ fn entry(chars: &mut Chars<'_>, section: &[u8], first: u8) -> Option<Entry> {
     while c == b' ' || c == b'\t' {
         c = chars.next();
     }
-    let value = if c == b'\n' {
-        None
+    let (value, alike) = if c == b'\n' {
+        (None, true)
     } else if c == b'=' {
-        Some(value(chars)?)
+        let (value, alike) = value(chars)?;
+        (Some(value), alike)
     } else {
         return None;
     };
@@ -502,40 +511,59 @@ fn entry(chars: &mut Chars<'_>, section: &[u8], first: u8) -> Option<Entry> {
         section: section.to_vec(),
         key,
         value,
+        alike,
     })
 }
 
-/// A value after its `=`, up to the end of its line: outer whitespace dropped, a comment cut; `None`: a quote, also in
-/// the comment (libgit2 counts quotes unlike git after a backslash, and a quote decides where a comment starts). A
-/// backslash (an escape, a continued line) refuses the whole file: [`Chars::odd`].
-fn value(chars: &mut Chars<'_>) -> Option<Vec<u8>> {
-    let mut comment = false;
+/// A value after its `=`, up to the end of its line, as git reads it: whitespace outside quotes dropped at the ends
+/// (inside the value: a space each), a comment cut at a `;` | `#` outside quotes, the quotes removed. With it whether
+/// libgit2 reads the same bytes: it takes the text from the first to the last byte that is no space before that
+/// comment, quotes removed. `None`: a quote left open (git refuses the file, libgit2 reads on). Both count quotes alike
+/// only where no backslash is, and a backslash (an escape, a continued line) refuses the whole file: [`Chars::odd`].
+fn value(chars: &mut Chars<'_>) -> Option<(Vec<u8>, bool)> {
+    let (mut quote, mut comment) = (false, false);
     let mut space = 0;
     let mut bytes = Vec::new();
+    // libgit2's reading: every byte from the first that is no space; `kept` ends at the last that is no space
+    let mut raw = Vec::new();
+    let mut kept = 0;
     loop {
         let c = chars.next();
         if c == b'\n' {
-            return Some(bytes);
-        }
-        if c == b'"' {
-            return None;
+            if quote {
+                return None;
+            }
+            raw.truncate(kept);
+            raw.retain(|&b| b != b'"');
+            let alike = raw == bytes;
+            return Some((bytes, alike));
         }
         if comment {
             continue;
         }
-        if is_space(c) {
+        if !quote && (c == b';' || c == b'#') {
+            comment = true;
+            continue;
+        }
+        if !is_space(c) || !raw.is_empty() {
+            raw.push(c);
+            if !is_space(c) {
+                kept = raw.len();
+            }
+        }
+        if is_space(c) && !quote {
             if !bytes.is_empty() {
                 space += 1;
             }
             continue;
         }
-        if c == b';' || c == b'#' {
-            comment = true;
-            continue;
-        }
         bytes.extend(std::iter::repeat_n(b' ', space));
         space = 0;
-        bytes.push(c);
+        if c == b'"' {
+            quote = !quote;
+        } else {
+            bytes.push(c);
+        }
     }
 }
 
@@ -548,11 +576,12 @@ mod tests {
             section: section.as_bytes().to_vec(),
             key: key.as_bytes().to_vec(),
             value: value.map(|text| text.as_bytes().to_vec()),
+            alike: true,
         }
     }
 
     /// The part of git's own config grammar libgit2 reads alike: what it takes, and what it refuses (all git refuses,
-    /// and escapes, continued lines, quotes in values, bytes libgit2 reads otherwise).
+    /// and escapes, continued lines, an open quote, bytes libgit2 reads otherwise).
     #[test]
     fn config_files_are_read_as_git_reads_them() {
         let read = |text: &str| entries(text.as_bytes());
@@ -571,6 +600,23 @@ mod tests {
             ])
         );
         assert_eq!(read("k = v\n"), Some(vec![entry_of("", "k", Some("v"))]));
+        // quotes without a backslash in the file: kept spaces, no comment inside, a comment after
+        assert_eq!(
+            read("[a]\nk = \" q \"\n[b \"include#1\"]\nmerge = \"refs/heads/include#1\" ; \"c\nv = x ; \"\n"),
+            Some(vec![
+                entry_of("a", "k", Some(" q ")),
+                entry_of("b", "merge", Some("refs/heads/include#1")),
+                entry_of("b", "v", Some("x")),
+            ])
+        );
+        // git drops the spaces after an empty pair of quotes, libgit2 keeps them
+        assert_eq!(
+            read("[a]\nk = \"\"  x\n"),
+            Some(vec![Entry {
+                alike: false,
+                ..entry_of("a", "k", Some("x"))
+            }])
+        );
         assert_eq!(read(""), Some(Vec::new()));
         assert_eq!(read("[a]"), Some(Vec::new()));
         for refused in [
@@ -590,8 +636,8 @@ mod tests {
             "[a \"x\\\"y\"]\n",
             "[a]\nk = x\\\\y\n",
             "[a]\nk = one\\\n two\n",
-            "[a]\nk = \" q \"\n",
-            "[a]\nk = v ; \"\n",
+            "[a]\nk = a \"b ; c\n",
+            "[a]\nk = \"x\\\"\"\n",
             "[a]\n# c\\\n",
             "[a]\nk = \u{b}v\n",
             "[a]\nk = v\u{c}\n",
@@ -632,6 +678,7 @@ mod tests {
             format!("[core]\n\texcludesFile = {local}\n\tattributesFile = {local}\n"),
             "[core]\n\tworktree = ../..\n[diff]\n\torderFile = order\n[mailmap]\n\tfile = ~/m\n".to_owned(),
             "[include]\n\tpath = missing.cfg\n".to_owned(),
+            format!("[core]\n\tattributesFile = \"{local}\"\n"),
         ] {
             assert!(check(&fine, &[&home]), "{fine}");
         }
@@ -644,7 +691,6 @@ mod tests {
             format!("[core \"any\"]\n\texcludesFile = {SHARE}/x\n"),
             "[core]\n\texcludesFile\n".to_owned(),
             "[core]\n\texcludesFile = a\\\\b\n".to_owned(),
-            format!("[core]\n\tattributesFile = \"{local}\"\n"),
             "[core]\n\texcludesFile = ~other/x\n".to_owned(),
             "[core]\n\texcludesFile = ~\n".to_owned(),
             "[core]\n\texcludesFile = %(prefix)/x\n".to_owned(),
@@ -801,15 +847,13 @@ mod tests {
                 );
             }
         }
-        // the same bytes anywhere in a file holding a watched word: a lone `\r`, a backslash in a header | a comment,
-        // a quote in any value (also one that is not watched)
+        // the same bytes anywhere in a file holding a watched word: a lone `\r`, a backslash in a header | a comment |
+        // a quoted value (also one that is not watched)
         for refused in [
             "[core]\n\texcludesFile = x\ry\n",
             "[includeIf \"gitdir:a\\\\b\"]\n\tpath = x\n",
             "[core]\n\texcludesFile = x\n# a\\\n",
-            "[core]\n\tworktree = ..\n[user]\n\tname = \"A\"\n",
-            "[core]\n\tattributesFile = \"x\"\n",
-            "[core]\n\tworktree = .. ; \"x\n",
+            "[core]\n\tworktree = ..\n[user]\n\tname = \"A\\\\B\"\n",
         ] {
             std::fs::write(&config, refused).unwrap();
             assert!(!scan(&[]).config_stays_local(&top, &config), "{refused:?}");
@@ -823,6 +867,57 @@ mod tests {
         )
         .unwrap();
         assert!(scan(&[]).config_stays_local(&top, &config));
+    }
+
+    /// git writes a value holding `#` | `;` in quotes (a branch `include#1`: `merge = "refs/heads/include#1"`). Without a
+    /// backslash in the file both readers count quotes alike (libgit2 miscounts only right after a backslash), so a
+    /// comment starts at the same place for both: such a file is fine. A quoted watched value is checked as both read
+    /// it; an open quote refuses (git refuses the file, libgit2 reads on), and so does a watched value the two would
+    /// read differently.
+    #[test]
+    fn quoted_values_are_read_alike_without_a_backslash() {
+        let dir = tempfile::tempdir().unwrap();
+        let top = dir.path().join(".git");
+        std::fs::create_dir_all(&top).unwrap();
+        let config = top.join("config");
+        let check = |text: &str| {
+            std::fs::write(&config, text).unwrap();
+            scan(&[]).config_stays_local(&top, &config)
+        };
+        // as `git clone` writes it for a repository whose default branch is `include#1`
+        let clone = "[core]\n\trepositoryformatversion = 0\n\tbare = false\n[remote \"origin\"]\n\turl = \
+                     https://example.com/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"include#1\"]\n\t\
+                     remote = origin\n\tmerge = \"refs/heads/include#1\"\n[extensions]\n\tworktreeConfig = true\n";
+        assert!(check(clone));
+        let read = git2::Config::open(&config).unwrap();
+        assert_eq!(
+            read.get_string("branch.include#1.merge").unwrap(),
+            "refs/heads/include#1"
+        );
+        let local = slashed(&dir.path().join("x"));
+        for fine in [
+            "[core]\n\tworktree = ..\n[user]\n\tname = \"A\"\n".to_owned(),
+            "[core]\n\tworktree = .. ; \"x\n".to_owned(),
+            format!("[core]\n\texcludesFile = \"{local}\" # a \"comment\n"),
+            format!("[core]\n\texcludesFile = \"{}\"/x\n", slashed(dir.path())),
+        ] {
+            assert!(check(&fine), "{fine}");
+        }
+        // libgit2 reads the spaces after an empty pair of quotes, git drops them: two different files
+        std::fs::write(&config, "[include]\n\tpath = \"\"  x.cfg\n").unwrap();
+        let read = git2::Config::open(&config).unwrap();
+        assert_eq!(read.get_string("include.path").unwrap(), "  x.cfg");
+        for refused in [
+            format!("[core]\n\texcludesFile = \"{SHARE}/x\"\n"),
+            "[core]\n\texcludesFile = \"//192.0.2.1\"/s/x\n".to_owned(),
+            format!("[include]\n\tpath = \"{SHARE}/x\" ; local.cfg\n"),
+            "[core]\n\tworktree = ..\n[user]\n\tname = \"A\n".to_owned(),
+            "[core]\n\tworktree = ..\n[user]\n\tname = a \"b ; c\n".to_owned(),
+            "[include]\n\tpath = \"\"  x.cfg\n".to_owned(),
+            "[core]\n\tworktree = ..\n[user]\n\tname = \"A\\\"B\"\n".to_owned(),
+        ] {
+            assert!(!check(&refused), "{refused}");
+        }
     }
 
     /// A watched value is short in any config git writes: a long one (256 KiB of names) is refused before any of its

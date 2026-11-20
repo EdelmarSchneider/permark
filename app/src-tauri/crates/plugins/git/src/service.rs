@@ -140,9 +140,10 @@ struct Shared {
     excluded: RwLock<Option<Vec<String>>>,
     /// The baseline in use (members measure against the same kind).
     baseline: RwLock<Option<BaselineKind>>,
-    /// What the worker's last look found (`None`: no look yet): the reader tells "no repository here" from "not
-    /// looked at yet".
-    looked: RwLock<Option<GitCondition>>,
+    /// What the reader answers a tracked question with while no repository is held, from the worker's last look
+    /// (`None`: no look yet): "no repository here" is told from "not looked at yet" and from "one is there that cannot
+    /// answer".
+    looked: RwLock<Option<NoTracking>>,
     /// Index answers of the reader.
     tracked: TrackedMemo,
 }
@@ -362,11 +363,10 @@ pub(crate) fn excluded_path(excluded: &[String], path: &str) -> bool {
 }
 
 /// [`GitOps::discover`] of `folder`, unless opening its repository would make git look up a path that is not on this
-/// computer ([`opens_locally`]: a `.git` file | `commondir` naming a share, which both backends follow): no repository
-/// then.
+/// computer ([`opens_locally`]: a `.git` file | `commondir` naming a share, which both backends follow): refused then.
 pub(crate) fn discover_here(backend: &dyn GitOps, folder: &Path, home: Option<&Path>) -> Discovery {
     if !opens_locally(folder) {
-        return Discovery::NoRepo;
+        return Discovery::Refused;
     }
     backend.discover(folder, home)
 }
@@ -750,18 +750,11 @@ impl Reader {
         {
             return NoTracking::NoRepository;
         }
-        match &*self
-            .shared
+        self.shared
             .looked
             .read()
             .unwrap_or_else(PoisonError::into_inner)
-        {
-            None => NoTracking::Slow,
-            Some(GitCondition::Unavailable) => NoTracking::Unavailable,
-            Some(GitCondition::NoRepo) => NoTracking::NoRepository,
-            // a repository is there and its status failed: it cannot answer now
-            Some(GitCondition::Error { .. } | GitCondition::Repo { .. }) => NoTracking::Failed,
-        }
+            .unwrap_or(NoTracking::Slow)
     }
 }
 
@@ -920,13 +913,23 @@ impl Worker {
         }
     }
 
-    /// What a look found, told to the windows (the project's facts) and to the reader.
-    fn tell(&self, condition: GitCondition) {
+    /// What a look found, told to the windows (the project's facts) and to the reader. `refused`: the repository there
+    /// may not be opened ([`Discovery::Refused`]): the windows see none, as for no repository, while the reader cannot
+    /// tell what its index holds.
+    fn tell(&self, condition: GitCondition, refused: bool) {
+        let unplaced = match &condition {
+            GitCondition::Unavailable => NoTracking::Unavailable,
+            GitCondition::NoRepo if !refused => NoTracking::NoRepository,
+            // a repository is there, refused | its status failed: it cannot answer now
+            GitCondition::NoRepo | GitCondition::Error { .. } | GitCondition::Repo { .. } => {
+                NoTracking::Failed
+            }
+        };
         *self
             .shared
             .looked
             .write()
-            .unwrap_or_else(PoisonError::into_inner) = Some(condition.clone());
+            .unwrap_or_else(PoisonError::into_inner) = Some(unplaced);
         self.args.facts.set_git(condition);
     }
 
@@ -952,7 +955,7 @@ impl Worker {
             self.backend = self.backends.get();
         }
         let Some(backend) = self.backend.clone() else {
-            self.tell(GitCondition::Unavailable);
+            self.tell(GitCondition::Unavailable, false);
             self.publish(None);
             return;
         };
@@ -967,13 +970,13 @@ impl Worker {
             }
             match self.discover(&backend) {
                 Discovery::Repo(_) => {}
-                Discovery::NoRepo => {
-                    self.tell(GitCondition::NoRepo);
+                found @ (Discovery::NoRepo | Discovery::Refused) => {
+                    self.tell(GitCondition::NoRepo, found == Discovery::Refused);
                     self.publish(None);
                     return;
                 }
                 Discovery::Error(reason) => {
-                    self.tell(GitCondition::Error { reason });
+                    self.tell(GitCondition::Error { reason }, false);
                     self.publish(None);
                     return;
                 }
@@ -993,15 +996,21 @@ impl Worker {
                     main,
                     worktrees: self.worktree_locations.clone(),
                 });
-                self.tell(GitCondition::Repo {
-                    state: snapshot.state,
-                });
+                self.tell(
+                    GitCondition::Repo {
+                        state: snapshot.state,
+                    },
+                    false,
+                );
                 self.publish(Some(snapshot));
             }
             Err(error) => {
-                self.tell(GitCondition::Error {
-                    reason: error.to_string(),
-                });
+                self.tell(
+                    GitCondition::Error {
+                        reason: error.to_string(),
+                    },
+                    false,
+                );
                 self.publish(None);
             }
         }

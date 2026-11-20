@@ -157,8 +157,8 @@ pub enum NoVersions {
 /// Why [`RepoReader::tracked_under`] has no answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum NoTracking {
-    /// No repository the reader may use holds the folder: none at all, or one it refuses (a repository of the home
-    /// folder | a drive, one whose git folder is not on this computer, one that ignores the project folder).
+    /// No repository the reader may use holds the folder: none at all, or one that is not the project's (a repository
+    /// of the home folder | a drive, one that ignores the project folder).
     #[error("no repository holds the folder")]
     NoRepository,
     /// The folder is inside another repository below the project's (a nested repository | a submodule).
@@ -170,6 +170,8 @@ pub enum NoTracking {
     /// Git did not answer in time.
     #[error("git did not answer in time")]
     Slow,
+    /// Git failed, or the repository there may not be opened (its git folder points off this computer | through a
+    /// link): what its index holds cannot be told.
     #[error("git failed")]
     Failed,
 }

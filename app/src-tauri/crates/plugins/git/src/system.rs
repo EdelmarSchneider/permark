@@ -271,6 +271,20 @@ pub fn run_until(
     max: usize,
     cancel: Option<&AtomicBool>,
 ) -> Result<Output, GitError> {
+    run_with(exe, dir, None, args, timeout, max, cancel)
+}
+
+/// [`run_until`]; `ceiling` set -> git's search for the repository never goes into that folder or above it
+/// (`GIT_CEILING_DIRECTORIES`).
+fn run_with(
+    exe: &Path,
+    dir: &Path,
+    ceiling: Option<&OsStr>,
+    args: &[&OsStr],
+    timeout: Duration,
+    max: usize,
+    cancel: Option<&AtomicBool>,
+) -> Result<Output, GitError> {
     if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
         return Err(GitError::Failed("stopped".to_owned()));
     }
@@ -279,11 +293,16 @@ pub fn run_until(
     let mut all: Vec<&OsStr> = BASE.into_iter().map(OsStr::new).collect();
     all.extend([OsStr::new("-c"), hooks]);
     all.extend_from_slice(args);
+    let mut set: Vec<(&str, &OsStr)> = SET
+        .iter()
+        .map(|&(name, value)| (name, OsStr::new(value)))
+        .collect();
+    set.extend(ceiling.map(|folder| ("GIT_CEILING_DIRECTORIES", folder)));
     let mut child = Proc::start(
         exe,
         &permark_core::paths::simplified(dir),
         &all,
-        &SET,
+        &set,
         &SCRUBBED,
     )
     .map_err(|e| GitError::Spawn(e.to_string()))?;
@@ -348,7 +367,7 @@ impl Proc {
         exe: &Path,
         dir: &Path,
         args: &[&OsStr],
-        set: &[(&str, &str)],
+        set: &[(&str, &OsStr)],
         remove: &[&str],
     ) -> std::io::Result<Self> {
         let mut command = std::process::Command::new(exe);
@@ -426,31 +445,38 @@ impl SystemGit {
             .then_some(Self { exe, cancel: None })
     }
 
-    fn call(&self, dir: &Path, args: &[&str]) -> Result<Output, GitError> {
-        let args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
-        run_until(
+    /// `args` in the working tree of `at`, git's search for the repository kept below the folder it was found in
+    /// ([`ceiling_of`]).
+    fn run_at(&self, at: &RepoLocation, args: &[&OsStr], max: usize) -> Result<Output, GitError> {
+        run_with(
             &self.exe,
-            dir,
-            &args,
+            &at.workdir,
+            ceiling_of(at).as_deref(),
+            args,
             TIMEOUT,
-            MAX_OUTPUT,
+            max,
             self.cancel.as_deref(),
         )
     }
 
+    fn call(&self, at: &RepoLocation, args: &[&str]) -> Result<Output, GitError> {
+        let args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
+        self.run_at(at, &args, MAX_OUTPUT)
+    }
+
     /// Text of a call that must succeed; `None` when git answered with a non-zero code (no such revision, no
     /// upstream, no commit yet).
-    fn text_or_none(&self, dir: &Path, args: &[&str]) -> Result<Option<String>, GitError> {
-        let out = self.call(dir, args)?;
+    fn text_or_none(&self, at: &RepoLocation, args: &[&str]) -> Result<Option<String>, GitError> {
+        let out = self.call(at, args)?;
         Ok((out.code == Some(0)).then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned()))
     }
 
     /// `-c` options that switch off the commands a config adds: the filter drivers the repository's own config sets
     /// (see [`repo_filter_drivers`]) and every hook a config defines (see [`config_hooks`]). A config that cannot be
     /// read | a hook that cannot be named -> error (the call that needs it is not made).
-    fn repo_commands_off(&self, dir: &Path) -> Result<Vec<String>, GitError> {
+    fn repo_commands_off(&self, at: &RepoLocation) -> Result<Vec<String>, GitError> {
         let out = self.call(
-            dir,
+            at,
             &[
                 "config",
                 "--show-scope",
@@ -499,26 +525,19 @@ impl SystemGit {
             OsStr::new("blob"),
             OsStr::new(&spec),
         ];
-        let out = run_until(
-            &self.exe,
-            &location.workdir,
-            &args,
-            TIMEOUT,
-            MAX_BLOB,
-            self.cancel.as_deref(),
-        )?;
+        let out = self.run_at(location, &args, MAX_BLOB)?;
         Ok((out.code == Some(0)).then_some(out.stdout))
     }
 
     /// The path (relative to the working tree) the file at `path` had before `commit` renamed it; `None`: that
     /// commit renamed nothing to it | git failed | the commit changed more than [`MAX_RENAME_PATHS`] paths (the
     /// rule of the built-in backend, so both say the same of a commit).
-    fn renamed_in(&self, dir: &Path, commit: CommitId, path: &str) -> Option<String> {
+    fn renamed_in(&self, at: &RepoLocation, commit: CommitId, path: &str) -> Option<String> {
         // the limit as an option: `diff.renameLimit` of the repository's config does not count
         let limit = format!("-l{MAX_RENAME_PATHS}");
         let mut args = RENAMES_OF.to_vec();
         args.extend([limit.as_str(), commit.as_str()]);
-        let out = self.call_ok(dir, &args).ok()?;
+        let out = self.call_ok(at, &args).ok()?;
         let changes = parse_name_status(&out.stdout).ok()?;
         // a rename is two paths, the one that went and the one that came
         let renames = changes
@@ -534,8 +553,8 @@ impl SystemGit {
             .from
     }
 
-    fn call_ok(&self, dir: &Path, args: &[&str]) -> Result<Output, GitError> {
-        let out = self.call(dir, args)?;
+    fn call_ok(&self, at: &RepoLocation, args: &[&str]) -> Result<Output, GitError> {
+        let out = self.call(at, args)?;
         if out.code == Some(0) {
             Ok(out)
         } else {
@@ -545,12 +564,11 @@ impl SystemGit {
 
     /// HEAD from two small calls (the commit baseline lists changes with other commands).
     fn head_info(&self, location: &RepoLocation) -> Result<HeadInfo, GitError> {
-        let dir = &location.workdir;
-        let verify = self.call(dir, &["rev-parse", "-q", "--verify", "HEAD"])?;
+        let verify = self.call(location, &["rev-parse", "-q", "--verify", "HEAD"])?;
         let oid = (verify.code == Some(0))
             .then(|| String::from_utf8_lossy(&verify.stdout).trim().to_owned())
             .filter(|oid| CommitId::parse(oid).is_some());
-        let branch = self.call(dir, &["symbolic-ref", "-q", "--short", "HEAD"])?;
+        let branch = self.call(location, &["symbolic-ref", "-q", "--short", "HEAD"])?;
         let name = (branch.code == Some(0))
             .then(|| String::from_utf8_lossy(&branch.stdout).trim().to_owned())
             .filter(|name| !name.is_empty());
@@ -642,6 +660,25 @@ fn filters_off(names: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// The folder git's search for the repository of `at` may not go into (`GIT_CEILING_DIRECTORIES`): the parent of the
+/// folder whose `.git` git found it by, fixed at discovery, so a `.git` there that is no repository later (emptied |
+/// swapped while the project is open) never lets git go on to a repository further up that was never looked at. That
+/// folder holds the git folder itself when the working tree is it | below it (`core.worktree`); else it is the working
+/// tree, whose `.git` file names the git folder (a linked worktree, a gitfile). `None`: no such parent (a drive root),
+/// or a path holding the list separator (git would split it into other paths).
+fn ceiling_of(at: &RepoLocation) -> Option<OsString> {
+    let holder = at
+        .git_dir
+        .parent()
+        .filter(|holder| {
+            at.git_dir.file_name() == Some(OsStr::new(".git")) && at.workdir.starts_with(holder)
+        })
+        .unwrap_or(&at.workdir);
+    let ceiling = permark_core::paths::simplified(holder.parent()?).into_owned();
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    (!ceiling.to_string_lossy().contains(separator)).then(|| ceiling.into_os_string())
+}
+
 fn first_line(text: &str) -> String {
     text.lines().next().unwrap_or("").trim().to_owned()
 }
@@ -727,14 +764,21 @@ impl GitOps for SystemGit {
     }
 
     fn discover(&self, root: &Path, home: Option<&Path>) -> Discovery {
-        let out = match self.call(
+        // the search itself walks up from the project folder (`opens_locally` looked at every `.git` on the way)
+        let search = [
+            "rev-parse",
+            "--show-toplevel",
+            "--absolute-git-dir",
+            "--show-prefix",
+        ]
+        .map(OsStr::new);
+        let out = match run_until(
+            &self.exe,
             root,
-            &[
-                "rev-parse",
-                "--show-toplevel",
-                "--absolute-git-dir",
-                "--show-prefix",
-            ],
+            &search,
+            TIMEOUT,
+            MAX_OUTPUT,
+            self.cancel.as_deref(),
         ) {
             Ok(out) => out,
             Err(error) => return Discovery::Error(error.to_string()),
@@ -768,25 +812,25 @@ impl GitOps for SystemGit {
                 None => return Discovery::NoRepo,
             }
         };
-        if !prefix.is_empty() {
-            let ignored = self.call(&workdir, &["check-ignore", "-q", "--", &prefix]);
+        let location = RepoLocation {
+            workdir,
+            git_dir: PathBuf::from(git_dir),
+            prefix,
+        };
+        if !location.prefix.is_empty() {
+            let ignored = self.call(&location, &["check-ignore", "-q", "--", &location.prefix]);
             if ignored.is_ok_and(|o| o.code == Some(0)) {
                 return Discovery::NoRepo;
             }
         }
-        Discovery::Repo(RepoLocation {
-            workdir,
-            git_dir: PathBuf::from(git_dir),
-            prefix,
-        })
+        Discovery::Repo(location)
     }
 
     fn status(&self, location: &RepoLocation, baseline: &Baseline) -> Result<RawStatus, GitError> {
         let spec = pathspec(&location.prefix);
-        let dir = &location.workdir;
         // the repository's own filter commands and the hooks of any config never run; submodules are compared by
         // commit only (their work trees would run their own config's commands)
-        let off = self.repo_commands_off(dir)?;
+        let off = self.repo_commands_off(location)?;
         let off: Vec<&str> = off.iter().map(String::as_str).collect();
         match baseline {
             Baseline::Head => {
@@ -803,7 +847,7 @@ impl GitOps for SystemGit {
                 if let Some(spec) = &spec {
                     args.push(spec);
                 }
-                let out = self.call_ok(dir, &args)?;
+                let out = self.call_ok(location, &args)?;
                 let parsed = parse_status(&out.stdout)?;
                 let (files, truncated) = finish(raw(&location.prefix, parsed.entries));
                 Ok(RawStatus {
@@ -835,8 +879,8 @@ impl GitOps for SystemGit {
                     diff.push(spec);
                     others.push(spec);
                 }
-                let mut entries = parse_name_status(&self.call_ok(dir, &diff)?.stdout)?;
-                entries.extend(parse_untracked(&self.call_ok(dir, &others)?.stdout));
+                let mut entries = parse_name_status(&self.call_ok(location, &diff)?.stdout)?;
+                entries.extend(parse_untracked(&self.call_ok(location, &others)?.stdout));
                 let (files, truncated) = finish(raw(&location.prefix, entries));
                 Ok(RawStatus {
                     head,
@@ -872,14 +916,7 @@ impl GitOps for SystemGit {
             .map(OsStr::new)
             .to_vec();
         args.extend(specs.iter().map(OsStr::new));
-        let out = match run_until(
-            &self.exe,
-            &location.workdir,
-            &args,
-            TIMEOUT,
-            MAX_LISTED,
-            self.cancel.as_deref(),
-        ) {
+        let out = match self.run_at(location, &args, MAX_LISTED) {
             // more entries than the cap: some are there; counted as tracked rather than read whole
             Err(GitError::TooLarge(_)) => return Ok(true),
             other => other?,
@@ -905,10 +942,7 @@ impl GitOps for SystemGit {
             return Ok(false);
         }
         // only other cases | names listed: other cases count when the repository is caseless
-        let caseless = self.call(
-            &location.workdir,
-            &["config", "--bool", "--get", "core.ignorecase"],
-        )?;
+        let caseless = self.call(location, &["config", "--bool", "--get", "core.ignorecase"])?;
         let caseless = match caseless.code {
             Some(0) => caseless.stdout.trim_ascii() == b"true",
             // not set: git compares with case
@@ -932,7 +966,6 @@ impl GitOps for SystemGit {
         if path.is_empty() || path.contains('\0') {
             return Ok(found);
         }
-        let dir = &location.workdir;
         let full = repo_path(&location.prefix, path);
         // after `--`, as a literal: the path is no option, no pattern, no pathspec magic
         let spec = format!(":(literal){full}");
@@ -951,7 +984,7 @@ impl GitOps for SystemGit {
             "--",
             spec.as_str(),
         ]);
-        let out = self.call(dir, &args)?;
+        let out = self.call(location, &args)?;
         if out.code != Some(0) {
             // a branch without a commit has nothing to list; anything else is a failure
             let head = self.head_info(location)?;
@@ -977,11 +1010,11 @@ impl GitOps for SystemGit {
         {
             // the end of the list: a file that came with its oldest version may have come under another name
             found.renamed_from = self
-                .renamed_in(dir, row.commit, &full)
+                .renamed_in(location, row.commit, &full)
                 .and_then(|old| below_prefix(&location.prefix, &old).map(str::to_owned));
         }
         found.rows = entries.into_iter().filter_map(|e| e.version).collect();
-        let tree = self.call(dir, &["ls-tree", "-z", "HEAD", "--", spec.as_str()])?;
+        let tree = self.call(location, &["ls-tree", "-z", "HEAD", "--", spec.as_str()])?;
         if tree.code == Some(0) {
             found.head_blob = parse_tree_file(&tree.stdout, &full);
         }
@@ -994,7 +1027,7 @@ impl GitOps for SystemGit {
         };
         let range = format!("{old}..{new}");
         let out = self
-            .call_ok(&location.workdir, &["rev-list", "--count", &range])
+            .call_ok(location, &["rev-list", "--count", &range])
             .ok()?;
         String::from_utf8_lossy(&out.stdout).trim().parse().ok()
     }
@@ -1004,16 +1037,15 @@ impl GitOps for SystemGit {
             return false;
         };
         let spec = format!("{oid}^{{commit}}");
-        self.call(&location.workdir, &["cat-file", "-e", &spec])
+        self.call(location, &["cat-file", "-e", &spec])
             .is_ok_and(|out| out.code == Some(0))
     }
 
     fn ahead_behind(&self, location: &RepoLocation) -> Result<Option<(u32, u32)>, GitError> {
-        let dir = &location.workdir;
         // `@{upstream}` of the branch HEAD names; none (or detached) -> no answer
         let Some(upstream) = self
             .text_or_none(
-                dir,
+                location,
                 &["rev-parse", "-q", "--verify", "@{upstream}^{commit}"],
             )?
             .filter(|oid| CommitId::parse(oid).is_some())
@@ -1021,8 +1053,10 @@ impl GitOps for SystemGit {
             return Ok(None);
         };
         let range = format!("HEAD...{upstream}");
-        let Some(text) =
-            self.text_or_none(dir, &["rev-list", "--left-right", "--count", &range, "--"])?
+        let Some(text) = self.text_or_none(
+            location,
+            &["rev-list", "--left-right", "--count", &range, "--"],
+        )?
         else {
             return Ok(None);
         };
@@ -1035,7 +1069,7 @@ impl GitOps for SystemGit {
 
     fn last_commit(&self, location: &RepoLocation) -> Result<Option<(i64, String)>, GitError> {
         // the raw commit object: no pretty-printing, so no signature check (`log.showSignature` would run gpg)
-        let out = self.call(&location.workdir, &["cat-file", "commit", "HEAD"])?;
+        let out = self.call(location, &["cat-file", "commit", "HEAD"])?;
         if out.code != Some(0) {
             return Ok(None);
         }
@@ -1043,10 +1077,8 @@ impl GitOps for SystemGit {
     }
 
     fn root_commit(&self, location: &RepoLocation) -> Result<Option<String>, GitError> {
-        let Some(text) = self.text_or_none(
-            &location.workdir,
-            &["rev-list", "--max-parents=0", "HEAD", "--"],
-        )?
+        let Some(text) =
+            self.text_or_none(location, &["rev-list", "--max-parents=0", "HEAD", "--"])?
         else {
             return Ok(None);
         };

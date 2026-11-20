@@ -59,6 +59,9 @@ pub struct RepoLocation {
 pub enum Discovery {
     Repo(RepoLocation),
     NoRepo,
+    /// A `.git` is there, but opening it would make git look up a path off this computer | through a link: git
+    /// features stay off as without a repository, yet nothing can be told of its index.
+    Refused,
     /// A repository is there but cannot be used (the sentence says why).
     Error(String),
 }

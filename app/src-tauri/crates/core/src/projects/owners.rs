@@ -43,10 +43,10 @@ impl OwnerSlot {
     /// Whether this owner's private state folder (`<owner>/.permark/local`) counts as tracked by git: its index holds
     /// the folder, the folder is inside a repository below the one asked (a nested repository | a checked-out
     /// submodule at `.permark` | `.permark/local` delivers what it holds, e.g. `git clone --recursive`), or a
-    /// repository that holds it cannot answer now (slow | failed; before the git plugin's first look the reader answers
-    /// slow, so startup withholds too). Then what the folder keeps may have come with a clone | checkout and never
-    /// reaches agents. State kept in the profile, no reader (git plugin off), no usable repository: not tracked. Asks
-    /// git: never call it on the open path.
+    /// repository that holds it cannot answer now (slow | failed | refused to open; before the git plugin's first look
+    /// the reader answers slow, so startup withholds too). Then what the folder keeps may have come with a clone |
+    /// checkout and never reaches agents. State kept in the profile, no reader (git plugin off), no repository of the
+    /// project: not tracked. Asks git: never call it on the open path.
     #[must_use]
     pub fn private_tracked(&self, repo: Option<&RepoHandle>) -> bool {
         if self.store.location() == StateLocation::Profile {

@@ -169,17 +169,24 @@ const READ_ON_OPEN: [&str; 13] = [
 
 /// Folders of a git folder whose every entry git | libgit2 may open at some look (the git folder itself, a ref folder,
 /// an info file, a loose objects folder, a pack): a link (symlink | junction) among them would lead them anywhere, a
-/// share too. Each folder is noted: an entry added | removed changes its stamp.
-const LISTED: [&str; 6] = [
-    "",
-    "info",
-    "refs",
-    "objects",
-    "objects/info",
-    "objects/pack",
+/// share too. Each folder is noted: an entry added | removed changes its stamp. With each, the most entries looked at;
+/// a fuller folder is refused.
+const LISTED: [(&str, usize); 6] = [
+    ("", MAX_ENTRIES),
+    ("info", MAX_ENTRIES),
+    ("refs", MAX_ENTRIES),
+    ("objects", MAX_ENTRIES),
+    ("objects/info", MAX_ENTRIES),
+    ("objects/pack", MAX_PACK_ENTRIES),
 ];
-/// Most entries of one listed folder looked at; a fuller folder is refused (git packs loose refs | objects long before).
+/// Most entries of a listed folder (git packs loose refs | objects long before).
 const MAX_ENTRIES: usize = 4096;
+/// Most entries of `objects/pack`: a partial clone keeps a pack, its index and a promisor file per fetch.
+const MAX_PACK_ENTRIES: usize = 100_000;
+/// Entries of the git folder itself that are never followed, so a link there is no risk: `hooks` (every call of the
+/// installed git points `core.hooksPath` elsewhere, the built-in backend runs no hook), `lfs` (Git LFS's own store,
+/// which git does not read).
+const NOT_READ: [&str; 2] = ["hooks", "lfs"];
 
 /// Why a repository git may not open is refused (a member's reason, a backend call's error).
 pub(crate) const NOT_LOCAL: &str =
@@ -223,12 +230,13 @@ fn folder_stays_local(folder: &Path, scan: &mut Scan) -> bool {
         }
     });
     no_link
-        && LISTED.iter().all(|name| {
+        && LISTED.iter().all(|&(name, cap)| {
             let path = name
                 .split('/')
                 .filter(|part| !part.is_empty())
                 .fold(folder.to_path_buf(), |at, part| at.join(part));
-            no_link_in(&path, scan)
+            let skipped: &[&str] = if name.is_empty() { &NOT_READ } else { &[] };
+            no_link_in(&path, scan, cap, skipped)
         })
         && ["config", "config.worktree"]
             .iter()
@@ -236,9 +244,10 @@ fn folder_stays_local(folder: &Path, scan: &mut Scan) -> bool {
         && scan.alternates_stay_local(&folder.join("objects"))
 }
 
-/// Whether no entry of the folder `path` is a link ([`LISTED`]); a missing folder | a file there holds none. The
-/// folder itself as a link is [`READ_ON_OPEN`]'s (the git folder may be one: a `.git` link leads there).
-fn no_link_in(path: &Path, scan: &mut Scan) -> bool {
+/// Whether no entry of the folder `path` but those named in `skipped` is a link, within its first `cap` entries
+/// ([`LISTED`]); a missing folder | a file there holds none. The folder itself as a link is [`READ_ON_OPEN`]'s (the git
+/// folder may be one: a `.git` link leads there).
+fn no_link_in(path: &Path, scan: &mut Scan, cap: usize, skipped: &[&str]) -> bool {
     match scan.note(path) {
         Ok(meta) if meta.is_file() => return true,
         Ok(_) => {}
@@ -251,8 +260,11 @@ fn no_link_in(path: &Path, scan: &mut Scan) -> bool {
     entries.all(|entry| {
         looked += 1;
         // the entry's own type: a link (symlink | junction) is never followed
-        looked <= MAX_ENTRIES
-            && entry.is_ok_and(|entry| entry.file_type().is_ok_and(|kind| !kind.is_symlink()))
+        looked <= cap
+            && entry.is_ok_and(|entry| {
+                skipped.iter().any(|name| entry.file_name() == *name)
+                    || entry.file_type().is_ok_and(|kind| !kind.is_symlink())
+            })
     })
 }
 
@@ -779,6 +791,20 @@ pub(crate) mod tests {
         assert_eq!(branch, None);
         assert_eq!(head, None);
         assert_eq!(unborn, Some((true, None)));
+    }
+
+    /// A partial clone keeps a pack, its index and a promisor file per fetch: a pack folder with more entries than
+    /// any other listed folder may hold still stays local.
+    #[test]
+    fn a_pack_folder_with_many_entries_stays_local() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = dir.path().join(".git");
+        let pack = git.join("objects").join("pack");
+        std::fs::create_dir_all(&pack).unwrap();
+        for n in 0..=MAX_ENTRIES {
+            std::fs::write(pack.join(format!("pack-{n}.promisor")), "").unwrap();
+        }
+        assert!(git_dir_stays_local(&git));
     }
 
     /// A folder link at `link` leading to `target` (unix: symlink; Windows: junction, which needs no privilege);

@@ -14,7 +14,7 @@ use permark_core::fsx::{same_file, SameFile};
 use permark_core::paths::Root;
 use permark_core::plugins::{
     CommitId, FileVersion, FileVersions, NoBlob, NoTracking, NoVersions, PluginId, PluginRegistry,
-    ProjectFacts, RepoReader, RpcCall,
+    ProjectFacts, RepoHandle, RepoReader, RpcCall,
 };
 use permark_core::settings::AppSettings;
 use permark_core::state::AppDirs;
@@ -315,8 +315,8 @@ fn discovery_tells_plain_folders_from_repositories_and_finds_the_prefix() {
 }
 
 /// A repository whose git folder is named by a path not on a local drive (a `.git` file | a `commondir` naming a
-/// share no host answers) is no repository, at once: neither backend looks it up, since even that connects to the
-/// server and offers it the person's sign-in.
+/// share no host answers) is refused, at once: neither backend looks it up, since even that connects to the server and
+/// offers it the person's sign-in.
 #[test]
 fn a_repository_named_on_a_share_is_never_opened() {
     let share = if cfg!(windows) {
@@ -350,7 +350,7 @@ fn a_repository_named_on_a_share_is_never_opened() {
             let started = Instant::now();
             assert_eq!(
                 service::discover_here(ops, project, None),
-                Discovery::NoRepo,
+                Discovery::Refused,
                 "{name}: {}",
                 project.display()
             );
@@ -364,7 +364,7 @@ fn a_repository_named_on_a_share_is_never_opened() {
 }
 
 /// A project whose `.git` is a link to a repository on this computer opens it as before. One whose `.git` links to a
-/// share is no repository, at once, and never the repository around it: both backends would follow the link.
+/// share is refused, at once, and never the repository around it: both backends would follow the link.
 #[test]
 fn a_git_link_opens_only_a_repository_on_this_computer() {
     use crate::worktrees::tests::{link_folder, symlink};
@@ -407,7 +407,7 @@ fn a_git_link_opens_only_a_repository_on_this_computer() {
         let started = Instant::now();
         assert_eq!(
             service::discover_here(ops, &far, None),
-            Discovery::NoRepo,
+            Discovery::Refused,
             "{name}"
         );
         assert!(
@@ -469,6 +469,37 @@ fn a_repository_whose_config_stays_here_still_opens() {
     });
 }
 
+/// git quotes a value holding `#` | `;` when it writes it: a branch named `include#1` gives `[branch "include#1"]` +
+/// `merge = "refs/heads/include#1"`. Such a config, as a plain `git clone` writes it, still opens on both backends.
+#[test]
+fn a_config_git_wrote_with_quoted_values_still_opens() {
+    let fx = Fixture::new();
+    fx.write(
+        "a.md", "a
+",
+    );
+    fx.commit("first");
+    add_config(
+        &fx.root.join(".git"),
+        "[remote \"origin\"]
+	url = https://example.com/r.git
+	fetch =          +refs/heads/*:refs/remotes/origin/*
+[branch \"include#1\"]
+	remote = origin
+	merge =          \"refs/heads/include#1\"
+[extensions]
+	worktreeConfig = true
+",
+    );
+    each(|name, ops| {
+        let found = service::discover_here(ops, &fx.root, None);
+        let Discovery::Repo(at) = found else {
+            panic!("{name}: {found:?}");
+        };
+        assert!(ops.status(&at, &Baseline::Head).is_ok(), "{name}");
+    });
+}
+
 /// A share no host answers (TEST-NET-1, never routed), as a config value.
 const SHARE: &str = "//192.0.2.1/s";
 
@@ -490,8 +521,8 @@ fn risky_projects(base: &Path, cases: &[(&str, Plant<'_>)]) -> Vec<(String, Path
         .collect()
 }
 
-/// Every project of `projects` is no repository on both backends, all of them within 5 s: nothing was looked up on
-/// the share they name.
+/// Every project of `projects` is refused on both backends, all of them within 5 s: nothing was looked up on the share
+/// they name.
 fn never_opened(projects: Vec<(String, PathBuf)>) {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -510,13 +541,13 @@ fn never_opened(projects: Vec<(String, PathBuf)>) {
         .recv_timeout(Duration::from_secs(5))
         .expect("a place named by a repository's config was looked up");
     for (case, discovery) in found {
-        assert_eq!(discovery, Discovery::NoRepo, "{case}");
+        assert_eq!(discovery, Discovery::Refused, "{case}");
     }
 }
 
 /// A repository whose own config (or a file it includes, or `config.worktree`) names a place git would look up off
-/// this computer, or that git and the built-in backend may read differently, is no repository, at once, before
-/// either backend opens it: git reads includes, `core.worktree`, `core.excludesFile`, `core.attributesFile`,
+/// this computer, or that git and the built-in backend may read differently, is refused, at once, before either
+/// backend opens it: git reads includes, `core.worktree`, `core.excludesFile`, `core.attributesFile`,
 /// `diff.orderFile` and `mailmap.file` while it answers, and alternates when it reads objects.
 #[test]
 fn a_repository_whose_config_names_a_share_is_never_opened() {
@@ -596,8 +627,8 @@ fn a_repository_whose_config_names_a_share_is_never_opened() {
 }
 
 /// A file | folder of the git folder that git or libgit2 opens on every look (HEAD, config, index, refs, objects,
-/// packed-refs, the info files, alternates, shallow) and that is a link (symlink | junction) makes the repository no
-/// repository, at once: both backends would follow it wherever it leads, a share too.
+/// packed-refs, the info files, alternates, shallow) and that is a link (symlink | junction) makes the repository
+/// refused, at once: both backends would follow it wherever it leads, a share too.
 #[test]
 fn a_repository_with_a_link_in_its_git_folder_is_never_opened() {
     use crate::worktrees::tests::{link_folder, symlink};
@@ -708,6 +739,40 @@ fn a_repository_with_a_link_in_its_git_folder_is_never_opened() {
     never_opened(risky_projects(&base, &cases));
 }
 
+/// Folders of the git folder neither backend reads may be links (some people keep them on another disk): `hooks`
+/// (every call of the installed git points it elsewhere; the built-in one runs no hook) and `lfs` (Git LFS's own
+/// store). The repository opens as before on both backends.
+#[test]
+fn a_linked_hooks_or_lfs_folder_still_opens() {
+    use crate::worktrees::tests::link_folder;
+    let fx = Fixture::new();
+    fx.write(
+        "a.md", "a
+",
+    );
+    fx.commit("first");
+    let git = fx.root.join(".git");
+    let spare = dunce::canonicalize(fx.dir.path()).unwrap().join("spare");
+    for name in ["hooks", "lfs"] {
+        let aside = spare.join(name);
+        std::fs::create_dir_all(&aside).unwrap();
+        if git.join(name).exists() {
+            std::fs::remove_dir_all(git.join(name)).unwrap();
+        }
+        if !link_folder(&aside, &git.join(name)) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+    }
+    each(|name, ops| {
+        let found = service::discover_here(ops, &fx.root, None);
+        let Discovery::Repo(at) = found else {
+            panic!("{name}: {found:?}");
+        };
+        assert!(ops.status(&at, &Baseline::Head).is_ok(), "{name}");
+    });
+}
+
 /// git and libgit2 pass over a `.git` folder that is no repository to them (an empty one) and open the next one up:
 /// such a decoy below a repository whose config names a place git may not reach opens nothing.
 #[test]
@@ -736,6 +801,38 @@ fn a_decoy_git_folder_below_a_repository_that_names_a_share_opens_nothing() {
         .unwrap();
         never_opened(vec![(include, project.clone())]);
     }
+}
+
+/// The installed git looks for the repository of every call from the working tree it was found in, never above it: a
+/// `.git` emptied while the project is open (a sync partner swapping it) makes the call fail, and the repository
+/// further up, never looked at, answers nothing.
+#[test]
+fn a_git_folder_emptied_while_open_never_leads_git_to_a_repository_above() {
+    let Some(git) = SystemGit::find() else {
+        eprintln!("SKIPPED: no git executable on PATH");
+        return;
+    };
+    let fx = Fixture::new();
+    fx.write(
+        "inner/a.md",
+        "a
+",
+    );
+    // the repository above holds the file: an answer from it would say "tracked"
+    fx.stage("inner/a.md");
+    let inner = fx.root.join("inner");
+    Repository::init(&inner).unwrap();
+    let at = location(&git, &inner);
+    assert_eq!(dunce::canonicalize(&at.workdir).unwrap(), inner);
+    assert!(matches!(git.tracked_under(&at, "a.md"), Ok(false)));
+    std::fs::remove_dir_all(inner.join(".git")).unwrap();
+    std::fs::create_dir(inner.join(".git")).unwrap();
+    let answer = git.tracked_under(&at, "a.md");
+    assert!(answer.is_err(), "{answer:?}");
+    assert!(
+        git.status(&at, &Baseline::Head).is_err(),
+        "a status from the repository above"
+    );
 }
 
 /// The repository is looked at again before every call of the backend the plugin uses (its files may change while the
@@ -2798,10 +2895,11 @@ fn the_reader_follows_the_index_without_a_refresh() {
     });
 }
 
-/// A folder without a repository, and folders whose repository the plugin refuses (it ignores the project folder; its
-/// `.git` names a share): no repository holds the private folder.
+/// A folder without a repository, and one whose repository ignores the project folder: no repository holds the
+/// private folder. A folder whose `.git` names a share holds a repository the plugin refuses to open: the reader cannot
+/// vouch for its index.
 #[test]
-fn the_reader_has_no_repository_to_ask_in_a_plain_or_refused_folder() {
+fn the_reader_has_no_repository_to_ask_in_a_plain_or_ignored_folder() {
     let share = if cfg!(windows) {
         r"\\192.0.2.1\s"
     } else {
@@ -2825,10 +2923,13 @@ fn the_reader_has_no_repository_to_ask_in_a_plain_or_refused_folder() {
             format!("gitdir: {}\n", Path::new(share).join("a.git").display()),
         )
         .unwrap();
-        for folder in [
-            dunce::canonicalize(plain.path()).unwrap(),
-            fx.root.join("skipped"),
-            dunce::canonicalize(&far).unwrap(),
+        for (folder, answer) in [
+            (
+                dunce::canonicalize(plain.path()).unwrap(),
+                NoTracking::NoRepository,
+            ),
+            (fx.root.join("skipped"), NoTracking::NoRepository),
+            (dunce::canonicalize(&far).unwrap(), NoTracking::Failed),
         ] {
             let running = start(&folder, &ops, Vec::new());
             let reader = running.service.reader();
@@ -2838,11 +2939,75 @@ fn the_reader_has_no_repository_to_ask_in_a_plain_or_refused_folder() {
             });
             assert_eq!(
                 reader.tracked_under(PRIVATE),
-                Err(NoTracking::NoRepository),
+                Err(answer),
                 "{name}: {}",
                 folder.display()
             );
+            assert_eq!(running.facts.git(), GitCondition::NoRepo, "{name}");
         }
+    });
+}
+
+/// A repository the plugin refuses to open (its config includes a file on a share) shows no repository to the windows,
+/// as before, but its index cannot be read to vouch for anything: a private folder the repository may deliver (added
+/// with `git add -f` before the clone) is withheld from agents, never served as untracked.
+#[test]
+fn a_refused_repository_withholds_its_private_folder() {
+    each(|name, _| {
+        let ops: Arc<dyn GitOps> = if name == "system" {
+            Arc::new(SystemGit::find().unwrap())
+        } else {
+            Arc::new(BuiltinGit)
+        };
+        let fx = Fixture::new();
+        fx.write(
+            "a.md", "a
+",
+        );
+        fx.write(
+            ".permark/local/comments.json",
+            "{}
+",
+        );
+        fx.write(
+            ".permark/local/.gitignore",
+            "*
+",
+        );
+        fx.commit("first");
+        fx.stage(".permark/local/comments.json");
+        // after the fixture's last use of its repository: nothing here reads that config again
+        add_config(
+            &fx.root.join(".git"),
+            &format!(
+                "[include]
+	path = {SHARE}/x
+"
+            ),
+        );
+        let running = start(&fx.root, &ops, Vec::new());
+        let reader = running.service.reader();
+        wait_until("the first look", || {
+            reader.tracked_under(PRIVATE) != Err(NoTracking::Slow)
+        });
+        assert_eq!(
+            reader.tracked_under(PRIVATE),
+            Err(NoTracking::Failed),
+            "{name}"
+        );
+        assert_eq!(running.facts.git(), GitCondition::NoRepo, "{name}");
+        assert!(running.service.snapshot().is_none(), "{name}");
+        // the rule agents are served by
+        let state = tempfile::tempdir().unwrap();
+        let store = permark_core::state::StateStore::for_project(
+            &AppDirs::under(state.path()),
+            &Root::open(&fx.root).unwrap(),
+        );
+        let owners = permark_core::projects::Owners::root_only(store);
+        assert!(
+            owners.root().private_tracked(Some(&RepoHandle(reader))),
+            "{name}"
+        );
     });
 }
 

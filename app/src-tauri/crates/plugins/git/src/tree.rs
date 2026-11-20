@@ -56,7 +56,7 @@ impl Proc {
         exe: &Path,
         dir: &Path,
         args: &[&OsStr],
-        set: &[(&str, &str)],
+        set: &[(&str, &OsStr)],
         remove: &[&str],
     ) -> io::Result<Self> {
         let application = wide(exe.as_os_str())?;
@@ -355,7 +355,7 @@ fn append(out: &mut Vec<u16>, arg: &OsStr, always: bool) -> io::Result<()> {
 
 /// This process's environment minus `remove`, with `set` (names ignoring case), sorted by name ignoring case, as a
 /// wide block (`NAME=value\0...\0\0`).
-pub fn env_block(set: &[(&str, &str)], remove: &[&str]) -> io::Result<Vec<u16>> {
+pub fn env_block(set: &[(&str, &OsStr)], remove: &[&str]) -> io::Result<Vec<u16>> {
     let upper = |name: &OsStr| name.to_string_lossy().to_uppercase();
     let mut vars: Vec<(OsString, OsString)> = std::env::vars_os()
         .filter(|(name, _)| {
@@ -434,7 +434,10 @@ mod tests {
     #[test]
     fn the_environment_is_scrubbed_set_and_sorted_ignoring_case() {
         let block = env_block(
-            &[("LC_ALL", "C"), ("GIT_TERMINAL_PROMPT", "0")],
+            &[
+                ("LC_ALL", OsStr::new("C")),
+                ("GIT_TERMINAL_PROMPT", OsStr::new("0")),
+            ],
             &["GIT_DIR", "Path_That_Is_Not_There"],
         )
         .unwrap();

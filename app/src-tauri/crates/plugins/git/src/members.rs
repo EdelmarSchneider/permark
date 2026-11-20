@@ -853,16 +853,14 @@ impl Members {
         snapshot_of(slot, kind)
     }
 
-    /// Where the repository of a followed project is.
+    /// Where the repository of a followed project is; `Err`: followed, but its repository may not be used (the reason:
+    /// refused, its `.git` unreadable). `None`: not followed.
     #[must_use]
-    pub fn location(&self, uid: &str) -> Option<RepoLocation> {
+    pub fn location(&self, uid: &str) -> Option<Result<RepoLocation, String>> {
         lock(&self.pool.state)
             .slots
-            .get(uid)?
-            .location
-            .as_ref()
-            .ok()
-            .cloned()
+            .get(uid)
+            .map(|slot| slot.location.clone())
     }
 
     /// Repositories followed now (teardown tests).

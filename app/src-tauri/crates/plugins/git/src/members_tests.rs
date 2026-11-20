@@ -924,7 +924,7 @@ fn lookups_member_work_and_callers_reads_never_run_more_than_two_at_a_time() {
         .map(|n| {
             let members = Arc::clone(&members);
             let backend = Arc::clone(&backend);
-            let location = members.location(&list[n].uid).unwrap();
+            let location = members.location(&list[n].uid).unwrap().unwrap();
             std::thread::spawn(move || {
                 for _ in 0..5 {
                     let blob = members
