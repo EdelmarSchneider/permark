@@ -203,6 +203,27 @@ fn without_permark_the_tags_live_in_the_profile_and_the_project_is_untouched() {
     assert!(!h.root().join(".permark").exists());
 }
 
+/// The tags are a team file: they live in `.permark/meta.toml` whenever `.permark/` is a real folder, also while the
+/// person's private state stays in the profile (here `local/` is a file), and an outside edit of that file is read in.
+#[test]
+fn the_team_folder_holds_the_tags_whatever_place_holds_the_private_state() {
+    let mut h = Harness::shared();
+    std::fs::write(h.root().join(".permark").join("local"), "x").unwrap();
+    h.write("a.md", "a\n");
+    h.write("b.md", "b\n");
+    h.open();
+    // the private state folder: the project's folder in the profile
+    let profile = h.core().store().dir().to_path_buf();
+    assert!(profile.starts_with(h.base.path()));
+    assert_eq!(h.index()["status"]["location"], "project");
+    h.set_tags("a.md", &["mine"]);
+    wait_until("the write", || h.meta_text().contains("mine"));
+    std::fs::write(h.meta(), "[files.\"b.md\"]\ntags = [\"theirs\"]\n").unwrap();
+    wait_until("their edit", || h.tags_of("b.md") == ["theirs"]);
+    h.close();
+    assert!(!profile.join(META_FILE).exists(), "nothing in the profile");
+}
+
 #[test]
 fn files_get_tags_in_front_matter_and_in_the_app_and_are_found_by_both() {
     let mut h = Harness::shared();

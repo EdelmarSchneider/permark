@@ -26,7 +26,7 @@ use permark_core::plugins::{
     ServiceLease,
 };
 use permark_core::settings::AppSettings;
-use permark_core::state::{AppDirs, ProjectId, StateStore};
+use permark_core::state::{AppDirs, ProjectId, StateLocation, StateStore};
 use permark_core::workspace::{CoreEnv, ProjectCore};
 use permark_core::{ErrorKind, IpcError};
 use serde_json::{json, Value};
@@ -1296,6 +1296,36 @@ fn session_of(status: &Value, agent: &Agent) -> Value {
         .unwrap_or(Value::Null)
 }
 
+/// Every `location.json` under the profile's project folders, with its bytes.
+fn location_rows(dirs: &AppDirs) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut rows: Vec<(PathBuf, Vec<u8>)> = std::fs::read_dir(dirs.profile.join("projects"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|e| e.path().join("location.json"))
+                .filter_map(|path| std::fs::read(&path).ok().map(|bytes| (path, bytes)))
+                .collect()
+        })
+        .unwrap_or_default();
+    rows.sort();
+    rows
+}
+
+/// The agent's side looks up the connected folder from its working folder up with profile files only: it keeps no
+/// record of where a folder's data sits, for none of the folders it passes.
+#[test]
+fn finding_the_project_from_a_working_folder_writes_nothing_in_the_profile() {
+    let fx = fx();
+    fx.on();
+    let deeper = fx.root.join("docs").join("deeper");
+    std::fs::create_dir_all(&deeper).unwrap();
+    let before = location_rows(&fx.dirs);
+    let agent = Agent::discover(&fx.dirs, &deeper, no_launch());
+    assert_eq!(agent.root().map(Root::path), Some(fx.root.as_path()));
+    assert!(crate::cli::discover(&fx.dirs, &deeper).is_some());
+    assert_eq!(location_rows(&fx.dirs), before);
+}
+
 #[test]
 fn two_agents_on_one_project_are_two_sessions_with_their_own_id_folder_and_last_call() {
     let fx = fx();
@@ -2030,11 +2060,15 @@ fn a_context_file_that_came_with_the_folder_is_removed_at_open() {
     std::fs::write(&file, b"{\"v\":1,\"doc\":\"docs/plan.md\"}").unwrap();
     fx.reopen();
     assert!(!file.exists(), "no token of this install: removed");
-    fx.rpc(
-        "publish",
-        json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
-    )
-    .unwrap();
+    // right after an open the projects inside may still be unknown: a publish then leaves the file to a later one
+    assert!(wait_for(|| {
+        fx.rpc(
+            "publish",
+            json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+        )
+        .unwrap();
+        file.exists()
+    }));
     let written = std::fs::read(&file).unwrap();
     fx.reopen();
     assert_eq!(
@@ -2042,6 +2076,68 @@ fn a_context_file_that_came_with_the_folder_is_removed_at_open() {
         written,
         "this install's file stays"
     );
+}
+
+/// The person keeps the folder's data in the profile while it has a team folder: no context file is written (nothing
+/// of the person's goes into a folder a sync tool | teammates share, no `local/` made there), while a copy found in the
+/// team folder's `local/` is still removed: at open when this install did not write it, and when the switch or the
+/// context group goes off.
+#[test]
+fn a_folder_whose_data_stays_in_the_profile_gets_no_context_file() {
+    let mut fx = fx();
+    let profile = fx
+        .dirs
+        .profile
+        .join("projects")
+        .join(ProjectId::of(fx.core().root()).as_str());
+    std::fs::create_dir_all(&profile).unwrap();
+    // the row the person's choice writes: data in the profile, for any folder at this path
+    std::fs::write(
+        profile.join("location.json"),
+        br#"{"version":1,"data":{"rows":[{"place":"profile","decided":true,"at":1}]}}"#,
+    )
+    .unwrap();
+    // whatever the first open put in `local/` gone, as in a team folder that arrived after it
+    fx.core.take();
+    let local = fx.root.join(".permark/local");
+    if local.exists() {
+        std::fs::remove_dir_all(&local).unwrap();
+    }
+    fx.reopen();
+    let store = fx.core().store();
+    assert_eq!(store.location(), StateLocation::Profile);
+    assert!(store.has_team_folder());
+    let file = local.join(crate::CONTEXT_FILE);
+    let publish = |fx: &Fx| {
+        fx.rpc(
+            "publish",
+            json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+        )
+        .unwrap();
+    };
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    publish(&fx);
+    assert!(!local.exists(), "no local/ made in the team folder");
+    assert!(!store.dir().join(crate::CONTEXT_FILE).exists());
+    // one that came with the folder: removed at open
+    std::fs::create_dir(&local).unwrap();
+    std::fs::write(&file, b"{\"v\":1,\"doc\":\"docs/plan.md\"}").unwrap();
+    fx.reopen();
+    assert!(!file.exists(), "no token of this install: removed");
+    // one there while the group | the switch goes off: removed
+    for (rpc, args) in [
+        ("setGroup", json!({ "group": "context", "on": false })),
+        ("setEnabled", json!({ "enabled": false })),
+    ] {
+        fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+        fx.rpc("setGroup", json!({ "group": "context", "on": true }))
+            .unwrap();
+        std::fs::write(&file, b"{\"v\":1}").unwrap();
+        publish(&fx);
+        assert_eq!(std::fs::read(&file).unwrap(), b"{\"v\":1}", "never written");
+        fx.rpc(rpc, args).unwrap();
+        assert!(!file.exists(), "{rpc}: removed");
+    }
 }
 
 #[test]

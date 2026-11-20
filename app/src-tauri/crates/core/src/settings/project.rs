@@ -14,7 +14,7 @@ use super::{
 };
 use crate::paths::Root;
 use crate::plugins::PluginId;
-use crate::state::PERMARK_DIR;
+use crate::state::{Sharing, PERMARK_DIR};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
@@ -166,12 +166,15 @@ const MAX_ENTRIES: usize = 200;
 const MAX_ENTRY: usize = 300;
 const MAX_GROUP: usize = 32;
 
-/// What the settings page shows of the project: whether `.permark/` exists, and the shared settings.
+/// What the settings page shows of the project: whether `.permark/` exists, what git may see of it, and the shared
+/// settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ProjectSettings {
     pub initialized: bool,
+    /// As PerMark's own `.permark/.gitignore` says ([`crate::state::sharing`]).
+    pub sharing: Sharing,
     pub tree: TreeConfig,
     pub ignore: Vec<String>,
     pub agent_deny: Vec<String>,
@@ -183,9 +186,10 @@ pub struct ProjectSettings {
 
 impl ProjectSettings {
     #[must_use]
-    pub fn of(initialized: bool, config: &ProjectConfig) -> Self {
+    pub fn of(initialized: bool, sharing: Sharing, config: &ProjectConfig) -> Self {
         Self {
             initialized,
+            sharing,
             tree: config.tree.clone(),
             ignore: config.ignore.clone(),
             agent_deny: config.agent_deny.iter().cloned().collect(),

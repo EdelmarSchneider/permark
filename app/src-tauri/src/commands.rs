@@ -32,6 +32,7 @@ use permark_core::session::{ProjectSession, RecentFolder};
 use permark_core::settings::{
     AppSettings, ProjectConfigFile, ProjectSettingChange, ProjectSettings, SettingChange,
 };
+use permark_core::state::Sharing;
 use permark_core::tree::{TreeFilter, TreeSnapshot};
 use permark_core::workspace::{
     ProjectCore, TabId, WindowSummary, WindowView, Workspace, WorkspaceId, WorkspaceRef,
@@ -1567,6 +1568,13 @@ pub fn project_init(handle: AppHandle, path: String) -> Result<(), IpcError> {
     state(&handle).init_project(std::path::Path::new(&path))
 }
 
+/// Keeps a folder's private data on this computer (the answer to its window's offer): only the profile's row is
+/// written, never the folder. Move is `project_init`.
+#[tauri::command(async)]
+pub fn project_data_keep(handle: AppHandle, path: String) -> Result<(), IpcError> {
+    state(&handle).keep_data(std::path::Path::new(&path))
+}
+
 /// Whether a folder has nothing in it yet (New project asks first before writing `.permark/` into a folder with files).
 /// A folder that cannot be read counts as not empty.
 #[tauri::command(async)]
@@ -1579,7 +1587,8 @@ pub fn folder_empty(path: String) -> bool {
 pub fn project_config_get(handle: AppHandle, window: Webview) -> Result<ProjectSettings, IpcError> {
     let core = project_of(&handle, &window)?;
     let initialized = ProjectConfigFile::of(core.root()).initialized();
-    Ok(ProjectSettings::of(initialized, &core.config()))
+    let sharing = permark_core::state::sharing(core.root());
+    Ok(ProjectSettings::of(initialized, sharing, &core.config()))
 }
 
 /// One shared setting of the project: written surgically to `.permark/config.toml`, live at once.
@@ -1599,7 +1608,21 @@ pub fn project_config_set(
     if touches_plugins {
         plugins_changed(&shell);
     }
-    Ok(ProjectSettings::of(true, &config))
+    let sharing = permark_core::state::sharing(core.root());
+    Ok(ProjectSettings::of(true, sharing, &config))
+}
+
+/// What git may see of the project's `.permark/` folder: PerMark's own `.permark/.gitignore` rewritten, only from the
+/// forms PerMark writes (someone else's file stays as it is).
+#[tauri::command(async)]
+pub fn project_sharing_set(
+    handle: AppHandle,
+    window: Webview,
+    sharing: Sharing,
+) -> Result<ProjectSettings, IpcError> {
+    let core = project_of(&handle, &window)?;
+    let sharing = core.set_sharing(sharing)?;
+    Ok(ProjectSettings::of(true, sharing, &core.config()))
 }
 
 /// Only a plugin of this build that runs per project can be turned on | off for one project.
@@ -1798,9 +1821,11 @@ commands![
     search_recent,
     plugin_call,
     project_init,
+    project_data_keep,
     folder_empty,
     project_config_get,
     project_config_set,
+    project_sharing_set,
     plugins_list,
     plugin_set_project,
     plugin_remove_data,

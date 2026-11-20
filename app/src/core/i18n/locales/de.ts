@@ -1720,6 +1720,19 @@ export default {
   "project.ignoreHint":
     "Passende Dateien werden nicht durchsucht und erscheinen nie im Live-Feed. Die Dateiliste zeigt sie abgeblendet, wie von git ignorierte Dateien.",
   "project.ignoreLabel": "Nicht in Suche und Live-Feed",
+  "project.dataAsk":
+    "Dieser Ordner hat jetzt einen .permark-Ordner. Kommentare, Gelesen-Markierungen und andere Daten zu diesem Ordner liegen weiterhin auf diesem Computer.",
+  "project.dataMove": "In den Ordner verschieben",
+  "project.dataKeep": "Auf diesem Computer behalten",
+  "project.dataMissing":
+    "Der .permark-Ordner dieses Ordners fehlt oder ist nicht nutzbar. PerMark verwendet die auf diesem Computer gespeicherte Kopie der Daten, die älter sein kann.",
+  "project.dataKeepCopy": "Diese Kopie weiter verwenden",
+  "project.dataPlace": "Daten zu diesem Ordner",
+  "project.dataPlaceProfile": "Auf diesem Computer gespeichert, im Benutzerprofil.",
+  "project.dataMoved": "Die Daten zu diesem Ordner liegen jetzt in seinem .permark-Ordner.",
+  "project.dataMoveHeld":
+    "Der .permark-Ordner dieses Ordners enthält bereits PerMark-Daten von anderswo, daher bleiben die Daten auf diesem Computer.",
+  "project.dataMoveFailed": "Die Daten konnten nicht in den Ordner verschoben werden: {message}",
   "project.initButton": "PerMark einrichten",
   "project.initConfig": "Die Einstellungen, die dieses Projekt mit dem Team teilt.",
   "project.initConfirm": "PerMark einrichten",
@@ -1727,9 +1740,9 @@ export default {
   "project.initIgnore": "Hält die privaten Ordner aus git heraus.",
   "project.initIntro": "PerMark legt hier einen Ordner .permark an mit:",
   "project.initLocal":
-    "Die privaten Daten zu diesem Projekt (Kommentare, Gelesen-Markierungen) und ihr Cache.",
+    "Die privaten Daten zu diesem Projekt (Kommentare, Gelesen-Markierungen, Rückgängig-Verlauf) und ein Cache, den PerMark jederzeit neu aufbauen kann.",
   "project.initNote":
-    "Die Dateien bleiben unberührt. Vorhandene Tags, Kommentare und Gelesen-Markierungen zu diesem Projekt werden übernommen.",
+    "Die Dateien bleiben unberührt. Vorhandene Tags, Kommentare und Gelesen-Markierungen zu diesem Projekt werden übernommen. Was für diesen Ordner erlaubt wurde, etwa der Zugriff für Agenten, bleibt in den eigenen PerMark-Daten auf diesem Computer.",
   "project.initTitle": "PerMark in {name} einrichten?",
   "project.newTitle": "{name} zum Projekt machen?",
   "project.newWhy":
@@ -1753,6 +1766,14 @@ export default {
   "project.treeUnset": "Nicht festgelegt",
   "project.scopes":
     "Mit „Alle“ markierte Einstellungen werden in .permark/config.toml dieses Ordners gespeichert und mit allen geteilt, die ihn öffnen. Mit „Nur du“ markierte Einstellungen bleiben auf diesem Computer.",
+  "project.shareGit": "Git die PerMark-Einstellungen dieses Ordners sehen lassen",
+  "project.shareGitCustom":
+    ".permark/.gitignore dieses Ordners hat jemand anderes geschrieben, daher lässt PerMark die Datei, wie sie ist.",
+  "project.shareGitFailed": "Es konnte nicht geändert werden, was Git in .permark sieht: {message}",
+  "project.shareGitHint":
+    "An: Git sieht die Einstellungen, Tags, die Projektliste und die Projektbeschreibungen in .permark, sodass du sie für dein Team committen kannst. Aus: Git ignoriert den ganzen .permark-Ordner; bereits committete Dateien bleiben committet. Ist .permark/.gitignore committet, bekommt dein Team diese Änderung auch. Deine privaten Daten und Caches bleiben immer außerhalb von Git.",
+  "project.shareGitOff": "Aus",
+  "project.shareGitOn": "An",
   "project.shareInit": "PerMark einrichten, um dies mit allen zu teilen",
   "project.sharedFileHint": "Geteilt mit allen, die diesen Ordner öffnen.",
   "settings.all": "Alle Einstellungen",

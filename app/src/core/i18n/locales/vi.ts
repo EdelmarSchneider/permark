@@ -1695,6 +1695,19 @@ export default {
   "project.ignoreHint":
     "Các tệp khớp mẫu không được tìm kiếm và không bao giờ xuất hiện trong bảng tin trực tiếp. Danh sách tệp hiển thị chúng mờ đi, giống các tệp mà git bỏ qua.",
   "project.ignoreLabel": "Loại khỏi tìm kiếm và bảng tin trực tiếp",
+  "project.dataAsk":
+    "Thư mục này giờ có một thư mục .permark. Nhận xét, dấu đã đọc và dữ liệu khác của bạn cho thư mục này vẫn được giữ trên máy tính này.",
+  "project.dataMove": "Chuyển vào thư mục",
+  "project.dataKeep": "Giữ trên máy tính này",
+  "project.dataMissing":
+    "Thư mục .permark của thư mục này bị thiếu hoặc không dùng được. PerMark đang dùng bản sao dữ liệu của bạn được giữ trên máy tính này, bản sao này có thể cũ hơn.",
+  "project.dataKeepCopy": "Tiếp tục dùng bản sao này",
+  "project.dataPlace": "Dữ liệu của bạn cho thư mục này",
+  "project.dataPlaceProfile": "Được giữ trên máy tính này, trong hồ sơ người dùng của bạn.",
+  "project.dataMoved": "Dữ liệu của bạn cho thư mục này giờ nằm trong thư mục .permark của nó.",
+  "project.dataMoveHeld":
+    "Thư mục .permark của thư mục này đã chứa dữ liệu PerMark từ nơi khác, nên dữ liệu của bạn vẫn ở trên máy tính này.",
+  "project.dataMoveFailed": "Không thể chuyển dữ liệu của bạn vào thư mục: {message}",
   "project.initButton": "Khởi tạo PerMark",
   "project.initConfig": "Các cài đặt dự án này dùng chung với nhóm.",
   "project.initConfirm": "Khởi tạo PerMark",
@@ -1702,9 +1715,9 @@ export default {
   "project.initIgnore": "Giữ các thư mục riêng tư ngoài git.",
   "project.initIntro": "PerMark tạo một thư mục .permark ở đây, gồm:",
   "project.initLocal":
-    "Dữ liệu riêng tư của bạn cho dự án này (nhận xét, dấu đã đọc) và bộ nhớ đệm.",
+    "Dữ liệu riêng tư của bạn cho dự án này (nhận xét, dấu đã đọc, lịch sử hoàn tác) và bộ nhớ đệm mà PerMark có thể dựng lại bất cứ lúc nào.",
   "project.initNote":
-    "Các tệp của bạn không bị động đến. Nhãn, nhận xét và dấu đã đọc bạn đã có cho dự án này sẽ được sao chép vào.",
+    "Các tệp của bạn không bị động đến. Nhãn, nhận xét và dấu đã đọc bạn đã có cho dự án này sẽ được sao chép vào. Những gì bạn cho phép với thư mục này, chẳng hạn quyền truy cập của agent, vẫn nằm trong dữ liệu PerMark của riêng bạn trên máy tính này.",
   "project.initTitle": "Khởi tạo PerMark trong {name}?",
   "project.newTitle": "Biến {name} thành một dự án?",
   "project.newWhy":
@@ -1728,6 +1741,14 @@ export default {
   "project.treeUnset": "Chưa đặt",
   "project.scopes":
     "Các cài đặt đánh dấu Mọi người được lưu trong .permark/config.toml của thư mục này và dùng chung với bất kỳ ai mở nó. Các cài đặt đánh dấu Chỉ bạn chỉ nằm trên máy tính này.",
+  "project.shareGit": "Cho git thấy cài đặt PerMark của thư mục này",
+  "project.shareGitCustom":
+    "Tệp .permark/.gitignore của thư mục này do người khác viết, nên PerMark giữ nguyên tệp đó.",
+  "project.shareGitFailed": "Không thể thay đổi những gì git thấy trong .permark: {message}",
+  "project.shareGitHint":
+    "Bật: git thấy các cài đặt, nhãn, danh sách dự án và mô tả dự án trong .permark, nên bạn có thể commit chúng cho nhóm của mình. Tắt: git bỏ qua toàn bộ thư mục .permark; các tệp đã được commit vẫn nằm trong commit. Nếu .permark/.gitignore đã được commit, nhóm của bạn cũng nhận thay đổi này. Dữ liệu riêng tư và bộ nhớ đệm của bạn luôn nằm ngoài git.",
+  "project.shareGitOff": "Tắt",
+  "project.shareGitOn": "Bật",
   "project.shareInit": "Khởi tạo PerMark để chia sẻ mục này với mọi người",
   "project.sharedFileHint": "Được chia sẻ với bất kỳ ai mở thư mục này.",
   "settings.all": "Toàn bộ cài đặt",

@@ -40,12 +40,13 @@ pub fn discover(dirs: &AppDirs, start: &Path) -> Option<Root> {
     (!perms::load(&store).replaced(root.path())).then_some(root)
 }
 
-/// The nearest folder at or above `start` the person made a choice for (on, off or replaced since).
+/// The nearest folder at or above `start` the person made a choice for (on, off or replaced since). Profile files
+/// only: nothing is read in or recorded for the folders it passes.
 fn nearest_known(dirs: &AppDirs, start: &Path) -> Option<(Root, StateStore)> {
     let start = dunce_canonical(start)?;
     start.ancestors().find_map(|folder| {
         let root = Root::open(folder).ok()?;
-        let store = StateStore::for_project(dirs, &root);
+        let store = StateStore::profile_only(dirs, &root);
         perms::known(&store).then_some((root, store))
     })
 }
@@ -64,7 +65,7 @@ fn connected_below(dirs: &AppDirs, start: &Path) -> Vec<String> {
         .filter_map(|recent| Root::open(Path::new(&recent.path)).ok())
         .filter_map(|root| {
             let rel = folder_in(&start, root.path()).filter(|rel| !rel.is_empty())?;
-            perms::load(&StateStore::for_project(dirs, &root))
+            perms::load(&StateStore::profile_only(dirs, &root))
                 .is_on(root.path())
                 .then(|| format!("{rel}/"))
         })

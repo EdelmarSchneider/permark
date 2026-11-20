@@ -5,7 +5,7 @@ use crate::paths::Root;
 use crate::plugins::fake::{Fake, Log};
 use crate::plugins::{Plugin, PluginId, PluginRegistry, PluginScope};
 use crate::settings::AppSettings;
-use crate::state::AppDirs;
+use crate::state::{AppDirs, StateLocation};
 
 struct Fx {
     _base: tempfile::TempDir,
@@ -1543,6 +1543,219 @@ fn initializing_an_open_project_moves_its_state_and_restarts_its_plugins() {
     }
 }
 
+/// A project plugin that writes what it holds into its own folder when it stops (a final flush).
+struct Flushing(crate::plugins::Manifest);
+
+struct Flushed(std::path::PathBuf);
+
+impl crate::plugins::Running for Flushed {}
+
+impl Drop for Flushed {
+    fn drop(&mut self) {
+        let _ = std::fs::create_dir_all(&self.0);
+        let _ = std::fs::write(self.0.join("flushed.json"), b"{}");
+    }
+}
+
+impl Plugin for Flushing {
+    fn manifest(&self) -> &crate::plugins::Manifest {
+        &self.0
+    }
+
+    fn start(
+        &self,
+        cx: &crate::plugins::PluginCx,
+    ) -> Result<Box<dyn crate::plugins::Running>, crate::plugins::PluginError> {
+        Ok(Box::new(Flushed(cx.state_dir.clone())))
+    }
+}
+
+/// The plugins stop before the person's data is copied into `.permark/local/`: what they write last is copied with
+/// the rest, and they start again on the new place.
+#[test]
+fn initializing_an_open_project_stops_its_plugins_before_the_copy() {
+    let flushing = Flushing(crate::plugins::Manifest {
+        id: PluginId::of("flush"),
+        kind: crate::plugins::PluginKind::Feature,
+        scope: PluginScope::Project,
+        requires: crate::conditions::Requirement::NONE,
+        depends_on: std::borrow::Cow::Borrowed(&[]),
+        default_enabled: true,
+    });
+    let f = fx_with(vec![Arc::new(flushing)], Log::default());
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _) = open_project(&f, dir.path());
+    let flushed = |store: &crate::state::StateStore| {
+        store
+            .plugin_dir(&PluginId::of("flush"))
+            .join("flushed.json")
+    };
+    let before = core.store();
+    assert!(!flushed(&before).exists());
+    f.registry.init_project(core.root()).unwrap();
+    let after = core.store();
+    assert_eq!(after.location(), StateLocation::Project);
+    assert!(flushed(&after).is_file(), "the last write was copied");
+    // plugins keeping state per owner start again on the new place too
+    let owners = core.projects().owners();
+    assert_eq!(owners.root().store.location(), StateLocation::Project);
+    assert_eq!(owners.root().store.dir(), after.dir());
+}
+
+/// Initialize of a project included in an open folder: that folder's owner followers hold their writes while the
+/// project's data is copied, then go on with the project's new place.
+#[test]
+fn initializing_an_included_project_holds_its_writes_around_the_copy() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("sub").join(".git")).unwrap();
+    std::fs::create_dir_all(root.join(".permark")).unwrap();
+    std::fs::write(
+        root.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"sub\"\n",
+    )
+    .unwrap();
+    let (core, _) = open_project(&f, root);
+    let projects = Arc::clone(core.projects());
+    let start = std::time::Instant::now();
+    while projects.owners().slots().len() != 2 {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(15),
+            "owners"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let member = |owners: &crate::projects::Owners| owners.slots()[1].store.location();
+    assert_eq!(member(&projects.owners()), StateLocation::Profile);
+    let heard: Arc<Mutex<Vec<String>>> = Arc::default();
+    let _follow = projects.follow_owners({
+        let heard = Arc::clone(&heard);
+        move |change| {
+            let word = match change {
+                crate::projects::OwnersChange::Pause => "pause".to_owned(),
+                crate::projects::OwnersChange::Resume(owners) => {
+                    format!("resume:{:?}", member(owners))
+                }
+            };
+            heard.lock().unwrap().push(word);
+        }
+    });
+    let sub = Root::open(&root.join("sub")).unwrap();
+    f.registry.init_project(&sub).unwrap();
+    let heard = heard.lock().unwrap().clone();
+    assert!(
+        heard.starts_with(&["pause".to_owned(), "resume:Project".to_owned()]),
+        "{heard:?}"
+    );
+    assert_eq!(member(&projects.owners()), StateLocation::Project);
+}
+
+/// The window's `permark` condition tells whether the folder has a team folder (`.permark/` a real folder), as the
+/// folder's state was read (at open, after Initialize | a reload): also while the private state stays in the profile
+/// (here `local/` is a file); a `.permark/` that arrives while the project is open counts from the next read, and a
+/// file in its place is none. Building a context never looks at the disk.
+#[test]
+fn the_permark_condition_follows_the_team_folder_as_last_read() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let permark = dir.path().join(".permark");
+    let (core, view) = open_project(&f, dir.path());
+    let condition = || f.registry.context_of(&view).unwrap().permark;
+    assert_eq!(condition(), PermarkCondition::NotInitialized);
+    std::fs::write(&permark, "x").unwrap();
+    core.reload_state(f.registry.env());
+    assert_eq!(condition(), PermarkCondition::NotInitialized);
+    std::fs::remove_file(&permark).unwrap();
+    std::fs::create_dir(&permark).unwrap();
+    std::fs::write(permark.join("local"), "x").unwrap();
+    assert_eq!(
+        condition(),
+        PermarkCondition::NotInitialized,
+        "not read yet"
+    );
+    core.reload_state(f.registry.env());
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    assert_eq!(condition(), PermarkCondition::Initialized);
+}
+
+/// The offer about the place of the data is worked out when the folder opens (and when its state is read again | the
+/// person keeps the data); the window's view carries it, and building a view never looks at the folder again. Keep:
+/// Move alone is left, the place and the plugins unchanged. Move: nothing left to offer, the data in the project.
+#[test]
+fn the_view_carries_the_data_offer_worked_out_when_the_folder_opens() {
+    use crate::state::location::DataOffer;
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let env = f.registry.env().clone();
+    // the person's data in the profile at the first open; a team folder arrives later (a pull)
+    let first = crate::state::location::settle(&env.dirs, &Root::open(dir.path()).unwrap());
+    std::fs::create_dir_all(first.dir()).unwrap();
+    std::fs::write(first.dir().join("session.json"), b"{}").unwrap();
+    let permark = dir.path().join(".permark");
+    std::fs::create_dir(&permark).unwrap();
+    std::fs::write(permark.join("config.toml"), b"# team\n").unwrap();
+    let (core, view) = open_project(&f, dir.path());
+    let offer = || match f.registry.window_view(&view).unwrap() {
+        WindowView::Showing {
+            workspace: WorkspaceView::Project { data_offer, .. },
+            ..
+        } => data_offer,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(offer(), DataOffer::Ask);
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    assert_eq!(
+        f.registry.context_of(&view).unwrap().permark,
+        PermarkCondition::Initialized
+    );
+    // data arriving in `local/` meanwhile is seen at the next read, not by a view built again
+    std::fs::create_dir(permark.join("local")).unwrap();
+    std::fs::write(permark.join("local").join("comments.json"), b"{}").unwrap();
+    f.registry.refresh();
+    assert_eq!(offer(), DataOffer::Ask);
+    std::fs::remove_dir_all(permark.join("local")).unwrap();
+
+    f.registry.keep_data(core.root()).unwrap();
+    assert_eq!(offer(), DataOffer::Movable);
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    assert!(take(&f.log).is_empty(), "the plugins go on as they were");
+    let names: Vec<String> = f.sink.take().iter().map(|e| e.name().to_owned()).collect();
+    assert!(names.contains(&"window-changed".to_owned()), "{names:?}");
+
+    f.registry.init_project(core.root()).unwrap();
+    assert_eq!(offer(), DataOffer::None);
+    assert_eq!(core.state_location(), StateLocation::Project);
+    assert!(core.store().dir().join("session.json").is_file());
+}
+
+/// Keep of a folder whose data is in the project (open in a window, or closed) is refused as a conflict and writes
+/// nothing: the folder's row stays byte for byte.
+#[test]
+fn keep_of_a_folder_whose_data_is_in_the_project_is_refused() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, &root).unwrap();
+    let row = env
+        .dirs
+        .profile
+        .join("projects")
+        .join(crate::state::ProjectId::of(&root).as_str())
+        .join(crate::state::location::FILE);
+    let bytes = std::fs::read(&row).unwrap();
+    let refused = |result: Result<(), IpcError>| {
+        assert_eq!(result.map_err(|e| e.kind), Err(crate::ErrorKind::Conflict));
+        assert_eq!(std::fs::read(&row).unwrap(), bytes);
+    };
+    refused(f.registry.keep_data(&root));
+    let (core, _) = open_project(&f, dir.path());
+    assert_eq!(core.state_location(), StateLocation::Project);
+    refused(f.registry.keep_data(core.root()));
+    assert_eq!(core.state_location(), StateLocation::Project);
+}
+
 #[test]
 fn a_second_reload_with_nothing_new_still_leaves_the_project_working() {
     let f = fx();
@@ -1680,6 +1893,43 @@ fn the_ignore_patterns_apply_at_once_and_back() {
     core.change_config(&env, &ProjectSettingChange::Ignore(Vec::new()))
         .unwrap();
     assert!(shown(&core).contains(&"draft.md".to_owned()));
+}
+
+/// The sharing choice rewrites `.permark/.gitignore`, and the tree takes its rules at once (what git skips is listed
+/// as ignored), without waiting for the watcher; back to shared, the team files are listed again.
+#[test]
+fn the_sharing_choice_reaches_the_tree_at_once() {
+    use crate::state::Sharing;
+    use crate::tree::{FilterShow, TreeFilter};
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.md"), "# a\n").unwrap();
+    let (core, _) = open_project(&f, dir.path());
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, core.root()).unwrap();
+    core.reload_state(&env);
+    let shown = |core: &ProjectCore| -> Vec<String> {
+        let snapshot = core.explorer().open_view(
+            "main",
+            Some(TreeFilter {
+                show: FilterShow::Everything,
+                show_hidden: true,
+                ..TreeFilter::default()
+            }),
+        );
+        snapshot.nodes.iter().map(|n| n.path.clone()).collect()
+    };
+    let team = ".permark/config.toml".to_owned();
+    assert!(shown(&core).contains(&team), "{:?}", shown(&core));
+    assert_eq!(
+        core.set_sharing(Sharing::Private).unwrap(),
+        Sharing::Private
+    );
+    let private = shown(&core);
+    assert!(!private.contains(&team), "{private:?}");
+    assert!(private.contains(&"a.md".to_owned()));
+    assert_eq!(core.set_sharing(Sharing::Shared).unwrap(), Sharing::Shared);
+    assert!(shown(&core).contains(&team));
 }
 
 #[test]

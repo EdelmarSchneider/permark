@@ -1703,6 +1703,19 @@ export default {
   "project.ignoreHint":
     "File yang cocok tidak dicari dan tidak pernah muncul di umpan langsung. Daftar file menampilkannya redup, seperti file yang diabaikan git.",
   "project.ignoreLabel": "Dikecualikan dari pencarian dan umpan langsung",
+  "project.dataAsk":
+    "Folder ini sekarang punya folder .permark. Komentar, tanda sudah dibaca, dan data Anda lainnya untuk folder ini masih disimpan di komputer ini.",
+  "project.dataMove": "Pindahkan ke folder",
+  "project.dataKeep": "Simpan di komputer ini",
+  "project.dataMissing":
+    "Folder .permark milik folder ini hilang atau tidak dapat digunakan. PerMark memakai salinan data Anda yang disimpan di komputer ini, yang mungkin lebih lama.",
+  "project.dataKeepCopy": "Tetap pakai salinan ini",
+  "project.dataPlace": "Data Anda untuk folder ini",
+  "project.dataPlaceProfile": "Disimpan di komputer ini, di profil pengguna Anda.",
+  "project.dataMoved": "Data Anda untuk folder ini sekarang ada di folder .permark-nya.",
+  "project.dataMoveHeld":
+    "Folder .permark milik folder ini sudah berisi data PerMark dari tempat lain, jadi data Anda tetap di komputer ini.",
+  "project.dataMoveFailed": "Tidak dapat memindahkan data Anda ke folder: {message}",
   "project.initButton": "Inisialisasi PerMark",
   "project.initConfig": "Pengaturan yang dibagikan proyek ini dengan timnya.",
   "project.initConfirm": "Inisialisasi PerMark",
@@ -1710,9 +1723,9 @@ export default {
   "project.initIgnore": "Menjaga folder pribadi tetap di luar git.",
   "project.initIntro": "PerMark membuat folder .permark di sini yang berisi:",
   "project.initLocal":
-    "Data pribadi Anda untuk proyek ini (komentar, tanda sudah dibaca) dan cache-nya.",
+    "Data pribadi Anda untuk proyek ini (komentar, tanda sudah dibaca, riwayat pembatalan) dan cache yang dapat dibangun ulang oleh PerMark kapan saja.",
   "project.initNote":
-    "File Anda tidak diubah. Tag, komentar, dan tanda sudah dibaca yang sudah Anda miliki untuk proyek ini akan disalin ke dalamnya.",
+    "File Anda tidak diubah. Tag, komentar, dan tanda sudah dibaca yang sudah Anda miliki untuk proyek ini akan disalin ke dalamnya. Hal yang Anda izinkan untuk folder ini, seperti akses agen, tetap berada di data PerMark Anda sendiri di komputer ini.",
   "project.initTitle": "Inisialisasi PerMark di {name}?",
   "project.newTitle": "Jadikan {name} sebuah proyek?",
   "project.newWhy":
@@ -1736,6 +1749,14 @@ export default {
   "project.treeUnset": "Belum diatur",
   "project.scopes":
     "Pengaturan bertanda Semua orang disimpan di .permark/config.toml folder ini dan dibagikan kepada siapa pun yang membukanya. Pengaturan bertanda Hanya Anda tetap di komputer ini.",
+  "project.shareGit": "Izinkan git melihat pengaturan PerMark folder ini",
+  "project.shareGitCustom":
+    "File .permark/.gitignore folder ini ditulis oleh orang lain, jadi PerMark membiarkannya apa adanya.",
+  "project.shareGitFailed": "Tidak dapat mengubah apa yang dilihat git di .permark: {message}",
+  "project.shareGitHint":
+    "Aktif: git melihat pengaturan, tag, daftar proyek, dan deskripsi proyek di .permark, sehingga Anda dapat meng-commit-nya untuk tim Anda. Nonaktif: git mengabaikan seluruh folder .permark; file yang sudah di-commit tetap ada di commit. Jika .permark/.gitignore sudah di-commit, tim Anda juga mendapat perubahan ini. Data pribadi dan cache Anda selalu tetap di luar git.",
+  "project.shareGitOff": "Nonaktif",
+  "project.shareGitOn": "Aktif",
   "project.shareInit": "Inisialisasi PerMark untuk membagikan ini kepada semua orang",
   "project.sharedFileHint": "Dibagikan dengan siapa pun yang membuka folder ini.",
   "settings.all": "Semua pengaturan",

@@ -1665,15 +1665,29 @@ const en = {
   "project.ignoreHint":
     "Files that match are not searched and never appear in the live feed. The file list shows them dimmed, as it does files git ignores.",
   "project.ignoreLabel": "Left out of search and live feed",
+  "project.dataAsk":
+    "This folder now has a .permark folder. Your comments, read marks and other data for it are still kept on this computer.",
+  "project.dataMove": "Move into the folder",
+  "project.dataKeep": "Keep on this computer",
+  "project.dataMissing":
+    "This folder's .permark folder is missing or can't be used. PerMark is using the copy of your data kept on this computer, which may be older.",
+  "project.dataKeepCopy": "Keep using this copy",
+  "project.dataPlace": "Your data for this folder",
+  "project.dataPlaceProfile": "Kept on this computer, in your user profile.",
+  "project.dataMoved": "Your data for this folder is now in its .permark folder.",
+  "project.dataMoveHeld":
+    "This folder's .permark folder already holds PerMark data from elsewhere, so your data stays on this computer.",
+  "project.dataMoveFailed": "Couldn't move your data into the folder: {message}",
   "project.initButton": "Initialize PerMark",
   "project.initConfig": "The settings this project shares with its team.",
   "project.initConfirm": "Initialize PerMark",
   "project.initFailed": "Couldn't initialize PerMark in {path}: {message}",
   "project.initIgnore": "Keeps the private folders out of git.",
   "project.initIntro": "PerMark creates a .permark folder here with:",
-  "project.initLocal": "Your private data for this project (comments, read marks) and its cache.",
+  "project.initLocal":
+    "Your private data for this project (comments, read marks, undo history) and a cache that PerMark can rebuild at any time.",
   "project.initNote":
-    "Your files are not touched. Tags, comments and read marks you already have for this project are copied in.",
+    "Your files are not touched. Tags, comments and read marks you already have for this project are copied in. What you allow for this folder, such as agent access, stays in your own PerMark data on this computer.",
   "project.initTitle": "Initialize PerMark in {name}?",
   "project.newTitle": "Make {name} a project?",
   "project.newWhy":
@@ -1697,6 +1711,14 @@ const en = {
   "project.treeUnset": "Not set",
   "project.scopes":
     "Settings marked Everyone are kept in this folder's .permark/config.toml and shared with whoever opens it. Settings marked Only you stay on this computer.",
+  "project.shareGit": "Let git see this folder's PerMark settings",
+  "project.shareGitCustom":
+    "This folder's .permark/.gitignore was written by someone else, so PerMark leaves it as it is.",
+  "project.shareGitFailed": "Couldn't change what git sees in .permark: {message}",
+  "project.shareGitHint":
+    "On: git sees the settings, tags, list of projects and project descriptions in .permark, so you can commit them for your team. Off: git ignores the whole .permark folder; files already committed stay committed. If .permark/.gitignore is committed, your team gets this change too. Your private data and caches always stay out of git.",
+  "project.shareGitOff": "Off",
+  "project.shareGitOn": "On",
   "project.shareInit": "Initialize PerMark to share this with everyone",
   "project.sharedFileHint": "Shared with whoever opens this folder.",
   "settings.all": "All settings",

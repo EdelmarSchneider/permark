@@ -1711,6 +1711,19 @@ export default {
   "project.ignoreHint":
     "Els fitxers que hi coincideixen no es cerquen i no apareixen mai als canvis en directe. La llista de fitxers els mostra atenuats, com els que git ignora.",
   "project.ignoreLabel": "Fora de la cerca i dels canvis en directe",
+  "project.dataAsk":
+    "Aquesta carpeta ara té una carpeta .permark. Els vostres comentaris, marques de lectura i altres dades d'aquesta carpeta continuen desats en aquest ordinador.",
+  "project.dataMove": "Mou a la carpeta",
+  "project.dataKeep": "Mantén en aquest ordinador",
+  "project.dataMissing":
+    "La carpeta .permark d'aquesta carpeta falta o no es pot fer servir. El PerMark fa servir la còpia de les vostres dades desada en aquest ordinador, que pot ser més antiga.",
+  "project.dataKeepCopy": "Continua fent servir aquesta còpia",
+  "project.dataPlace": "Les vostres dades d'aquesta carpeta",
+  "project.dataPlaceProfile": "Desades en aquest ordinador, al vostre perfil d'usuari.",
+  "project.dataMoved": "Les vostres dades d'aquesta carpeta ara són a la seva carpeta .permark.",
+  "project.dataMoveHeld":
+    "La carpeta .permark d'aquesta carpeta ja conté dades del PerMark d'un altre lloc, així que les vostres dades es queden en aquest ordinador.",
+  "project.dataMoveFailed": "No s'han pogut moure les vostres dades a la carpeta: {message}",
   "project.initButton": "Inicialitza el PerMark",
   "project.initConfig": "La configuració que aquest projecte comparteix amb el seu equip.",
   "project.initConfirm": "Inicialitza el PerMark",
@@ -1718,9 +1731,9 @@ export default {
   "project.initIgnore": "Manté les carpetes privades fora del Git.",
   "project.initIntro": "El PerMark crea aquí una carpeta .permark amb:",
   "project.initLocal":
-    "Les vostres dades privades d'aquest projecte (comentaris, marques de lectura) i la seva memòria cau.",
+    "Les vostres dades privades d'aquest projecte (comentaris, marques de lectura, historial de desfer) i una memòria cau que el PerMark pot reconstruir en qualsevol moment.",
   "project.initNote":
-    "Els vostres fitxers no es toquen. S'hi copien les etiquetes, els comentaris i les marques de lectura que ja teniu d'aquest projecte.",
+    "Els vostres fitxers no es toquen. S'hi copien les etiquetes, els comentaris i les marques de lectura que ja teniu d'aquest projecte. El que permeteu per a aquesta carpeta, com ara l'accés dels agents, es queda a les vostres pròpies dades del PerMark en aquest ordinador.",
   "project.initTitle": "Voleu inicialitzar el PerMark a {name}?",
   "project.newTitle": "Voleu convertir {name} en un projecte?",
   "project.newWhy":
@@ -1745,6 +1758,14 @@ export default {
   "project.treeUnset": "Sense definir",
   "project.scopes":
     "La configuració marcada amb Tothom es desa a .permark/config.toml d'aquesta carpeta i es comparteix amb qui l'obri. La marcada amb Només vós es queda en aquest ordinador.",
+  "project.shareGit": "Permet que el Git vegi la configuració del PerMark d'aquesta carpeta",
+  "project.shareGitCustom":
+    "El fitxer .permark/.gitignore d'aquesta carpeta l'ha escrit una altra persona, així que el PerMark el deixa tal com està.",
+  "project.shareGitFailed": "No s'ha pogut canviar què veu el Git a .permark: {message}",
+  "project.shareGitHint":
+    "Activat: el Git veu la configuració, les etiquetes, la llista de projectes i les descripcions dels projectes de .permark, de manera que en podeu fer un commit per al vostre equip. Desactivat: el Git ignora tota la carpeta .permark; els fitxers que ja són en un commit s'hi queden. Si .permark/.gitignore és en un commit, el vostre equip també rep aquest canvi. Les vostres dades privades i la memòria cau sempre queden fora del Git.",
+  "project.shareGitOff": "Desactivat",
+  "project.shareGitOn": "Activat",
   "project.shareInit": "Inicialitzeu el PerMark per compartir-ho amb tothom",
   "project.sharedFileHint": "Compartit amb qui obri aquesta carpeta.",
   "settings.all": "Tota la configuració",

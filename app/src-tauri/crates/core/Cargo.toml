@@ -29,7 +29,11 @@ comrak.workspace = true
 ammonia.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Globalization"] }
+windows-sys = { workspace = true, features = [
+    "Win32_Globalization",
+    "Win32_Storage_CloudFilters",
+    "Win32_System_LibraryLoader",
+] }
 widestring.workspace = true
 winreg.workspace = true
 

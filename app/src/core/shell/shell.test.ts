@@ -749,6 +749,38 @@ describe("the project settings and Initialize PerMark", () => {
     );
   });
 
+  it("Overview, set up: whether git sees the folder's PerMark settings is chosen there for everyone; a file someone else wrote is only described", async () => {
+    const label = "Let git see this folder's PerMark settings";
+    await open();
+    mountPage("project");
+    await tick();
+    expect(target.textContent).not.toContain(label);
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    await until(() => target.textContent?.includes(label) ?? false, "the row");
+    const row = (): HTMLElement => byText(".row", label);
+    expect(row().querySelector(".name")?.textContent).toContain("Everyone");
+    expect(row().textContent).toContain("Your private data and caches always stay out of git.");
+    const radio = (name: string): HTMLButtonElement | undefined =>
+      Array.from(row().querySelectorAll<HTMLButtonElement>("button[role=radio]")).find(
+        (b) => b.textContent?.trim() === name,
+      );
+    expect(radio("On")?.getAttribute("aria-checked")).toBe("true");
+    radio("Off")?.click();
+    await until(() => mock.probe.shell.project().sharing === "private", "kept");
+    await until(() => radio("Off")?.getAttribute("aria-checked") === "true", "shown");
+    // someone else rewrote the file meanwhile: the change is refused, says why, and the row describes the file
+    mock.probe.shell.sharing("custom");
+    radio("On")?.click();
+    await until(
+      () => target.textContent?.includes("Couldn't change what git sees in .permark") ?? false,
+      "why",
+    );
+    await until(() => row().querySelector("button[role=radio]") === null, "no choice left");
+    expect(row().textContent).toContain("was written by someone else");
+    expect(mock.probe.shell.project().sharing).toBe("custom");
+  });
+
   it("Files, not initialized: the shared rows show greyed and do nothing until the person sets PerMark up", async () => {
     await open();
     mountPage("files");
@@ -899,6 +931,11 @@ describe("the project settings and Initialize PerMark", () => {
     expect(target.textContent).toContain("Initialize PerMark in permark-docs?");
     expect(target.textContent).toContain(".permark/config.toml");
     expect(target.textContent).toContain("Your files are not touched.");
+    // the undo history moves with the private data; what the person allows for the folder stays behind
+    expect(target.textContent).toContain("(comments, read marks, undo history)");
+    expect(target.textContent).toContain(
+      "such as agent access, stays in your own PerMark data on this computer.",
+    );
     press(target.querySelector(".dialog")!, "Escape");
     byText("button", "Cancel").click();
     byText("button.btn--primary", "Initialize PerMark").click();

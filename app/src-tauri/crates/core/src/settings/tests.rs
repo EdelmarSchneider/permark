@@ -2,7 +2,7 @@ use std::fs;
 
 use super::*;
 use crate::paths::Root;
-use crate::state::DEFAULT_CONFIG_TOML;
+use crate::state::{Sharing, DEFAULT_CONFIG_TOML};
 
 fn doc(text: &str) -> DocumentMut {
     text.parse().unwrap()
@@ -1183,10 +1183,12 @@ fn a_team_file_lists_the_plugin_keys_it_holds_that_are_not_read() {
         "token-count.extra",
     ]);
     assert_eq!(config.ignored_plugin_keys, expected);
-    let settings = ProjectSettings::of(true, &config);
+    let settings = ProjectSettings::of(true, Sharing::Private, &config);
     assert_eq!(settings.ignored_plugin_keys, expected);
     let json = serde_json::to_value(&settings).unwrap();
     assert_eq!(json["ignoredPluginKeys"][2], "git.backend");
+    // what git may see of `.permark/` travels with the shared settings
+    assert_eq!(json["sharing"], "private");
     // only on | off and the tokenizers are read: nothing to list
     let read = "[plugins.git]\nenabled = false\n[plugins.token-count]\ntokenizers = [\"o200k\"]\n";
     assert_eq!(

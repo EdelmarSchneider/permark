@@ -74,6 +74,77 @@ pub(super) fn local_drive(letter: u8) -> bool {
     matches!(kind, DRIVE_REMOVABLE | DRIVE_FIXED | DRIVE_RAMDISK)
 }
 
+/// `CfGetSyncRootInfoByPath` (cldapi.dll), looked up at the first call.
+type SyncRootInfo = unsafe extern "system" fn(
+    windows_sys::core::PCWSTR,
+    windows_sys::Win32::Storage::CloudFilters::CF_SYNC_ROOT_INFO_CLASS,
+    *mut std::ffi::c_void,
+    u32,
+    *mut u32,
+) -> windows_sys::core::HRESULT;
+
+/// Whether `path` is inside a Cloud Files sync root (the folder a sync service such as OneDrive, Dropbox, iCloud or
+/// Box registers with Windows): `CfGetSyncRootInfoByPath` answers `S_OK` there, or `ERROR_MORE_DATA` for a buffer
+/// too small; anything else (not inside one, no such path, no Cloud Files service) -> false. cldapi.dll is loaded on
+/// first use instead of linked: Windows 10 before 1709 lacks it, and a linked import would keep the app from starting
+/// there.
+// Documented FFI: no std wrapper for the Cloud Files API. The library comes from System32 only; the function pointer
+// is the documented export cast to its documented signature; `path` is a NUL-terminated wide string owned by this
+// function, `info` and `returned` live writable locals of the sizes passed; all outlive the call.
+#[allow(unsafe_code)]
+pub(super) fn in_sync_root(path: &Path) -> bool {
+    use std::sync::OnceLock;
+    use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
+    use windows_sys::Win32::Storage::CloudFilters::{
+        CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC,
+    };
+    use windows_sys::Win32::System::LibraryLoader::{
+        GetProcAddress, LoadLibraryExW, LOAD_LIBRARY_SEARCH_SYSTEM32,
+    };
+    static FUNCTION: OnceLock<Option<SyncRootInfo>> = OnceLock::new();
+    let function = FUNCTION.get_or_init(|| {
+        let library: Vec<u16> = "cldapi.dll\0".encode_utf16().collect();
+        // SAFETY: `library` is a live NUL-terminated buffer; a null file handle is documented; the module stays
+        // loaded for the life of the process (never freed), so the function pointer below stays valid.
+        let module = unsafe {
+            LoadLibraryExW(
+                library.as_ptr(),
+                std::ptr::null_mut(),
+                LOAD_LIBRARY_SEARCH_SYSTEM32,
+            )
+        };
+        if module.is_null() {
+            return None;
+        }
+        // SAFETY: `module` is a loaded module; the name is a NUL-terminated C string literal.
+        let found = unsafe { GetProcAddress(module, c"CfGetSyncRootInfoByPath".as_ptr().cast()) }?;
+        // SAFETY: the export's documented signature is `SyncRootInfo` (cfapi.h).
+        Some(unsafe {
+            std::mem::transmute::<unsafe extern "system" fn() -> isize, SyncRootInfo>(found)
+        })
+    });
+    let (Some(function), Ok(path)) = (*function, wide(&extended(path))) else {
+        return false;
+    };
+    let mut info = CF_SYNC_ROOT_BASIC_INFO::default();
+    let size = u32::try_from(std::mem::size_of::<CF_SYNC_ROOT_BASIC_INFO>()).unwrap_or(0);
+    let mut returned = 0u32;
+    // SAFETY: see above; `info` holds `size` writable bytes.
+    let result = unsafe {
+        function(
+            path.as_ptr(),
+            CF_SYNC_ROOT_INFO_BASIC,
+            (&raw mut info).cast(),
+            size,
+            &raw mut returned,
+        )
+    };
+    // HRESULT_FROM_WIN32(ERROR_MORE_DATA): the bit pattern 0x800700EA as the signed HRESULT
+    #[allow(clippy::cast_possible_wrap)]
+    let more_data = (0x8007_0000 | ERROR_MORE_DATA) as i32;
+    result == 0 || result == more_data
+}
+
 /// `(volume serial, file index)` of `path`; a link | junction is opened itself (`OPEN_REPARSE_POINT`). The handle
 /// (no access asked, every share mode) lives for this call only: never in the way of a rename.
 // Documented FFI: GetFileInformationByHandle has no stable std wrapper (`MetadataExt::file_index` is unstable). The
@@ -139,7 +210,7 @@ pub(super) fn final_path(file: &std::fs::File) -> io::Result<PathBuf> {
     Err(io::Error::other("path of the open file keeps growing"))
 }
 
-fn wide(path: &Path) -> io::Result<Vec<u16>> {
+pub(super) fn wide(path: &Path) -> io::Result<Vec<u16>> {
     let mut units: Vec<u16> = path.as_os_str().encode_wide().collect();
     if units.contains(&0) {
         return Err(io::Error::new(

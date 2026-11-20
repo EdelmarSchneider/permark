@@ -21,7 +21,6 @@ use crate::error::{ErrorKind, IpcError};
 use crate::events::{ContextChanged, CoreEvent, WindowChanged, WindowsChanged};
 use crate::paths::{FileScope, RootKey, Vault, VaultPath};
 use crate::plugins::PluginId;
-use crate::state::StateLocation;
 
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
@@ -1151,6 +1150,52 @@ impl WorkspaceRegistry {
             .collect()
     }
 
+    /// Initializes PerMark in a folder (Explorer, New project, Settings), then every window is told. A core open on the
+    /// folder stops its plugins around the copy of the person's data ([`ProjectCore::initialize`]); a core that keeps
+    /// the folder as an included project holds that project's writes meanwhile ([`crate::projects::Projects::hold_member`]).
+    ///
+    /// # Errors
+    /// What [`crate::state::init_project`] refuses.
+    pub fn init_project(&self, root: &crate::paths::Root) -> Result<(), IpcError> {
+        let cores = self.cores();
+        let held: Vec<_> = cores
+            .iter()
+            .filter_map(|core| core.projects().hold_member(root))
+            .collect();
+        let done = match cores.iter().find(|core| core.root().key() == root.key()) {
+            Some(core) => core.initialize(&self.env),
+            None => crate::state::init_project(&self.env.dirs, root)
+                .map(|_| ())
+                .map_err(IpcError::from),
+        };
+        drop(held);
+        done?;
+        self.refresh();
+        Ok(())
+    }
+
+    /// The person keeps a folder's data on this computer (its window's offer), then every window is told: a core open
+    /// on the folder works its offer out again ([`ProjectCore::keep_data`]); no core, only the row is written.
+    ///
+    /// # Errors
+    /// The folder's data is in its own `.permark/local/` (a conflict, nothing written); the profile's row file cannot be
+    /// written.
+    pub fn keep_data(&self, root: &crate::paths::Root) -> Result<(), IpcError> {
+        match self
+            .cores()
+            .iter()
+            .find(|core| core.root().key() == root.key())
+        {
+            Some(core) => core.keep_data()?,
+            None => crate::state::location::keep(&crate::state::StateStore::for_project(
+                &self.env.dirs,
+                root,
+            ))?,
+        }
+        self.refresh();
+        Ok(())
+    }
+
     /// Recomputes + emits what changed (after settings | plugin | unsaved changes).
     pub fn refresh(&self) {
         let mut inner = lock(&self.inner);
@@ -1524,6 +1569,7 @@ fn workspace_view(id: WorkspaceId, entry: &Entry) -> WorkspaceView {
             name: core.root().name(),
             root: core.root().path().display().to_string(),
             state_location: core.state_location(),
+            data_offer: core.data_offer(),
         },
         Workspace::SingleFile(file) => WorkspaceView::SingleFile {
             id,
@@ -1580,7 +1626,8 @@ fn context_of(
     match &entry.workspace {
         Workspace::Project(core) => {
             context.workspace = WorkspaceKind::Project;
-            context.permark = if core.state_location() == StateLocation::Project {
+            // as the folder's state was last read: a context is built at every change, never with a look at the disk
+            context.permark = if core.has_team_folder() {
                 PermarkCondition::Initialized
             } else {
                 PermarkCondition::NotInitialized

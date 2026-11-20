@@ -17,11 +17,6 @@ pub use explorer::{Explorer, WalkGate};
 pub use filter::{FilterShow, TreeFilter};
 pub use ignore::{Ignorer, MemberRule, MemberSet};
 pub(crate) use model::{below_root, is_link as is_link_meta, key_of, path_always_out};
-
-/// Whether `path` itself (not followed) is a link | junction | reparse point.
-pub(crate) fn is_link_meta_of(path: &std::path::Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|m| is_link_meta(&m))
-}
 pub use model::{Marker, Scan, ScanFile};
 
 use crate::error::{ErrorKind, IpcError};

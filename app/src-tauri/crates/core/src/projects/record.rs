@@ -617,8 +617,10 @@ pub fn record_path(root: &Path) -> PathBuf {
     root.join(crate::state::PERMARK_DIR).join(RECORD_FILE)
 }
 
+/// Whether `path` itself (not followed) is a link: what std reports as one (symlink, junction), so a team file or
+/// folder that is a cloud placeholder (OneDrive Files On-Demand) is read as the file | folder it is.
 pub(super) fn is_link(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|m| crate::tree::is_link_meta(&m))
+    std::fs::symlink_metadata(path).is_ok_and(|m| crate::fsx::is_link(&m))
 }
 
 /// Reads the record of `root` from disk.
@@ -626,9 +628,7 @@ pub(super) fn is_link(path: &Path) -> bool {
 pub fn read(root: &Path) -> RecordRead {
     let path = record_path(root);
     let permark = root.join(crate::state::PERMARK_DIR);
-    if !std::fs::symlink_metadata(&permark)
-        .is_ok_and(|m| m.is_dir() && !crate::tree::is_link_meta(&m))
-    {
+    if !std::fs::symlink_metadata(&permark).is_ok_and(|m| m.is_dir() && !crate::fsx::is_link(&m)) {
         return RecordRead::Absent;
     }
     if is_link(&path) {
@@ -675,8 +675,8 @@ pub fn write(
     announce: &dyn Fn(&[u8]),
 ) -> Result<Written, RecordError> {
     let permark = root.join(crate::state::PERMARK_DIR);
-    let real = std::fs::symlink_metadata(&permark)
-        .is_ok_and(|m| m.is_dir() && !crate::tree::is_link_meta(&m));
+    let real =
+        std::fs::symlink_metadata(&permark).is_ok_and(|m| m.is_dir() && !crate::fsx::is_link(&m));
     let path = record_path(root);
     if !real || is_link(&path) {
         return Err(RecordError::Unavailable);

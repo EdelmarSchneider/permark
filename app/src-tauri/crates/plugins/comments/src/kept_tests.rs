@@ -392,13 +392,40 @@ fn comments_removed_while_the_folder_was_closed_are_set_aside_at_the_next_open()
     assert_eq!(texts(&core), strings(&["kept", "removed while closed"]));
 }
 
-/// The kept copy's file in the folder's state (this install's own folder in it).
+/// The kept copy's file in the folder's state (the plugin's folder of this install's own folder in it).
 fn kept_file(core: &ProjectCore) -> PathBuf {
     core.store()
         .machine()
         .unwrap()
         .dir()
+        .join("plugins")
+        .join("comments")
         .join("comments-kept.json")
+}
+
+/// "Remove data" takes the kept copy and the asides with the rest of the plugin's data, in a folder with its own
+/// `.permark/local` and in one whose state lives in the profile.
+#[test]
+fn remove_data_takes_the_kept_copy_and_the_asides() {
+    for fx in [Fx::new(), Fx::initialized()] {
+        let core = fx.open();
+        add(&core, "kept");
+        add(&core, "removed while closed");
+        let file = file_of(&core);
+        drop(core);
+        outside(&file, without(&["removed while closed"]));
+        let core = fx.open();
+        assert_eq!(asides(&core).len(), 1);
+        let kept = kept_file(&core);
+        let asides_file = kept.with_file_name("comments-asides.json");
+        assert!(kept.is_file() && asides_file.is_file());
+        let dirs = core.store().app_dirs().clone();
+        drop(core);
+        let root = Root::open(&fx.root).unwrap();
+        permark_core::state::remove_plugin_data_everywhere(&dirs, &ID, &[root]).unwrap();
+        assert!(!kept.exists(), "{}", kept.display());
+        assert!(!asides_file.exists(), "{}", asides_file.display());
+    }
 }
 
 #[test]

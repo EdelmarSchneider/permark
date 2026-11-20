@@ -1696,6 +1696,19 @@ export default {
   "project.ignoreHint":
     "Os ficheiros que coinciden non se buscan e nunca aparecen nos cambios en directo. A lista de ficheiros móstraos atenuados, como os ficheiros que git ignora.",
   "project.ignoreLabel": "Fóra da busca e dos cambios en directo",
+  "project.dataAsk":
+    "Este cartafol ten agora un cartafol .permark. Os seus comentarios, marcas de lectura e outros datos deste cartafol seguen gardados neste ordenador.",
+  "project.dataMove": "Mover ao cartafol",
+  "project.dataKeep": "Manter neste ordenador",
+  "project.dataMissing":
+    "O cartafol .permark deste cartafol falta ou non se pode usar. PerMark está a usar a copia dos seus datos gardada neste ordenador, que pode ser máis antiga.",
+  "project.dataKeepCopy": "Seguir usando esta copia",
+  "project.dataPlace": "Os seus datos deste cartafol",
+  "project.dataPlaceProfile": "Gardados neste ordenador, no seu perfil de usuario.",
+  "project.dataMoved": "Os seus datos deste cartafol están agora no seu cartafol .permark.",
+  "project.dataMoveHeld":
+    "O cartafol .permark deste cartafol xa contén datos de PerMark doutro lugar, así que os seus datos quedan neste ordenador.",
+  "project.dataMoveFailed": "Non foi posíbel mover os seus datos ao cartafol: {message}",
   "project.initButton": "Inicializar PerMark",
   "project.initConfig": "A configuración que este proxecto comparte co seu equipo.",
   "project.initConfirm": "Inicializar PerMark",
@@ -1703,9 +1716,9 @@ export default {
   "project.initIgnore": "Mantén os cartafoles privados fóra de Git.",
   "project.initIntro": "PerMark crea aquí un cartafol .permark con:",
   "project.initLocal":
-    "Os seus datos privados deste proxecto (comentarios, marcas de lectura) e a súa caché.",
+    "Os seus datos privados deste proxecto (comentarios, marcas de lectura, historial de desfacer) e unha caché que PerMark pode reconstruír en calquera momento.",
   "project.initNote":
-    "Os seus ficheiros non se tocan. Cópianse as etiquetas, os comentarios e as marcas de lectura que xa ten para este proxecto.",
+    "Os seus ficheiros non se tocan. Cópianse as etiquetas, os comentarios e as marcas de lectura que xa ten para este proxecto. O que permita para este cartafol, como o acceso dos axentes, queda nos seus propios datos de PerMark neste ordenador.",
   "project.initTitle": "Inicializar PerMark en {name}?",
   "project.newTitle": "Converter {name} nun proxecto?",
   "project.newWhy":
@@ -1730,6 +1743,14 @@ export default {
   "project.treeUnset": "Sen definir",
   "project.scopes":
     "A configuración marcada con Todos gárdase no .permark/config.toml deste cartafol e compártese con quen o abra. A marcada con Só vostede queda neste ordenador.",
+  "project.shareGit": "Permitir que Git vexa a configuración de PerMark deste cartafol",
+  "project.shareGitCustom":
+    "O ficheiro .permark/.gitignore deste cartafol escribiuno outra persoa, así que PerMark déixao tal como está.",
+  "project.shareGitFailed": "Non se puido cambiar o que Git ve en .permark: {message}",
+  "project.shareGitHint":
+    "Activado: Git ve a configuración, as etiquetas, a lista de proxectos e as descricións dos proxectos de .permark, así que pode incluílos nun commit para o seu equipo. Desactivado: Git ignora todo o cartafol .permark; os ficheiros xa incluídos nun commit seguen nel. Se .permark/.gitignore está incluído nun commit, o seu equipo tamén recibe este cambio. Os seus datos privados e as cachés quedan sempre fóra de Git.",
+  "project.shareGitOff": "Desactivado",
+  "project.shareGitOn": "Activado",
   "project.shareInit": "Inicialice PerMark para compartir isto con todos",
   "project.sharedFileHint": "Compartido con quen abra este cartafol.",
   "settings.all": "Toda a configuración",

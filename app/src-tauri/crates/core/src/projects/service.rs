@@ -129,8 +129,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// A link as std reports one (symlink, junction): a cloud placeholder folder (OneDrive Files On-Demand) on the way to a
+/// project, or as its `.permark/`, is the folder it is.
 fn is_link(meta: &std::fs::Metadata) -> bool {
-    crate::tree::is_link_meta(meta)
+    crate::fsx::is_link(meta)
 }
 
 fn real_dir(path: &Path) -> bool {
@@ -472,6 +474,22 @@ impl std::fmt::Debug for Projects {
         f.debug_struct("Projects")
             .field("root", &self.root.path())
             .finish_non_exhaustive()
+    }
+}
+
+/// The writes for an included project held ([`Projects::hold_member`]); dropped, the followers resume with the owners
+/// worked out again (the project's new place).
+pub struct MemberHold<'a> {
+    projects: &'a Projects,
+    _turn: MutexGuard<'a, ()>,
+}
+
+impl Drop for MemberHold<'_> {
+    fn drop(&mut self) {
+        let projects = self.projects;
+        let now = projects.owners_for(&projects.snapshot(), &[]);
+        *lock(&projects.owners) = now.clone();
+        projects.tell_owners(&OwnersChange::Resume(&now));
     }
 }
 
@@ -961,6 +979,13 @@ impl Projects {
     pub fn store_of(&self, path: &VaultPath) -> Option<StateStore> {
         let root = Root::open(&abs_of(self.root.path(), path)).ok()?;
         Some(StateStore::for_project(&self.dirs, &root))
+    }
+
+    /// [`Projects::store_of`] for an owner slot: the member's data place settled first, as when it is opened alone
+    /// (its row written once), so every store of the member gives one answer.
+    fn settled_store_of(&self, path: &VaultPath) -> Option<StateStore> {
+        let root = Root::open(&abs_of(self.root.path(), path)).ok()?;
+        Some(crate::state::location::settle(&self.dirs, &root))
     }
 
     /// Writes the first commits the `git` plugin learned (`RecordOp::SetFirstCommit`, one record write for all;
@@ -1763,7 +1788,8 @@ impl Projects {
             || map.member(uid).is_some_and(|m| is_copied(&inner, m))
     }
 
-    /// The owners for `map`: members copied (or about to be: `extra`) whose folder is there.
+    /// The owners for `map`: members copied (or about to be: `extra`) whose folder is there, each member's data place
+    /// settled (under `owners_turn`: one writer of the rows at a time).
     fn owners_for(&self, map: &ProjectMap, extra: &[ProjectUid]) -> Owners {
         let root = StateStore::for_project(&self.dirs, &self.root);
         let copied: Vec<bool> = {
@@ -1777,7 +1803,7 @@ impl Projects {
             .filter(|(m, copied)| *copied || extra.contains(&m.uid))
             .map(|(m, _)| m)
             .filter_map(|m| {
-                let store = self.store_of(&m.path)?;
+                let store = self.settled_store_of(&m.path)?;
                 Some(OwnerSlot::member(m.uid.clone(), m.path.as_str(), store))
             })
             .collect();
@@ -1820,6 +1846,46 @@ impl Projects {
         let now = self.owners_for(&map, &[]);
         *lock(&self.owners) = now.clone();
         self.tell_owners(&OwnersChange::Resume(&now));
+    }
+
+    /// The opened folder's own data place moved (PerMark initialized in it, or that undone): the owners are worked out
+    /// again from what the folders hold now; followers paused and resumed only when a place changed. Before the owners
+    /// are first known, they are replaced quietly: followers wait for the worker's `Resume`, which reads them.
+    pub fn reload_owners(&self) {
+        let _turn = lock(&self.owners_turn);
+        let now = self.owners_for(&self.snapshot(), &[]);
+        if now.same(&lock(&self.owners)) {
+            return;
+        }
+        if !self.owners_known() {
+            *lock(&self.owners) = now;
+            return;
+        }
+        self.tell_owners(&OwnersChange::Pause);
+        *lock(&self.owners) = now.clone();
+        self.tell_owners(&OwnersChange::Resume(&now));
+    }
+
+    /// Holds the writes for the included project whose folder is `folder` while PerMark is initialized in it (its data
+    /// copied into its `.permark/local/`): followers paused now, resumed with the owners worked out again when the hold
+    /// goes. `None`: `folder` is no owner of this folder now (nothing to hold).
+    #[must_use]
+    pub fn hold_member(&self, folder: &Root) -> Option<MemberHold<'_>> {
+        let turn = lock(&self.owners_turn);
+        let owned = self.owners().slots().iter().skip(1).any(|slot| {
+            VaultPath::parse(&slot.path)
+                .ok()
+                .and_then(|path| Root::open(&abs_of(self.root.path(), &path)).ok())
+                .is_some_and(|member| member.key() == folder.key())
+        });
+        if !owned {
+            return None;
+        }
+        self.tell_owners(&OwnersChange::Pause);
+        Some(MemberHold {
+            projects: self,
+            _turn: turn,
+        })
     }
 
     fn tell_owners(&self, change: &OwnersChange<'_>) {
@@ -2836,7 +2902,7 @@ impl Projects {
             .path()
             .join(PERMARK_DIR)
             .join(vocabulary::VOCABULARY_FILE);
-        if crate::tree::is_link_meta_of(&path) {
+        if record::is_link(&path) {
             return Err(vocab_unavailable());
         }
         let Some(bytes) = vocabulary::write_file(&path, &self.own, edit)? else {

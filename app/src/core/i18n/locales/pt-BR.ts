@@ -1693,6 +1693,19 @@ export default {
   "project.ignoreHint":
     "Arquivos que combinam não entram na busca e nunca aparecem no feed ao vivo. A lista de arquivos mostra esses arquivos esmaecidos, como os que o git ignora.",
   "project.ignoreLabel": "Fora da busca e do feed ao vivo",
+  "project.dataAsk":
+    "Esta pasta agora tem uma pasta .permark. Seus comentários, marcas de leitura e outros dados dela continuam guardados neste computador.",
+  "project.dataMove": "Mover para a pasta",
+  "project.dataKeep": "Manter neste computador",
+  "project.dataMissing":
+    "A pasta .permark desta pasta está faltando ou não pode ser usada. O PerMark está usando a cópia dos seus dados guardada neste computador, que pode ser mais antiga.",
+  "project.dataKeepCopy": "Continuar usando esta cópia",
+  "project.dataPlace": "Seus dados desta pasta",
+  "project.dataPlaceProfile": "Guardados neste computador, no seu perfil de usuário.",
+  "project.dataMoved": "Seus dados desta pasta agora estão na pasta .permark dela.",
+  "project.dataMoveHeld":
+    "A pasta .permark desta pasta já contém dados do PerMark vindos de outro lugar, então seus dados continuam neste computador.",
+  "project.dataMoveFailed": "Não foi possível mover seus dados para a pasta: {message}",
   "project.initButton": "Inicializar o PerMark",
   "project.initConfig": "As configurações que este projeto compartilha com a equipe.",
   "project.initConfirm": "Inicializar o PerMark",
@@ -1700,9 +1713,9 @@ export default {
   "project.initIgnore": "Mantém as pastas privadas fora do git.",
   "project.initIntro": "O PerMark cria aqui uma pasta .permark com:",
   "project.initLocal":
-    "Seus dados privados deste projeto (comentários, marcas de leitura) e o cache.",
+    "Seus dados privados deste projeto (comentários, marcas de leitura, histórico de desfazer) e um cache que o PerMark pode reconstruir a qualquer momento.",
   "project.initNote":
-    "Seus arquivos não são alterados. Tags, comentários e marcas de leitura que você já tem neste projeto são copiados.",
+    "Seus arquivos não são alterados. Tags, comentários e marcas de leitura que você já tem neste projeto são copiados. O que você permite nesta pasta, como o acesso de agentes, fica nos seus próprios dados do PerMark neste computador.",
   "project.initTitle": "Inicializar o PerMark em {name}?",
   "project.newTitle": "Transformar {name} em um projeto?",
   "project.newWhy":
@@ -1726,6 +1739,14 @@ export default {
   "project.treeUnset": "Não definido",
   "project.scopes":
     "As configurações marcadas com Todos ficam no .permark/config.toml desta pasta e são compartilhadas com quem abrir a pasta. As marcadas com Só você ficam neste computador.",
+  "project.shareGit": "Deixar o git ver as configurações do PerMark desta pasta",
+  "project.shareGitCustom":
+    "O arquivo .permark/.gitignore desta pasta foi escrito por outra pessoa, então o PerMark o deixa como está.",
+  "project.shareGitFailed": "Não foi possível mudar o que o git vê em .permark: {message}",
+  "project.shareGitHint":
+    "Ligado: o git vê as configurações, as tags, a lista de projetos e as descrições dos projetos em .permark, então você pode fazer commit deles para a sua equipe. Desligado: o git ignora a pasta .permark inteira; arquivos que já estão em um commit continuam nele. Se .permark/.gitignore estiver em um commit, sua equipe também recebe essa mudança. Seus dados privados e caches sempre ficam fora do git.",
+  "project.shareGitOff": "Desligado",
+  "project.shareGitOn": "Ligado",
   "project.shareInit": "Inicialize o PerMark para compartilhar isto com todos",
   "project.sharedFileHint": "Compartilhado com quem abrir esta pasta.",
   "settings.all": "Todas as configurações",

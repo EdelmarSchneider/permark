@@ -196,6 +196,15 @@ sends your messages and what it reads to its own AI service. An agent that start
 tool the first time.
 The Windows installers may also download Microsoft's WebView2 component while they install, if your computer does not have it.
 
+**"Where does PerMark keep my data?"**<br>
+Your settings, recent folders and your choices about each folder (for example whether an agent may read it) stay in your user
+profile. What belongs to a project goes in a `.permark/` folder inside it: its shared settings and tags, your comments and read
+marks, and caches PerMark can rebuild. PerMark creates that folder only when you ask for it, for example with **Initialize
+PerMark**; a folder without one keeps its data in your profile, and a `.permark/` folder that arrives later does not take your
+data unless you choose **Move into the folder**. Git never sees `.permark/local` and `.permark/cache`; choose **Settings → This
+folder** to keep the whole `.permark/` folder out of git. A `.permark/` folder can only narrow what PerMark or an agent may do,
+never widen it.
+
 ## What PerMark is not
 
 - **Not a code editor.** No completion, refactoring, build, run or debug. Real code work opens in your own editor.
@@ -354,7 +363,7 @@ In Claude Code, a `UserPromptSubmit` hook in `.claude/settings.json` (or your us
 ```
 
 When there is nothing to say (the connection is off, or PerMark is not open), the command prints nothing, so a hook never adds
-noise to a prompt. A project with a `.permark/` folder also has `.permark/local/agent-context.json` while the connection is on:
+noise to a prompt. A project that keeps its data in its `.permark/` folder also has `.permark/local/agent-context.json` while the connection is on:
 the same answer as a file, for a script or a tool without MCP. **It holds the open document, the section on screen and your
 selected text, and any program running as you can read it, as can a folder-sync tool that watches the project.** It stays out of git and is deleted when the connection is turned off. A copy that PerMark did not write on this computer for this folder, such as one that came with a copied or synced folder, is deleted when the folder opens.
 

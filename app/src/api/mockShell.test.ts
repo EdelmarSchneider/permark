@@ -34,6 +34,49 @@ describe("mock project settings", () => {
     expect((await comments())?.state).toEqual({ state: "on" });
   });
 
+  it("a project's view carries where its data is kept: Keep and Move change it as the backend does", async () => {
+    const api = createMockApi();
+    const shownOffer = async (): Promise<string | null> => {
+      const view = value(await api.windowBoot()).view;
+      return view.state === "showing" && view.workspace.kind === "project"
+        ? view.workspace.dataOffer
+        : null;
+    };
+    await api.openPath("C:/plain", "tab");
+    expect(await shownOffer()).toBe("none");
+    api.probe.shell.dataOffer(MOCK_FOLDER, "ask");
+    await api.openPath(MOCK_FOLDER, "tab");
+    expect(await shownOffer()).toBe("ask");
+    // a team folder is there: its shared settings can be written
+    expect(value(await api.projectConfigGet()).initialized).toBe(true);
+    value(await api.projectDataKeep(MOCK_FOLDER));
+    expect(await shownOffer()).toBe("movable");
+    value(await api.projectInit(MOCK_FOLDER));
+    expect(await shownOffer()).toBe("none");
+  });
+
+  it("sets what git sees of .permark only in a set-up folder and never over someone else's file", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "tab");
+    expect(value(await api.projectConfigGet()).sharing).toBe("shared");
+    // no `.permark/` yet: nothing to write into
+    expect((await api.projectSharingSet("private")).ok).toBe(false);
+    value(await api.projectInit(MOCK_FOLDER));
+    expect(value(await api.projectSharingSet("private")).sharing).toBe("private");
+    expect(value(await api.projectConfigGet()).sharing).toBe("private");
+    expect(value(await api.projectSharingSet("shared")).sharing).toBe("shared");
+    // a file someone else wrote: left as it is, whatever is asked
+    api.probe.shell.sharing("custom");
+    for (const ask of ["shared", "private", "custom"] as const) {
+      const refused = await api.projectSharingSet(ask);
+      expect(refused.ok).toBe(false);
+      if (!refused.ok && refused.error.kind === "backend") {
+        expect(refused.error.error.kind).toBe("conflict");
+      }
+    }
+    expect(value(await api.projectConfigGet()).sharing).toBe("custom");
+  });
+
   it("refuses a plugin of the app or one that does not exist", async () => {
     const api = createMockApi();
     await api.openPath(MOCK_FOLDER, "tab");

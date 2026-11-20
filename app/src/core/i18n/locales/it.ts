@@ -1710,6 +1710,19 @@ export default {
   "project.ignoreHint":
     "I file che corrispondono non vengono cercati e non compaiono mai nel feed in tempo reale. L'elenco dei file li mostra attenuati, come i file ignorati da git.",
   "project.ignoreLabel": "Esclusi dalla ricerca e dal feed in tempo reale",
+  "project.dataAsk":
+    "Questa cartella ora ha una cartella .permark. I tuoi commenti, segni di lettura e altri dati di questa cartella restano salvati su questo computer.",
+  "project.dataMove": "Sposta nella cartella",
+  "project.dataKeep": "Tieni su questo computer",
+  "project.dataMissing":
+    "La cartella .permark di questa cartella manca o non si può usare. PerMark usa la copia dei tuoi dati salvata su questo computer, che potrebbe essere meno recente.",
+  "project.dataKeepCopy": "Continua a usare questa copia",
+  "project.dataPlace": "I tuoi dati di questa cartella",
+  "project.dataPlaceProfile": "Salvati su questo computer, nel tuo profilo utente.",
+  "project.dataMoved": "I tuoi dati di questa cartella ora sono nella sua cartella .permark.",
+  "project.dataMoveHeld":
+    "La cartella .permark di questa cartella contiene già dati di PerMark provenienti da altrove, quindi i tuoi dati restano su questo computer.",
+  "project.dataMoveFailed": "Impossibile spostare i tuoi dati nella cartella: {message}",
   "project.initButton": "Inizializza PerMark",
   "project.initConfig": "Le impostazioni che questo progetto condivide con il team.",
   "project.initConfirm": "Inizializza PerMark",
@@ -1717,9 +1730,9 @@ export default {
   "project.initIgnore": "Tiene le cartelle private fuori da git.",
   "project.initIntro": "PerMark crea qui una cartella .permark con:",
   "project.initLocal":
-    "I tuoi dati privati di questo progetto (commenti, segni di lettura) e la sua cache.",
+    "I tuoi dati privati di questo progetto (commenti, segni di lettura, cronologia degli annullamenti) e una cache che PerMark può ricostruire in qualsiasi momento.",
   "project.initNote":
-    "I tuoi file non vengono toccati. I tag, i commenti e i segni di lettura che hai già per questo progetto vengono copiati.",
+    "I tuoi file non vengono toccati. I tag, i commenti e i segni di lettura che hai già per questo progetto vengono copiati. Ciò che consenti per questa cartella, come l'accesso degli agenti, resta nei tuoi dati di PerMark su questo computer.",
   "project.initTitle": "Inizializzare PerMark in {name}?",
   "project.newTitle": "Rendere {name} un progetto?",
   "project.newWhy":
@@ -1744,6 +1757,14 @@ export default {
   "project.treeUnset": "Non impostato",
   "project.scopes":
     "Le impostazioni contrassegnate con Tutti sono salvate in .permark/config.toml di questa cartella e condivise con chiunque la apra. Quelle contrassegnate con Solo tu restano su questo computer.",
+  "project.shareGit": "Lascia che git veda le impostazioni di PerMark di questa cartella",
+  "project.shareGitCustom":
+    "Il file .permark/.gitignore di questa cartella è stato scritto da qualcun altro, quindi PerMark lo lascia com'è.",
+  "project.shareGitFailed": "Impossibile cambiare ciò che git vede in .permark: {message}",
+  "project.shareGitHint":
+    "Attivo: git vede le impostazioni, i tag, l'elenco dei progetti e le descrizioni dei progetti in .permark, così puoi farne il commit per il tuo team. Disattivato: git ignora l'intera cartella .permark; i file già inclusi in un commit ci restano. Se .permark/.gitignore è incluso in un commit, anche il tuo team riceve questa modifica. I tuoi dati privati e le cache restano sempre fuori da git.",
+  "project.shareGitOff": "Disattivato",
+  "project.shareGitOn": "Attivo",
   "project.shareInit": "Inizializza PerMark per condividerlo con tutti",
   "project.sharedFileHint": "Condiviso con chiunque apra questa cartella.",
   "settings.all": "Tutte le impostazioni",

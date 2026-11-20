@@ -186,6 +186,36 @@ fn found_projects_are_offered_then_included_all_and_undone() {
     assert!(!again.undone);
 }
 
+/// The owners follow the opened folder's own data place: an include that initializes PerMark puts the folder's slot
+/// where the core's store is, its undo puts it back in the profile (the row names the profile), so the plugins started
+/// again write where the data is.
+#[test]
+fn the_owners_follow_the_opened_folder_initialized_and_undone() {
+    use crate::state::StateLocation::{Profile, Project};
+    let base = tempfile::tempdir().unwrap();
+    let dir = sample_root();
+    let root = dir.path();
+    let (env, _sink) = env(base.path());
+    let core = ProjectCore::open(Root::open(root).unwrap(), &env);
+    ready(&core);
+    let slot = |core: &ProjectCore| answer(&core.projects().owners().root().store);
+    assert_eq!(slot(&core).0, Profile);
+    let (outcome, initialized) = core.projects_include(&env, &paths(&["notes"])).unwrap();
+    assert!(initialized);
+    assert_eq!(core.store().location(), Project);
+    assert_eq!(slot(&core), answer(&core.store()));
+    let (undone, moved) = core.projects_undo(&env, outcome.undo.unwrap()).unwrap();
+    assert!(undone.undone && moved);
+    assert_eq!(core.store().location(), Profile);
+    assert_eq!(slot(&core), answer(&core.store()));
+    // a `.permark/` arriving later never takes the data back into the folder by itself
+    permark(root, "");
+    assert_eq!(
+        StateStore::for_project(&env.dirs, core.root()).location(),
+        Profile
+    );
+}
+
 #[test]
 fn undo_keeps_a_permark_folder_that_changed_and_a_record_that_existed() {
     let base = tempfile::tempdir().unwrap();
@@ -1147,6 +1177,197 @@ fn members_asked_from_many_threads_are_read_once() {
             assert_eq!(projects.held_members(), 20);
         });
     });
+}
+
+/// The readers of a folder's team files (project list, tag vocabulary, card place, project marker) take only a real
+/// `.permark/` folder: a folder link (junction | symlink) or a file in its place counts as none, nothing is read
+/// through it, and the card stays in the profile.
+#[test]
+fn team_readers_take_only_a_real_permark_folder() {
+    fn fill(permark: &Path) -> bool {
+        fs::create_dir_all(permark).is_ok()
+            && fs::write(permark.join(record::RECORD_FILE), "version = 1\n").is_ok()
+            && fs::write(
+                permark.join(vocabulary::VOCABULARY_FILE),
+                "version = 1\n\n[tags.spec]\n",
+            )
+            .is_ok()
+            && fs::write(permark.join(card::CARD_FILE), "version = 1\n").is_ok()
+    }
+    // (layout of `<folder>/.permark` given an outside folder, read as a real `.permark/`; `false` from the maker ->
+    // cannot be made here, skipped)
+    type Make = fn(&Path, &Path) -> bool;
+    let base = tempfile::tempdir().unwrap();
+    let dirs = AppDirs::under(base.path());
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut layouts: Vec<(&str, Make, bool)> = vec![
+        ("missing", |_, _| true, false),
+        ("plain folder", |permark, _| fill(permark), true),
+        (
+            "junction | symlink",
+            |permark, out| fill(out) && crate::tree::tests::link_out(permark, out),
+            false,
+        ),
+        ("file", |permark, _| fs::write(permark, "x").is_ok(), false),
+    ];
+    // Windows makes directory symlinks only with the privilege (developer mode): skipped without it
+    #[cfg(windows)]
+    layouts.push((
+        "directory symlink",
+        |permark, out| fill(out) && std::os::windows::fs::symlink_dir(out, permark).is_ok(),
+        false,
+    ));
+    for (name, make, real) in layouts {
+        let folder = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let team = outside.path().join("team");
+        let permark = folder.path().join(PERMARK_DIR);
+        if !make(&permark, &team) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        assert_eq!(real_dir(&permark), real, "{name}: marker");
+        let place = card::file_of(&dirs, folder.path()).map(|file| file.place());
+        if real {
+            assert!(
+                matches!(record::read(folder.path()), RecordRead::Read(_)),
+                "{name}"
+            );
+            let vocab = vocabulary::read(folder.path());
+            assert!(
+                vocab.vocab().is_some_and(|v| v.tags.contains_key("spec")),
+                "{name}: {vocab:?}"
+            );
+            assert_eq!(place, Some(CardPlace::Project), "{name}");
+        } else {
+            assert_eq!(record::read(folder.path()), RecordRead::Absent, "{name}");
+            let vocab = vocabulary::read(folder.path());
+            // a file in place of `.permark/`: Linux | macOS report the read as failed (not a folder), Windows finds no
+            // file there; neither reads tags
+            if cfg!(unix) && name == "file" {
+                assert!(
+                    matches!(vocab, VocabRead::Unreadable { .. }),
+                    "{name}: {vocab:?}"
+                );
+            } else {
+                assert_eq!(vocab, VocabRead::Absent, "{name}");
+            }
+            assert_eq!(place, Some(CardPlace::Profile), "{name}");
+        }
+    }
+}
+
+/// The owners rebuilt twice over unchanged folders are the same places (followers read nothing again). A `.permark/`
+/// arriving in a member moves that member's state into it, so the next rebuild differs once; the rebuilds after it
+/// agree again.
+#[test]
+fn owners_rebuilt_over_the_same_folders_are_the_same() {
+    use crate::state::StateLocation::{self, Profile, Project};
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    permark(root, "");
+    git(root, "sub");
+    fs::write(
+        root.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"sub\"\n",
+    )
+    .unwrap();
+    let (env, _sink) = env(base.path());
+    let core = ProjectCore::open(Root::open(root).unwrap(), &env);
+    let projects = core.projects();
+    wait("owners", || projects.owners().slots().len() == 2);
+    // one map for every rebuild: only what is on disk changes between them
+    let map = projects.snapshot();
+    let first = projects.owners_for(&map, &[]);
+    assert!(first.same(&projects.owners_for(&map, &[])));
+    assert!(first.same(&projects.owners()));
+    let location = |owners: &Owners| -> Vec<StateLocation> {
+        owners.slots().iter().map(|s| s.store.location()).collect()
+    };
+    assert_eq!(location(&first), [Project, Profile]);
+    // the member's data stays where its first open put it; only its team folder arrives
+    permark(root, "sub");
+    let moved = projects.owners_for(&map, &[]);
+    assert_eq!(location(&moved), [Project, Profile]);
+    assert!(!moved.same(&first));
+    assert!(moved.same(&projects.owners_for(&map, &[])));
+}
+
+/// What a store says about where a folder's data sits.
+type Answer = (
+    crate::state::StateLocation,
+    std::path::PathBuf,
+    std::path::PathBuf,
+    bool,
+);
+
+fn answer(store: &StateStore) -> Answer {
+    (
+        store.location(),
+        store.dir().to_path_buf(),
+        store.cache_dir().to_path_buf(),
+        store.has_team_folder(),
+    )
+}
+
+/// Every store of one folder gives one answer: the opened folder's own store, the store after a reload, its owner
+/// slot, a member's owner slot and the member opened alone. Layouts: an initialized folder whose profile still holds
+/// an older copy, and a `.permark/` that arrived with nothing private in it while the profile holds the state.
+#[test]
+fn every_store_of_a_folder_gives_one_answer() {
+    use crate::state::StateLocation::{Profile, Project};
+    // (layout, the private state in `.permark/local/` too, where every store puts it)
+    let layouts = [
+        ("initialized, older profile copy", true, Project),
+        ("team folder arrived, state in the profile", false, Profile),
+    ];
+    for (name, local_state, place) in layouts {
+        let base = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        git(root, "sub");
+        let (env, _sink) = env(base.path());
+        for folder in [root.to_path_buf(), root.join("sub")] {
+            let id = crate::state::ProjectId::of(&Root::open(&folder).unwrap());
+            let profile = env.dirs.profile.join("projects").join(id.as_str());
+            fs::create_dir_all(&profile).unwrap();
+            fs::write(profile.join("session.json"), b"{}").unwrap();
+            fs::create_dir_all(folder.join(".permark")).unwrap();
+            if local_state {
+                let local = folder.join(".permark/local");
+                fs::create_dir_all(&local).unwrap();
+                fs::write(local.join("session.json"), b"{}").unwrap();
+            }
+        }
+        fs::write(
+            root.join(".permark/projects.toml"),
+            "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"sub\"\n",
+        )
+        .unwrap();
+        let core = ProjectCore::open(Root::open(root).unwrap(), &env);
+        let projects = core.projects();
+        wait("owners", || projects.owners().slots().len() == 2);
+        let opened = answer(&core.store());
+        assert_eq!(opened.0, place, "{name}");
+        let owners = projects.owners();
+        assert_eq!(
+            answer(&owners.slots()[0].store),
+            opened,
+            "{name}: root slot"
+        );
+        core.reload_state(&env);
+        assert_eq!(answer(&core.store()), opened, "{name}: reloaded");
+        let member = answer(&owners.slots()[1].store);
+        assert_eq!(member.0, place, "{name}: member");
+        let alone = ProjectCore::open(Root::open(&root.join("sub")).unwrap(), &env);
+        assert_eq!(
+            answer(&alone.store()),
+            member,
+            "{name}: member opened alone"
+        );
+        drop(alone);
+    }
 }
 
 /// Live moves (real fs renames under the real watch).

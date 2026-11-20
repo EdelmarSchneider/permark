@@ -34,6 +34,10 @@ impl Fx {
     fn store(&self) -> StateStore {
         StateStore::for_project(&self.dirs, &self.root())
     }
+    /// The store of the folder opened in a window: its row written first.
+    fn settled(&self) -> StateStore {
+        location::settle(&self.dirs, &self.root())
+    }
 }
 
 fn sample(n: u32) -> Sample {
@@ -228,6 +232,206 @@ fn remove_everywhere_covers_app_known_projects_and_open_roots() {
     assert!(!other_store.plugin_dir(&git).exists());
 }
 
+/// `path` made with `bytes`, its folders too.
+fn put(path: &Path, bytes: &[u8]) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, bytes).unwrap();
+}
+
+/// "Remove data" takes only the plugin's own folders: another plugin's data and what other computers keep for the
+/// folder (their own folders in `machine/` and in the cache, in the project and in the profile) stay byte for byte.
+#[test]
+fn remove_data_leaves_other_plugins_and_other_computers_folders_as_they_are() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    let git = PluginId::of("git");
+    let other = "0123456789abcdef";
+    let local = f.permark().join("local");
+    let profile = f
+        .dirs
+        .profile
+        .join("projects")
+        .join(ProjectId::of(&f.root()).as_str());
+    let at = |base: &Path, parts: &[&str]| parts.iter().fold(base.to_path_buf(), |p, n| p.join(n));
+    let kept = [
+        at(&local, &["plugins", "tags", "a.json"]),
+        at(&local, &["machine", other, "plugins", "git", "a.json"]),
+        at(&f.permark(), &["cache", other, "plugins", "git", "a.json"]),
+        at(&profile, &["machine", other, "plugins", "git", "a.json"]),
+        at(&profile, &["plugins", "tags", "a.json"]),
+    ];
+    for path in &kept {
+        put(path, b"kept");
+    }
+    store
+        .plugin_file::<Sample>(&git, "a.json")
+        .save(&sample(1))
+        .unwrap();
+    remove_plugin_data_everywhere(&f.dirs, &git, &[f.root()]).unwrap();
+    assert!(!store.plugin_dir(&git).exists());
+    for path in &kept {
+        assert_eq!(fs::read(path).unwrap(), b"kept", "{}", path.display());
+    }
+}
+
+/// "Remove data" also takes what this computer keeps for the plugin: its folder in this install's own folder of the
+/// state (in an open project and in the profile of a folder no window has open) and in the project's cache; the rest
+/// of this install's folder stays.
+#[test]
+fn remove_data_sweeps_this_computers_own_plugin_folders() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    let git = PluginId::of("git");
+    let machine = store.machine().unwrap();
+    let iid = machine.iid().to_owned();
+    let closed = tempfile::tempdir().unwrap();
+    let closed = StateStore::for_project(&f.dirs, &Root::open(closed.path()).unwrap());
+    let gone = [
+        machine.dir().join("plugins").join("git").join("a.json"),
+        f.permark()
+            .join("cache")
+            .join(&iid)
+            .join("plugins")
+            .join("git")
+            .join("a.json"),
+        closed
+            .machine()
+            .unwrap()
+            .dir()
+            .join("plugins")
+            .join("git")
+            .join("a.json"),
+    ];
+    for path in &gone {
+        put(path, b"mine");
+    }
+    let own = machine.dir().join("journal.json");
+    put(&own, b"core's");
+    remove_plugin_data_everywhere(&f.dirs, &git, &[f.root()]).unwrap();
+    for path in &gone {
+        assert!(!path.exists(), "{}", path.display());
+    }
+    assert_eq!(fs::read(&own).unwrap(), b"core's");
+    // one store's own sweep takes its install folder's plugin folder too (the profile's here)
+    let path = closed
+        .machine()
+        .unwrap()
+        .dir()
+        .join("plugins")
+        .join("git")
+        .join("b.json");
+    put(&path, b"mine");
+    closed.remove_plugin_data(&git).unwrap();
+    assert!(!path.exists());
+}
+
+/// `base` joined with each `/`-separated name of `rel`.
+fn rel_path(base: &Path, rel: &str) -> PathBuf {
+    rel.split('/')
+        .fold(base.to_path_buf(), |path, name| path.join(name))
+}
+
+/// A sweep of "Remove data" meeting a link: `link` (a template below `base`, `{iid}` = this install's id) points to a
+/// folder outside holding what the sweep of `swept` would reach through it.
+fn sweep_through_link(
+    name: &str,
+    base: &Path,
+    iid: &str,
+    link: &str,
+    swept: &[String],
+    sweep: impl Fn(),
+) {
+    let link = link.replace("{iid}", iid);
+    let full = swept
+        .iter()
+        .find(|path| **path == link || path.starts_with(&format!("{link}/")))
+        .unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let last = full.len() == link.len();
+    let theirs = if last {
+        outside.path().join("x")
+    } else {
+        rel_path(outside.path(), &full[link.len() + 1..]).join("x")
+    };
+    put(&theirs, b"theirs");
+    let at = rel_path(base, &link);
+    fs::create_dir_all(at.parent().unwrap()).unwrap();
+    if !crate::tree::tests::link_out(&at, outside.path()) {
+        eprintln!("skipped {name}: no folder links here");
+        return;
+    }
+    sweep();
+    assert_eq!(fs::read(&theirs).unwrap(), b"theirs", "{name}: target kept");
+    // a link on the way stays (nothing removed below it); the plugin's own folder as a link goes, never followed
+    assert_eq!(
+        fs::symlink_metadata(&at).is_ok(),
+        !last,
+        "{name}: the link itself"
+    );
+}
+
+/// "Remove data" never deletes through a link | junction on the way down from `.permark/` (a repository may ship
+/// `local/plugins`, `local/machine`, this install's folder or its cache folder as one pointing elsewhere): the folder
+/// it points to keeps what it holds and nothing below the link is removed. The plugin's own folder as a link is
+/// removed as a link, never followed.
+#[test]
+fn remove_data_never_deletes_through_a_link_in_the_project() {
+    let git = PluginId::of("git");
+    for link in [
+        "local/plugins",
+        "local/machine",
+        "local/machine/{iid}",
+        "local/machine/{iid}/plugins",
+        "cache/{iid}",
+        "local/plugins/git",
+    ] {
+        let f = fx();
+        let store = init_project(&f.dirs, &f.root()).unwrap();
+        let iid = store.machine().unwrap().iid().to_owned();
+        assert_eq!(store.cache_dir(), f.permark().join("cache").join(&iid));
+        let swept = [
+            "local/plugins/git".to_owned(),
+            format!("local/machine/{iid}/plugins/git"),
+            format!("cache/{iid}/plugins/git"),
+        ];
+        sweep_through_link(link, &f.permark(), &iid, link, &swept, || {
+            store.remove_plugin_data(&git).unwrap();
+            remove_plugin_data_everywhere(&f.dirs, &git, &[f.root()]).unwrap();
+        });
+    }
+}
+
+/// The same from a folder's profile folder down (its state and its cache, in a store and in the sweep of the folders
+/// no window has open): a link on the way leaves its target as it is.
+#[test]
+fn remove_data_never_deletes_through_a_link_in_the_profile() {
+    let git = PluginId::of("git");
+    for (name, link, in_cache) in [
+        ("plugins", "plugins", false),
+        ("machine", "machine", false),
+        ("own machine folder", "machine/{iid}", false),
+        ("cache plugins", "plugins", true),
+    ] {
+        let f = fx();
+        let store = f.store();
+        assert_eq!(store.location(), StateLocation::Profile);
+        let iid = store.machine().unwrap().iid().to_owned();
+        let base = if in_cache {
+            store.cache_dir().to_path_buf()
+        } else {
+            store.dir().to_path_buf()
+        };
+        let swept = [
+            "plugins/git".to_owned(),
+            format!("machine/{iid}/plugins/git"),
+        ];
+        sweep_through_link(name, &base, &iid, link, &swept, || {
+            store.remove_plugin_data(&git).unwrap();
+            remove_plugin_data_everywhere(&f.dirs, &git, &[]).unwrap();
+        });
+    }
+}
+
 #[test]
 fn init_project_creates_files_keeps_existing_and_carries_state() {
     let f = fx();
@@ -307,6 +511,7 @@ fn init_project_copies_profile_state_except_profile_only_files() {
             "projects-copied.json",
             "card.json",
             "from-0.5",
+            "location.json",
         ]
     );
     let after = init_project(&f.dirs, &f.root()).unwrap();
@@ -386,18 +591,357 @@ fn init_project_makes_exactly_these_files() {
     }
     assert_eq!(
         fs::read_to_string(permark.join(".gitignore")).unwrap(),
-        PROJECT_GITIGNORE
+        SHARED_IGNORE
     );
+    // the bytes earlier versions wrote: a folder made by any of them reads as shared
+    assert_eq!(
+        fs::read(permark.join(".gitignore")).unwrap(),
+        b"# PerMark private state: not shared.\nlocal/\ncache/\n"
+    );
+}
+
+/// A named change made in a fresh `.permark/`.
+type PermarkEdit = (&'static str, fn(&Path));
+
+/// Undo of an init takes `.permark/` back only while its two files hold the bytes PerMark wrote: an edited
+/// `config.toml`, another `.gitignore` or a missing one leave the folder as it is.
+#[test]
+fn uninit_project_keeps_a_folder_whose_files_changed() {
+    let edits: [PermarkEdit; 4] = [
+        ("config edited", |p| {
+            let mut text = fs::read_to_string(p.join("config.toml")).unwrap();
+            text.push_str("ignore = [\"drafts/\"]\n");
+            fs::write(p.join("config.toml"), text).unwrap();
+        }),
+        ("ignore edited", |p| {
+            fs::write(p.join(".gitignore"), "local/\n").unwrap();
+        }),
+        ("ignore gone", |p| {
+            fs::remove_file(p.join(".gitignore")).unwrap();
+        }),
+        ("config gone", |p| {
+            fs::remove_file(p.join("config.toml")).unwrap();
+        }),
+    ];
+    for (name, edit) in edits {
+        let f = fx();
+        init_project(&f.dirs, &f.root()).unwrap();
+        edit(&f.permark());
+        let listed = entries_below(&f.permark());
+        assert!(!uninit_project(&f.dirs, &f.root()).unwrap(), "{name}");
+        assert_eq!(entries_below(&f.permark()), listed, "{name}: kept whole");
+    }
+    // untouched: taken back
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+    assert!(!f.permark().exists());
+}
+
+/// A file symlink at `link` to `target` (Windows: only with the symlink privilege, else `false`: skipped).
+fn file_link(link: &Path, target: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_file(target, link).is_ok()
+    }
+}
+
+/// Undo of an init also takes the folder back after the sharing choice (either form PerMark writes, with the line
+/// endings git may give it) and with the settings header of the version before. Both files are read as capped plain
+/// files inside `.permark/`: a link in place of either one, or a file too large to be PerMark's, keeps the folder.
+#[test]
+fn uninit_project_takes_back_either_sharing_form_and_the_earlier_header() {
+    let taken: [PermarkEdit; 3] = [
+        ("private", |p| {
+            fs::write(p.join(".gitignore"), PRIVATE_IGNORE).unwrap();
+        }),
+        ("private crlf", |p| {
+            fs::write(p.join(".gitignore"), PRIVATE_IGNORE.replace('\n', "\r\n")).unwrap();
+        }),
+        ("earlier header", |p| {
+            let text = fs::read_to_string(p.join("config.toml")).unwrap();
+            let (_, rest) = text.split_once('\n').unwrap();
+            let earlier = format!(
+                "# PerMark project settings. Shared with your team: safe to commit.\n{rest}"
+            );
+            fs::write(p.join("config.toml"), earlier).unwrap();
+        }),
+    ];
+    for (name, edit) in taken {
+        let f = fx();
+        init_project(&f.dirs, &f.root()).unwrap();
+        edit(&f.permark());
+        assert!(uninit_project(&f.dirs, &f.root()).unwrap(), "{name}");
+        assert!(!f.permark().exists(), "{name}: taken back");
+    }
+    // a file too large to be PerMark's: never read whole
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    let mut text = DEFAULT_CONFIG_TOML.to_owned();
+    text.push_str(&"#\n".repeat(40 * 1024));
+    fs::write(f.permark().join("config.toml"), text).unwrap();
+    assert!(!uninit_project(&f.dirs, &f.root()).unwrap(), "too large");
+    // a link in place of either file, its target holding the bytes PerMark wrote
+    for (name, bytes) in [
+        (".gitignore", SHARED_IGNORE),
+        ("config.toml", DEFAULT_CONFIG_TOML),
+    ] {
+        let f = fx();
+        init_project(&f.dirs, &f.root()).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join(name);
+        fs::write(&target, bytes).unwrap();
+        fs::remove_file(f.permark().join(name)).unwrap();
+        if !file_link(&f.permark().join(name), &target) {
+            eprintln!("skipped {name} link: cannot be made here");
+            continue;
+        }
+        assert!(!uninit_project(&f.dirs, &f.root()).unwrap(), "{name} link");
+        assert!(f.permark().join("local").is_dir(), "{name} link: kept");
+        assert_eq!(fs::read(&target).unwrap(), bytes.as_bytes());
+    }
+}
+
+/// New team files start with the line that tells people to commit the folder; a folder's own file stays as it is.
+#[test]
+fn init_project_writes_the_commit_hint_header() {
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    let text = fs::read_to_string(f.permark().join("config.toml")).unwrap();
+    assert_eq!(text, DEFAULT_CONFIG_TOML);
+    assert_eq!(
+        text.lines().next(),
+        Some(
+            "# PerMark project settings. Commit the .permark folder to share these settings with your team."
+        )
+    );
+}
+
+/// What git may see of the team folder is read from PerMark's own `.permark/.gitignore`: missing or the shared form
+/// -> shared, the private form -> private (either with the line endings git may give it on checkout); anything else
+/// (other text, an empty file, a folder, a link, a file too large to be PerMark's) -> someone else's.
+#[test]
+fn sharing_reads_only_the_two_forms_it_writes() {
+    assert_eq!(
+        PRIVATE_IGNORE,
+        "# PerMark: git ignores this whole folder. Change it in Settings > This folder.\n*\n"
+    );
+    let crlf = |text: &str| text.replace('\n', "\r\n");
+    let cases: Vec<(&str, Option<String>, Sharing)> = vec![
+        ("missing", None, Sharing::Shared),
+        ("shared", Some(SHARED_IGNORE.to_owned()), Sharing::Shared),
+        ("shared crlf", Some(crlf(SHARED_IGNORE)), Sharing::Shared),
+        ("private", Some(PRIVATE_IGNORE.to_owned()), Sharing::Private),
+        ("private crlf", Some(crlf(PRIVATE_IGNORE)), Sharing::Private),
+        (
+            "mixed",
+            Some(format!("{SHARED_IGNORE}*\n")),
+            Sharing::Custom,
+        ),
+        (
+            "team's own",
+            Some("# the team's own\n".to_owned()),
+            Sharing::Custom,
+        ),
+        ("empty", Some(String::new()), Sharing::Custom),
+        ("too large", Some("#\n".repeat(40 * 1024)), Sharing::Custom),
+    ];
+    for (name, text, want) in cases {
+        let f = fx();
+        fs::create_dir(f.permark()).unwrap();
+        if let Some(text) = text {
+            fs::write(f.permark().join(".gitignore"), text).unwrap();
+        }
+        assert_eq!(sharing(&f.root()), want, "{name}");
+    }
+    let f = fx();
+    fs::create_dir_all(f.permark().join(".gitignore")).unwrap();
+    assert_eq!(sharing(&f.root()), Sharing::Custom, "a folder");
+    let f = fx();
+    fs::create_dir(f.permark()).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("ignore"), SHARED_IGNORE).unwrap();
+    if file_link(
+        &f.permark().join(".gitignore"),
+        &outside.path().join("ignore"),
+    ) {
+        assert_eq!(sharing(&f.root()), Sharing::Custom, "a link");
+    }
+}
+
+/// The sharing choice rewrites only PerMark's own `.permark/.gitignore`, and only from the forms it writes: shared <->
+/// private (the file's line endings kept), a missing file made private, a missing file left missing when shared (git
+/// sees the team files then already). Someone else's file is refused and stays byte for byte.
+#[test]
+fn set_sharing_writes_only_its_own_two_forms() {
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    let ignore = f.permark().join(".gitignore");
+    let set = |to| set_sharing(&f.root(), to);
+    assert_eq!(set(Sharing::Private).unwrap(), Sharing::Private);
+    assert_eq!(fs::read(&ignore).unwrap(), PRIVATE_IGNORE.as_bytes());
+    assert_eq!(set(Sharing::Private).unwrap(), Sharing::Private, "again");
+    assert_eq!(fs::read(&ignore).unwrap(), PRIVATE_IGNORE.as_bytes());
+    assert_eq!(set(Sharing::Shared).unwrap(), Sharing::Shared);
+    assert_eq!(fs::read(&ignore).unwrap(), SHARED_IGNORE.as_bytes());
+    // the line endings git gave the file on checkout stay
+    fs::write(&ignore, SHARED_IGNORE.replace('\n', "\r\n")).unwrap();
+    assert_eq!(set(Sharing::Private).unwrap(), Sharing::Private);
+    assert_eq!(
+        fs::read_to_string(&ignore).unwrap(),
+        PRIVATE_IGNORE.replace('\n', "\r\n")
+    );
+    fs::remove_file(&ignore).unwrap();
+    assert_eq!(set(Sharing::Shared).unwrap(), Sharing::Shared);
+    assert!(fs::symlink_metadata(&ignore).is_err(), "nothing made");
+    assert_eq!(set(Sharing::Private).unwrap(), Sharing::Private);
+    assert_eq!(fs::read(&ignore).unwrap(), PRIVATE_IGNORE.as_bytes());
+    // someone else's file: refused whatever is asked
+    fs::write(&ignore, "# the team's own\n").unwrap();
+    for to in [Sharing::Shared, Sharing::Private, Sharing::Custom] {
+        assert!(set(to).is_err(), "{to:?}");
+    }
+    assert_eq!(fs::read(&ignore).unwrap(), b"# the team's own\n");
+    // a form of someone else's is never written, even over PerMark's own
+    fs::write(&ignore, SHARED_IGNORE).unwrap();
+    assert!(set(Sharing::Custom).is_err());
+    assert_eq!(fs::read(&ignore).unwrap(), SHARED_IGNORE.as_bytes());
+    assert_eq!(
+        entries_below(&f.permark())
+            .into_iter()
+            .filter(|e| !e.contains('/'))
+            .collect::<Vec<_>>(),
+        [".gitignore", "config.toml"],
+        "no temp left"
+    );
+}
+
+/// The sharing choice needs a real team folder: none, a file, or a link in place of `.permark` (its target untouched),
+/// or a link in place of the file -> refused, nothing written anywhere.
+#[test]
+fn set_sharing_needs_a_real_team_folder_and_file() {
+    let f = fx();
+    assert!(set_sharing(&f.root(), Sharing::Private).is_err());
+    assert!(fs::symlink_metadata(f.permark()).is_err(), "nothing made");
+    let f = fx();
+    fs::write(f.permark(), b"x").unwrap();
+    assert!(set_sharing(&f.root(), Sharing::Private).is_err());
+    assert_eq!(fs::read(f.permark()).unwrap(), b"x");
+    let f = fx();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join(".gitignore"), SHARED_IGNORE).unwrap();
+    if crate::tree::tests::link_out(&f.permark(), outside.path()) {
+        assert_eq!(sharing(&f.root()), Sharing::Custom);
+        assert!(set_sharing(&f.root(), Sharing::Private).is_err());
+        assert_eq!(entries_below(outside.path()), [".gitignore"]);
+        assert_eq!(
+            fs::read(outside.path().join(".gitignore")).unwrap(),
+            SHARED_IGNORE.as_bytes()
+        );
+    } else {
+        eprintln!("skipped the folder link: cannot be made here");
+    }
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    let target = outside.path().join("ignore");
+    fs::write(&target, SHARED_IGNORE).unwrap();
+    fs::remove_file(f.permark().join(".gitignore")).unwrap();
+    if file_link(&f.permark().join(".gitignore"), &target) {
+        assert!(set_sharing(&f.root(), Sharing::Private).is_err());
+        assert_eq!(fs::read(&target).unwrap(), SHARED_IGNORE.as_bytes());
+        assert!(fs::symlink_metadata(f.permark().join(".gitignore"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    } else {
+        eprintln!("skipped the file link: cannot be made here");
+    }
+}
+
+/// A link to nothing in place of `.permark/.gitignore` (a file symlink, or a folder link | junction whose target is
+/// gone) is someone else's file: refused, nothing made at the target, the link left as it is.
+#[test]
+fn set_sharing_refuses_a_dangling_link_in_place_of_the_file() {
+    // (kind, made: `false` -> cannot be made here, skipped)
+    type Make = fn(&Path, &Path) -> bool;
+    let kinds: [(&str, Make); 2] = [
+        ("file symlink", |link, target| file_link(link, target)),
+        ("folder link", |link, target| {
+            fs::create_dir(target).is_ok()
+                && crate::tree::tests::link_out(link, target)
+                && fs::remove_dir(target).is_ok()
+        }),
+    ];
+    for (name, make) in kinds {
+        let f = fx();
+        init_project(&f.dirs, &f.root()).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("gone");
+        let ignore = f.permark().join(".gitignore");
+        fs::remove_file(&ignore).unwrap();
+        if !make(&ignore, &target) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        assert_eq!(sharing(&f.root()), Sharing::Custom, "{name}");
+        for to in [Sharing::Private, Sharing::Shared] {
+            assert!(
+                matches!(set_sharing(&f.root(), to), Err(StateError::Foreign { .. })),
+                "{name}: {to:?}"
+            );
+        }
+        assert!(
+            fs::symlink_metadata(&target).is_err(),
+            "{name}: nothing made"
+        );
+        assert!(
+            fs::symlink_metadata(&ignore).is_ok_and(|m| crate::fsx::is_link(&m)),
+            "{name}: the link stays"
+        );
+    }
+}
+
+/// A hard link in place of `.permark/.gitignore` is a plain file to every reader (nothing tells it from one), so it
+/// reads as the form its bytes hold and the sharing choice goes ahead: the new form is written by an atomic replace of
+/// the name, which takes the name off the shared file, never writing into it; the other name keeps its bytes.
+#[test]
+fn set_sharing_over_a_hard_link_replaces_the_name_and_leaves_the_other_one() {
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let other = outside.path().join("ignore");
+    fs::write(&other, SHARED_IGNORE).unwrap();
+    let ignore = f.permark().join(".gitignore");
+    fs::remove_file(&ignore).unwrap();
+    if fs::hard_link(&other, &ignore).is_err() {
+        eprintln!("skipped: no hard link across these folders");
+        return;
+    }
+    assert_eq!(sharing(&f.root()), Sharing::Shared);
+    assert_eq!(
+        set_sharing(&f.root(), Sharing::Private).unwrap(),
+        Sharing::Private
+    );
+    assert_eq!(fs::read(&ignore).unwrap(), PRIVATE_IGNORE.as_bytes());
+    assert_eq!(fs::read(&other).unwrap(), SHARED_IGNORE.as_bytes());
 }
 
 #[test]
 fn uninit_project_takes_back_a_cache_holding_more_files() {
     let f = fx();
     let store = init_project(&f.dirs, &f.root()).unwrap();
-    store
-        .cache_file::<Sample>("index.json")
-        .save(&sample(1))
-        .unwrap();
+    let file = store.cache_file::<Sample>("index.json");
+    file.save(&sample(1)).unwrap();
+    // this install's own folder of `cache/`
+    let iid = store.machine().unwrap().iid().to_owned();
+    assert_eq!(
+        file.path(),
+        f.permark().join("cache").join(iid).join("index.json")
+    );
     fs::write(store.cache_dir().join("extra.bin"), b"x").unwrap();
     assert!(uninit_project(&f.dirs, &f.root()).unwrap());
     assert!(!f.root().path().join(".permark").exists());
@@ -470,7 +1014,7 @@ fn the_state_folders_ignore_everything_whatever_the_folder_shipped() {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, text).unwrap();
     }
-    let store = f.store();
+    let store = f.settled();
     store.file::<Sample>("x.json").save(&sample(1)).unwrap();
     store
         .cache_file::<Sample>("index.json")
@@ -522,7 +1066,7 @@ fn a_link_in_place_of_an_ignore_file_is_replaced_never_followed() {
     let folder = outside.path().join("folder");
     fs::create_dir(&folder).unwrap();
     std::os::unix::fs::symlink(&folder, cache.join(".gitignore")).unwrap();
-    f.store()
+    f.settled()
         .cache_file::<Sample>("index.json")
         .save(&sample(1))
         .unwrap();
@@ -538,12 +1082,13 @@ fn the_cache_folder_carries_a_cache_directory_tag() {
     let f = fx();
     let permark = f.project.path().join(".permark");
     fs::create_dir(&permark).unwrap();
-    let store = f.store();
+    let store = f.settled();
     store.file::<Sample>("x.json").save(&sample(1)).unwrap();
     store
         .cache_file::<Sample>("index.json")
         .save(&sample(2))
         .unwrap();
+    // in `cache/` itself, around every install's own folder
     let tag = permark.join("cache").join("CACHEDIR.TAG");
     let text = fs::read_to_string(&tag).unwrap();
     assert!(text.starts_with("Signature: 8a477f597d28d172789f06886806bc55\n"));
@@ -558,6 +1103,61 @@ fn the_cache_folder_carries_a_cache_directory_tag() {
         .save(&sample(3))
         .unwrap();
     assert!(fs::read_to_string(&tag).unwrap().ends_with("# mine\n"));
+}
+
+/// A cache file it cannot use (corrupt, a newer version's, larger than its cap, a link in its place) is left out of
+/// the load and replaced by the next save: nothing set aside beside it, no save refused, nothing behind a link touched.
+#[test]
+fn a_cache_file_it_cannot_use_is_rebuilt_never_kept() {
+    #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+    struct Small {
+        n: u32,
+    }
+    impl StateData for Small {
+        const VERSION: u32 = 1;
+        const MAX_BYTES: u64 = 64;
+    }
+    type Make = fn(&Path, &Path) -> bool;
+    let cases: Vec<(&str, Make)> = vec![
+        ("corrupt", |p, _| fs::write(p, b"{ not json").is_ok()),
+        ("a newer version's", |p, _| {
+            fs::write(p, br#"{"version":2,"data":{"n":1}}"#).is_ok()
+        }),
+        ("larger than its cap", |p, _| {
+            fs::write(
+                p,
+                format!(r#"{{"version":1,"data":{{"n":1}}}}{}"#, " ".repeat(64)),
+            )
+            .is_ok()
+        }),
+        ("a link", |p, out| crate::tree::tests::link_out(p, out)),
+    ];
+    for (name, make) in cases {
+        let f = fx();
+        fs::create_dir(f.permark()).unwrap();
+        let store = location::settle(&f.dirs, &f.root());
+        let file = store.cache_file::<Small>("index/c.json");
+        let dir = file.path().parent().unwrap().to_path_buf();
+        fs::create_dir_all(&dir).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        if !make(file.path(), outside.path()) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        assert_eq!(file.load(), None, "{name}");
+        file.save(&Small { n: 7 }).unwrap();
+        let names: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["c.json"], "{name}: nothing set aside");
+        assert_eq!(file.load(), Some(Small { n: 7 }), "{name}");
+        assert!(file.path().starts_with(f.permark().join("cache")), "{name}");
+        assert!(
+            fs::read_dir(outside.path()).unwrap().next().is_none(),
+            "{name}: nothing behind the link"
+        );
+    }
 }
 
 #[test]
@@ -996,7 +1596,7 @@ fn team_files_are_read_only_as_plain_files_in_permark() {
     let dirs = f.dirs.clone();
     let answers = answered(move || {
         let card = match card::file_of(&dirs, root.path()) {
-            Some(file @ card::CardFile::Project(_)) => file.read(),
+            Some(file @ card::CardFile::Project { .. }) => file.read(),
             _ => panic!("the card is the project's"),
         };
         (
@@ -1097,13 +1697,29 @@ fn uninit_project_never_carries_profile_only_files_back() {
     for name in PROFILE_ONLY.iter().chain(&SHARED_FILES) {
         fs::write(local.join(name), b"from the project").unwrap();
     }
+    // every such file of the profile as it was (the row aside: undo writes it itself)
+    let snapshot = || -> Vec<(&str, Option<Vec<u8>>)> {
+        PROFILE_ONLY
+            .iter()
+            .chain(&SHARED_FILES)
+            .filter(|name| **name != location::FILE)
+            .map(|name| (*name, fs::read(profile.join(name)).ok()))
+            .collect()
+    };
+    let kept = snapshot();
     assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+    assert_eq!(snapshot(), kept);
     assert_eq!(
         fs::read(profile.join("agent.json")).unwrap(),
         b"person's choice"
     );
+    // nothing of the project's comes back (the row of the folder's data place is the profile's own)
     for name in PROFILE_ONLY.iter().chain(&SHARED_FILES).skip(1) {
-        assert!(!profile.join(name).exists(), "{name} stays out");
+        assert_ne!(
+            fs::read(profile.join(name)).ok().as_deref(),
+            Some(&b"from the project"[..]),
+            "{name} stays out"
+        );
     }
     assert_eq!(
         f.store().file::<Sample>("session.json").load().into_value(),
@@ -1673,22 +2289,21 @@ fn store_paths_are_pinned() {
     assert_eq!(s.location(), StateLocation::Profile);
     pinned(&s, &profile, &cache, &profile, &profile);
     assert_eq!(path_of(s.legacy_shared_file("meta.toml")), None);
-    // a real `.permark/`: private state in `local/`, caches in `cache/`, shared files in `.permark/` itself
+    // a real `.permark/`: private state in `local/`, shared files in `.permark/` itself; caches in the app cache until
+    // the folder's row says where they go
     let permark = f.root().path().join(".permark");
     fs::create_dir(&permark).unwrap();
     let s = f.store();
     assert_eq!(s.location(), StateLocation::Project);
-    pinned(
-        &s,
-        &permark.join("local"),
-        &permark.join("cache"),
-        &permark,
-        &profile,
-    );
+    pinned(&s, &permark.join("local"), &cache, &permark, &profile);
     assert_eq!(
         path_of(s.legacy_shared_file("meta.toml")),
         Some(profile.join("meta.toml"))
     );
+    // opened (the row written): caches in this install's own folder of `cache/`
+    let s = f.settled();
+    let own = permark.join("cache").join(s.machine().unwrap().iid());
+    pinned(&s, &permark.join("local"), &own, &permark, &profile);
     // a file in place of `cache/`: caches stay in the profile cache
     fs::write(permark.join("cache"), "x").unwrap();
     assert_eq!(f.store().cache_dir(), cache);
@@ -1701,6 +2316,620 @@ fn store_paths_are_pinned() {
         &f.dirs.cache,
         &f.dirs.profile,
         &f.dirs.profile,
+    );
+}
+
+/// Every path a project's store hands out.
+#[derive(Debug, PartialEq)]
+struct Resolved {
+    location: StateLocation,
+    team: bool,
+    dir: PathBuf,
+    cache_dir: PathBuf,
+    cache_file: PathBuf,
+    machine: Option<PathBuf>,
+    shared_file: PathBuf,
+    legacy_shared_file: Option<PathBuf>,
+    profile_file: PathBuf,
+    plugin_dir: PathBuf,
+    profile_plugin_dir: PathBuf,
+}
+
+impl Resolved {
+    fn of(s: &StateStore) -> Self {
+        let git = PluginId::of("git");
+        Self {
+            location: s.location(),
+            team: s.has_team_folder(),
+            dir: s.dir().to_path_buf(),
+            cache_dir: s.cache_dir().to_path_buf(),
+            cache_file: s.cache_file::<Sample>("c.json").path().to_path_buf(),
+            machine: s.machine().map(|m| m.dir().to_path_buf()),
+            shared_file: s.shared_file("meta.toml").path().to_path_buf(),
+            legacy_shared_file: s
+                .legacy_shared_file("meta.toml")
+                .map(|raw| raw.path().to_path_buf()),
+            profile_file: s.profile_file::<Sample>("agent.json").path().to_path_buf(),
+            plugin_dir: s.plugin_dir(&git),
+            profile_plugin_dir: s.profile_plugin_dir(&git),
+        }
+    }
+
+    /// The answer for a store of `f`'s folder whose state sits at `place` (install id `iid`).
+    fn at(f: &Fx, iid: &str, place: Place) -> Self {
+        let id = ProjectId::of(&f.root());
+        let profile = f.dirs.profile.join("projects").join(id.as_str());
+        let profile_cache = f.dirs.cache.join("projects").join(id.as_str());
+        let permark = f.root().path().join(PERMARK_DIR);
+        let (dir, cache) = match place {
+            Place::Profile | Place::TeamOnly => (profile.clone(), profile_cache),
+            Place::Project => (permark.join("local"), permark.join("cache").join(iid)),
+            Place::ProjectStateOnly => (permark.join("local"), profile_cache),
+        };
+        // shared files in `.permark/` (the profile copy kept apart) whenever it is the team folder
+        let team = !matches!(place, Place::Profile);
+        let shared = if team { &permark } else { &profile };
+        Self {
+            location: if matches!(place, Place::Profile | Place::TeamOnly) {
+                StateLocation::Profile
+            } else {
+                StateLocation::Project
+            },
+            team,
+            cache_file: cache.join("c.json"),
+            cache_dir: cache,
+            machine: Some(dir.join("machine").join(iid)),
+            shared_file: shared.join("meta.toml"),
+            legacy_shared_file: team.then(|| profile.join("meta.toml")),
+            profile_file: profile.join("agent.json"),
+            plugin_dir: dir.join("plugins").join("git"),
+            profile_plugin_dir: profile.join("plugins").join("git"),
+            dir,
+        }
+    }
+}
+
+/// Where a project store's state sits.
+#[derive(Clone, Copy)]
+enum Place {
+    Profile,
+    /// In the project, caches in this install's own folder of `cache/` (as the folder's row says).
+    Project,
+    /// In the project, caches in the profile cache.
+    ProjectStateOnly,
+    /// In the profile; only the team files in `.permark/`.
+    TeamOnly,
+}
+
+impl Fx {
+    fn permark(&self) -> PathBuf {
+        self.project.path().join(PERMARK_DIR)
+    }
+}
+
+/// A folder layout: made in the folder (`false` -> the system cannot make it here, skipped).
+type MakeLayout = fn(&Fx, &Path) -> bool;
+
+/// Every layout a project folder can have, with the place its store gives once the folder is opened.
+fn folder_layouts() -> Vec<(&'static str, MakeLayout, Place)> {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut layouts: Vec<(&str, MakeLayout, Place)> = vec![
+        ("no .permark", |_, _| true, Place::Profile),
+        (
+            "profile state only",
+            |f, _| {
+                f.store()
+                    .file::<Sample>("session.json")
+                    .save(&sample(1))
+                    .is_ok()
+            },
+            Place::Profile,
+        ),
+        (
+            ".permark, local missing",
+            |f, _| fs::create_dir(f.permark()).is_ok(),
+            Place::Project,
+        ),
+        (
+            ".permark with local",
+            |f, _| fs::create_dir_all(f.permark().join("local")).is_ok(),
+            Place::Project,
+        ),
+        (
+            ".permark a file",
+            |f, _| fs::write(f.permark(), "x").is_ok(),
+            Place::Profile,
+        ),
+        (
+            ".permark a junction | symlink",
+            |f, out| crate::tree::tests::link_out(&f.permark(), out),
+            Place::Profile,
+        ),
+        (
+            "local a file",
+            |f, _| {
+                fs::create_dir(f.permark()).is_ok()
+                    && fs::write(f.permark().join("local"), "x").is_ok()
+            },
+            Place::TeamOnly,
+        ),
+        (
+            "local a junction | symlink",
+            |f, out| {
+                fs::create_dir(f.permark()).is_ok()
+                    && crate::tree::tests::link_out(&f.permark().join("local"), out)
+            },
+            Place::TeamOnly,
+        ),
+        (
+            "cache a file",
+            |f, _| {
+                fs::create_dir(f.permark()).is_ok()
+                    && fs::write(f.permark().join("cache"), "x").is_ok()
+            },
+            Place::ProjectStateOnly,
+        ),
+    ];
+    // Windows makes directory symlinks only with the privilege (developer mode): skipped without it
+    #[cfg(windows)]
+    layouts.push((
+        ".permark a directory symlink",
+        |f, out| std::os::windows::fs::symlink_dir(out, f.permark()).is_ok(),
+        Place::Profile,
+    ));
+    layouts
+}
+
+/// Where a project's store sits for each layout its folder can have: `.permark/` a real folder (with `local/` real or
+/// missing) -> `local/`, caches in this install's own folder of `cache/` once the folder is opened (its row written)
+/// unless something else is there as `cache/`, in the profile cache before; anything else (no `.permark/`, a file or a
+/// folder link in its place, a file | link as `local/`) -> the profile. Team files follow `.permark/` whenever it is a
+/// real folder, also while the private state stays in the profile. Resolving and opening write nothing into the
+/// folder and nothing through a link; a second store of the same folder gives the same answer.
+#[test]
+fn every_path_a_store_hands_out_is_pinned_for_each_folder_layout() {
+    for (name, make, place) in folder_layouts() {
+        let f = fx();
+        let outside = tempfile::tempdir().unwrap();
+        if !make(&f, outside.path()) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        let before = entries_below(f.project.path());
+        let s = f.store();
+        let got = Resolved::of(&s);
+        assert_eq!(
+            has_team_folder(&f.root()),
+            got.team,
+            "{name}: the folder's own answer"
+        );
+        let iid = s.machine().unwrap().iid().to_owned();
+        // no row yet: the caches stay in the profile cache
+        let unopened = match place {
+            Place::Project => Place::ProjectStateOnly,
+            other => other,
+        };
+        assert_eq!(got, Resolved::at(&f, &iid, unopened), "{name}");
+        assert_eq!(Resolved::of(&f.store()), got, "{name}: a second store");
+        let opened = Resolved::of(&f.settled());
+        assert_eq!(opened, Resolved::at(&f, &iid, place), "{name}: opened");
+        assert_eq!(
+            Resolved::of(&f.store()),
+            opened,
+            "{name}: a store after the open"
+        );
+        assert_eq!(
+            entries_below(f.project.path()),
+            before,
+            "{name}: folder untouched"
+        );
+        assert!(
+            fs::read_dir(outside.path()).unwrap().next().is_none(),
+            "{name}: nothing behind a link"
+        );
+    }
+}
+
+/// Undo of an init takes `.permark/` back only while `local/` and `cache/` hold no link anywhere: a junction | symlink
+/// inside or in their place, or a file in place of `local/`, leaves `.permark/` as it is (nothing carried back,
+/// nothing removed, the link's target untouched).
+#[test]
+fn uninit_project_takes_back_only_state_folders_without_a_link() {
+    fn local(permark: &Path) -> PathBuf {
+        permark.join("local")
+    }
+    // (what is put into the fresh `.permark/`, taken back; `false` from the maker -> cannot be made here, skipped)
+    type Make = fn(&Path, &Path) -> bool;
+    let mut cases: Vec<(&str, Make, bool)> = vec![
+        (
+            "plain folder + file in local",
+            |p, _| {
+                fs::create_dir(local(p).join("sub")).is_ok()
+                    && fs::write(local(p).join("sub").join("a.json"), "{}").is_ok()
+            },
+            true,
+        ),
+        (
+            "junction | symlink in local",
+            |p, out| crate::tree::tests::link_out(&local(p).join("elsewhere"), out),
+            false,
+        ),
+        (
+            "junction | symlink as cache",
+            |p, out| {
+                fs::remove_dir_all(p.join("cache")).is_ok()
+                    && crate::tree::tests::link_out(&p.join("cache"), out)
+            },
+            false,
+        ),
+        (
+            "file in place of local",
+            |p, _| fs::remove_dir_all(local(p)).is_ok() && fs::write(local(p), "x").is_ok(),
+            false,
+        ),
+    ];
+    #[cfg(unix)]
+    cases.push((
+        "file symlink in local",
+        |p, out| {
+            std::os::unix::fs::symlink(out.join("kept.txt"), local(p).join("kept.txt")).is_ok()
+        },
+        false,
+    ));
+    // Windows makes symlinks only with the privilege (developer mode): skipped without it
+    #[cfg(windows)]
+    cases.push((
+        "directory symlink in local",
+        |p, out| std::os::windows::fs::symlink_dir(out, local(p).join("elsewhere")).is_ok(),
+        false,
+    ));
+    for (name, make, taken) in cases {
+        let f = fx();
+        init_project(&f.dirs, &f.root()).unwrap();
+        let permark = f.root().path().join(PERMARK_DIR);
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("kept.txt"), b"theirs").unwrap();
+        if !make(&permark, outside.path()) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        assert_eq!(uninit_project(&f.dirs, &f.root()).unwrap(), taken, "{name}");
+        assert_eq!(
+            fs::symlink_metadata(&permark).is_ok(),
+            !taken,
+            "{name}: .permark kept"
+        );
+        assert_eq!(
+            entries_below(outside.path()),
+            ["kept.txt"],
+            "{name}: target untouched"
+        );
+        assert_eq!(
+            fs::read(outside.path().join("kept.txt")).unwrap(),
+            b"theirs"
+        );
+    }
+}
+
+/// A cloud placeholder folder (OneDrive Files On-Demand) carries a reparse point that is no link: std reports a plain
+/// folder. Where the private state lives keeps the rule of earlier versions, which counted any reparse point as a link
+/// (the state stays in the profile, where they kept it), while `.permark/` is the team folder: team files are written
+/// there, the project list, the tag vocabulary and the card are read there, and its `local/` is where a context file
+/// sits. No test can make a cloud folder: the earlier rule's predicate is swapped for one that calls everything a link,
+/// and std answers for the folder as for a plain one.
+#[test]
+fn a_cloud_folder_is_the_team_folder_while_the_private_state_stays_where_earlier_versions_kept_it()
+{
+    use crate::projects::{card, record, vocabulary};
+    let f = fx();
+    let permark = f.permark();
+    fs::create_dir_all(permark.join("local")).unwrap();
+    fs::write(permark.join(record::RECORD_FILE), "version = 1\n").unwrap();
+    fs::write(
+        permark.join(vocabulary::VOCABULARY_FILE),
+        "version = 1\n\n[tags.spec]\n",
+    )
+    .unwrap();
+    let cloud = StateStore::for_project_as(&f.dirs, &f.root(), |_| true);
+    let iid = cloud.machine().unwrap().iid().to_owned();
+    assert_eq!(
+        Resolved::of(&cloud),
+        Resolved::at(&f, &iid, Place::TeamOnly)
+    );
+    assert!(has_team_folder(&f.root()));
+    cloud.shared_file("meta.toml").write(b"x = 1\n").unwrap();
+    assert_eq!(fs::read(permark.join("meta.toml")).unwrap(), b"x = 1\n");
+    assert!(matches!(
+        record::read(f.root().path()),
+        crate::projects::RecordRead::Read(_)
+    ));
+    let vocab = vocabulary::read(f.root().path());
+    assert!(
+        vocab.vocab().is_some_and(|v| v.tags.contains_key("spec")),
+        "{vocab:?}"
+    );
+    let place = card::file_of(&f.dirs, f.root().path()).map(|file| file.place());
+    assert_eq!(place, Some(card::CardPlace::Project));
+    assert_eq!(
+        cloud
+            .local_raw_file(context::FILE)
+            .map(|file| file.path().to_path_buf()),
+        Some(permark.join("local").join(context::FILE))
+    );
+    // the same folder under the earlier rule's own predicate: a plain folder, so the state is in `local/`
+    assert_eq!(f.store().location(), StateLocation::Project);
+}
+
+/// The project's `local/` is offered whatever place holds the private state, only while `.permark/` is a real folder
+/// and `local/` is a real folder or missing; it is the store's own state folder when the state is there.
+#[test]
+fn the_local_folder_is_offered_only_inside_a_real_team_folder() {
+    // (layout, made in the folder: `false` -> the system cannot make it here, skipped; offered)
+    type Make = fn(&Fx, &Path) -> bool;
+    let layouts: Vec<(&str, Make, bool)> = vec![
+        ("no .permark", |_, _| true, false),
+        (
+            ".permark, local missing",
+            |f, _| fs::create_dir(f.permark()).is_ok(),
+            true,
+        ),
+        (
+            ".permark a file",
+            |f, _| fs::write(f.permark(), "x").is_ok(),
+            false,
+        ),
+        (
+            ".permark a junction | symlink",
+            |f, out| crate::tree::tests::link_out(&f.permark(), out),
+            false,
+        ),
+        (
+            "local a file",
+            |f, _| {
+                fs::create_dir(f.permark()).is_ok()
+                    && fs::write(f.permark().join("local"), "x").is_ok()
+            },
+            false,
+        ),
+        (
+            "local a junction | symlink",
+            |f, out| {
+                fs::create_dir(f.permark()).is_ok()
+                    && crate::tree::tests::link_out(&f.permark().join("local"), out)
+            },
+            false,
+        ),
+    ];
+    for (name, make, offered) in layouts {
+        let f = fx();
+        let outside = tempfile::tempdir().unwrap();
+        if !make(&f, outside.path()) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        let s = f.store();
+        let file = s.local_raw_file("x.json");
+        assert_eq!(file.is_some(), offered, "{name}");
+        if let Some(file) = file {
+            assert_eq!(file.path(), s.raw_file("x.json").path(), "{name}");
+            file.write(b"{}").unwrap();
+            assert_eq!(
+                fs::read(f.permark().join("local").join("x.json")).unwrap(),
+                b"{}"
+            );
+        }
+        assert!(
+            fs::read_dir(outside.path()).unwrap().next().is_none(),
+            "{name}: nothing behind a link"
+        );
+    }
+}
+
+/// Initialize never copies a plugin's profile-only folder ([`StateStore::profile_plugin_dir`]) into `.permark/local/`:
+/// those folders stay in the profile on purpose (the Assistant's work copy of the project and its saved conversation),
+/// since inside the project a tool walking up from the work copy finds the project, and a synced or shared folder
+/// carries the conversation to other computers. The other plugins' data is copied as before.
+#[test]
+fn init_project_leaves_profile_pinned_plugin_folders_in_the_profile() {
+    let f = fx();
+    let before = f.store();
+    let acp = PluginId::of("acp");
+    let pinned = before.profile_plugin_dir(&acp);
+    fs::create_dir_all(pinned.join("work").join("proj")).unwrap();
+    fs::write(pinned.join("work").join("proj").join("doc.md"), b"# copy").unwrap();
+    fs::create_dir_all(pinned.join("run")).unwrap();
+    before
+        .profile_plugin_file::<Sample>(&acp, "session.json")
+        .save(&sample(1))
+        .unwrap();
+    before
+        .plugin_file::<Sample>(&PluginId::of("tags"), "t.json")
+        .save(&sample(4))
+        .unwrap();
+    let listed = entries_below(&pinned);
+    let after = init_project(&f.dirs, &f.root()).unwrap();
+    assert_eq!(after.location(), StateLocation::Project);
+    assert!(!after.dir().join("plugins").join("acp").exists());
+    assert_eq!(
+        after
+            .plugin_file::<Sample>(&PluginId::of("tags"), "t.json")
+            .load(),
+        Loaded::Found(sample(4))
+    );
+    // the profile keeps its folder whole, and every store of the folder still answers it
+    assert_eq!(after.profile_plugin_dir(&acp), pinned);
+    assert_eq!(entries_below(&pinned), listed);
+    assert_eq!(
+        after
+            .profile_plugin_file::<Sample>(&acp, "session.json")
+            .load(),
+        Loaded::Found(sample(1))
+    );
+}
+
+/// Initialize into a `local/` that already holds a `machine/` folder (another computer's, from a sync partner, or an
+/// empty one a repository ships): this install's own folder in the profile (its undo journal, kept copies) is carried
+/// in beside the others, never over a folder of the same name; another computer's folder stays byte for byte, and a
+/// link | junction inside `local/` is left out of the copy, its target untouched, no temp folder left behind.
+#[test]
+fn initialize_carries_this_computers_folder_beside_the_ones_local_holds() {
+    let f = fx();
+    let before = f.store();
+    before
+        .file::<Sample>("session.json")
+        .save(&sample(5))
+        .unwrap();
+    let iid = before.machine().unwrap().iid().to_owned();
+    before
+        .machine_file::<Sample>("journal.json")
+        .unwrap()
+        .save(&sample(7))
+        .unwrap();
+    let local = f.permark().join("local");
+    let other = local.join("machine").join("0123456789abcdef");
+    put(&other.join("journal.json"), b"theirs");
+    let outside = tempfile::tempdir().unwrap();
+    put(&outside.path().join("x"), b"outside");
+    let escape = other.join("escape");
+    let linked = crate::tree::tests::link_out(&escape, outside.path());
+    let after = init_project(&f.dirs, &f.root()).unwrap();
+    assert_eq!(after.location(), StateLocation::Project);
+    assert_eq!(
+        after.machine().unwrap().dir(),
+        local.join("machine").join(&iid)
+    );
+    assert_eq!(
+        after.machine_file::<Sample>("journal.json").unwrap().load(),
+        Loaded::Found(sample(7))
+    );
+    assert_eq!(
+        after.file::<Sample>("session.json").load(),
+        Loaded::Found(sample(5))
+    );
+    assert_eq!(fs::read(other.join("journal.json")).unwrap(), b"theirs");
+    if linked {
+        assert!(
+            fs::symlink_metadata(&escape).is_err(),
+            "left out of the copy"
+        );
+    } else {
+        eprintln!("skipped the link: cannot be made here");
+    }
+    assert_eq!(entries_below(outside.path()), ["x"]);
+    assert_eq!(fs::read(outside.path().join("x")).unwrap(), b"outside");
+    let top: Vec<String> = entries_below(&f.permark())
+        .into_iter()
+        .filter(|e| !e.trim_end_matches('/').contains('/'))
+        .collect();
+    assert_eq!(top, [".gitignore", "cache/", "config.toml", "local/"]);
+    // a folder of this install already there is never written over (the profile's copy then stays the only one)
+    let f = fx();
+    let before = f.store();
+    before
+        .machine_file::<Sample>("journal.json")
+        .unwrap()
+        .save(&sample(7))
+        .unwrap();
+    before
+        .file::<Sample>("session.json")
+        .save(&sample(5))
+        .unwrap();
+    let iid = before.machine().unwrap().iid().to_owned();
+    let mine = f
+        .permark()
+        .join("local")
+        .join("machine")
+        .join(&iid)
+        .join("journal.json");
+    put(&mine, b"already here");
+    init_project(&f.dirs, &f.root()).unwrap();
+    assert_eq!(fs::read(&mine).unwrap(), b"already here");
+}
+
+/// Undo of an init never carries a profile-only plugin folder back from `local/` (one an earlier version copied
+/// there): the profile's own folder is the live one and stays as it is; the rest of `local/` comes back.
+#[test]
+fn uninit_project_never_carries_a_profile_pinned_plugin_folder_back() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    let acp = PluginId::of("acp");
+    store
+        .profile_plugin_file::<Sample>(&acp, "session.json")
+        .save(&sample(1))
+        .unwrap();
+    let stale = store.dir().join("plugins").join("acp");
+    fs::create_dir_all(stale.join("work")).unwrap();
+    fs::write(stale.join("session.json"), b"older copy").unwrap();
+    fs::write(stale.join("work").join("doc.md"), b"# older").unwrap();
+    store
+        .plugin_file::<Sample>(&PluginId::of("tags"), "t.json")
+        .save(&sample(4))
+        .unwrap();
+    let pinned = store.profile_plugin_dir(&acp);
+    let listed = entries_below(&pinned);
+    assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+    assert_eq!(entries_below(&pinned), listed);
+    let back = f.store();
+    assert_eq!(
+        back.profile_plugin_file::<Sample>(&acp, "session.json")
+            .load(),
+        Loaded::Found(sample(1))
+    );
+    assert_eq!(
+        back.plugin_file::<Sample>(&PluginId::of("tags"), "t.json")
+            .load(),
+        Loaded::Found(sample(4))
+    );
+}
+
+/// A profile-only file moved aside as unreadable (`<name>.broken-<ms>`) stays in the profile as the file itself does:
+/// Initialize | Move never copies one into `.permark/local/`, and undoing it never carries one an earlier version
+/// copied there back over the profile's. An aside of the project's own data is carried as before.
+#[test]
+fn profile_only_files_moved_aside_never_travel_with_the_data() {
+    let f = fx();
+    let before = f.settled();
+    before
+        .file::<Sample>("session.json")
+        .save(&sample(5))
+        .unwrap();
+    let asides = [
+        "location.json.broken-1",
+        "agent.json.broken-2-1",
+        "card.json.broken-3",
+    ];
+    for name in asides {
+        fs::write(before.dir().join(name), b"profile's aside").unwrap();
+    }
+    fs::write(before.dir().join("session.json.broken-4"), b"data aside").unwrap();
+    let after = init_project(&f.dirs, &f.root()).unwrap();
+    assert_eq!(after.location(), StateLocation::Project);
+    for name in asides {
+        assert!(!after.dir().join(name).exists(), "{name} stays out");
+    }
+    assert_eq!(
+        fs::read(after.dir().join("session.json.broken-4")).unwrap(),
+        b"data aside"
+    );
+    assert_eq!(
+        after.file::<Sample>("session.json").load(),
+        Loaded::Found(sample(5))
+    );
+    for name in asides.iter().chain(&["plugins.json.broken-5"]) {
+        fs::write(after.dir().join(name), b"from the project").unwrap();
+    }
+    assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+    for name in asides {
+        assert_eq!(
+            fs::read(before.dir().join(name)).unwrap(),
+            b"profile's aside",
+            "{name}"
+        );
+    }
+    assert!(!before.dir().join("plugins.json.broken-5").exists());
+    assert_eq!(
+        f.store().file::<Sample>("session.json").load(),
+        Loaded::Found(sample(5))
     );
 }
 
@@ -1770,6 +2999,18 @@ fn machine_files_sit_under_the_install_id_in_both_locations() {
         s.machine_raw_file("x.json").unwrap().path(),
         m.dir().join("x.json")
     );
+    let git = PluginId::of("git");
+    let own_plugin = m.dir().join("plugins").join("git");
+    assert_eq!(
+        s.machine_plugin_file::<Sample>(&git, "k.json")
+            .unwrap()
+            .path(),
+        own_plugin.join("k.json")
+    );
+    assert_eq!(
+        s.machine_plugin_raw_file(&git, "r.json").unwrap().path(),
+        own_plugin.join("r.json")
+    );
     assert_eq!(
         s.install_file::<Sample>("marks.json").unwrap().path(),
         f.dirs.install.join("marks.json")
@@ -1795,6 +3036,8 @@ fn machine_files_sit_under_the_install_id_in_both_locations() {
     assert!(app.machine().is_none());
     assert!(app.machine_file::<Sample>("x.json").is_none());
     assert!(app.machine_raw_file("x.json").is_none());
+    assert!(app.machine_plugin_file::<Sample>(&git, "k.json").is_none());
+    assert!(app.machine_plugin_raw_file(&git, "r.json").is_none());
     assert_eq!(
         app.install_file::<Sample>("marks.json").unwrap().path(),
         f.dirs.install.join("marks.json")

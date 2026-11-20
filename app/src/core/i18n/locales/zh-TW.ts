@@ -1636,14 +1636,29 @@ export default {
   "project.ignoreHint":
     "符合的檔案不會被搜尋，也不會出現在即時動態中。檔案清單會像顯示 git 忽略的檔案那樣將它們淡化顯示。",
   "project.ignoreLabel": "不出現在搜尋和即時動態中",
+  "project.dataAsk":
+    "此資料夾現在有 .permark 資料夾。您在此資料夾中的註解、已讀標記和其他資料仍保存在這台電腦上。",
+  "project.dataMove": "移入資料夾",
+  "project.dataKeep": "保留在這台電腦上",
+  "project.dataMissing":
+    "此資料夾的 .permark 資料夾不見了或無法使用。PerMark 正在使用保存在這台電腦上的資料副本，它可能較舊。",
+  "project.dataKeepCopy": "繼續使用此副本",
+  "project.dataPlace": "您在此資料夾中的資料",
+  "project.dataPlaceProfile": "保存在這台電腦上您的使用者設定檔中。",
+  "project.dataMoved": "您在此資料夾中的資料現在位於它的 .permark 資料夾中。",
+  "project.dataMoveHeld":
+    "此資料夾的 .permark 資料夾中已有來自別處的 PerMark 資料，因此您的資料仍保留在這台電腦上。",
+  "project.dataMoveFailed": "無法將您的資料移入資料夾：{message}",
   "project.initButton": "初始化 PerMark",
   "project.initConfig": "此專案與團隊共用的設定。",
   "project.initConfirm": "初始化 PerMark",
   "project.initFailed": "無法在 {path} 中初始化 PerMark：{message}",
   "project.initIgnore": "讓私人資料夾不進入 Git。",
   "project.initIntro": "PerMark 會在此建立 .permark 資料夾，內含：",
-  "project.initLocal": "您在此專案中的私人資料（註解、已讀標記）及其快取。",
-  "project.initNote": "不會更動您的檔案。您在此專案中已有的標籤、註解和已讀標記會複製進來。",
+  "project.initLocal":
+    "您在此專案中的私人資料（註解、已讀標記、復原記錄），以及 PerMark 隨時可以重建的快取。",
+  "project.initNote":
+    "不會更動您的檔案。您在此專案中已有的標籤、註解和已讀標記會複製進來。您為此資料夾允許的項目（例如代理程式存取權）仍保存在這台電腦上您自己的 PerMark 資料中。",
   "project.initTitle": "要在 {name} 中初始化 PerMark 嗎？",
   "project.newTitle": "要將 {name} 設為專案嗎？",
   "project.newWhy":
@@ -1666,6 +1681,13 @@ export default {
   "project.treeUnset": "未設定",
   "project.scopes":
     "標示為「所有人」的設定儲存在此資料夾的 .permark/config.toml 中，與開啟它的每個人共用。標示為「僅自己」的設定只保存在這台電腦上。",
+  "project.shareGit": "讓 Git 看到此資料夾的 PerMark 設定",
+  "project.shareGitCustom": "此資料夾的 .permark/.gitignore 由其他人撰寫，因此 PerMark 保持原樣。",
+  "project.shareGitFailed": "無法變更 Git 在 .permark 中看到的內容：{message}",
+  "project.shareGitHint":
+    "開啟：Git 能看到 .permark 中的設定、標籤、專案清單和專案說明，您可以為團隊提交它們。關閉：Git 忽略整個 .permark 資料夾；已經提交的檔案仍維持已提交。如果 .permark/.gitignore 已提交，您的團隊也會收到這項變更。您的私人資料和快取一律不進入 Git。",
+  "project.shareGitOff": "關閉",
+  "project.shareGitOn": "開啟",
   "project.shareInit": "初始化 PerMark 以便與所有人共用",
   "project.sharedFileHint": "與開啟此資料夾的每個人共用。",
   "settings.all": "所有設定",

@@ -1736,6 +1736,19 @@ export default {
   "project.ignoreHint":
     "Les fichiers correspondants ne sont pas recherchés et n'apparaissent jamais dans le flux en direct. La liste des fichiers les affiche estompés, comme les fichiers ignorés par git.",
   "project.ignoreLabel": "Exclus de la recherche et du flux en direct",
+  "project.dataAsk":
+    "Ce dossier a maintenant un dossier .permark. Vos commentaires, marques de lecture et autres données pour ce dossier restent conservés sur cet ordinateur.",
+  "project.dataMove": "Déplacer dans le dossier",
+  "project.dataKeep": "Garder sur cet ordinateur",
+  "project.dataMissing":
+    "Le dossier .permark de ce dossier est absent ou inutilisable. PerMark utilise la copie de vos données conservée sur cet ordinateur, qui peut être plus ancienne.",
+  "project.dataKeepCopy": "Continuer avec cette copie",
+  "project.dataPlace": "Vos données pour ce dossier",
+  "project.dataPlaceProfile": "Conservées sur cet ordinateur, dans votre profil utilisateur.",
+  "project.dataMoved": "Vos données pour ce dossier sont maintenant dans son dossier .permark.",
+  "project.dataMoveHeld":
+    "Le dossier .permark de ce dossier contient déjà des données PerMark venues d'ailleurs, vos données restent donc sur cet ordinateur.",
+  "project.dataMoveFailed": "Impossible de déplacer vos données dans le dossier : {message}",
   "project.initButton": "Initialiser PerMark",
   "project.initConfig": "Les paramètres que ce projet partage avec son équipe.",
   "project.initConfirm": "Initialiser PerMark",
@@ -1743,9 +1756,9 @@ export default {
   "project.initIgnore": "Garde les dossiers privés hors de Git.",
   "project.initIntro": "PerMark crée ici un dossier .permark contenant :",
   "project.initLocal":
-    "Vos données privées pour ce projet (commentaires, marques de lecture) et son cache.",
+    "Vos données privées pour ce projet (commentaires, marques de lecture, historique d'annulation) et un cache que PerMark peut reconstruire à tout moment.",
   "project.initNote":
-    "Vos fichiers ne sont pas modifiés. Les étiquettes, commentaires et marques de lecture que vous avez déjà pour ce projet y sont copiés.",
+    "Vos fichiers ne sont pas modifiés. Les étiquettes, commentaires et marques de lecture que vous avez déjà pour ce projet y sont copiés. Ce que vous autorisez pour ce dossier, comme l'accès des agents, reste dans vos propres données PerMark sur cet ordinateur.",
   "project.initTitle": "Initialiser PerMark dans {name} ?",
   "project.newTitle": "Faire de {name} un projet ?",
   "project.newWhy":
@@ -1770,6 +1783,14 @@ export default {
   "project.treeUnset": "Non défini",
   "project.scopes":
     "Les paramètres marqués Tout le monde sont enregistrés dans le .permark/config.toml de ce dossier et partagés avec quiconque l'ouvre. Ceux marqués Vous seul restent sur cet ordinateur.",
+  "project.shareGit": "Laisser Git voir les paramètres PerMark de ce dossier",
+  "project.shareGitCustom":
+    "Le fichier .permark/.gitignore de ce dossier a été écrit par quelqu'un d'autre ; PerMark le laisse tel quel.",
+  "project.shareGitFailed": "Impossible de modifier ce que Git voit dans .permark : {message}",
+  "project.shareGitHint":
+    "Activé : Git voit les paramètres, les étiquettes, la liste des projets et les descriptions des projets dans .permark, pour que vous puissiez les committer pour votre équipe. Désactivé : Git ignore tout le dossier .permark ; les fichiers déjà committés le restent. Si .permark/.gitignore est committé, votre équipe reçoit aussi ce changement. Vos données privées et les caches restent toujours hors de Git.",
+  "project.shareGitOff": "Désactivé",
+  "project.shareGitOn": "Activé",
   "project.shareInit": "Initialisez PerMark pour partager ceci avec tout le monde",
   "project.sharedFileHint": "Partagé avec quiconque ouvre ce dossier.",
   "settings.all": "Tous les paramètres",

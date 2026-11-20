@@ -55,6 +55,7 @@ import type { PluginKind } from "./generated/PluginKind";
 import type { PluginInfo } from "./generated/PluginInfo";
 import type { ProjectSettingChange } from "./generated/ProjectSettingChange";
 import type { ProjectSettings } from "./generated/ProjectSettings";
+import type { Sharing } from "./generated/Sharing";
 import type { DeleteOutcome } from "./generated/DeleteOutcome";
 import type { Body } from "./generated/Body";
 import type { ConfigEdit } from "./generated/ConfigEdit";
@@ -289,6 +290,7 @@ export type {
   PluginKind,
   ProjectSettingChange,
   ProjectSettings,
+  Sharing,
   ViewRequest,
   ClosingTab,
   CloseAnswer,
@@ -544,9 +546,11 @@ export interface Commands {
   };
   plugin_call: { args: { plugin: string; method: string; args: JsonValue }; result: JsonValue };
   project_init: { args: { path: string }; result: null };
+  project_data_keep: { args: { path: string }; result: null };
   folder_empty: { args: { path: string }; result: boolean };
   project_config_get: { args: Record<string, never>; result: ProjectSettings };
   project_config_set: { args: { change: ProjectSettingChange }; result: ProjectSettings };
+  project_sharing_set: { args: { sharing: Sharing }; result: ProjectSettings };
   plugins_list: { args: Record<string, never>; result: PluginInfo[] };
   plugin_set_project: { args: { plugin: string; enabled: boolean | null }; result: null };
   plugin_remove_data: { args: { plugin: string }; result: null };
@@ -1419,11 +1423,16 @@ export interface Api {
   demoDismiss(): Promise<Result<null>>;
   /** Creates `.permark/` in a folder; a project open on it reloads its state at once. */
   projectInit(path: string): Promise<Result<null>>;
+  /** Keeps a folder's private data on this computer (its window's offer); Move is `projectInit`. */
+  projectDataKeep(path: string): Promise<Result<null>>;
   /** Whether a folder has nothing in it yet (one that cannot be read counts as not empty). */
   folderEmpty(path: string): Promise<Result<boolean>>;
   /** The shared settings (`.permark/config.toml`) of this window's project. */
   projectConfigGet(): Promise<Result<ProjectSettings>>;
   projectConfigSet(change: ProjectSettingChange): Promise<Result<ProjectSettings>>;
+  /** What git may see of `.permark/`: PerMark's own `.permark/.gitignore` rewritten (someone else's file is
+   *  refused); the shared settings as they are now. */
+  projectSharingSet(sharing: Sharing): Promise<Result<ProjectSettings>>;
   /** Every plugin with its state for this window. */
   pluginsList(): Promise<Result<PluginInfo[]>>;
   /** The person's own choice for a plugin in this project (`null`: follow the app). */

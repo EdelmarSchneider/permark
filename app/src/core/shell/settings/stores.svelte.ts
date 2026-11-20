@@ -8,6 +8,7 @@ import {
   type PluginInfo,
   type ProjectSettingChange,
   type ProjectSettings,
+  type Sharing,
 } from "../../../api";
 
 export type ProjectState =
@@ -28,6 +29,8 @@ class ProjectSettingsStore {
   state = $state.raw<ProjectState>({ status: "idle" });
   /** The last refused change: which key, and why (cleared by the next change that works). */
   problem = $state.raw<{ key: string; code: string } | null>(null);
+  /** Why the last change of what git sees of `.permark/` was refused (cleared by the next one that works). */
+  sharingError = $state.raw<ApiError | null>(null);
   #api: Api = api;
   #seq = 0;
 
@@ -54,8 +57,23 @@ class ProjectSettingsStore {
     return true;
   }
 
+  /** What git may see of `.permark/` (PerMark's own `.permark/.gitignore`). `true` when it was kept; else
+   *  `sharingError` says why and the folder is read again (the file may hold someone else's text now). */
+  async setSharing(sharing: Sharing): Promise<boolean> {
+    const result = await this.#api.projectSharingSet(sharing);
+    if (!result.ok) {
+      this.sharingError = result.error;
+      await this.load(this.#api);
+      return false;
+    }
+    this.sharingError = null;
+    this.state = { status: "ready", settings: result.value };
+    return true;
+  }
+
   clearProblem(): void {
     this.problem = null;
+    this.sharingError = null;
   }
 
   /** The shared file sets plugin key `key` (`<id>.<key>`), which no plugin reads: the person's own value applies. */

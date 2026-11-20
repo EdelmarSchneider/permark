@@ -1779,6 +1779,19 @@ export default {
   "project.ignoreHint":
     "Fișierele care se potrivesc nu sunt căutate și nu apar niciodată în fluxul în timp real. Lista de fișiere le arată estompate, ca pe fișierele ignorate de git.",
   "project.ignoreLabel": "Excluse din căutare și din fluxul în timp real",
+  "project.dataAsk":
+    "Acest dosar are acum un dosar .permark. Comentariile, marcajele de citire și celelalte date ale tale pentru el sunt păstrate în continuare pe acest computer.",
+  "project.dataMove": "Mută în dosar",
+  "project.dataKeep": "Păstrează pe acest computer",
+  "project.dataMissing":
+    "Dosarul .permark al acestui dosar lipsește sau nu poate fi folosit. PerMark folosește copia datelor tale păstrată pe acest computer, care poate fi mai veche.",
+  "project.dataKeepCopy": "Folosește în continuare această copie",
+  "project.dataPlace": "Datele tale pentru acest dosar",
+  "project.dataPlaceProfile": "Păstrate pe acest computer, în profilul tău de utilizator.",
+  "project.dataMoved": "Datele tale pentru acest dosar sunt acum în dosarul său .permark.",
+  "project.dataMoveHeld":
+    "Dosarul .permark al acestui dosar conține deja date PerMark din altă parte, așa că datele tale rămân pe acest computer.",
+  "project.dataMoveFailed": "Datele tale nu au putut fi mutate în dosar: {message}",
   "project.initButton": "Inițializează PerMark",
   "project.initConfig": "Setările pe care acest proiect le partajează cu echipa sa.",
   "project.initConfirm": "Inițializează PerMark",
@@ -1786,9 +1799,9 @@ export default {
   "project.initIgnore": "Ține dosarele private în afara git.",
   "project.initIntro": "PerMark creează aici un dosar .permark cu:",
   "project.initLocal":
-    "Datele tale private pentru acest proiect (comentarii, marcaje de citire) și memoria cache.",
+    "Datele tale private pentru acest proiect (comentarii, marcaje de citire, istoricul anulărilor) și o memorie cache pe care PerMark o poate reconstrui oricând.",
   "project.initNote":
-    "Fișierele tale nu sunt atinse. Etichetele, comentariile și marcajele de citire pe care le ai deja pentru acest proiect sunt copiate acolo.",
+    "Fișierele tale nu sunt atinse. Etichetele, comentariile și marcajele de citire pe care le ai deja pentru acest proiect sunt copiate acolo. Ce permiți pentru acest dosar, de exemplu accesul agenților, rămâne în propriile tale date PerMark de pe acest computer.",
   "project.initTitle": "Inițializezi PerMark în {name}?",
   "project.newTitle": "Faci din {name} un proiect?",
   "project.newWhy":
@@ -1813,6 +1826,14 @@ export default {
   "project.treeUnset": "Nesetat",
   "project.scopes":
     "Setările marcate cu Toată lumea sunt păstrate în .permark/config.toml al acestui dosar și partajate cu oricine îl deschide. Cele marcate cu Doar tu rămân pe acest computer.",
+  "project.shareGit": "Lasă git să vadă setările PerMark ale acestui dosar",
+  "project.shareGitCustom":
+    "Fișierul .permark/.gitignore al acestui dosar a fost scris de altcineva, așa că PerMark îl lasă așa cum este.",
+  "project.shareGitFailed": "Nu s-a putut schimba ce vede git în .permark: {message}",
+  "project.shareGitHint":
+    "Activat: git vede setările, etichetele, lista de proiecte și descrierile proiectelor din .permark, așa că le poți include într-un commit pentru echipa ta. Dezactivat: git ignoră tot dosarul .permark; fișierele care sunt deja într-un commit rămân acolo. Dacă .permark/.gitignore este într-un commit, echipa ta primește și ea această schimbare. Datele tale private și cache-urile rămân mereu în afara git.",
+  "project.shareGitOff": "Dezactivat",
+  "project.shareGitOn": "Activat",
   "project.shareInit": "Inițializează PerMark pentru a partaja asta cu toată lumea",
   "project.sharedFileHint": "Partajat cu oricine deschide acest dosar.",
   "settings.all": "Toate setările",

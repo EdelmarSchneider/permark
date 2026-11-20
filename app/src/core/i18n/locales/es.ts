@@ -1694,6 +1694,19 @@ export default {
   "project.ignoreHint":
     "Los archivos que coinciden no se buscan y nunca aparecen en el feed en vivo. La lista de archivos los muestra atenuados, como los archivos que git ignora.",
   "project.ignoreLabel": "Fuera de la búsqueda y del feed en vivo",
+  "project.dataAsk":
+    "Esta carpeta tiene ahora una carpeta .permark. Tus comentarios, marcas de lectura y demás datos de ella siguen guardados en este equipo.",
+  "project.dataMove": "Mover a la carpeta",
+  "project.dataKeep": "Mantener en este equipo",
+  "project.dataMissing":
+    "La carpeta .permark de esta carpeta falta o no se puede usar. PerMark está usando la copia de tus datos guardada en este equipo, que puede ser más antigua.",
+  "project.dataKeepCopy": "Seguir usando esta copia",
+  "project.dataPlace": "Tus datos de esta carpeta",
+  "project.dataPlaceProfile": "Guardados en este equipo, en tu perfil de usuario.",
+  "project.dataMoved": "Tus datos de esta carpeta están ahora en su carpeta .permark.",
+  "project.dataMoveHeld":
+    "La carpeta .permark de esta carpeta ya contiene datos de PerMark de otro lugar, así que tus datos se quedan en este equipo.",
+  "project.dataMoveFailed": "No se pudieron mover tus datos a la carpeta: {message}",
   "project.initButton": "Inicializar PerMark",
   "project.initConfig": "La configuración que este proyecto comparte con su equipo.",
   "project.initConfirm": "Inicializar PerMark",
@@ -1701,9 +1714,9 @@ export default {
   "project.initIgnore": "Mantiene las carpetas privadas fuera de git.",
   "project.initIntro": "PerMark crea aquí una carpeta .permark con:",
   "project.initLocal":
-    "Tus datos privados de este proyecto (comentarios, marcas de lectura) y su caché.",
+    "Tus datos privados de este proyecto (comentarios, marcas de lectura, historial de deshacer) y una caché que PerMark puede reconstruir en cualquier momento.",
   "project.initNote":
-    "Tus archivos no se tocan. Las etiquetas, los comentarios y las marcas de lectura que ya tienes en este proyecto se copian.",
+    "Tus archivos no se tocan. Las etiquetas, los comentarios y las marcas de lectura que ya tienes en este proyecto se copian. Lo que permites para esta carpeta, como el acceso de los agentes, se queda en tus propios datos de PerMark en este equipo.",
   "project.initTitle": "¿Inicializar PerMark en {name}?",
   "project.newTitle": "¿Convertir {name} en un proyecto?",
   "project.newWhy":
@@ -1728,6 +1741,14 @@ export default {
   "project.treeUnset": "Sin definir",
   "project.scopes":
     "La configuración marcada con Todos se guarda en .permark/config.toml de esta carpeta y se comparte con quien la abra. La marcada con Solo tú se queda en este equipo.",
+  "project.shareGit": "Dejar que git vea la configuración de PerMark de esta carpeta",
+  "project.shareGitCustom":
+    "El archivo .permark/.gitignore de esta carpeta lo escribió otra persona, así que PerMark lo deja como está.",
+  "project.shareGitFailed": "No se pudo cambiar lo que git ve en .permark: {message}",
+  "project.shareGitHint":
+    "Activado: git ve la configuración, las etiquetas, la lista de proyectos y las descripciones de proyectos de .permark, así que puedes incluirlos en un commit para tu equipo. Desactivado: git ignora toda la carpeta .permark; los archivos ya incluidos en un commit siguen en él. Si .permark/.gitignore está incluido en un commit, tu equipo también recibe este cambio. Tus datos privados y las cachés siempre quedan fuera de git.",
+  "project.shareGitOff": "Desactivado",
+  "project.shareGitOn": "Activado",
   "project.shareInit": "Inicializa PerMark para compartir esto con todos",
   "project.sharedFileHint": "Compartido con quien abra esta carpeta.",
   "settings.all": "Toda la configuración",

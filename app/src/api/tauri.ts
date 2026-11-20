@@ -232,6 +232,7 @@ export const tauriApi: Api = {
   onPlugin: <E extends PluginEventName>(event: E, handler: (payload: PluginEnvelope<E>) => void) =>
     listenHere<PluginEnvelope<E>>(event, handler),
   projectInit: (path) => call("project_init", { path }),
+  projectDataKeep: (path) => call("project_data_keep", { path }),
   folderEmpty: (path) => call("folder_empty", { path }),
   projectsView: () => call("projects_view", {}),
   projectsInclude: (pick) => call("projects_include", { pick }),
@@ -251,6 +252,7 @@ export const tauriApi: Api = {
     call("vocabulary_set_style", { kind, name, color, icon }),
   projectConfigGet: () => call("project_config_get", {}),
   projectConfigSet: (change) => call("project_config_set", { change }),
+  projectSharingSet: (sharing) => call("project_sharing_set", { sharing }),
   pluginsList: () => call("plugins_list", {}),
   pluginSetProject: (plugin, enabled) => call("plugin_set_project", { plugin, enabled }),
   pluginRemoveData: (plugin) => call("plugin_remove_data", { plugin }),

@@ -28,7 +28,7 @@ use permark_core::projects::{
     VocabKind,
 };
 use permark_core::search::harvest::{Harvest, HarvestSubscription};
-use permark_core::state::{RawFile, StateLocation};
+use permark_core::state::RawFile;
 use permark_core::tree::{category_of, Category};
 use permark_core::watch::{ChangeKind, FsBatch, OwnWrites};
 
@@ -119,8 +119,8 @@ struct Unit {
 
 impl Unit {
     fn new(slot: &OwnerSlot) -> Self {
-        let in_project = slot.store.location() == StateLocation::Project;
-        let watched = in_project.then(|| {
+        // a team file: in `.permark/` whenever it is a real folder, whatever place holds the private state
+        let watched = slot.store.has_team_folder().then(|| {
             if slot.path.is_empty() {
                 META_PATH.to_owned()
             } else {
@@ -845,7 +845,7 @@ impl TagsService {
     /// index pass.
     #[must_use]
     pub fn start(args: ServiceArgs) -> Self {
-        let location = if args.owners.root().store.location() == StateLocation::Project {
+        let location = if args.owners.root().store.has_team_folder() {
             TagsLocation::Project
         } else {
             TagsLocation::Profile

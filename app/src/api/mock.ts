@@ -859,7 +859,14 @@ export function createMockApi(): Api & {
           path,
           folder: path.replace(/[\\/][^\\/]*$/, ""),
         }
-      : { kind: "project", id, name: nameOf(path), root: path, stateLocation: "profile" };
+      : {
+          kind: "project",
+          id,
+          name: nameOf(path),
+          root: path,
+          stateLocation: "profile",
+          dataOffer: shell.offerOf(path),
+        };
     return { state: "showing", workspace, document: null };
   }
 
@@ -1051,7 +1058,17 @@ export function createMockApi(): Api & {
     projectInit: (path) => {
       const shown = shell.initProject(path);
       if (shown && view.state === "showing" && view.workspace.kind === "project") {
-        showView({ ...view, workspace: { ...view.workspace, stateLocation: "project" } });
+        showView({
+          ...view,
+          workspace: { ...view.workspace, stateLocation: "project", dataOffer: "none" },
+        });
+      }
+      return ok(null);
+    },
+    projectDataKeep: (path) => {
+      const shown = shell.keepData(path);
+      if (shown && view.state === "showing" && view.workspace.kind === "project") {
+        showView({ ...view, workspace: { ...view.workspace, dataOffer: shell.offerOf(path) } });
       }
       return ok(null);
     },
@@ -1459,6 +1476,8 @@ export const mockApi = createMockApi();
 // there too (earlier versions of a document). Tests keep their own mock, with no repository unless they set one.
 if (import.meta.env.MODE === "mock") {
   mockApi.probe.context.set({ git: { status: "repo", state: "clean" } });
+  // ...and a .permark folder arrived in it while the person's data stayed on this computer: it offers Move | Keep
+  mockApi.probe.shell.dataOffer(MOCK_FOLDER, "ask");
   // ...and comments something outside the app removed wait in the Comments tab to be restored
   mockApi.probe.plugins.organizing.setAside(
     [

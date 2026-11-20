@@ -184,7 +184,7 @@ impl Owners {
         self.owner_of(path) != 0
     }
 
-    /// Same places (member ids, folders, state folders): nothing to read again.
+    /// Same places (member ids, folders, state folders, team folders): nothing to read again.
     #[must_use]
     pub fn same(&self, other: &Self) -> bool {
         self.slots.len() == other.slots.len()
@@ -194,6 +194,7 @@ impl Owners {
                     && a.store.dir() == b.store.dir()
                     && a.store.location() == b.store.location()
                     && a.store.cache_dir() == b.store.cache_dir()
+                    && a.store.has_team_folder() == b.store.has_team_folder()
             })
     }
 
@@ -317,6 +318,25 @@ mod tests {
         assert!(owners.same(&owners.clone()));
         assert!(!owners.same(&Owners::root_only(store(base.path(), "r"))));
         assert!(Owners::root_only(store(base.path(), "r")).is_single());
+    }
+
+    /// A team folder arriving where the private state stays (here `local/` is a file, so the state keeps its place)
+    /// changes where the team files are: the owners differ, so the followers read them again.
+    #[test]
+    fn owners_differ_when_only_the_team_folder_changed() {
+        let base = tempfile::tempdir().unwrap();
+        let before = Owners::root_only(store(base.path(), "r"));
+        let permark = base.path().join("r").join(PERMARK_DIR);
+        std::fs::create_dir(&permark).unwrap();
+        std::fs::write(permark.join("local"), "x").unwrap();
+        let after = Owners::root_only(store(base.path(), "r"));
+        let (a, b) = (&before.root().store, &after.root().store);
+        assert_eq!(
+            (a.location(), a.dir(), a.cache_dir()),
+            (b.location(), b.dir(), b.cache_dir())
+        );
+        assert!(!after.same(&before));
+        assert!(after.same(&Owners::root_only(store(base.path(), "r"))));
     }
 
     /// A repository whose index answers every folder the same way, and remembers what it was asked.

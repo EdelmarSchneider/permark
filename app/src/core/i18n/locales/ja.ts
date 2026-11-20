@@ -1710,15 +1710,29 @@ export default {
   "project.ignoreHint":
     "一致するファイルは検索されず、リアルタイムの変更にも表示されません。ファイル一覧では、git が無視するファイルと同じように淡色で表示されます。",
   "project.ignoreLabel": "検索とリアルタイムの変更から除外",
+  "project.dataAsk":
+    "このフォルダーに .permark フォルダーができました。このフォルダーのコメント、既読の印などのデータは、引き続きこのコンピューターに保存されています。",
+  "project.dataMove": "フォルダーに移動",
+  "project.dataKeep": "このコンピューターに残す",
+  "project.dataMissing":
+    "このフォルダーの .permark フォルダーが見つからないか、使えません。PerMark はこのコンピューターに保存されたデータのコピーを使っています。このコピーは古い可能性があります。",
+  "project.dataKeepCopy": "このコピーを使い続ける",
+  "project.dataPlace": "このフォルダーのデータ",
+  "project.dataPlaceProfile": "このコンピューターのユーザープロファイルに保存されています。",
+  "project.dataMoved": "このフォルダーのデータは .permark フォルダーに移りました。",
+  "project.dataMoveHeld":
+    "このフォルダーの .permark フォルダーには別の場所からの PerMark データが既にあるため、データはこのコンピューターに残ります。",
+  "project.dataMoveFailed": "データをフォルダーに移動できませんでした：{message}",
   "project.initButton": "PerMark を初期化",
   "project.initConfig": "このプロジェクトがチームと共有する設定。",
   "project.initConfirm": "PerMark を初期化",
   "project.initFailed": "{path} で PerMark を初期化できませんでした：{message}",
   "project.initIgnore": "非公開のフォルダーを git の対象から外します。",
   "project.initIntro": "PerMark はここに .permark フォルダーを作成し、次のものを置きます：",
-  "project.initLocal": "このプロジェクトの個人データ（コメント、既読の印）とキャッシュ。",
+  "project.initLocal":
+    "このプロジェクトの個人データ（コメント、既読の印、元に戻す履歴）と、PerMark がいつでも作り直せるキャッシュ。",
   "project.initNote":
-    "ファイルには手を加えません。このプロジェクトに既にあるタグ、コメント、既読の印はコピーされます。",
+    "ファイルには手を加えません。このプロジェクトに既にあるタグ、コメント、既読の印はコピーされます。このフォルダーに許可した内容（エージェントのアクセスなど）は、このコンピューター上のあなた自身の PerMark データに残ります。",
   "project.initTitle": "{name} で PerMark を初期化しますか？",
   "project.newTitle": "{name} をプロジェクトにしますか？",
   "project.newWhy":
@@ -1742,6 +1756,14 @@ export default {
   "project.treeUnset": "未設定",
   "project.scopes":
     "「全員」の設定はこのフォルダーの .permark/config.toml に保存され、このフォルダーを開くすべての人と共有されます。「自分のみ」の設定はこのコンピューターに残ります。",
+  "project.shareGit": "このフォルダーの PerMark の設定を git に見せる",
+  "project.shareGitCustom":
+    "このフォルダーの .permark/.gitignore はほかの人が書いたものなので、PerMark はそのままにします。",
+  "project.shareGitFailed": "git が .permark で認識するものを変更できませんでした：{message}",
+  "project.shareGitHint":
+    "オン：git は .permark 内の設定、タグ、プロジェクトの一覧、プロジェクトの説明を認識するので、チームのためにコミットできます。オフ：git は .permark フォルダー全体を無視します。すでにコミットされたファイルはコミットされたままです。.permark/.gitignore がコミットされている場合、この変更はチームにも届きます。個人のデータとキャッシュは常に git の対象外です。",
+  "project.shareGitOff": "オフ",
+  "project.shareGitOn": "オン",
   "project.shareInit": "全員と共有するには PerMark を初期化してください",
   "project.sharedFileHint": "このフォルダーを開く全員と共有されます。",
   "settings.all": "すべての設定",

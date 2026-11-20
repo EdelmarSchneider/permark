@@ -27,15 +27,17 @@ pub(super) enum Entry {
     Other,
 }
 
-/// Any reparse point counts as a link here, a cloud placeholder folder too: this decides where a project's state lives,
-/// so a `.permark` in a synced folder keeps its state in the profile (a move to `.permark/local/` would leave the state
-/// kept there unread).
+/// A link here is what std reports as one ([`crate::fsx::is_link`]: symlink, junction). A cloud placeholder folder
+/// (OneDrive Files On-Demand) carries a reparse point too, yet is a plain folder: a team folder in a synced folder is
+/// read and written like any other, as the zone reads and [`prepare`] see it.
 pub(super) fn entry(path: &Path) -> Entry {
-    entry_as(path, crate::tree::is_link_meta)
+    entry_as(path, crate::fsx::is_link)
 }
 
-/// What is on disk at a path, `link` telling what counts as a link (never followed).
-fn entry_as(path: &Path, link: fn(&Metadata) -> bool) -> Entry {
+/// What is on disk at a path, `link` telling what counts as a link (never followed). Another `link` than std's: the
+/// rule of earlier versions for where a project's state lives (any reparse point), or a test standing for a cloud
+/// folder, which no test can make.
+pub(super) fn entry_as(path: &Path, link: fn(&Metadata) -> bool) -> Entry {
     match std::fs::symlink_metadata(path) {
         // a junction is a directory to `symlink_metadata` on some std versions: `link` looks at it too
         Ok(meta) if meta.file_type().is_dir() && !link(&meta) => Entry::Folder,
@@ -104,7 +106,7 @@ fn holds_folder(meta: &std::fs::Metadata) -> bool {
 /// created when missing, its state folder self-ignoring. `permark` = the `.permark` folder, `state` = `local` | `cache`.
 pub(super) fn prepare(permark: &Path, state: &Path, dir: &Path) -> io::Result<()> {
     // a link as the zone reads see one: a cloud placeholder folder on the way is a folder, so saves go where loads read
-    let walked = |path: &Path| entry_as(path, crate::fsx::is_link);
+    let walked = entry;
     // top-down, `.permark` to `dir` (plugin namespaces): a link is refused before anything below it is looked up (a
     // lookup through it could reach a network share); below a missing folder nothing is there yet
     let check = || -> io::Result<()> {

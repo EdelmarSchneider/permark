@@ -1664,15 +1664,29 @@ export default {
   "project.ignoreHint":
     "일치하는 파일은 검색되지 않으며 실시간 변경 목록에도 나타나지 않습니다. 파일 목록에서는 git이 무시하는 파일처럼 흐리게 표시됩니다.",
   "project.ignoreLabel": "검색 및 실시간 변경 목록에서 제외",
+  "project.dataAsk":
+    "이 폴더에 이제 .permark 폴더가 있습니다. 이 폴더에 대한 댓글, 읽음 표시 등의 데이터는 계속 이 컴퓨터에 보관됩니다.",
+  "project.dataMove": "폴더로 옮기기",
+  "project.dataKeep": "이 컴퓨터에 두기",
+  "project.dataMissing":
+    "이 폴더의 .permark 폴더가 없거나 사용할 수 없습니다. PerMark는 이 컴퓨터에 보관된 데이터 사본을 사용하고 있으며, 이 사본은 더 오래되었을 수 있습니다.",
+  "project.dataKeepCopy": "이 사본 계속 사용",
+  "project.dataPlace": "이 폴더에 대한 데이터",
+  "project.dataPlaceProfile": "이 컴퓨터의 사용자 프로필에 보관됩니다.",
+  "project.dataMoved": "이 폴더에 대한 데이터가 이제 .permark 폴더에 있습니다.",
+  "project.dataMoveHeld":
+    "이 폴더의 .permark 폴더에 이미 다른 곳에서 온 PerMark 데이터가 있어 데이터는 이 컴퓨터에 그대로 둡니다.",
+  "project.dataMoveFailed": "데이터를 폴더로 옮길 수 없습니다: {message}",
   "project.initButton": "PerMark 초기화",
   "project.initConfig": "이 프로젝트가 팀과 공유하는 설정입니다.",
   "project.initConfirm": "PerMark 초기화",
   "project.initFailed": "{path}에서 PerMark를 초기화할 수 없습니다: {message}",
   "project.initIgnore": "비공개 폴더를 Git에서 제외합니다.",
   "project.initIntro": "PerMark가 여기에 다음 내용이 담긴 .permark 폴더를 만듭니다:",
-  "project.initLocal": "이 프로젝트에 대한 개인 데이터(댓글, 읽음 표시)와 캐시입니다.",
+  "project.initLocal":
+    "이 프로젝트에 대한 개인 데이터(댓글, 읽음 표시, 실행 취소 기록)와 PerMark가 언제든 다시 만들 수 있는 캐시입니다.",
   "project.initNote":
-    "파일은 건드리지 않습니다. 이 프로젝트에 이미 있는 태그, 댓글, 읽음 표시를 복사해 넣습니다.",
+    "파일은 건드리지 않습니다. 이 프로젝트에 이미 있는 태그, 댓글, 읽음 표시를 복사해 넣습니다. 에이전트 접근처럼 이 폴더에 허용한 항목은 이 컴퓨터에 있는 본인의 PerMark 데이터에 그대로 남습니다.",
   "project.initTitle": "{name}에서 PerMark를 초기화할까요?",
   "project.newTitle": "{name}을(를) 프로젝트로 만들까요?",
   "project.newWhy":
@@ -1695,6 +1709,14 @@ export default {
   "project.treeUnset": "설정 안 됨",
   "project.scopes":
     "'모두'로 표시된 설정은 이 폴더의 .permark/config.toml에 저장되어 이 폴더를 여는 모든 사람과 공유됩니다. '나만'으로 표시된 설정은 이 컴퓨터에만 남습니다.",
+  "project.shareGit": "Git이 이 폴더의 PerMark 설정을 보게 하기",
+  "project.shareGitCustom":
+    "이 폴더의 .permark/.gitignore는 다른 사람이 작성한 것이므로 PerMark는 그대로 둡니다.",
+  "project.shareGitFailed": "Git이 .permark에서 보는 항목을 바꾸지 못했습니다: {message}",
+  "project.shareGitHint":
+    "켜짐: Git이 .permark의 설정, 태그, 프로젝트 목록, 프로젝트 설명을 보므로 팀을 위해 커밋할 수 있습니다. 꺼짐: Git이 .permark 폴더 전체를 무시합니다. 이미 커밋된 파일은 커밋된 상태로 남습니다. .permark/.gitignore가 커밋되어 있으면 팀도 이 변경을 받습니다. 개인 데이터와 캐시는 항상 Git에서 제외됩니다.",
+  "project.shareGitOff": "꺼짐",
+  "project.shareGitOn": "켜짐",
   "project.shareInit": "모두와 공유하려면 PerMark를 초기화하세요",
   "project.sharedFileHint": "이 폴더를 여는 모든 사람과 공유됩니다.",
   "settings.all": "모든 설정",

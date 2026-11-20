@@ -1699,6 +1699,19 @@ export default {
   "project.ignoreHint":
     "Eşleşen dosyalar aranmaz ve canlı akışta hiç görünmez. Dosya listesi bunları, git'in yok saydığı dosyalar gibi soluk gösterir.",
   "project.ignoreLabel": "Aramanın ve canlı akışın dışında",
+  "project.dataAsk":
+    "Bu klasörde artık bir .permark klasörü var. Bu klasöre ait yorumlarınız, okundu işaretleriniz ve diğer verileriniz hâlâ bu bilgisayarda tutuluyor.",
+  "project.dataMove": "Klasöre taşı",
+  "project.dataKeep": "Bu bilgisayarda tut",
+  "project.dataMissing":
+    "Bu klasörün .permark klasörü yok ya da kullanılamıyor. PerMark, verilerinizin bu bilgisayarda tutulan kopyasını kullanıyor; bu kopya daha eski olabilir.",
+  "project.dataKeepCopy": "Bu kopyayı kullanmaya devam et",
+  "project.dataPlace": "Bu klasöre ait verileriniz",
+  "project.dataPlaceProfile": "Bu bilgisayarda, kullanıcı profilinizde tutuluyor.",
+  "project.dataMoved": "Bu klasöre ait verileriniz artık klasörün .permark klasöründe.",
+  "project.dataMoveHeld":
+    "Bu klasörün .permark klasöründe başka bir yerden gelmiş PerMark verileri zaten var, bu yüzden verileriniz bu bilgisayarda kalıyor.",
+  "project.dataMoveFailed": "Verileriniz klasöre taşınamadı: {message}",
   "project.initButton": "PerMark'ı başlat",
   "project.initConfig": "Bu projenin ekibiyle paylaştığı ayarlar.",
   "project.initConfirm": "PerMark'ı başlat",
@@ -1706,9 +1719,9 @@ export default {
   "project.initIgnore": "Özel klasörleri Git'in dışında tutar.",
   "project.initIntro": "PerMark burada şunları içeren bir .permark klasörü oluşturur:",
   "project.initLocal":
-    "Bu projeye ait özel verileriniz (yorumlar, okundu işaretleri) ve önbelleği.",
+    "Bu projeye ait özel verileriniz (yorumlar, okundu işaretleri, geri alma geçmişi) ve PerMark'ın her an yeniden oluşturabileceği önbellek.",
   "project.initNote":
-    "Dosyalarınıza dokunulmaz. Bu proje için zaten sahip olduğunuz etiketler, yorumlar ve okundu işaretleri içeri kopyalanır.",
+    "Dosyalarınıza dokunulmaz. Bu proje için zaten sahip olduğunuz etiketler, yorumlar ve okundu işaretleri içeri kopyalanır. Bu klasör için verdiğiniz izinler, örneğin ajan erişimi, bu bilgisayardaki kendi PerMark verilerinizde kalır.",
   "project.initTitle": "PerMark, {name} içinde başlatılsın mı?",
   "project.newTitle": "{name} bir proje yapılsın mı?",
   "project.newWhy":
@@ -1732,6 +1745,14 @@ export default {
   "project.treeUnset": "Ayarlanmadı",
   "project.scopes":
     "Herkes olarak işaretli ayarlar bu klasörün .permark/config.toml dosyasında saklanır ve klasörü açan herkesle paylaşılır. Yalnızca siz olarak işaretli ayarlar bu bilgisayarda kalır.",
+  "project.shareGit": "Git'in bu klasörün PerMark ayarlarını görmesine izin ver",
+  "project.shareGitCustom":
+    "Bu klasörün .permark/.gitignore dosyasını başka biri yazmış, bu yüzden PerMark onu olduğu gibi bırakır.",
+  "project.shareGitFailed": "Git'in .permark içinde gördükleri değiştirilemedi: {message}",
+  "project.shareGitHint":
+    "Açık: Git, .permark içindeki ayarları, etiketleri, proje listesini ve proje açıklamalarını görür; böylece bunları ekibiniz için commit edebilirsiniz. Kapalı: Git tüm .permark klasörünü yok sayar; zaten commit edilmiş dosyalar commit'te kalır. .permark/.gitignore commit edilmişse bu değişiklik ekibinize de ulaşır. Özel verileriniz ve önbellekler her zaman Git'in dışında kalır.",
+  "project.shareGitOff": "Kapalı",
+  "project.shareGitOn": "Açık",
   "project.shareInit": "Bunu herkesle paylaşmak için PerMark'ı başlatın",
   "project.sharedFileHint": "Bu klasörü açan herkesle paylaşılır.",
   "settings.all": "Tüm ayarlar",

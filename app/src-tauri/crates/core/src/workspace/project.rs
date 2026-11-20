@@ -28,7 +28,8 @@ use crate::search::{SearchFilter, SearchIndex, SearchOptions};
 use crate::settings::{
     AppSettings, ProjectConfig, ProjectConfigFile, ProjectSettingChange, SettingsError,
 };
-use crate::state::{AppDirs, ProjectId, StateData, StateLocation, StateStore};
+use crate::state::location::DataOffer;
+use crate::state::{AppDirs, ProjectId, Sharing, StateData, StateLocation, StateStore};
 use crate::tree::Explorer;
 use crate::watch::{
     FsBatch, LiveStatus, OwnWrites, PathHold, StatusHook, Subscription, WatchHub, Watcher,
@@ -272,6 +273,9 @@ pub struct ProjectCore {
     vault: Vault,
     /// Where the project's state lives; moves when PerMark is initialized in the folder (`reload_state`).
     store: RwLock<StateStore>,
+    /// What the window offers about the place of the person's data, worked out with `store` (and again on Keep): views
+    /// read it, never the disk.
+    data_offer: RwLock<DataOffer>,
     config: RwLock<ProjectConfig>,
     enablement: Mutex<BTreeMap<PluginId, Enablement>>,
     plugins: Mutex<PluginSet>,
@@ -340,12 +344,15 @@ impl ProjectCore {
     #[allow(clippy::too_many_lines)] // the composition root: every service built and wired in one place
     pub fn open(root: Root, env: &CoreEnv) -> Arc<Self> {
         let id = ProjectId::of(&root);
-        let store = StateStore::for_project(&env.dirs, &root);
+        // where the person's data sits is settled before anything reads or writes it: a first open records it, so a
+        // `.permark/` that arrives later never moves it
+        let store = crate::state::location::settle(&env.dirs, &root);
         // the person's data 0.5 kept in its own profile folder, taken over once
         crate::state::older::take_over_project(&env.dirs, &root, &store);
         // a context file for scripts that came with the folder goes before a plugin starts, whatever the agent
         // connection's state: scripts would take it for the person's live context
         crate::state::context::remove_foreign(&store);
+        let data_offer = crate::state::location::offer(&store);
         let config = ProjectConfig::load(&root);
         // plugins that are on may offer extra roots (linked worktrees) before the project is built
         let (enablement, on) = project_enablement(env, &config, &store);
@@ -458,6 +465,7 @@ impl ProjectCore {
             hub,
             id,
             store: RwLock::new(store),
+            data_offer: RwLock::new(data_offer),
             config: RwLock::new(config),
             vault,
             enablement: Mutex::new(BTreeMap::new()),
@@ -617,11 +625,27 @@ impl ProjectCore {
         env: &CoreEnv,
         pick: &ProjectPick,
     ) -> Result<(IncludeOutcome, bool), crate::IpcError> {
-        self.projects.include(pick, &|| {
-            crate::state::init_project(&env.dirs, self.vault.main())?;
-            self.reload_state(env);
-            Ok(())
-        })
+        self.projects.include(pick, &|| self.initialize(env))
+    }
+
+    /// Initializes PerMark in this folder ([`crate::state::init_project`]): the plugins stop first, so what they write
+    /// last lands in the place the person's data is copied from; then everything reads the state again from the new
+    /// place ([`ProjectCore::reload_state`]). A refusal starts the plugins again on the place they had. The caller
+    /// tells the windows.
+    ///
+    /// # Errors
+    /// What `init_project` refuses: both places hold data (`Conflict`), a link or a file in the way, IO.
+    pub fn initialize(&self, env: &CoreEnv) -> Result<(), crate::IpcError> {
+        self.plugins
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .stop_all();
+        if let Err(error) = crate::state::init_project(&env.dirs, self.vault.main()) {
+            self.apply_plugins(env);
+            return Err(error.into());
+        }
+        self.reload_state(env);
+        Ok(())
     }
 
     /// Takes back the last include (`token`); a `.permark/` it made goes when untouched (the state goes back to the
@@ -741,7 +765,47 @@ impl ProjectCore {
 
     #[must_use]
     pub fn state_location(&self) -> StateLocation {
-        self.store().location()
+        self.store
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .location()
+    }
+
+    /// Whether the folder had a team folder when its state was last read (open, Initialize, a reload): a `.permark/`
+    /// that arrives meanwhile counts from the next read.
+    #[must_use]
+    pub fn has_team_folder(&self) -> bool {
+        self.store
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .has_team_folder()
+    }
+
+    /// What the window offers about the place of the person's data ([`crate::state::location::offer`]), as worked out
+    /// when the state was last read | the data was kept.
+    #[must_use]
+    pub fn data_offer(&self) -> DataOffer {
+        *self
+            .data_offer
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The person keeps the folder's data on this computer ([`crate::state::location::keep`]): the place and the plugins
+    /// stay as they are (the store already reads the profile), only the offer is worked out again. The caller tells
+    /// the windows.
+    ///
+    /// # Errors
+    /// The store reads the folder's own `.permark/local/` (a conflict, nothing written); the profile's row file cannot
+    /// be written.
+    pub fn keep_data(&self) -> Result<(), crate::IpcError> {
+        let store = self.store();
+        crate::state::location::keep(&store)?;
+        *self
+            .data_offer
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = crate::state::location::offer(&store);
+        Ok(())
     }
 
     /// PerMark was initialized in this folder: the state folder and the config are read again, the file operations'
@@ -750,6 +814,10 @@ impl ProjectCore {
     pub fn reload_state(&self, env: &CoreEnv) {
         let store = StateStore::for_project(&env.dirs, self.vault.main());
         let config = ProjectConfig::load(self.vault.main());
+        *self
+            .data_offer
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = crate::state::location::offer(&store);
         *self.store.write().unwrap_or_else(PoisonError::into_inner) = store.clone();
         *self.config.write().unwrap_or_else(PoisonError::into_inner) = config.clone();
         self.fileops.use_store(&store);
@@ -759,6 +827,8 @@ impl ProjectCore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .stop_all();
+        // plugins keeping state per owner start on the folder's new place, not the one the owners had
+        self.projects.reload_owners();
         self.apply_plugins(env);
         self.rescan();
     }
@@ -781,6 +851,21 @@ impl ProjectCore {
         self.explorer.reconfigure(&config);
         self.rescan();
         Ok(config)
+    }
+
+    /// What git may see of the folder's `.permark/` ([`crate::state::set_sharing`]): a rewritten ignore file reaches the
+    /// tree at once (its rules decide what is listed as ignored), not only when the watcher reports it.
+    ///
+    /// # Errors
+    /// What `set_sharing` refuses: no real team folder, someone else's ignore file, IO.
+    pub fn set_sharing(&self, to: Sharing) -> Result<Sharing, crate::state::StateError> {
+        let before = crate::state::sharing(self.vault.main());
+        let now = crate::state::set_sharing(self.vault.main(), to)?;
+        if now != before {
+            self.explorer
+                .sync_paths(&[format!("{}/.gitignore", crate::state::PERMARK_DIR)], &[]);
+        }
+        Ok(now)
     }
 
     /// The person asked to read the folder again: the tree is walked, and the index, git and every plugin that keeps a
