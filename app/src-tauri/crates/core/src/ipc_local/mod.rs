@@ -217,7 +217,10 @@ project
     fn take_lock(&self) -> Result<std::fs::File, IpcLocalError> {
         use std::fs::{OpenOptions, TryLockError};
         if let Some(folder) = self.path.parent() {
-            make_private(folder)?;
+            crate::fsx::private_dir(folder).map_err(|source| IpcLocalError::Folder {
+                path: folder.display().to_string(),
+                source,
+            })?;
         }
         let file = OpenOptions::new()
             .read(true)
@@ -318,29 +321,6 @@ fn our_uid() -> u32 {
 #[allow(clippy::verbose_bit_mask)] // the group/other permission bits are the point
 fn is_private_folder(is_dir: bool, uid: u32, mode: u32, ours: u32) -> bool {
     is_dir && uid == ours && mode & 0o077 == 0
-}
-
-/// Makes `dir` a folder only we can enter (existing: mode reset; someone else's | a link -> error).
-#[cfg(unix)]
-fn make_private(dir: &Path) -> Result<(), IpcLocalError> {
-    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-    let fail = |source| IpcLocalError::Folder {
-        path: dir.display().to_string(),
-        source,
-    };
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)
-        .map_err(fail)?;
-    let meta = std::fs::symlink_metadata(dir).map_err(fail)?;
-    if !meta.file_type().is_dir() {
-        return Err(fail(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "not a folder",
-        )));
-    }
-    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).map_err(fail)
 }
 
 #[cfg(unix)]

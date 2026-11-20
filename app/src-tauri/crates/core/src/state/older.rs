@@ -150,6 +150,7 @@ mod tests {
         let dirs = AppDirs {
             profile: base.path().join("data").join("PerMark"),
             cache: base.path().join("cache").join("PerMark"),
+            install: base.path().join("local").join("PerMark").join("install"),
         };
         let project = base.path().join("Pro jeto ü");
         std::fs::create_dir_all(&project).unwrap();
@@ -236,6 +237,7 @@ mod tests {
                 .join("elsewhere")
                 .join("PerMark"),
             cache: dirs.cache.clone(),
+            install: dirs.install.clone(),
         };
         std::fs::remove_dir_all(root.path().join(".permark")).unwrap();
         let store = StateStore::for_project(&none, &root);
@@ -309,6 +311,7 @@ mod tests {
         let dirs = AppDirs {
             profile: data.join("PerMark"),
             cache: base.path().join("cache").join("PerMark"),
+            install: base.path().join("local").join("PerMark").join("install"),
         };
         assert_eq!(older_window(&dirs), None, "no 0.5 folder");
         std::fs::create_dir_all(data.join(OLDER_FOLDER)).unwrap();

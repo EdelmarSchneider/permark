@@ -1070,3 +1070,256 @@ fn an_update_that_cannot_read_the_file_keeps_fresh_handles_from_saving_defaults(
     healthy.save(&sample(2)).unwrap();
     assert_eq!(healthy.load(), Loaded::Found(sample(2)));
 }
+
+/// Every path a store hands out, in both locations and for the app-wide store: new state roots never move the files
+/// earlier versions wrote.
+#[test]
+fn store_paths_are_pinned() {
+    let f = fx();
+    let git = PluginId::of("git");
+    let id = ProjectId::of(&f.root());
+    let profile = f.dirs.profile.join("projects").join(id.as_str());
+    let cache = f.dirs.cache.join("projects").join(id.as_str());
+    let path_of = |file: Option<RawFile>| file.map(|raw| raw.path().to_path_buf());
+    let pinned = |s: &StateStore, dir: &Path, cache: &Path, shared: &Path, own: &Path| {
+        assert_eq!(s.dir(), dir);
+        assert_eq!(s.cache_dir(), cache);
+        assert_eq!(s.file::<Sample>("x.json").path(), dir.join("x.json"));
+        assert_eq!(s.raw_file("quiet.json").path(), dir.join("quiet.json"));
+        assert_eq!(s.shared_file("meta.toml").path(), shared.join("meta.toml"));
+        assert_eq!(
+            s.profile_file::<Sample>("agent.json").path(),
+            own.join("agent.json")
+        );
+        assert_eq!(s.app_dir(), f.dirs.profile);
+        assert_eq!(
+            s.app_file::<Sample>("a.json").path(),
+            f.dirs.profile.join("a.json")
+        );
+        assert_eq!(
+            s.cache_file::<Sample>("c.json").path(),
+            cache.join("c.json")
+        );
+        let plugin = dir.join("plugins").join("git");
+        assert_eq!(s.plugin_dir(&git), plugin);
+        assert_eq!(
+            s.plugin_file::<Sample>(&git, "p.json").path(),
+            plugin.join("p.json")
+        );
+        assert_eq!(
+            s.plugin_raw_file(&git, "r.json").path(),
+            plugin.join("r.json")
+        );
+        let own_plugin = own.join("plugins").join("git");
+        assert_eq!(s.profile_plugin_dir(&git), own_plugin);
+        assert_eq!(
+            s.profile_plugin_file::<Sample>(&git, "s.json").path(),
+            own_plugin.join("s.json")
+        );
+    };
+    // no `.permark/`: everything in the profile, keyed by the project id
+    let s = f.store();
+    assert_eq!(s.location(), StateLocation::Profile);
+    pinned(&s, &profile, &cache, &profile, &profile);
+    assert_eq!(path_of(s.legacy_shared_file("meta.toml")), None);
+    // a real `.permark/`: private state in `local/`, caches in `cache/`, shared files in `.permark/` itself
+    let permark = f.root().path().join(".permark");
+    fs::create_dir(&permark).unwrap();
+    let s = f.store();
+    assert_eq!(s.location(), StateLocation::Project);
+    pinned(
+        &s,
+        &permark.join("local"),
+        &permark.join("cache"),
+        &permark,
+        &profile,
+    );
+    assert_eq!(
+        path_of(s.legacy_shared_file("meta.toml")),
+        Some(profile.join("meta.toml"))
+    );
+    // a file in place of `cache/`: caches stay in the profile cache
+    fs::write(permark.join("cache"), "x").unwrap();
+    assert_eq!(f.store().cache_dir(), cache);
+    // app-wide: the profile folder itself
+    let app = StateStore::app(&f.dirs);
+    assert_eq!(app.location(), StateLocation::Profile);
+    pinned(
+        &app,
+        &f.dirs.profile,
+        &f.dirs.cache,
+        &f.dirs.profile,
+        &f.dirs.profile,
+    );
+}
+
+#[test]
+fn app_dirs_under_layout_is_pinned() {
+    let base = Path::new("base");
+    let dirs = AppDirs::under(base);
+    assert_eq!(dirs.profile, base.join("profile"));
+    assert_eq!(dirs.cache, base.join("cache"));
+    let Some(system) = AppDirs::system() else {
+        return;
+    };
+    // debug builds (the tests) never touch the person's real state
+    let name = if cfg!(debug_assertions) {
+        "PerMark-dev"
+    } else {
+        "PerMark"
+    };
+    assert!(system.profile.ends_with(name));
+    assert!(system.cache.ends_with(name));
+}
+
+#[test]
+fn the_install_folder_stays_apart_and_a_snap_keeps_it_across_revisions() {
+    let base = Path::new("base");
+    assert_eq!(AppDirs::under(base).install, base.join("install"));
+    if let Some(system) = AppDirs::system() {
+        if std::env::var_os("SNAP").is_none() {
+            let name = if cfg!(debug_assertions) {
+                "PerMark-dev"
+            } else {
+                "PerMark"
+            };
+            assert!(system.install.ends_with(Path::new(name).join("install")));
+        }
+    }
+    let snap = Some(std::ffi::OsStr::new("/snap/permark/12"));
+    let common = Some(std::ffi::OsStr::new("/home/a/snap/permark/common"));
+    assert_eq!(
+        snap_install(snap, common),
+        Some(Path::new("/home/a/snap/permark/common").join("install"))
+    );
+    assert_eq!(snap_install(Some(std::ffi::OsStr::new("")), common), None);
+    assert_eq!(snap_install(None, common), None);
+    assert_eq!(snap_install(snap, None), None);
+    assert_eq!(
+        snap_install(snap, Some(std::ffi::OsStr::new("snap/permark/common"))),
+        None
+    );
+}
+
+#[test]
+fn machine_files_sit_under_the_install_id_in_both_locations() {
+    let f = fx();
+    let journal = |dir: &Path| dir.join("fileops").join("journal.json");
+    // no `.permark/`: the project's profile folder
+    let s = f.store();
+    let m = s.machine().unwrap();
+    assert_eq!(m.iid().len(), 16);
+    assert!(m.iid().bytes().all(|b| b.is_ascii_hexdigit()));
+    assert_eq!(m.dir(), s.dir().join("machine").join(m.iid()));
+    let file = s.machine_file::<Sample>("fileops/journal.json").unwrap();
+    assert_eq!(file.path(), journal(m.dir()));
+    file.save(&sample(1)).unwrap();
+    assert_eq!(file.load(), Loaded::Found(sample(1)));
+    assert_eq!(
+        s.machine_raw_file("x.json").unwrap().path(),
+        m.dir().join("x.json")
+    );
+    assert_eq!(
+        s.install_file::<Sample>("marks.json").unwrap().path(),
+        f.dirs.install.join("marks.json")
+    );
+    assert_eq!(s.app_dirs(), &f.dirs);
+    // a real `.permark/`: inside `local/`, same install id, same folder id
+    let permark = f.root().path().join(".permark");
+    fs::create_dir(&permark).unwrap();
+    let p = f.store();
+    let pm = p.machine().unwrap();
+    assert_eq!((pm.iid(), pm.rid()), (m.iid(), m.rid()));
+    assert_eq!(
+        pm.dir(),
+        permark.join("local").join("machine").join(pm.iid())
+    );
+    p.machine_file::<Sample>("x.json")
+        .unwrap()
+        .save(&sample(2))
+        .unwrap();
+    assert!(pm.dir().join("x.json").is_file());
+    // app-wide: no folder to bind data to; the install folder is still there
+    let app = StateStore::app(&f.dirs);
+    assert!(app.machine().is_none());
+    assert!(app.machine_file::<Sample>("x.json").is_none());
+    assert!(app.machine_raw_file("x.json").is_none());
+    assert_eq!(
+        app.install_file::<Sample>("marks.json").unwrap().path(),
+        f.dirs.install.join("marks.json")
+    );
+}
+
+#[test]
+fn a_machine_file_is_guarded_like_the_other_state_files() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let s = f.store();
+    let file = s.machine_file::<Sample>("x.json").unwrap();
+    let local = f.root().path().join(".permark").join("local");
+    fs::write(&local, "now a file").unwrap();
+    assert!(file.save(&sample(1)).is_err());
+    assert!(s.machine_raw_file("y.json").unwrap().write(b"y").is_err());
+    assert_eq!(fs::read_to_string(&local).unwrap(), "now a file");
+}
+
+#[test]
+fn the_folder_id_follows_the_folder_and_the_install_and_is_never_stored() {
+    let f = fx();
+    let store = f.store();
+    let rid = store.machine().unwrap().rid().to_owned();
+    assert_eq!(rid.len(), 32);
+    assert!(rid.bytes().all(|b| b.is_ascii_hexdigit()));
+    // the same folder opened again: the same id
+    assert_eq!(f.store().machine().unwrap().rid(), rid);
+    // another folder: another id under the same install id
+    let other = tempfile::tempdir().unwrap();
+    let o = StateStore::for_project(&f.dirs, &Root::open(other.path()).unwrap());
+    assert_ne!(o.machine().unwrap().rid(), rid);
+    assert_eq!(o.machine().unwrap().iid(), store.machine().unwrap().iid());
+    // a folder made again at the same path: another id wherever the disk tells the two apart
+    let again = other.path().join("again");
+    fs::create_dir(&again).unwrap();
+    let first = crate::fsx::FolderIdentity::of(&again);
+    let before = StateStore::for_project(&f.dirs, &Root::open(&again).unwrap());
+    let before = before.machine().unwrap().rid().to_owned();
+    fs::remove_dir(&again).unwrap();
+    fs::create_dir(&again).unwrap();
+    let after = StateStore::for_project(&f.dirs, &Root::open(&again).unwrap());
+    let told_apart = matches!(
+        (first, crate::fsx::FolderIdentity::of(&again)),
+        (Some(a), Some(b)) if !a.same(b)
+    );
+    if told_apart {
+        assert_ne!(after.machine().unwrap().rid(), before);
+    }
+    // another install (another key): other ids for the same folder
+    let base = tempfile::tempdir().unwrap();
+    let elsewhere = StateStore::for_project(&AppDirs::under(base.path()), &f.root());
+    let em = elsewhere.machine().unwrap();
+    assert_ne!(em.rid(), rid);
+    assert_ne!(em.iid(), store.machine().unwrap().iid());
+    // only the key is kept: the folder id is worked out again at each open
+    let kept: Vec<String> = fs::read_dir(&f.dirs.install)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(kept, ["install.key"]);
+}
+
+#[test]
+fn clones_of_a_store_share_one_machine_and_no_key_means_none() {
+    let f = fx();
+    let s = f.store();
+    let copy = s.clone();
+    assert!(std::ptr::eq(s.machine().unwrap(), copy.machine().unwrap()));
+    // an install folder that cannot be made (a file in the way): no key, no machine data, no install files
+    let base = tempfile::tempdir().unwrap();
+    let mut dirs = AppDirs::under(base.path());
+    fs::write(base.path().join("blocked"), "x").unwrap();
+    dirs.install = base.path().join("blocked").join("install");
+    let blocked = StateStore::for_project(&dirs, &f.root());
+    assert!(blocked.machine().is_none());
+    assert!(blocked.machine_file::<Sample>("x.json").is_none());
+    assert!(blocked.install_file::<Sample>("marks.json").is_none());
+}

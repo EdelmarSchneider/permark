@@ -448,6 +448,7 @@ fn env(backend: Option<Arc<dyn GitOps>>, heard: &Arc<Heard>, visits: Option<Path
             let dirs = AppDirs {
                 profile: base.join(path.replace('/', "_")),
                 cache: base.join("cache"),
+                install: base.join("install"),
             };
             Some(StateStore::app(&dirs).file("visit.json"))
         }),

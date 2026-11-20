@@ -226,23 +226,10 @@ fn lock_dir() -> Option<PathBuf> {
 /// `<base>/permark-locks` of the first base where it is (or is made) a real folder owned by this user, mode 0700.
 #[cfg(all(unix, not(target_os = "macos")))]
 fn private_dir(bases: &[PathBuf]) -> Option<PathBuf> {
-    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
-    let me = rustix::process::geteuid().as_raw();
-    bases.iter().find_map(|base| {
-        let dir = base.join("permark-locks");
-        let _ = std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&dir);
-        let meta = std::fs::symlink_metadata(&dir).ok()?;
-        if !meta.file_type().is_dir() || meta.uid() != me {
-            return None;
-        }
-        if meta.mode() & 0o077 != 0 {
-            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).ok()?;
-        }
-        Some(dir)
-    })
+    bases
+        .iter()
+        .map(|base| base.join("permark-locks"))
+        .find(|dir| crate::fsx::private_dir(dir).is_ok())
 }
 
 /// Three-way merge of keyed entries: what this writer changed since `base` (added, changed, removed) goes on top of

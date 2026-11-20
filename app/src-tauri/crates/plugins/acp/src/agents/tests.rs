@@ -303,6 +303,7 @@ fn the_choice_lives_in_the_profile_folder_never_in_the_project() {
     let dirs = AppDirs {
         profile: profile.path().to_path_buf(),
         cache: profile.path().join("cache"),
+        install: profile.path().join("install"),
     };
     let store = StateStore::for_project(&dirs, &Root::open(project.path()).unwrap());
     assert_eq!(store.location(), StateLocation::Project);

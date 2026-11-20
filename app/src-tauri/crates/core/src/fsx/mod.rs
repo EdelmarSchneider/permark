@@ -503,6 +503,41 @@ pub fn replace_file(from: &Path, to: &Path) -> io::Result<()> {
     retry(&RETRY_DELAYS, || rename_durably(from, to))
 }
 
+/// Makes `dir` (missing parents too) a real folder of this user that only this user can enter. Unix: mode 0700 (an
+/// existing folder is tightened); a link, a file or another user's folder in the way is refused. Windows: created;
+/// the per-user profile it sits in already keeps other users out.
+///
+/// # Errors
+/// Creation failed, something other than this user's folder in the way, mode change refused.
+pub fn private_dir(dir: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)?;
+        let meta = std::fs::symlink_metadata(dir)?;
+        if !meta.file_type().is_dir() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a folder"));
+        }
+        if meta.uid() != rustix::process::geteuid().as_raw() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "a folder of another user",
+            ));
+        }
+        if meta.mode() & 0o777 != 0o700 {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir_all(dir)
+    }
+}
+
 /// Bytes free for this user on the volume holding `path`; a path not made yet answers for its nearest existing
 /// folder (a store root before its first download).
 ///

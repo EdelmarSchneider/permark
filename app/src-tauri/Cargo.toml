@@ -65,6 +65,8 @@ dunce = "1.0.5"
 unicode-normalization = "0.1.25"
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 sha2 = "0.10"
+# HMAC + system randomness for the install key (already in the lock through rustls)
+ring = "0.17"
 toml_edit = "0.25.17"
 dirs = "7.0.0"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }

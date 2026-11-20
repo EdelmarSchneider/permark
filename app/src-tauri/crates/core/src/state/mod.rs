@@ -5,12 +5,14 @@
 pub mod older;
 mod private;
 mod raw;
+mod seal;
 pub mod shared_write;
 
 use std::io;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::de::DeserializeOwned;
@@ -23,6 +25,7 @@ use crate::paths::Root;
 use crate::plugins::PluginId;
 
 pub use raw::{RawFile, SHARED_MAX_BYTES};
+pub use seal::{Machine, Seal};
 pub use shared_write::{merge3, FileLock};
 
 pub const PERMARK_DIR: &str = ".permark";
@@ -66,6 +69,8 @@ pub const DEFAULT_CONFIG_TOML: &str = "\
 pub struct AppDirs {
     pub profile: PathBuf,
     pub cache: PathBuf,
+    /// This computer's own folder (the install key): never in a roaming profile on Windows.
+    pub install: PathBuf,
 }
 
 impl AppDirs {
@@ -80,17 +85,42 @@ impl AppDirs {
         Some(Self {
             profile: dirs::data_dir()?.join(name),
             cache: dirs::cache_dir()?.join(name),
+            install: install_dir(name)?,
         })
     }
 
-    /// `base/profile` + `base/cache` (tests, portable setups).
+    /// `base/profile` + `base/cache` + `base/install` (tests, portable setups).
     #[must_use]
     pub fn under(base: &Path) -> Self {
         Self {
             profile: base.join("profile"),
             cache: base.join("cache"),
+            install: base.join("install"),
         }
     }
+}
+
+/// `<local data>/<name>/install`; in a Snap, the common folder (the data folder changes with each revision).
+fn install_dir(name: &str) -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    if let Some(dir) = snap_install(
+        std::env::var_os("SNAP").as_deref(),
+        std::env::var_os("SNAP_USER_COMMON").as_deref(),
+    ) {
+        return Some(dir);
+    }
+    Some(dirs::data_local_dir()?.join(name).join("install"))
+}
+
+/// `$SNAP_USER_COMMON/install` when running as a Snap (`SNAP` set) and the common folder is absolute.
+#[cfg(any(target_os = "linux", test))]
+fn snap_install(
+    snap: Option<&std::ffi::OsStr>,
+    common: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
+    let common = Path::new(common?);
+    // `has_root`: an absolute path as Linux writes it, also on the computers the tests run on
+    (snap.is_some_and(|s| !s.is_empty()) && common.has_root()).then(|| common.join("install"))
 }
 
 /// Stable id of a project folder: xxh3 of its `RootKey` as saved ([`crate::paths::RootKey::saved_spelling`]: shares
@@ -374,27 +404,8 @@ impl<T: StateData> StateFile<T> {
         Err(StateError::io(&self.path, raw::kept_changing()))
     }
 
-    /// `<name>.broken-<ms>` next to it; never overwrites an older backup.
     fn move_aside(&self) -> Option<PathBuf> {
-        let name = self.path.file_name()?.to_string_lossy().into_owned();
-        let ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_millis());
-        for n in 0..100u32 {
-            let suffix = if n == 0 {
-                String::new()
-            } else {
-                format!("-{n}")
-            };
-            let backup = self
-                .path
-                .with_file_name(format!("{name}.broken-{ms}{suffix}"));
-            if std::fs::symlink_metadata(&backup).is_ok() {
-                continue;
-            }
-            return std::fs::rename(&self.path, &backup).ok().map(|()| backup);
-        }
-        None
+        move_aside(&self.path)
     }
 
     /// Atomic write of `{ version, data }`; saves of one file in this process take turns (`shared_write::save_turn`).
@@ -428,6 +439,28 @@ impl<T: StateData> StateFile<T> {
         unread::clear(&self.path);
         Ok(())
     }
+}
+
+/// `<name>.broken-<ms>` next to `path` (the entry itself: a link is moved, never followed); never overwrites an older
+/// backup.
+fn move_aside(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    let ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis());
+    for n in 0..100u32 {
+        let suffix = if n == 0 {
+            String::new()
+        } else {
+            format!("-{n}")
+        };
+        let backup = path.with_file_name(format!("{name}.broken-{ms}{suffix}"));
+        if std::fs::symlink_metadata(&backup).is_ok() {
+            continue;
+        }
+        return std::fs::rename(path, &backup).ok().map(|()| backup);
+    }
+    None
 }
 
 /// The state files a load | update could not read (or parse and move aside) and left in place (board item 15): a save
@@ -513,6 +546,12 @@ pub struct StateStore {
     shared: PathBuf,
     guard: Option<Guard>,
     cache_guard: Option<Guard>,
+    /// The person's state roots this store was made from.
+    roots: AppDirs,
+    /// The project folder; `None`: the app-wide store.
+    root: Option<Root>,
+    /// This install's data for the project, worked out at first use; clones share it.
+    machine: Arc<OnceLock<Option<Machine>>>,
 }
 
 impl StateStore {
@@ -528,6 +567,9 @@ impl StateStore {
             shared: dirs.profile.clone(),
             guard: None,
             cache_guard: None,
+            roots: dirs.clone(),
+            root: None,
+            machine: Arc::default(),
         }
     }
 
@@ -561,6 +603,9 @@ impl StateStore {
                 shared: permark.clone(),
                 guard: Some(guard(&local)),
                 cache_guard: cache_usable.then(|| guard(&cache)),
+                roots: dirs.clone(),
+                root: Some(root.clone()),
+                machine: Arc::default(),
             }
         } else {
             Self {
@@ -572,8 +617,60 @@ impl StateStore {
                 app_dir: dirs.profile.clone(),
                 guard: None,
                 cache_guard: None,
+                roots: dirs.clone(),
+                root: Some(root.clone()),
+                machine: Arc::default(),
             }
         }
+    }
+
+    /// The person's state roots (profile, cache, install) this store was made from.
+    #[must_use]
+    pub fn app_dirs(&self) -> &AppDirs {
+        &self.roots
+    }
+
+    /// This install's own data for the project: read only by this install, sealed with its key and bound to the
+    /// folder, in `<state dir>/machine/<iid>/`. `None`: the app-wide store, or no usable install key (keep no such
+    /// data: fail closed).
+    #[must_use]
+    pub fn machine(&self) -> Option<&Machine> {
+        self.machine
+            .get_or_init(|| {
+                let root = self.root.as_ref()?;
+                let install = seal::install(&self.roots.install)?;
+                Some(Machine::new(&install, root, &self.dir))
+            })
+            .as_ref()
+    }
+
+    /// A typed file in [`StateStore::machine`]'s folder, guarded like the other state files.
+    #[must_use]
+    pub fn machine_file<T: StateData>(&self, name: &str) -> Option<StateFile<T>> {
+        self.machine().map(|machine| StateFile {
+            path: machine.dir().join(name),
+            guard: self.guard.clone(),
+            read: AtomicU8::new(unread::NEVER),
+            _data: PhantomData,
+        })
+    }
+
+    /// A raw file in [`StateStore::machine`]'s folder.
+    #[must_use]
+    pub fn machine_raw_file(&self, name: &str) -> Option<RawFile> {
+        self.machine()
+            .map(|machine| RawFile::private(machine.dir().join(name), self.guard.clone()))
+    }
+
+    /// A typed file in the install folder (this computer's, for every project); `None`: no usable install key.
+    #[must_use]
+    pub fn install_file<T: StateData>(&self, name: &str) -> Option<StateFile<T>> {
+        seal::install(&self.roots.install).map(|_| StateFile {
+            path: self.roots.install.join(name),
+            guard: None,
+            read: AtomicU8::new(unread::NEVER),
+            _data: PhantomData,
+        })
     }
 
     #[must_use]
