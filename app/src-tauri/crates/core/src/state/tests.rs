@@ -996,7 +996,7 @@ fn team_files_are_read_only_as_plain_files_in_permark() {
     let dirs = f.dirs.clone();
     let answers = answered(move || {
         let card = match card::file_of(&dirs, root.path()) {
-            Some(file @ card::CardFile::Project(_)) => file.read(),
+            Some(file @ card::CardFile::Project { .. }) => file.read(),
             _ => panic!("the card is the project's"),
         };
         (
@@ -1708,6 +1708,7 @@ fn store_paths_are_pinned() {
 #[derive(Debug, PartialEq)]
 struct Resolved {
     location: StateLocation,
+    team: bool,
     dir: PathBuf,
     cache_dir: PathBuf,
     cache_file: PathBuf,
@@ -1724,6 +1725,7 @@ impl Resolved {
         let git = PluginId::of("git");
         Self {
             location: s.location(),
+            team: s.has_team_folder(),
             dir: s.dir().to_path_buf(),
             cache_dir: s.cache_dir().to_path_buf(),
             cache_file: s.cache_file::<Sample>("c.json").path().to_path_buf(),
@@ -1745,19 +1747,20 @@ impl Resolved {
         let profile_cache = f.dirs.cache.join("projects").join(id.as_str());
         let permark = f.root().path().join(PERMARK_DIR);
         let (dir, cache) = match place {
-            Place::Profile => (profile.clone(), profile_cache),
+            Place::Profile | Place::TeamOnly => (profile.clone(), profile_cache),
             Place::Project => (permark.join("local"), permark.join("cache")),
             Place::ProjectStateOnly => (permark.join("local"), profile_cache),
         };
-        // shared files in `.permark/` (the profile copy kept apart) whenever the state is there
+        // shared files in `.permark/` (the profile copy kept apart) whenever it is the team folder
         let team = !matches!(place, Place::Profile);
         let shared = if team { &permark } else { &profile };
         Self {
-            location: if team {
-                StateLocation::Project
-            } else {
+            location: if matches!(place, Place::Profile | Place::TeamOnly) {
                 StateLocation::Profile
+            } else {
+                StateLocation::Project
             },
+            team,
             cache_file: cache.join("c.json"),
             cache_dir: cache,
             machine: Some(dir.join("machine").join(iid)),
@@ -1778,6 +1781,8 @@ enum Place {
     Project,
     /// In the project, caches in the profile cache.
     ProjectStateOnly,
+    /// In the profile; only the team files in `.permark/`.
+    TeamOnly,
 }
 
 impl Fx {
@@ -1788,7 +1793,8 @@ impl Fx {
 
 /// Where a project's store sits for each layout its folder can have: `.permark/` a real folder (with `local/` real or
 /// missing) -> `local/`, caches in `cache/` unless something else is there; anything else (no `.permark/`, a file or a
-/// folder link in its place, a file | link as `local/`) -> the profile. Resolving writes nothing into the folder and
+/// folder link in its place, a file | link as `local/`) -> the profile. Team files follow `.permark/` whenever it is a
+/// real folder, also while the private state stays in the profile. Resolving writes nothing into the folder and
 /// nothing through a link; a second store of the same folder gives the same answer.
 #[test]
 fn every_path_a_store_hands_out_is_pinned_for_each_folder_layout() {
@@ -1832,7 +1838,7 @@ fn every_path_a_store_hands_out_is_pinned_for_each_folder_layout() {
                 fs::create_dir(f.permark()).is_ok()
                     && fs::write(f.permark().join("local"), "x").is_ok()
             },
-            Place::Profile,
+            Place::TeamOnly,
         ),
         (
             "local a junction | symlink",
@@ -1840,7 +1846,7 @@ fn every_path_a_store_hands_out_is_pinned_for_each_folder_layout() {
                 fs::create_dir(f.permark()).is_ok()
                     && crate::tree::tests::link_out(&f.permark().join("local"), out)
             },
-            Place::Profile,
+            Place::TeamOnly,
         ),
         (
             "cache a file",
@@ -1868,6 +1874,11 @@ fn every_path_a_store_hands_out_is_pinned_for_each_folder_layout() {
         let before = entries_below(f.project.path());
         let s = f.store();
         let got = Resolved::of(&s);
+        assert_eq!(
+            has_team_folder(&f.root()),
+            got.team,
+            "{name}: the folder's own answer"
+        );
         let iid = s.machine().unwrap().iid().to_owned();
         assert_eq!(got, Resolved::at(&f, &iid, place), "{name}");
         assert_eq!(Resolved::of(&f.store()), got, "{name}: a second store");
@@ -1960,6 +1971,120 @@ fn uninit_project_takes_back_only_state_folders_without_a_link() {
         assert_eq!(
             fs::read(outside.path().join("kept.txt")).unwrap(),
             b"theirs"
+        );
+    }
+}
+
+/// A cloud placeholder folder (OneDrive Files On-Demand) carries a reparse point that is no link: std reports a plain
+/// folder. Where the private state lives keeps the rule of earlier versions, which counted any reparse point as a link
+/// (the state stays in the profile, where they kept it), while `.permark/` is the team folder: team files are written
+/// there, the project list, the tag vocabulary and the card are read there, and its `local/` is where a context file
+/// sits. No test can make a cloud folder: the earlier rule's predicate is swapped for one that calls everything a link,
+/// and std answers for the folder as for a plain one.
+#[test]
+fn a_cloud_folder_is_the_team_folder_while_the_private_state_stays_where_earlier_versions_kept_it()
+{
+    use crate::projects::{card, record, vocabulary};
+    let f = fx();
+    let permark = f.permark();
+    fs::create_dir_all(permark.join("local")).unwrap();
+    fs::write(permark.join(record::RECORD_FILE), "version = 1\n").unwrap();
+    fs::write(
+        permark.join(vocabulary::VOCABULARY_FILE),
+        "version = 1\n\n[tags.spec]\n",
+    )
+    .unwrap();
+    let cloud = StateStore::for_project_as(&f.dirs, &f.root(), |_| true);
+    let iid = cloud.machine().unwrap().iid().to_owned();
+    assert_eq!(
+        Resolved::of(&cloud),
+        Resolved::at(&f, &iid, Place::TeamOnly)
+    );
+    assert!(has_team_folder(&f.root()));
+    cloud.shared_file("meta.toml").write(b"x = 1\n").unwrap();
+    assert_eq!(fs::read(permark.join("meta.toml")).unwrap(), b"x = 1\n");
+    assert!(matches!(
+        record::read(f.root().path()),
+        crate::projects::RecordRead::Read(_)
+    ));
+    let vocab = vocabulary::read(f.root().path());
+    assert!(
+        vocab.vocab().is_some_and(|v| v.tags.contains_key("spec")),
+        "{vocab:?}"
+    );
+    let place = card::file_of(&f.dirs, f.root().path()).map(|file| file.place());
+    assert_eq!(place, Some(card::CardPlace::Project));
+    assert_eq!(
+        cloud
+            .local_raw_file(context::FILE)
+            .map(|file| file.path().to_path_buf()),
+        Some(permark.join("local").join(context::FILE))
+    );
+    // the same folder under the earlier rule's own predicate: a plain folder, so the state is in `local/`
+    assert_eq!(f.store().location(), StateLocation::Project);
+}
+
+/// The project's `local/` is offered whatever place holds the private state, only while `.permark/` is a real folder
+/// and `local/` is a real folder or missing; it is the store's own state folder when the state is there.
+#[test]
+fn the_local_folder_is_offered_only_inside_a_real_team_folder() {
+    // (layout, made in the folder: `false` -> the system cannot make it here, skipped; offered)
+    type Make = fn(&Fx, &Path) -> bool;
+    let layouts: Vec<(&str, Make, bool)> = vec![
+        ("no .permark", |_, _| true, false),
+        (
+            ".permark, local missing",
+            |f, _| fs::create_dir(f.permark()).is_ok(),
+            true,
+        ),
+        (
+            ".permark a file",
+            |f, _| fs::write(f.permark(), "x").is_ok(),
+            false,
+        ),
+        (
+            ".permark a junction | symlink",
+            |f, out| crate::tree::tests::link_out(&f.permark(), out),
+            false,
+        ),
+        (
+            "local a file",
+            |f, _| {
+                fs::create_dir(f.permark()).is_ok()
+                    && fs::write(f.permark().join("local"), "x").is_ok()
+            },
+            false,
+        ),
+        (
+            "local a junction | symlink",
+            |f, out| {
+                fs::create_dir(f.permark()).is_ok()
+                    && crate::tree::tests::link_out(&f.permark().join("local"), out)
+            },
+            false,
+        ),
+    ];
+    for (name, make, offered) in layouts {
+        let f = fx();
+        let outside = tempfile::tempdir().unwrap();
+        if !make(&f, outside.path()) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        let s = f.store();
+        let file = s.local_raw_file("x.json");
+        assert_eq!(file.is_some(), offered, "{name}");
+        if let Some(file) = file {
+            assert_eq!(file.path(), s.raw_file("x.json").path(), "{name}");
+            file.write(b"{}").unwrap();
+            assert_eq!(
+                fs::read(f.permark().join("local").join("x.json")).unwrap(),
+                b"{}"
+            );
+        }
+        assert!(
+            fs::read_dir(outside.path()).unwrap().next().is_none(),
+            "{name}: nothing behind a link"
         );
     }
 }

@@ -1,4 +1,4 @@
-//! `agent-context.json` in a project's state folder: the live context the agent connection publishes for scripts
+//! `agent-context.json` in a project's `.permark/local/`: the live context the agent connection publishes for scripts
 //! without MCP (the path stays: scripts read it there). It carries a token only this install can make for this folder
 //! and this content, so a copy that arrived with the folder (a zip, a clone, a sync partner), or one whose content
 //! changed since, is told apart from the one this install wrote, and is removed when the project opens, whether the
@@ -8,9 +8,9 @@ use std::io;
 
 use serde_json::{Map, Value};
 
-use super::{Machine, Seal, StateLocation, StateStore};
+use super::{Machine, Seal, StateStore};
 
-/// Name of the file in the project's state folder (`.permark/local/`).
+/// Name of the file in the project's team folder (`.permark/local/`).
 pub const FILE: &str = "agent-context.json";
 /// Seal kind of the token: bound to the folder's id under this install's key, never to the install id alone (that one
 /// names a folder inside `.permark/local/` and travels with it).
@@ -53,14 +53,15 @@ pub fn encode(store: &StateStore, mut context: Map<String, Value>) -> Option<Vec
 }
 
 /// Removes a context file this install did not write for this folder; run when the project opens, before any plugin
-/// starts. Only in the project's own state folder (the agent connection writes none in the profile). Left as it is
-/// when its token cannot be checked: no usable install key, or a read that failed for another reason than what stands
-/// there (the file held by another program). Best effort: a folder that cannot be written still opens.
+/// starts. Only in the team folder's `local/` ([`StateStore::local_raw_file`]), whatever place holds the private state:
+/// the agent connection writes it there and none in the profile, and a folder from elsewhere may bring one there. Left
+/// as it is when its token cannot be checked: no usable install key, or a read that failed for another reason than
+/// what stands there (the file held by another program). Best effort: a folder that cannot be written still opens.
 pub fn remove_foreign(store: &StateStore) {
-    if store.location() != StateLocation::Project {
+    let Some(file) = store.local_raw_file(FILE) else {
         return;
-    }
-    let file = store.raw_file(FILE).capped(MAX_BYTES);
+    };
+    let file = file.capped(MAX_BYTES);
     let bytes = match file.read() {
         Ok(Some(bytes)) => Some(bytes),
         // a link, FIFO, folder or oversized file: never a file this install wrote
@@ -337,6 +338,29 @@ mod tests {
         fs::write(file(&store).join("kept"), b"x").unwrap();
         remove_foreign(&store);
         assert_eq!(fs::read(file(&store).join("kept")).unwrap(), b"x");
+    }
+
+    /// The file sits in the team folder's `local/` (where scripts read it), also while the private state stays in the
+    /// profile: a copy that came with the folder there is removed at open, this install's own copy stays. Shown with a
+    /// cloud folder, whose state earlier versions kept in the profile (the earlier rule's predicate swapped for one
+    /// that calls everything a link: no test can make a cloud folder).
+    #[test]
+    fn a_copy_in_the_team_folder_goes_whatever_place_holds_the_private_state() {
+        let f = fx();
+        let store = StateStore::for_project_as(&f.dirs, &f.root(), |_| true);
+        assert_eq!(store.location(), StateLocation::Profile);
+        let path = f.project.path().join(".permark").join("local").join(FILE);
+        put(&path, &context(None));
+        remove_foreign(&store);
+        assert!(!path.exists(), "a copy without this install's token goes");
+        let ours = ours(&store);
+        put(&path, &ours);
+        remove_foreign(&store);
+        assert_eq!(fs::read(&path).unwrap(), ours, "this install's copy stays");
+        // the profile folder holds none to check
+        put(&file(&store), &context(None));
+        remove_foreign(&store);
+        assert!(file(&store).exists(), "profile copy left");
     }
 
     #[cfg(unix)]

@@ -21,7 +21,6 @@ use crate::error::{ErrorKind, IpcError};
 use crate::events::{ContextChanged, CoreEvent, WindowChanged, WindowsChanged};
 use crate::paths::{FileScope, RootKey, Vault, VaultPath};
 use crate::plugins::PluginId;
-use crate::state::StateLocation;
 
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
@@ -1580,7 +1579,8 @@ fn context_of(
     match &entry.workspace {
         Workspace::Project(core) => {
             context.workspace = WorkspaceKind::Project;
-            context.permark = if core.state_location() == StateLocation::Project {
+            // read again at each look: a team folder that arrived while the project is open counts at once
+            context.permark = if crate::state::has_team_folder(core.root()) {
                 PermarkCondition::Initialized
             } else {
                 PermarkCondition::NotInitialized

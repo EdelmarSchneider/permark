@@ -10,7 +10,7 @@ use ts_rs::TS;
 
 use super::record::{eol_of, key_at, quoted, splice, strip_bom, Lines};
 use super::uid::ProjectUid;
-use crate::state::{AppDirs, StateData, PERMARK_DIR};
+use crate::state::{AppDirs, StateData, StateFile, PERMARK_DIR};
 
 pub const CARD_FILE: &str = "project.toml";
 pub const PROFILE_CARD: &str = "card.json";
@@ -266,39 +266,78 @@ impl StateData for ProfileCard {
 /// Where the card of the folder `abs` is kept.
 #[derive(Debug, Clone)]
 pub enum CardFile {
-    Project(PathBuf),
-    Profile(crate::state::StateFile<ProfileCard>),
+    /// `.permark/project.toml`. `earlier`: the card kept in the profile (from before the folder had a real
+    /// `.permark/`), shown while the project card is not written yet; the first edit writes its fields in.
+    Project {
+        path: PathBuf,
+        earlier: Option<StateFile<ProfileCard>>,
+    },
+    Profile(StateFile<ProfileCard>),
 }
 
 /// The card file of a project folder: its `.permark/project.toml` when `.permark/` is a real folder, else the
 /// profile (by the folder's `ProjectId`).
 #[must_use]
 pub fn file_of(dirs: &AppDirs, abs: &Path) -> Option<CardFile> {
+    let profile = crate::paths::Root::open(abs)
+        .ok()
+        .map(|root| crate::state::StateStore::for_project(dirs, &root).profile_file(PROFILE_CARD));
     let permark = abs.join(PERMARK_DIR);
-    if std::fs::symlink_metadata(&permark)
-        .is_ok_and(|m| m.is_dir() && !crate::tree::is_link_meta(&m))
-    {
-        return Some(CardFile::Project(permark.join(CARD_FILE)));
+    if std::fs::symlink_metadata(&permark).is_ok_and(|m| m.is_dir() && !crate::fsx::is_link(&m)) {
+        return Some(CardFile::Project {
+            path: permark.join(CARD_FILE),
+            earlier: profile,
+        });
     }
-    let root = crate::paths::Root::open(abs).ok()?;
-    let store = crate::state::StateStore::for_project(dirs, &root);
-    Some(CardFile::Profile(store.profile_file(PROFILE_CARD)))
+    profile.map(CardFile::Profile)
+}
+
+/// The card kept in the profile, each value checked as a project card's is (an invalid one is not shown).
+fn profile_card(file: &StateFile<ProfileCard>) -> Card {
+    let kept = file.load().into_value();
+    let take = |field, raw: &Option<String>| raw.as_deref().and_then(|r| clean(field, r));
+    Card {
+        id: None,
+        name: take(CardField::Name, &kept.name),
+        short: take(CardField::Short, &kept.short),
+        description: take(CardField::Description, &kept.description),
+        category: take(CardField::Category, &kept.category),
+        invalid: Vec::new(),
+        warning: None,
+    }
+}
+
+/// Card text holding the fields of `card` except `skip` (pure; empty when it holds none).
+fn text_of(card: &Card, id: &ProjectUid, skip: CardField) -> String {
+    let mut text = String::new();
+    for field in CardField::ALL.into_iter().filter(|f| *f != skip) {
+        let value = match field {
+            CardField::Name => &card.name,
+            CardField::Short => &card.short,
+            CardField::Description => &card.description,
+            CardField::Category => &card.category,
+        };
+        if let Some(value) = value {
+            text = apply(&text, id, field, Some(value));
+        }
+    }
+    text
 }
 
 impl CardFile {
     #[must_use]
     pub fn place(&self) -> CardPlace {
         match self {
-            Self::Project(_) => CardPlace::Project,
+            Self::Project { .. } => CardPlace::Project,
             Self::Profile(_) => CardPlace::Profile,
         }
     }
 
-    /// The card as kept (missing = empty card).
+    /// The card as kept (missing = empty card; a missing project card = the card kept in the profile).
     #[must_use]
     pub fn read(&self) -> Card {
         match self {
-            Self::Project(path) => {
+            Self::Project { path, earlier } => {
                 if super::record::is_link(path) {
                     return Card {
                         warning: Some(CardWarning::Unreadable),
@@ -314,23 +353,15 @@ impl CardFile {
                         warning: Some(CardWarning::TooLarge),
                         ..Card::default()
                     },
+                    Err(crate::fsx::FsxError::Io { source, .. })
+                        if source.kind() == std::io::ErrorKind::NotFound =>
+                    {
+                        earlier.as_ref().map_or_else(Card::default, profile_card)
+                    }
                     Err(_) => Card::default(),
                 }
             }
-            Self::Profile(file) => {
-                let kept = file.load().into_value();
-                let take =
-                    |field, raw: &Option<String>| raw.as_deref().and_then(|r| clean(field, r));
-                Card {
-                    id: None,
-                    name: take(CardField::Name, &kept.name),
-                    short: take(CardField::Short, &kept.short),
-                    description: take(CardField::Description, &kept.description),
-                    category: take(CardField::Category, &kept.category),
-                    invalid: Vec::new(),
-                    warning: None,
-                }
-            }
+            Self::Profile(file) => profile_card(file),
         }
     }
 
@@ -355,7 +386,7 @@ impl CardFile {
                 })?)
             };
         match self {
-            Self::Project(path) => {
+            Self::Project { path, earlier } => {
                 if super::record::is_link(path) {
                     return Err(IpcError::new(ErrorKind::Unavailable).subject("card"));
                 }
@@ -372,10 +403,13 @@ impl CardFile {
                             return Err(IpcError::new(ErrorKind::Unavailable).subject("card"));
                         }
                     }
-                    let text = before
-                        .as_deref()
-                        .map(|b| String::from_utf8_lossy(b).into_owned())
-                        .unwrap_or_default();
+                    let text = match before.as_deref() {
+                        Some(bytes) => String::from_utf8_lossy(bytes).into_owned(),
+                        // the first project card: the fields shown from the profile card go in with the change
+                        None => earlier.as_ref().map_or_else(String::new, |file| {
+                            text_of(&profile_card(file), id, change.field)
+                        }),
+                    };
                     let after = apply(&text, id, change.field, value.as_deref()).into_bytes();
                     let seen = before.as_deref().map(crate::fsx::hash);
                     announce(path, &after);
@@ -520,5 +554,59 @@ mod tests {
             &|_, _| {},
         );
         assert!(refused.is_err());
+    }
+
+    /// The card kept in the profile (from before the folder had a real `.permark/`) is shown while the project card is
+    /// not written yet; the first edit writes the project card with the fields shown plus the change, and the profile
+    /// copy stays as it was. A project card that exists is the only one read, whatever fields it lacks.
+    #[test]
+    fn a_missing_project_card_shows_the_profile_card_until_the_first_edit_writes_it() {
+        let base = tempfile::tempdir().unwrap();
+        let dirs = AppDirs::under(&base.path().join("dirs"));
+        let project = base.path().join("proj");
+        std::fs::create_dir(&project).unwrap();
+        let edit = |file: &CardFile, field, value: &str| {
+            file.write(
+                &uid(),
+                &CardChange {
+                    field,
+                    value: value.into(),
+                },
+                &|_, _| {},
+            )
+            .unwrap();
+        };
+        let profile = file_of(&dirs, &project).unwrap();
+        edit(&profile, CardField::Name, "Notes app");
+        edit(&profile, CardField::Description, "Notes  and\nplans");
+        let CardFile::Profile(kept) = &profile else {
+            panic!("the card is the profile's");
+        };
+        let kept_bytes = std::fs::read(kept.path()).unwrap();
+        std::fs::create_dir(project.join(PERMARK_DIR)).unwrap();
+        let file = file_of(&dirs, &project).unwrap();
+        assert_eq!(file.place(), CardPlace::Project);
+        let shown = file.read();
+        assert_eq!(shown.name.as_deref(), Some("Notes app"));
+        assert_eq!(shown.description.as_deref(), Some("Notes and plans"));
+        assert_eq!(shown.id, None);
+        assert!(!project.join(PERMARK_DIR).join(CARD_FILE).exists());
+        edit(&file, CardField::Short, "notes");
+        let written = std::fs::read(project.join(PERMARK_DIR).join(CARD_FILE)).unwrap();
+        assert_eq!(
+            parse(&written),
+            Card {
+                id: Some(uid()),
+                name: Some("Notes app".into()),
+                short: Some("notes".into()),
+                description: Some("Notes and plans".into()),
+                ..Card::default()
+            }
+        );
+        assert_eq!(file.read(), parse(&written));
+        assert_eq!(std::fs::read(kept.path()).unwrap(), kept_bytes);
+        // a project card of its own, even one without a name: the profile card is no longer shown
+        std::fs::write(project.join(PERMARK_DIR).join(CARD_FILE), "version = 1\n").unwrap();
+        assert_eq!(file_of(&dirs, &project).unwrap().read(), Card::default());
     }
 }

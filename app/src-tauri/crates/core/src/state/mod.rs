@@ -651,8 +651,8 @@ pub struct StateStore {
     profile_dir: PathBuf,
     /// `<profile>/`: app-wide files (defaults a project starts from).
     app_dir: PathBuf,
-    /// `.permark/` when the project has it (shared files), else the state folder.
-    shared: PathBuf,
+    /// `.permark/` when it is the project's team folder ([`has_team_folder`]): shared files live there.
+    team: Option<PathBuf>,
     guard: Option<Guard>,
     cache_guard: Option<Guard>,
     /// The person's state roots this store was made from.
@@ -673,7 +673,7 @@ impl StateStore {
             cache: dirs.cache.clone(),
             profile_dir: dirs.profile.clone(),
             app_dir: dirs.profile.clone(),
-            shared: dirs.profile.clone(),
+            team: None,
             guard: None,
             cache_guard: None,
             roots: dirs.clone(),
@@ -682,19 +682,36 @@ impl StateStore {
         }
     }
 
-    /// `.permark/local/` when `.permark/` is a real folder (and `local/` real or missing), else the profile.
+    /// `.permark/local/` when `.permark/` is a real folder (and `local/` real or missing), else the profile. Shared
+    /// files follow the team folder ([`has_team_folder`]) whatever place holds the state.
     #[must_use]
     pub fn for_project(dirs: &AppDirs, root: &Root) -> Self {
+        Self::for_project_as(dirs, root, crate::tree::is_link_meta)
+    }
+
+    /// [`StateStore::for_project`], `legacy_link` telling what counts as a link for the place of the private state:
+    /// earlier versions counted any reparse point, a cloud placeholder folder too, so a project in a synced folder
+    /// keeps its state in the profile, where they kept it (moved to `.permark/local/`, it would be left unread). Tests
+    /// pass another predicate to stand for a cloud folder, which none can make.
+    pub(crate) fn for_project_as(
+        dirs: &AppDirs,
+        root: &Root,
+        legacy_link: fn(&std::fs::Metadata) -> bool,
+    ) -> Self {
         let id = ProjectId::of(root);
         let profile_dir = dirs.profile.join("projects").join(id.as_str());
         let profile_cache = dirs.cache.join("projects").join(id.as_str());
         let permark = root.path().join(PERMARK_DIR);
         let local = permark.join("local");
         let cache = permark.join("cache");
-        let usable = private::is_real_folder(&permark)
-            && !matches!(private::entry(&local), private::Entry::Other);
+        let team = has_team_folder(root).then(|| permark.clone());
+        let entry = |path: &Path| private::entry_as(path, legacy_link);
+        // the state is in `local/` only inside a team folder, whatever `legacy_link` takes for a folder
+        let usable = team.is_some()
+            && matches!(entry(&permark), private::Entry::Folder)
+            && !matches!(entry(&local), private::Entry::Other);
         if usable {
-            let cache_usable = !matches!(private::entry(&cache), private::Entry::Other);
+            let cache_usable = !matches!(entry(&cache), private::Entry::Other);
             let guard = |state: &Path| Guard {
                 permark: permark.clone(),
                 state: state.to_path_buf(),
@@ -709,7 +726,7 @@ impl StateStore {
                 },
                 profile_dir,
                 app_dir: dirs.profile.clone(),
-                shared: permark.clone(),
+                team,
                 guard: Some(guard(&local)),
                 cache_guard: cache_usable.then(|| guard(&cache)),
                 roots: dirs.clone(),
@@ -721,9 +738,9 @@ impl StateStore {
                 location: StateLocation::Profile,
                 dir: profile_dir.clone(),
                 cache: profile_cache,
-                shared: profile_dir.clone(),
                 profile_dir,
                 app_dir: dirs.profile.clone(),
+                team,
                 guard: None,
                 cache_guard: None,
                 roots: dirs.clone(),
@@ -787,6 +804,12 @@ impl StateStore {
         self.location
     }
 
+    /// Whether the project had a team folder when this store was made ([`has_team_folder`]).
+    #[must_use]
+    pub fn has_team_folder(&self) -> bool {
+        self.team.is_some()
+    }
+
     #[must_use]
     pub fn dir(&self) -> &Path {
         &self.dir
@@ -813,22 +836,41 @@ impl StateStore {
         RawFile::private(self.dir.join(name), self.guard.clone())
     }
 
-    /// A raw file shared with the team: `.permark/<name>` when the project has `.permark/`, else the profile.
+    /// A raw file in the project's `.permark/local/` whatever place holds the private state: for a file programs read
+    /// at that path (the agent context), and one a folder from elsewhere may bring there. Where the state is in
+    /// `local/`, the same file as [`StateStore::raw_file`]. `None`: no team folder, or `local/` a link | file.
+    #[must_use]
+    pub fn local_raw_file(&self, name: &str) -> Option<RawFile> {
+        let permark = self.team.as_ref()?;
+        let local = permark.join("local");
+        if matches!(private::entry(&local), private::Entry::Other) {
+            return None;
+        }
+        Some(RawFile::private(
+            local.join(name),
+            Some(Guard {
+                permark: permark.clone(),
+                state: local,
+            }),
+        ))
+    }
+
+    /// A raw file shared with the team: `.permark/<name>` when the project has a team folder, whatever place holds
+    /// the private state; else the profile.
     #[must_use]
     pub fn shared_file(&self, name: &str) -> RawFile {
-        match (&self.location, &self.guard) {
-            (StateLocation::Project, Some(guard)) => {
-                RawFile::shared(self.shared.join(name), guard.permark.clone())
-            }
-            _ => RawFile::private(self.shared.join(name), None),
+        match &self.team {
+            Some(permark) => RawFile::shared(permark.join(name), permark.clone()),
+            None => RawFile::private(self.profile_dir.join(name), None),
         }
     }
 
-    /// The profile's copy of a shared file (what the project kept there before it had `.permark/`); `None` while
-    /// the project has no `.permark/` (then the profile copy IS the file).
+    /// The profile's copy of a shared file (what the project kept there before it had a team folder); `None` while
+    /// the project has none (then the profile copy IS the file).
     #[must_use]
     pub fn legacy_shared_file(&self, name: &str) -> Option<RawFile> {
-        (self.location == StateLocation::Project)
+        self.team
+            .is_some()
             .then(|| RawFile::private(self.profile_dir.join(name), None))
     }
 
@@ -926,6 +968,14 @@ impl StateStore {
         }
         Ok(())
     }
+}
+
+/// Whether `root` has a team folder: `.permark/` a real folder, a link being what std reports as one (a link |
+/// junction | file in its place: none; a cloud placeholder folder: one). Team files (settings, tags, the project list,
+/// the card) live there whatever place holds the person's private state.
+#[must_use]
+pub fn has_team_folder(root: &Root) -> bool {
+    private::is_real_folder(&root.path().join(PERMARK_DIR))
 }
 
 /// Removes a folder tree; a link is removed itself, never followed.
@@ -1110,7 +1160,7 @@ fn holds_link(dir: &Path) -> bool {
         private::Entry::Folder => std::fs::read_dir(dir).map_or(true, |entries| {
             entries.flatten().any(|e| {
                 let path = e.path();
-                crate::tree::is_link_meta_of(&path)
+                std::fs::symlink_metadata(&path).is_ok_and(|m| crate::fsx::is_link(&m))
                     || e.file_type()
                         .map_or(true, |t| t.is_dir() && holds_link(&path))
             })

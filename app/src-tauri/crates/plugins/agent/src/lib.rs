@@ -48,7 +48,6 @@ use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
     PluginScope, RpcRegistration, Running,
 };
-use permark_core::state::StateLocation;
 use permark_core::{ErrorKind, IpcError};
 use serde::Deserialize;
 
@@ -218,10 +217,10 @@ fn saved(result: Result<(), permark_core::state::StateError>) -> Result<(), IpcE
 /// (a script reads it with no check of its own); `write`: the current context written while both are on.
 fn sync_context_file(hub: &Hub, write: bool) {
     let store = hub.tools.store();
-    if store.location() != StateLocation::Project {
+    // in the team folder's `local/` (where scripts read it) whatever place holds the private state
+    let Some(file) = store.local_raw_file(CONTEXT_FILE) else {
         return;
-    }
-    let file = store.raw_file(CONTEXT_FILE);
+    };
     if !hub.tools.allows(Group::Context) {
         let _ = file.remove();
         return;

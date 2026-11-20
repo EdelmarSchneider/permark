@@ -5,7 +5,7 @@ use crate::paths::Root;
 use crate::plugins::fake::{Fake, Log};
 use crate::plugins::{Plugin, PluginId, PluginRegistry, PluginScope};
 use crate::settings::AppSettings;
-use crate::state::AppDirs;
+use crate::state::{AppDirs, StateLocation};
 
 struct Fx {
     _base: tempfile::TempDir,
@@ -1541,6 +1541,28 @@ fn initializing_an_open_project_moves_its_state_and_restarts_its_plugins() {
         } => assert_eq!(state_location, StateLocation::Project),
         other => panic!("{other:?}"),
     }
+}
+
+/// The window's `permark` condition tells whether the folder has a team folder (`.permark/` a real folder), read again
+/// at each look: also while the private state stays in the profile (here `local/` is a file), and for a `.permark/`
+/// that arrived while the project is open; a file in its place is none.
+#[test]
+fn the_permark_condition_follows_the_team_folder_on_disk() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let permark = dir.path().join(".permark");
+    let (core, view) = open_project(&f, dir.path());
+    let condition = || f.registry.context_of(&view).unwrap().permark;
+    assert_eq!(condition(), PermarkCondition::NotInitialized);
+    std::fs::write(&permark, "x").unwrap();
+    assert_eq!(condition(), PermarkCondition::NotInitialized);
+    std::fs::remove_file(&permark).unwrap();
+    std::fs::create_dir(&permark).unwrap();
+    std::fs::write(permark.join("local"), "x").unwrap();
+    assert_eq!(condition(), PermarkCondition::Initialized);
+    core.reload_state(f.registry.env());
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    assert_eq!(condition(), PermarkCondition::Initialized);
 }
 
 #[test]

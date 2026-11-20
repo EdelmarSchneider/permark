@@ -129,8 +129,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// A link as std reports one (symlink, junction): a cloud placeholder folder (OneDrive Files On-Demand) on the way to a
+/// project, or as its `.permark/`, is the folder it is.
 fn is_link(meta: &std::fs::Metadata) -> bool {
-    crate::tree::is_link_meta(meta)
+    crate::fsx::is_link(meta)
 }
 
 fn real_dir(path: &Path) -> bool {
@@ -2836,7 +2838,7 @@ impl Projects {
             .path()
             .join(PERMARK_DIR)
             .join(vocabulary::VOCABULARY_FILE);
-        if crate::tree::is_link_meta_of(&path) {
+        if record::is_link(&path) {
             return Err(vocab_unavailable());
         }
         let Some(bytes) = vocabulary::write_file(&path, &self.own, edit)? else {
