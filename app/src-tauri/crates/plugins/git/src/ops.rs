@@ -395,10 +395,16 @@ pub fn prefix_of(workdir: &Path, project: &Path) -> Option<String> {
     )
 }
 
+/// Whether the git folder file `path` is there; a link counts as there and is never followed (its target may be on a
+/// share, and even a look connects to the server).
+fn marker(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
+}
+
 /// The state of the repository from the marker files in its git folder.
 #[must_use]
 pub fn repo_state(git_dir: &Path) -> RepoState {
-    let has = |name: &str| git_dir.join(name).exists();
+    let has = |name: &str| marker(&git_dir.join(name));
     if has("rebase-merge") || has("rebase-apply") {
         RepoState::Rebasing
     } else if has("MERGE_HEAD") {
@@ -421,7 +427,7 @@ pub fn repo_state(git_dir: &Path) -> RepoState {
 /// common git folder.
 #[must_use]
 pub fn shallow(git_dir: &Path) -> bool {
-    common_dir(git_dir).join("shallow").exists()
+    marker(&common_dir(git_dir).join("shallow"))
 }
 
 /// Sorts by path and cuts at [`MAX_FILES`].
@@ -590,6 +596,26 @@ mod tests {
         assert!(shallow(&git));
         assert!(shallow(&admin));
         assert!(!shallow(&dir.path().join("nowhere")));
+    }
+
+    /// A marker file that is a link is there as a link: its target is never looked up (it may be on a share, and even
+    /// a look connects to the server). A link to nothing still marks the state.
+    #[test]
+    fn marker_links_are_never_followed() {
+        use crate::worktrees::tests::link_folder;
+        let dir = tempfile::tempdir().unwrap();
+        let git = dir.path().join(".git");
+        std::fs::create_dir_all(&git).unwrap();
+        let gone = dir.path().join("gone");
+        std::fs::create_dir_all(&gone).unwrap();
+        if !link_folder(&gone, &git.join("shallow")) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+        assert!(link_folder(&gone, &git.join("MERGE_HEAD")));
+        std::fs::remove_dir(&gone).unwrap();
+        assert!(shallow(&git));
+        assert_eq!(repo_state(&git), RepoState::Merging);
     }
 
     #[test]

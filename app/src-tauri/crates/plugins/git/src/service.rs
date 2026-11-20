@@ -21,13 +21,14 @@ use permark_core::state::{StateData, StateFile};
 use serde::{Deserialize, Serialize};
 
 use crate::builtin::BuiltinGit;
+use crate::config_scan::{Scan, Seen};
 use crate::ops::{
     blob_or_miss, finish, repo_path, repo_state, tracked_of, versions_of, Baseline, Discovery,
-    GitError, GitOps, RawFile, RepoLocation,
+    GitError, GitOps, RawFile, RawStatus, RepoLocation,
 };
 use crate::system::SystemGit;
-use crate::types::{BaselineInfo, BaselineKind, GitFile, GitSnapshot, WorktreeInfo};
-use crate::worktrees::{branch_of, opens_locally};
+use crate::types::{BackendKind, BaselineInfo, BaselineKind, GitFile, GitSnapshot, WorktreeInfo};
+use crate::worktrees::{branch_of, git_dir_scan, opens_locally, NOT_LOCAL};
 
 /// The person's choice of baseline (`prefs.json`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,8 +147,146 @@ struct Shared {
     tracked: TrackedMemo,
 }
 
+/// Most git folders a [`LocalMemo`] keeps an answer for (a project's root, its worktrees, its members).
+const MAX_LOCAL: usize = 64;
+
+/// Answers of [`git_dir_scan`] kept while every path the look went by looks the same ([`Seen::unchanged`]): a few
+/// stats per call instead of reading the config files again.
+#[derive(Default)]
+pub(crate) struct LocalMemo {
+    kept: Mutex<HashMap<PathBuf, (Seen, bool)>>,
+}
+
+impl LocalMemo {
+    /// Whether git may open the git folder `git_dir` now ([`git_dir_scan`]).
+    pub(crate) fn stays_local(&self, git_dir: &Path) -> bool {
+        // taken out while it is checked: the lock is not held during the stats (another caller looks for itself)
+        let held = self
+            .kept
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(git_dir);
+        let (seen, answer) = match held {
+            Some((seen, answer)) if seen.unchanged() => (seen, answer),
+            _ => {
+                let mut scan = Scan::new();
+                let answer = git_dir_scan(git_dir, &mut scan);
+                (scan.seen, answer)
+            }
+        };
+        let mut kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
+        if kept.len() >= MAX_LOCAL {
+            kept.clear();
+        }
+        kept.insert(git_dir.to_path_buf(), (seen, answer));
+        answer
+    }
+}
+
+/// A backend that asks nothing of a repository git may not open without leaving this computer ([`git_dir_scan`]),
+/// looked at again before every call: the files of its git folder may change while the project is open, and both
+/// backends read them again on every open. Discovery is not looked at here: [`discover_here`] looks before.
+pub(crate) struct LocalOnly {
+    inner: Arc<dyn GitOps>,
+    memo: Arc<LocalMemo>,
+}
+
+impl LocalOnly {
+    fn wrap(inner: Arc<dyn GitOps>, memo: Arc<LocalMemo>) -> Arc<dyn GitOps> {
+        Arc::new(Self { inner, memo })
+    }
+
+    fn check(&self, location: &RepoLocation) -> Result<(), GitError> {
+        if self.memo.stays_local(&location.git_dir) {
+            Ok(())
+        } else {
+            Err(GitError::Failed(NOT_LOCAL.to_owned()))
+        }
+    }
+}
+
+impl GitOps for LocalOnly {
+    fn kind(&self) -> BackendKind {
+        self.inner.kind()
+    }
+
+    fn discover(&self, root: &Path, home: Option<&Path>) -> Discovery {
+        self.inner.discover(root, home)
+    }
+
+    fn status(&self, location: &RepoLocation, baseline: &Baseline) -> Result<RawStatus, GitError> {
+        self.check(location)?;
+        self.inner.status(location, baseline)
+    }
+
+    fn blob_at_head(
+        &self,
+        location: &RepoLocation,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        self.check(location)?;
+        self.inner.blob_at_head(location, path)
+    }
+
+    fn blob_at(
+        &self,
+        location: &RepoLocation,
+        commit: CommitId,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        self.check(location)?;
+        self.inner.blob_at(location, commit, path)
+    }
+
+    fn file_versions(
+        &self,
+        location: &RepoLocation,
+        path: &str,
+        after: usize,
+        limit: usize,
+    ) -> Result<FileVersions, GitError> {
+        self.check(location)?;
+        self.inner.file_versions(location, path, after, limit)
+    }
+
+    fn tracked_under(&self, location: &RepoLocation, path: &str) -> Result<bool, GitError> {
+        self.check(location)?;
+        self.inner.tracked_under(location, path)
+    }
+
+    fn commit_exists(&self, location: &RepoLocation, oid: &str) -> bool {
+        self.check(location).is_ok() && self.inner.commit_exists(location, oid)
+    }
+
+    fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32> {
+        self.check(location).ok()?;
+        self.inner.commit_count(location, old, new)
+    }
+
+    fn ahead_behind(&self, location: &RepoLocation) -> Result<Option<(u32, u32)>, GitError> {
+        self.check(location)?;
+        self.inner.ahead_behind(location)
+    }
+
+    fn last_commit(&self, location: &RepoLocation) -> Result<Option<(i64, String)>, GitError> {
+        self.check(location)?;
+        self.inner.last_commit(location)
+    }
+
+    fn root_commit(&self, location: &RepoLocation) -> Result<Option<String>, GitError> {
+        self.check(location)?;
+        self.inner.root_commit(location)
+    }
+
+    fn cancellable(&self, flag: &Arc<AtomicBool>) -> Option<Arc<dyn GitOps>> {
+        let inner = self.inner.cancellable(flag)?;
+        Some(Self::wrap(inner, Arc::clone(&self.memo)))
+    }
+}
+
 /// The backend of a project, chosen once (the installed git answers `--version`, or the built-in one) and shared by
-/// the root worker and the member pool: one `git --version` per plugin start.
+/// the root worker and the member pool: one `git --version` per plugin start. Every call of it looks at the
+/// repository's git folder first ([`LocalOnly`]).
 pub struct BackendCell {
     choice: BackendChoice,
     chosen: OnceLock<Option<Arc<dyn GitOps>>>,
@@ -178,14 +317,16 @@ impl BackendCell {
             .get_or_init(|| {
                 let system = || SystemGit::find().map(|s| Arc::new(s) as Arc<dyn GitOps>);
                 let builtin = || Arc::new(BuiltinGit) as Arc<dyn GitOps>;
-                match &self.choice {
+                let chosen = match &self.choice {
                     BackendChoice::Fixed(backend) => Some(Arc::clone(backend)),
                     BackendChoice::Pref(GitBackendPref::Builtin) => Some(builtin()),
                     BackendChoice::Pref(GitBackendPref::System) => system(),
                     BackendChoice::Pref(GitBackendPref::Automatic) => {
                         Some(system().unwrap_or_else(builtin))
                     }
-                }
+                };
+                let memo = Arc::new(LocalMemo::default());
+                chosen.map(|backend| LocalOnly::wrap(backend, memo))
             })
             .clone()
     }

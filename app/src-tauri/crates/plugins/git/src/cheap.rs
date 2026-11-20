@@ -9,7 +9,9 @@ use permark_core::plugins::CommitId;
 
 use crate::ops::{repo_state, RepoLocation};
 use crate::types::HeadInfo;
-use crate::worktrees::{common_dir, commondir_stays_local, named_path, read_git_file, read_line};
+use crate::worktrees::{
+    common_dir, git_dir_stays_local, named_path, read_git_file, read_line, NOT_LOCAL,
+};
 
 /// Most bytes of `packed-refs` read looking for one ref (a bigger file is not read: the ref counts as missing).
 const MAX_PACKED: u64 = 8 * 1024 * 1024;
@@ -32,8 +34,8 @@ pub struct Cheap {
 /// only). `Err`: why it cannot be used (the sentence names the cause).
 ///
 /// # Errors
-/// No `.git` | a gitfile without a `gitdir:` line | its target missing | not on this computer (also the common
-/// folder its `commondir` names).
+/// No `.git` | a gitfile without a `gitdir:` line | its target missing | not on this computer (also a path its git
+/// folder's files name, or a link there: [`git_dir_stays_local`]).
 pub fn member_location(folder: &Path) -> Result<RepoLocation, String> {
     #[cfg(test)]
     LOCATIONS_READ.with(|c| c.set(c.get() + 1));
@@ -59,8 +61,8 @@ pub fn member_location(folder: &Path) -> Result<RepoLocation, String> {
         // a link (symlink | junction) too: a member is read from files only, never through a link
         return Err("no .git".to_owned());
     };
-    if !commondir_stays_local(&git_dir) {
-        return Err("the common folder of the repository is not on this computer".to_owned());
+    if !git_dir_stays_local(&git_dir) {
+        return Err(NOT_LOCAL.to_owned());
     }
     Ok(RepoLocation {
         workdir: folder.to_path_buf(),

@@ -7,6 +7,7 @@
 
 mod builtin;
 mod cheap;
+mod config_scan;
 mod members;
 #[cfg(test)]
 mod members_real_tests;

@@ -411,6 +411,352 @@ fn a_git_link_opens_only_a_repository_on_this_computer() {
     });
 }
 
+/// `path` as a config value: forward slashes, which git reads on every system (a backslash starts an escape there).
+fn config_path(path: &Path) -> String {
+    path.display().to_string().replace('\\', "/")
+}
+
+/// Adds `text` at the end of the repository's own config file.
+fn add_config(git_dir: &Path, text: &str) {
+    let file = git_dir.join("config");
+    let mut config = std::fs::read_to_string(&file).unwrap();
+    config.push_str(text);
+    std::fs::write(file, config).unwrap();
+}
+
+/// A repository whose own config names only places on this computer opens as before, on both backends: an include of
+/// a local file, a relative `core.worktree`, a local `core.excludesFile`, alternates relative to its objects folder.
+#[test]
+fn a_repository_whose_config_stays_here_still_opens() {
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let base = dunce::canonicalize(fx.dir.path()).unwrap();
+    Repository::init(base.join("other")).unwrap();
+    std::fs::write(base.join("local.gitconfig"), "[user]\n\tname = Local\n").unwrap();
+    std::fs::write(base.join("ignore"), "*.tmp\n").unwrap();
+    let git = fx.root.join(".git");
+    add_config(
+        &git,
+        &format!(
+            "[include]\n\tpath = ../../local.gitconfig\n[core]\n\tworktree = ..\n\texcludesFile = \"{}\"\n",
+            config_path(&base.join("ignore"))
+        ),
+    );
+    std::fs::create_dir_all(git.join("objects").join("info")).unwrap();
+    std::fs::write(
+        git.join("objects").join("info").join("alternates"),
+        "../../../other/.git/objects\n",
+    )
+    .unwrap();
+    each(|name, ops| {
+        let found = service::discover_here(ops, &fx.root, None);
+        assert_eq!(found, ops.discover(&fx.root, None), "{name}");
+        let Discovery::Repo(at) = found else {
+            panic!("{name}: {found:?}");
+        };
+        assert_eq!(dunce::canonicalize(&at.workdir).unwrap(), fx.root, "{name}");
+        assert!(ops.status(&at, &Baseline::Head).is_ok(), "{name}");
+    });
+}
+
+/// A share no host answers (TEST-NET-1, never routed), as a config value.
+const SHARE: &str = "//192.0.2.1/s";
+
+/// What a case puts into a fresh repository: called with its git folder and the folder that holds all cases.
+type PlantFn = dyn Fn(&Path, &Path);
+type Plant<'a> = &'a PlantFn;
+
+/// What `cases` give, each run in a fresh repository in its own folder of `base`: (case, project folder).
+fn risky_projects(base: &Path, cases: &[(&str, Plant<'_>)]) -> Vec<(String, PathBuf)> {
+    cases
+        .iter()
+        .map(|(name, plant)| {
+            let folder = base.join(name);
+            std::fs::create_dir_all(&folder).unwrap();
+            Repository::init(&folder).unwrap();
+            plant(&folder.join(".git"), base);
+            ((*name).to_owned(), folder)
+        })
+        .collect()
+}
+
+/// Every project of `projects` is no repository on both backends, all of them within 5 s: nothing was looked up on
+/// the share they name.
+fn never_opened(projects: Vec<(String, PathBuf)>) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut found = Vec::new();
+        for (name, ops) in backends() {
+            for (case, folder) in &projects {
+                found.push((
+                    format!("{name}: {case}"),
+                    service::discover_here(ops.as_ref(), folder, None),
+                ));
+            }
+        }
+        let _ = tx.send(found);
+    });
+    let found = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("a place named by a repository's config was looked up");
+    for (case, discovery) in found {
+        assert_eq!(discovery, Discovery::NoRepo, "{case}");
+    }
+}
+
+/// A repository whose own config (or a file it includes, or `config.worktree`) names a place git would look up off
+/// this computer, or that git and the built-in backend may read differently, is no repository, at once, before
+/// either backend opens it: git reads includes, `core.worktree`, `core.excludesFile`, `core.attributesFile`,
+/// `diff.orderFile` and `mailmap.file` while it answers, and alternates when it reads objects.
+#[test]
+fn a_repository_whose_config_names_a_share_is_never_opened() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dunce::canonicalize(dir.path()).unwrap();
+    let add = |text: String| move |git: &Path, _: &Path| add_config(git, &text);
+    let alternates = |line: &'static str| {
+        move |git: &Path, _: &Path| {
+            let info = git.join("objects").join("info");
+            std::fs::create_dir_all(&info).unwrap();
+            std::fs::write(info.join("alternates"), format!("{line}\n")).unwrap();
+        }
+    };
+    let include = add(format!("[include]\n\tpath = {SHARE}/x\n"));
+    let gitdir = add(format!("[includeIf \"gitdir:/\"]\n\tpath = {SHARE}/x\n"));
+    let branch = add(format!(
+        "[includeIf \"onbranch:main\"]\n\tpath = {SHARE}/x\n"
+    ));
+    let remote = add(format!(
+        "[includeIf \"hasconfig:remote.*.url:x\"]\n\tpath = {SHARE}/x\n"
+    ));
+    let other_user = add("[include]\n\tpath = ~nobody/x\n".to_owned());
+    let prefix = add("[include]\n\tpath = %(prefix)/x\n".to_owned());
+    let nested = |git: &Path, base: &Path| {
+        std::fs::write(
+            base.join("near.gitconfig"),
+            format!("[core]\n\texcludesFile = {SHARE}/x\n"),
+        )
+        .unwrap();
+        add_config(git, "[include]\n\tpath = ../../near.gitconfig\n");
+    };
+    let worktree = add(format!("[core]\n\tworktree = {SHARE}/w\n"));
+    let excludes = add(format!("[core]\n\texcludesFile = {SHARE}/x\n"));
+    let attributes = add(format!("[core]\n\tattributesFile = {SHARE}/x\n"));
+    let order = add(format!("[diff]\n\torderFile = {SHARE}/x\n"));
+    let mailmap = add(format!("[mailmap]\n\tfile = {SHARE}/x\n"));
+    let same_line = add(format!("[core] excludesFile = {SHARE}/x\n"));
+    let quoted = add(format!(
+        "[CORE]\n\tExcludesFile = \"{SHARE}/x\" ; a comment\n"
+    ));
+    // `\\192.0.2.1\s\x` written with git's escapes; a value continued on the next line
+    let escaped = add("[core]\n\texcludesFile = \\\\\\\\192.0.2.1\\\\s\\\\x\n".to_owned());
+    let continued = add(format!("[core]\n\texcludesFile = {SHARE}\\\n/x\n"));
+    let per_tree = |git: &Path, _: &Path| {
+        std::fs::write(
+            git.join("config.worktree"),
+            format!("[core]\n\texcludesFile = {SHARE}/x\n"),
+        )
+        .unwrap();
+    };
+    let unclosed = add("[include\n\tpath = x\n".to_owned());
+    let far_objects = alternates("//192.0.2.1/s/objects");
+    let bare_objects = alternates("other/objects");
+    let cases: [(&str, Plant<'_>); 20] = [
+        ("include", &include),
+        ("include if gitdir", &gitdir),
+        ("include if branch", &branch),
+        ("include if remote", &remote),
+        ("include of another user's home", &other_user),
+        ("include below git's own folder", &prefix),
+        ("include of a file that names a share", &nested),
+        ("worktree", &worktree),
+        ("excludes", &excludes),
+        ("attributes", &attributes),
+        ("order", &order),
+        ("mailmap", &mailmap),
+        ("on the header's line", &same_line),
+        ("quoted", &quoted),
+        ("escaped", &escaped),
+        ("continued", &continued),
+        ("config of the working tree", &per_tree),
+        ("unclosed header", &unclosed),
+        ("alternates on a share", &far_objects),
+        ("alternates beside the current folder", &bare_objects),
+    ];
+    never_opened(risky_projects(&base, &cases));
+}
+
+/// A file | folder of the git folder that git or libgit2 opens on every look (HEAD, config, index, refs, objects,
+/// packed-refs, the info files, alternates, shallow) and that is a link (symlink | junction) makes the repository no
+/// repository, at once: both backends would follow it wherever it leads, a share too.
+#[test]
+fn a_repository_with_a_link_in_its_git_folder_is_never_opened() {
+    use crate::worktrees::tests::{link_folder, symlink};
+    let dir = tempfile::tempdir().unwrap();
+    let base = dunce::canonicalize(dir.path()).unwrap();
+    let spare = base.join("spare");
+    std::fs::create_dir_all(&spare).unwrap();
+    // a folder of the git folder moved aside and linked back from its place
+    let folder_link = |name: &'static str| {
+        let spare = spare.clone();
+        move |git: &Path, _: &Path| {
+            let real = git.join(name);
+            std::fs::create_dir_all(&real).unwrap();
+            let aside = spare.join(git.parent().unwrap().file_name().unwrap());
+            std::fs::create_dir_all(&aside).unwrap();
+            let aside = aside.join(name);
+            std::fs::rename(&real, &aside).unwrap();
+            assert!(link_folder(&aside, &real), "{name}");
+        }
+    };
+    let mut cases: Vec<(&str, Box<PlantFn>)> = vec![
+        ("refs", Box::new(folder_link("refs"))),
+        ("objects", Box::new(folder_link("objects"))),
+        ("info", Box::new(folder_link("info"))),
+    ];
+    if !link_folder(&spare, &base.join("probe")) {
+        eprintln!("links could not be made here; skipped");
+        return;
+    }
+    let symlinks = symlink(&spare.join("x"), &base.join("probe file"));
+    if symlinks {
+        for name in [
+            "HEAD",
+            "config",
+            "index",
+            "packed-refs",
+            "shallow",
+            "config.worktree",
+            "info/exclude",
+            "info/attributes",
+            "objects/info/alternates",
+        ] {
+            cases.push((
+                name,
+                Box::new(move |git: &Path, base: &Path| {
+                    let at = git.join(name);
+                    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+                    let target = base.join(format!("target {}", name.replace('/', " ")));
+                    if at.exists() {
+                        std::fs::copy(&at, &target).unwrap();
+                        std::fs::remove_file(&at).unwrap();
+                    } else {
+                        std::fs::write(&target, "").unwrap();
+                    }
+                    assert!(symlink(&target, &at), "{name}");
+                }),
+            ));
+        }
+        // a link to a share: never looked up
+        cases.push((
+            "config on a share",
+            Box::new(|git: &Path, _: &Path| {
+                let at = git.join("config");
+                std::fs::remove_file(&at).unwrap();
+                assert!(symlink(&Path::new(SHARE).join("config"), &at));
+            }),
+        ));
+    } else {
+        eprintln!("symlinks cannot be made here; the file cases are skipped");
+    }
+    let cases: Vec<(&str, Plant<'_>)> = cases
+        .iter()
+        .map(|(name, plant)| (*name, plant.as_ref()))
+        .collect();
+    never_opened(risky_projects(&base, &cases));
+}
+
+/// The repository is looked at again before every call of the backend the plugin uses (its files may change while the
+/// project is open): one whose config names a share since it was opened answers nothing, at once, and answers again
+/// once the config is back.
+#[test]
+fn a_repository_whose_config_turns_to_a_share_is_not_asked_again() {
+    for (name, ops) in backends() {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        let head = fx.commit("first");
+        let git = fx.root.join(".git");
+        let config = std::fs::read_to_string(git.join("config")).unwrap();
+        let backend = BackendCell::new(BackendChoice::Fixed(ops)).get().unwrap();
+        let at = location(backend.as_ref(), &fx.root);
+        assert!(backend.status(&at, &Baseline::Head).is_ok(), "{name}");
+        add_config(&git, &format!("[core]\n\texcludesFile = {SHARE}/x\n"));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (asked, place) = (Arc::clone(&backend), at.clone());
+        let id = head.clone();
+        std::thread::spawn(move || {
+            let stopped = asked.cancellable(&Arc::new(std::sync::atomic::AtomicBool::new(false)));
+            let _ = tx.send((
+                asked.status(&place, &Baseline::Head).is_err(),
+                asked.blob_at_head(&place, "a.md").is_err(),
+                asked.blob_at(&place, commit_id(&id), "a.md").is_err(),
+                asked.file_versions(&place, "a.md", 0, 10).is_err(),
+                asked.tracked_under(&place, "a.md").is_err(),
+                asked.commit_exists(&place, &id),
+                asked.commit_count(&place, &id, &id),
+                asked.ahead_behind(&place).is_err(),
+                asked.last_commit(&place).is_err(),
+                asked.root_commit(&place).is_err(),
+                stopped.map(|b| b.status(&place, &Baseline::Head).is_err()),
+            ));
+        });
+        let answers = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the share was looked up");
+        let killable = name == "system";
+        assert_eq!(
+            answers,
+            (
+                true,
+                true,
+                true,
+                true,
+                true,
+                false,
+                None,
+                true,
+                true,
+                true,
+                killable.then_some(true)
+            ),
+            "{name}"
+        );
+        std::fs::write(git.join("config"), &config).unwrap();
+        assert!(backend.status(&at, &Baseline::Head).is_ok(), "{name}");
+        assert!(backend.commit_exists(&at, &head), "{name}");
+    }
+}
+
+/// The look before every call reads the git folder's files once while they stay the same (a few stats each call), and
+/// again as soon as one of them changes: an included file, a file that appears where none was.
+#[test]
+fn the_look_before_each_call_reads_the_files_again_only_when_they_change() {
+    let scans = || crate::config_scan::SCANS.with(std::cell::Cell::get);
+    let fx = Fixture::new();
+    let git = fx.root.join(".git");
+    add_config(&git, "[include]\n\tpath = ../../near.gitconfig\n");
+    let near = fx.root.parent().unwrap().join("near.gitconfig");
+    std::fs::write(&near, "[user]\n\tname = A\n").unwrap();
+    let memo = service::LocalMemo::default();
+    let before = scans();
+    assert!(memo.stays_local(&git));
+    assert!(memo.stays_local(&git));
+    assert_eq!(scans() - before, 1, "unchanged: read once");
+    std::fs::write(&near, format!("[core]\n\texcludesFile = {SHARE}/x\n")).unwrap();
+    assert!(!memo.stays_local(&git));
+    assert!(!memo.stays_local(&git));
+    assert_eq!(scans() - before, 2);
+    std::fs::write(&near, "[user]\n\tname = A\n").unwrap();
+    assert!(memo.stays_local(&git));
+    std::fs::write(
+        git.join("config.worktree"),
+        format!("[mailmap]\n\tfile = {SHARE}/m\n"),
+    )
+    .unwrap();
+    assert!(!memo.stays_local(&git));
+    assert_eq!(scans() - before, 4);
+}
+
 #[test]
 fn a_nested_repository_is_the_repository_of_its_folder() {
     each(|name, ops| {
