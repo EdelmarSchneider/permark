@@ -129,6 +129,8 @@ fn paths_that_differ_in_case_find_the_entry_on_systems_that_ignore_case() {
 fn editing_the_real_file_touches_only_what_changed_and_keeps_crlf() {
     let edited = edit_text(REAL, &[Op::set_description("README.md", "The start")]).unwrap();
     assert!(edited.starts_with(REAL.trim_end()), "{edited:?}");
+    // a file written by an earlier version keeps its own header
+    assert!(edited.contains("# Safe to commit and share."), "{edited:?}");
     assert!(edited.contains("[files.\"README.md\"]"));
     assert!(edited.contains("description = \"The start\""));
     assert!(
@@ -158,6 +160,10 @@ fn a_new_file_gets_the_header_and_entries_in_path_order() {
     )
     .unwrap();
     assert!(text.starts_with(HEADER));
+    assert_eq!(
+        text.lines().nth(1),
+        Some("# Commit the .permark folder to share these settings with your team. PerMark rewrites this file when you edit tags.")
+    );
     let a = text.find("[files.\"a/x.md\"]").unwrap();
     let m = text.find("[files.\"m.md\"]").unwrap();
     let z = text.find("[files.\"z.md\"]").unwrap();

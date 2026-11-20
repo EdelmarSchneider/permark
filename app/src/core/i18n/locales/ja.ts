@@ -1755,6 +1755,14 @@ export default {
   "project.treeUnset": "未設定",
   "project.scopes":
     "「全員」の設定はこのフォルダーの .permark/config.toml に保存され、このフォルダーを開くすべての人と共有されます。「自分のみ」の設定はこのコンピューターに残ります。",
+  "project.shareGit": "このフォルダーの PerMark の設定を git に見せる",
+  "project.shareGitCustom":
+    "このフォルダーの .permark/.gitignore はほかの人が書いたものなので、PerMark はそのままにします。",
+  "project.shareGitFailed": "git が .permark で認識するものを変更できませんでした：{message}",
+  "project.shareGitHint":
+    "オン：git は .permark 内の設定、タグ、プロジェクトの一覧、プロジェクトの説明を認識するので、チームのためにコミットできます。オフ：git は .permark フォルダー全体を無視します。すでにコミットされたファイルはコミットされたままです。.permark/.gitignore がコミットされている場合、この変更はチームにも届きます。個人のデータとキャッシュは常に git の対象外です。",
+  "project.shareGitOff": "オフ",
+  "project.shareGitOn": "オン",
   "project.shareInit": "全員と共有するには PerMark を初期化してください",
   "project.sharedFileHint": "このフォルダーを開く全員と共有されます。",
   "settings.all": "すべての設定",

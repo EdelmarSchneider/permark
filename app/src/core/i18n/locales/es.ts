@@ -1741,6 +1741,14 @@ export default {
   "project.treeUnset": "Sin definir",
   "project.scopes":
     "La configuración marcada con Todos se guarda en .permark/config.toml de esta carpeta y se comparte con quien la abra. La marcada con Solo tú se queda en este equipo.",
+  "project.shareGit": "Dejar que git vea la configuración de PerMark de esta carpeta",
+  "project.shareGitCustom":
+    "El archivo .permark/.gitignore de esta carpeta lo escribió otra persona, así que PerMark lo deja como está.",
+  "project.shareGitFailed": "No se pudo cambiar lo que git ve en .permark: {message}",
+  "project.shareGitHint":
+    "Activado: git ve la configuración, las etiquetas, la lista de proyectos y las descripciones de proyectos de .permark, así que puedes incluirlos en un commit para tu equipo. Desactivado: git ignora toda la carpeta .permark; los archivos ya incluidos en un commit siguen en él. Si .permark/.gitignore está incluido en un commit, tu equipo también recibe este cambio. Tus datos privados y las cachés siempre quedan fuera de git.",
+  "project.shareGitOff": "Desactivado",
+  "project.shareGitOn": "Activado",
   "project.shareInit": "Inicializa PerMark para compartir esto con todos",
   "project.sharedFileHint": "Compartido con quien abra esta carpeta.",
   "settings.all": "Toda la configuración",

@@ -1665,6 +1665,14 @@ export default {
   "project.treeUnset": "未设置",
   "project.scopes":
     "标为“所有人”的设置保存在此文件夹的 .permark/config.toml 中，与打开它的每个人共享。标为“仅自己”的设置只保存在这台电脑上。",
+  "project.shareGit": "让 git 看到此文件夹的 PerMark 设置",
+  "project.shareGitCustom":
+    "此文件夹的 .permark/.gitignore 由其他人编写，因此 PerMark 保持其原样。",
+  "project.shareGitFailed": "无法更改 git 在 .permark 中看到的内容：{message}",
+  "project.shareGitHint":
+    "开启：git 能看到 .permark 中的设置、标签、项目列表和项目说明，你可以为团队提交它们。关闭：git 忽略整个 .permark 文件夹；已经提交的文件仍保持已提交状态。如果 .permark/.gitignore 已提交，你的团队也会收到这项更改。你的私有数据和缓存始终不进入 git。",
+  "project.shareGitOff": "关闭",
+  "project.shareGitOn": "开启",
   "project.shareInit": "初始化 PerMark 以便与所有人共享",
   "project.sharedFileHint": "与打开此文件夹的每个人共享。",
   "settings.all": "全部设置",

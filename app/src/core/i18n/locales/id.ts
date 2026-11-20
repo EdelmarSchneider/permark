@@ -1749,6 +1749,14 @@ export default {
   "project.treeUnset": "Belum diatur",
   "project.scopes":
     "Pengaturan bertanda Semua orang disimpan di .permark/config.toml folder ini dan dibagikan kepada siapa pun yang membukanya. Pengaturan bertanda Hanya Anda tetap di komputer ini.",
+  "project.shareGit": "Izinkan git melihat pengaturan PerMark folder ini",
+  "project.shareGitCustom":
+    "File .permark/.gitignore folder ini ditulis oleh orang lain, jadi PerMark membiarkannya apa adanya.",
+  "project.shareGitFailed": "Tidak dapat mengubah apa yang dilihat git di .permark: {message}",
+  "project.shareGitHint":
+    "Aktif: git melihat pengaturan, tag, daftar proyek, dan deskripsi proyek di .permark, sehingga Anda dapat meng-commit-nya untuk tim Anda. Nonaktif: git mengabaikan seluruh folder .permark; file yang sudah di-commit tetap ada di commit. Jika .permark/.gitignore sudah di-commit, tim Anda juga mendapat perubahan ini. Data pribadi dan cache Anda selalu tetap di luar git.",
+  "project.shareGitOff": "Nonaktif",
+  "project.shareGitOn": "Aktif",
   "project.shareInit": "Inisialisasi PerMark untuk membagikan ini kepada semua orang",
   "project.sharedFileHint": "Dibagikan dengan siapa pun yang membuka folder ini.",
   "settings.all": "Semua pengaturan",

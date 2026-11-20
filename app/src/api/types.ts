@@ -55,6 +55,7 @@ import type { PluginKind } from "./generated/PluginKind";
 import type { PluginInfo } from "./generated/PluginInfo";
 import type { ProjectSettingChange } from "./generated/ProjectSettingChange";
 import type { ProjectSettings } from "./generated/ProjectSettings";
+import type { Sharing } from "./generated/Sharing";
 import type { DeleteOutcome } from "./generated/DeleteOutcome";
 import type { Body } from "./generated/Body";
 import type { ConfigEdit } from "./generated/ConfigEdit";
@@ -289,6 +290,7 @@ export type {
   PluginKind,
   ProjectSettingChange,
   ProjectSettings,
+  Sharing,
   ViewRequest,
   ClosingTab,
   CloseAnswer,
@@ -548,6 +550,7 @@ export interface Commands {
   folder_empty: { args: { path: string }; result: boolean };
   project_config_get: { args: Record<string, never>; result: ProjectSettings };
   project_config_set: { args: { change: ProjectSettingChange }; result: ProjectSettings };
+  project_sharing_set: { args: { sharing: Sharing }; result: ProjectSettings };
   plugins_list: { args: Record<string, never>; result: PluginInfo[] };
   plugin_set_project: { args: { plugin: string; enabled: boolean | null }; result: null };
   plugin_remove_data: { args: { plugin: string }; result: null };
@@ -1427,6 +1430,9 @@ export interface Api {
   /** The shared settings (`.permark/config.toml`) of this window's project. */
   projectConfigGet(): Promise<Result<ProjectSettings>>;
   projectConfigSet(change: ProjectSettingChange): Promise<Result<ProjectSettings>>;
+  /** What git may see of `.permark/`: PerMark's own `.permark/.gitignore` rewritten (someone else's file is
+   *  refused); the shared settings as they are now. */
+  projectSharingSet(sharing: Sharing): Promise<Result<ProjectSettings>>;
   /** Every plugin with its state for this window. */
   pluginsList(): Promise<Result<PluginInfo[]>>;
   /** The person's own choice for a plugin in this project (`null`: follow the app). */

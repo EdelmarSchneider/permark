@@ -1710,6 +1710,14 @@ const en = {
   "project.treeUnset": "Not set",
   "project.scopes":
     "Settings marked Everyone are kept in this folder's .permark/config.toml and shared with whoever opens it. Settings marked Only you stay on this computer.",
+  "project.shareGit": "Let git see this folder's PerMark settings",
+  "project.shareGitCustom":
+    "This folder's .permark/.gitignore was written by someone else, so PerMark leaves it as it is.",
+  "project.shareGitFailed": "Couldn't change what git sees in .permark: {message}",
+  "project.shareGitHint":
+    "On: git sees the settings, tags, list of projects and project descriptions in .permark, so you can commit them for your team. Off: git ignores the whole .permark folder; files already committed stay committed. If .permark/.gitignore is committed, your team gets this change too. Your private data and caches always stay out of git.",
+  "project.shareGitOff": "Off",
+  "project.shareGitOn": "On",
   "project.shareInit": "Initialize PerMark to share this with everyone",
   "project.sharedFileHint": "Shared with whoever opens this folder.",
   "settings.all": "All settings",

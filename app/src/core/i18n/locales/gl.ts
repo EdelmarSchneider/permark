@@ -1743,6 +1743,14 @@ export default {
   "project.treeUnset": "Sen definir",
   "project.scopes":
     "A configuración marcada con Todos gárdase no .permark/config.toml deste cartafol e compártese con quen o abra. A marcada con Só vostede queda neste ordenador.",
+  "project.shareGit": "Permitir que Git vexa a configuración de PerMark deste cartafol",
+  "project.shareGitCustom":
+    "O ficheiro .permark/.gitignore deste cartafol escribiuno outra persoa, así que PerMark déixao tal como está.",
+  "project.shareGitFailed": "Non se puido cambiar o que Git ve en .permark: {message}",
+  "project.shareGitHint":
+    "Activado: Git ve a configuración, as etiquetas, a lista de proxectos e as descricións dos proxectos de .permark, así que pode incluílos nun commit para o seu equipo. Desactivado: Git ignora todo o cartafol .permark; os ficheiros xa incluídos nun commit seguen nel. Se .permark/.gitignore está incluído nun commit, o seu equipo tamén recibe este cambio. Os seus datos privados e as cachés quedan sempre fóra de Git.",
+  "project.shareGitOff": "Desactivado",
+  "project.shareGitOn": "Activado",
   "project.shareInit": "Inicialice PerMark para compartir isto con todos",
   "project.sharedFileHint": "Compartido con quen abra este cartafol.",
   "settings.all": "Toda a configuración",

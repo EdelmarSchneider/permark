@@ -1708,6 +1708,14 @@ export default {
   "project.treeUnset": "설정 안 됨",
   "project.scopes":
     "'모두'로 표시된 설정은 이 폴더의 .permark/config.toml에 저장되어 이 폴더를 여는 모든 사람과 공유됩니다. '나만'으로 표시된 설정은 이 컴퓨터에만 남습니다.",
+  "project.shareGit": "Git이 이 폴더의 PerMark 설정을 보게 하기",
+  "project.shareGitCustom":
+    "이 폴더의 .permark/.gitignore는 다른 사람이 작성한 것이므로 PerMark는 그대로 둡니다.",
+  "project.shareGitFailed": "Git이 .permark에서 보는 항목을 바꾸지 못했습니다: {message}",
+  "project.shareGitHint":
+    "켜짐: Git이 .permark의 설정, 태그, 프로젝트 목록, 프로젝트 설명을 보므로 팀을 위해 커밋할 수 있습니다. 꺼짐: Git이 .permark 폴더 전체를 무시합니다. 이미 커밋된 파일은 커밋된 상태로 남습니다. .permark/.gitignore가 커밋되어 있으면 팀도 이 변경을 받습니다. 개인 데이터와 캐시는 항상 Git에서 제외됩니다.",
+  "project.shareGitOff": "꺼짐",
+  "project.shareGitOn": "켜짐",
   "project.shareInit": "모두와 공유하려면 PerMark를 초기화하세요",
   "project.sharedFileHint": "이 폴더를 여는 모든 사람과 공유됩니다.",
   "settings.all": "모든 설정",

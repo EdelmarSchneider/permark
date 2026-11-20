@@ -1819,6 +1819,14 @@ export default {
   "project.treeUnset": "Не задано",
   "project.scopes":
     "Настройки с пометкой «Все» хранятся в .permark/config.toml этой папки и доступны всем, кто её открывает. Настройки с пометкой «Только вы» остаются на этом компьютере.",
+  "project.shareGit": "Разрешить git видеть настройки PerMark этой папки",
+  "project.shareGitCustom":
+    "Файл .permark/.gitignore этой папки написал кто-то другой, поэтому PerMark оставляет его как есть.",
+  "project.shareGitFailed": "Не удалось изменить, что git видит в .permark: {message}",
+  "project.shareGitHint":
+    "Вкл.: git видит настройки, теги, список проектов и описания проектов в .permark, поэтому вы можете закоммитить их для своей команды. Выкл.: git игнорирует всю папку .permark; уже закоммиченные файлы остаются в репозитории. Если .permark/.gitignore закоммичен, ваша команда тоже получит это изменение. Ваши личные данные и кэши всегда остаются вне git.",
+  "project.shareGitOff": "Выкл.",
+  "project.shareGitOn": "Вкл.",
   "project.shareInit": "Инициализируйте PerMark, чтобы поделиться этим со всеми",
   "project.sharedFileHint": "Общий для всех, кто открывает эту папку.",
   "settings.all": "Все настройки",

@@ -1745,6 +1745,14 @@ export default {
   "project.treeUnset": "Ayarlanmadı",
   "project.scopes":
     "Herkes olarak işaretli ayarlar bu klasörün .permark/config.toml dosyasında saklanır ve klasörü açan herkesle paylaşılır. Yalnızca siz olarak işaretli ayarlar bu bilgisayarda kalır.",
+  "project.shareGit": "Git'in bu klasörün PerMark ayarlarını görmesine izin ver",
+  "project.shareGitCustom":
+    "Bu klasörün .permark/.gitignore dosyasını başka biri yazmış, bu yüzden PerMark onu olduğu gibi bırakır.",
+  "project.shareGitFailed": "Git'in .permark içinde gördükleri değiştirilemedi: {message}",
+  "project.shareGitHint":
+    "Açık: Git, .permark içindeki ayarları, etiketleri, proje listesini ve proje açıklamalarını görür; böylece bunları ekibiniz için commit edebilirsiniz. Kapalı: Git tüm .permark klasörünü yok sayar; zaten commit edilmiş dosyalar commit'te kalır. .permark/.gitignore commit edilmişse bu değişiklik ekibinize de ulaşır. Özel verileriniz ve önbellekler her zaman Git'in dışında kalır.",
+  "project.shareGitOff": "Kapalı",
+  "project.shareGitOn": "Açık",
   "project.shareInit": "Bunu herkesle paylaşmak için PerMark'ı başlatın",
   "project.sharedFileHint": "Bu klasörü açan herkesle paylaşılır.",
   "settings.all": "Tüm ayarlar",

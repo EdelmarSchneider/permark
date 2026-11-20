@@ -1758,6 +1758,14 @@ export default {
   "project.treeUnset": "Sense definir",
   "project.scopes":
     "La configuració marcada amb Tothom es desa a .permark/config.toml d'aquesta carpeta i es comparteix amb qui l'obri. La marcada amb Només vós es queda en aquest ordinador.",
+  "project.shareGit": "Permet que el Git vegi la configuració del PerMark d'aquesta carpeta",
+  "project.shareGitCustom":
+    "El fitxer .permark/.gitignore d'aquesta carpeta l'ha escrit una altra persona, així que el PerMark el deixa tal com està.",
+  "project.shareGitFailed": "No s'ha pogut canviar què veu el Git a .permark: {message}",
+  "project.shareGitHint":
+    "Activat: el Git veu la configuració, les etiquetes, la llista de projectes i les descripcions dels projectes de .permark, de manera que en podeu fer un commit per al vostre equip. Desactivat: el Git ignora tota la carpeta .permark; els fitxers que ja són en un commit s'hi queden. Si .permark/.gitignore és en un commit, el vostre equip també rep aquest canvi. Les vostres dades privades i la memòria cau sempre queden fora del Git.",
+  "project.shareGitOff": "Desactivat",
+  "project.shareGitOn": "Activat",
   "project.shareInit": "Inicialitzeu el PerMark per compartir-ho amb tothom",
   "project.sharedFileHint": "Compartit amb qui obri aquesta carpeta.",
   "settings.all": "Tota la configuració",

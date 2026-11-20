@@ -252,6 +252,7 @@ export const tauriApi: Api = {
     call("vocabulary_set_style", { kind, name, color, icon }),
   projectConfigGet: () => call("project_config_get", {}),
   projectConfigSet: (change) => call("project_config_set", { change }),
+  projectSharingSet: (sharing) => call("project_sharing_set", { sharing }),
   pluginsList: () => call("plugins_list", {}),
   pluginSetProject: (plugin, enabled) => call("plugin_set_project", { plugin, enabled }),
   pluginRemoveData: (plugin) => call("plugin_remove_data", { plugin }),

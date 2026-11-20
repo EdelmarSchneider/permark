@@ -9,6 +9,7 @@ import type { PluginInfo } from "./generated/PluginInfo";
 import type { PluginKind } from "./generated/PluginKind";
 import type { ProjectSettingChange } from "./generated/ProjectSettingChange";
 import type { ProjectSettings } from "./generated/ProjectSettings";
+import type { Sharing } from "./generated/Sharing";
 import type { WindowSummary } from "./generated/WindowSummary";
 import type { AppSettings, Result } from "./types";
 
@@ -97,8 +98,13 @@ export const MOCK_MANIFESTS: readonly Manifest[] = [
 const ok = <T>(value: T): Promise<Result<T>> => Promise.resolve({ ok: true, value });
 
 function refusal<T>(
-  command: "project_config_set" | "plugin_remove_data" | "plugin_data_bytes" | "plugin_set_project",
-  kind: "unavailable" | "invalidData" | "unsupported",
+  command:
+    | "project_config_set"
+    | "project_sharing_set"
+    | "plugin_remove_data"
+    | "plugin_data_bytes"
+    | "plugin_set_project",
+  kind: "unavailable" | "invalidData" | "unsupported" | "conflict",
   subject: string,
   detail: string | null = null,
 ): Promise<Result<T>> {
@@ -111,6 +117,7 @@ function refusal<T>(
 function emptyProject(): ProjectSettings {
   return {
     initialized: false,
+    sharing: "shared",
     tree: { show: null, include: [], exclude: [] },
     ignore: [],
     agentDeny: [],
@@ -211,6 +218,10 @@ export function createMockShell(deps: {
         deps.changed();
       },
       project: (): ProjectSettings => project,
+      /** What the folder's `.permark/.gitignore` says (`custom`: someone else wrote it). */
+      sharing(sharing: Sharing): void {
+        project = { ...project, sharing };
+      },
       /** The project's shared file holds plugin keys no plugin reads (`<id>.<key>`). */
       ignorePluginKeys(keys: string[]): void {
         project = { ...project, ignoredPluginKeys: keys };
@@ -295,6 +306,15 @@ export function createMockShell(deps: {
           default:
             change satisfies never;
         }
+        return ok(project);
+      },
+      /** Only PerMark's own two forms are written, never over someone else's file. */
+      projectSharingSet: (sharing: Sharing) => {
+        if (!project.initialized)
+          return refusal<ProjectSettings>("project_sharing_set", "unavailable", "permark");
+        if (project.sharing === "custom" || sharing === "custom")
+          return refusal<ProjectSettings>("project_sharing_set", "conflict", ".permark/.gitignore");
+        project = { ...project, sharing };
         return ok(project);
       },
       pluginsList: (inProject: boolean): Promise<Result<PluginInfo[]>> => {

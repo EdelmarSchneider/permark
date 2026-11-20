@@ -1741,6 +1741,14 @@ export default {
   "project.treeUnset": "Chưa đặt",
   "project.scopes":
     "Các cài đặt đánh dấu Mọi người được lưu trong .permark/config.toml của thư mục này và dùng chung với bất kỳ ai mở nó. Các cài đặt đánh dấu Chỉ bạn chỉ nằm trên máy tính này.",
+  "project.shareGit": "Cho git thấy cài đặt PerMark của thư mục này",
+  "project.shareGitCustom":
+    "Tệp .permark/.gitignore của thư mục này do người khác viết, nên PerMark giữ nguyên tệp đó.",
+  "project.shareGitFailed": "Không thể thay đổi những gì git thấy trong .permark: {message}",
+  "project.shareGitHint":
+    "Bật: git thấy các cài đặt, nhãn, danh sách dự án và mô tả dự án trong .permark, nên bạn có thể commit chúng cho nhóm của mình. Tắt: git bỏ qua toàn bộ thư mục .permark; các tệp đã được commit vẫn nằm trong commit. Nếu .permark/.gitignore đã được commit, nhóm của bạn cũng nhận thay đổi này. Dữ liệu riêng tư và bộ nhớ đệm của bạn luôn nằm ngoài git.",
+  "project.shareGitOff": "Tắt",
+  "project.shareGitOn": "Bật",
   "project.shareInit": "Khởi tạo PerMark để chia sẻ mục này với mọi người",
   "project.sharedFileHint": "Được chia sẻ với bất kỳ ai mở thư mục này.",
   "settings.all": "Toàn bộ cài đặt",

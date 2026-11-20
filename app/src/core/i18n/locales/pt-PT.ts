@@ -1756,6 +1756,14 @@ export default {
   "project.treeUnset": "Não definido",
   "project.scopes":
     "As definições marcadas com Todos ficam guardadas no .permark/config.toml desta pasta e são partilhadas com quem a abrir. As marcadas com Só para si ficam neste computador.",
+  "project.shareGit": "Deixar o Git ver as definições do PerMark desta pasta",
+  "project.shareGitCustom":
+    "O ficheiro .permark/.gitignore desta pasta foi escrito por outra pessoa, por isso o PerMark deixa-o como está.",
+  "project.shareGitFailed": "Não foi possível alterar o que o Git vê em .permark: {message}",
+  "project.shareGitHint":
+    "Ativado: o Git vê as definições, as etiquetas, a lista de projetos e as descrições dos projetos em .permark, por isso pode fazer commit deles para a sua equipa. Desativado: o Git ignora toda a pasta .permark; os ficheiros que já estão num commit continuam nele. Se .permark/.gitignore estiver num commit, a sua equipa também recebe esta alteração. Os seus dados privados e as caches ficam sempre fora do Git.",
+  "project.shareGitOff": "Desativado",
+  "project.shareGitOn": "Ativado",
   "project.shareInit": "Inicialize o PerMark para partilhar isto com todos",
   "project.sharedFileHint": "Partilhado com quem abrir esta pasta.",
   "settings.all": "Todas as definições",

@@ -54,11 +54,19 @@ pub const PROFILE_PLUGINS: [&str; 1] = ["acp"];
 /// [`RawFile::capped`]): a larger one is left unread, never taken into memory.
 pub const DEFAULT_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
-const PROJECT_GITIGNORE: &str = "# PerMark private state: not shared.\nlocal/\ncache/\n";
+/// `.permark/.gitignore` while git sees the team files (settings, tags, the project list, the card): only the private
+/// folders stay out. The bytes every earlier version wrote.
+const SHARED_IGNORE: &str = "# PerMark private state: not shared.\nlocal/\ncache/\n";
+/// `.permark/.gitignore` while git sees nothing of the folder, the file itself included.
+const PRIVATE_IGNORE: &str =
+    "# PerMark: git ignores this whole folder. Change it in Settings > This folder.\n*\n";
+/// Most bytes a file PerMark writes into `.permark/` itself (`config.toml`, `.gitignore`) is read with when compared
+/// with what PerMark wrote: a larger one cannot be PerMark's and is never taken into memory.
+const FORM_MAX_BYTES: u64 = 64 * 1024;
 
 /// Written by "Initialize PerMark"; every key optional, commented values = defaults.
 pub const DEFAULT_CONFIG_TOML: &str = "\
-# PerMark project settings. Shared with your team: safe to commit.
+# PerMark project settings. Commit the .permark folder to share these settings with your team.
 # Everything here is optional; the commented values are the defaults.
 
 # Extra gitignore-style patterns hidden from the live feed and from search.
@@ -78,6 +86,18 @@ pub const DEFAULT_CONFIG_TOML: &str = "\
 # [plugins.comments]
 # enabled = false
 ";
+/// First line of the [`DEFAULT_CONFIG_TOML`] the version before wrote (the rest is the same).
+const EARLIER_CONFIG_HEADER: &str =
+    "# PerMark project settings. Shared with your team: safe to commit.\n";
+
+/// Whether `bytes` are the `config.toml` Initialize writes, with this version's header or the one before.
+fn is_default_config(bytes: &[u8]) -> bool {
+    let body = DEFAULT_CONFIG_TOML
+        .split_once('\n')
+        .map_or("", |(_, body)| body);
+    bytes == DEFAULT_CONFIG_TOML.as_bytes()
+        || bytes.strip_prefix(EARLIER_CONFIG_HEADER.as_bytes()) == Some(body.as_bytes())
+}
 
 /// Roots of the person's own state. Passed to every service (tests use temp dirs): NEVER a global.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,6 +188,46 @@ pub enum StateLocation {
     Project,
 }
 
+/// What git may see of a project's team folder, as PerMark's own `.permark/.gitignore` says: the team files
+/// (`Shared`), nothing (`Private`), or the file holds what someone else wrote and PerMark never writes over it
+/// (`Custom`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum Sharing {
+    Shared,
+    Private,
+    Custom,
+}
+
+impl Sharing {
+    /// The bytes PerMark writes for it (`None`: someone else's text, never written).
+    fn form(self) -> Option<&'static str> {
+        match self {
+            Self::Shared => Some(SHARED_IGNORE),
+            Self::Private => Some(PRIVATE_IGNORE),
+            Self::Custom => None,
+        }
+    }
+
+    /// Which of PerMark's forms `bytes` hold, and whether with the `\r\n` line endings git may give the file on
+    /// checkout (`None`: neither form).
+    fn of_bytes(bytes: &[u8]) -> Option<(Self, bool)> {
+        [Self::Shared, Self::Private]
+            .into_iter()
+            .find_map(|sharing| {
+                let form = sharing.form()?;
+                if bytes == form.as_bytes() {
+                    Some((sharing, false))
+                } else if bytes == form.replace('\n', "\r\n").as_bytes() {
+                    Some((sharing, true))
+                } else {
+                    None
+                }
+            })
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum StateError {
     #[error("cannot write {path}: {source}")]
@@ -181,6 +241,10 @@ pub enum StateError {
     /// one copy would hide the other.
     #[error("{path} already holds PerMark data")]
     BothHoldData { path: String },
+    /// A file PerMark writes only in the forms it knows (`path`) holds something else (someone else's text, a link, a
+    /// folder) or changed meanwhile: left as it is.
+    #[error("{path} holds what someone else wrote")]
+    Foreign { path: String },
 }
 
 impl StateError {
@@ -202,6 +266,7 @@ impl From<StateError> for IpcError {
             StateError::BothHoldData { path } => IpcError::new(ErrorKind::Conflict)
                 .subject(path)
                 .detail(location::BOTH_HOLD_DATA),
+            StateError::Foreign { path } => IpcError::new(ErrorKind::Conflict).subject(path),
         }
     }
 }
@@ -1150,6 +1215,107 @@ pub fn has_team_folder(root: &Root) -> bool {
     private::is_real_folder(&root.path().join(PERMARK_DIR))
 }
 
+/// A link or a file stands where PerMark keeps a folder.
+fn in_the_way(path: &Path) -> StateError {
+    StateError::io(
+        path,
+        io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "a link or a file is in the way",
+        ),
+    )
+}
+
+/// What stands at `.permark/.gitignore`.
+enum Ignore {
+    Missing,
+    /// One of PerMark's forms (`crlf`: with the line endings git may give it on checkout); `seen` = hash of the bytes.
+    Form {
+        sharing: Sharing,
+        crlf: bool,
+        seen: crate::fsx::ContentHash,
+    },
+    /// Someone else's text, a link, a folder, an unreadable | larger file.
+    Other,
+}
+
+/// Reads `permark`'s `.gitignore` as a capped plain file inside `permark` (never through a link).
+fn ignore_of(permark: &Path) -> Ignore {
+    match crate::fsx::read_regular(
+        &permark.join(".gitignore"),
+        FORM_MAX_BYTES,
+        Zone::Inside(permark),
+    ) {
+        Ok(bytes) => {
+            Sharing::of_bytes(&bytes).map_or(Ignore::Other, |(sharing, crlf)| Ignore::Form {
+                sharing,
+                crlf,
+                seen: crate::fsx::hash(&bytes),
+            })
+        }
+        Err(crate::fsx::FsxError::Io { source, .. })
+            if source.kind() == io::ErrorKind::NotFound =>
+        {
+            Ignore::Missing
+        }
+        Err(_) => Ignore::Other,
+    }
+}
+
+/// What git may see of `root`'s team folder ([`Sharing`]), as PerMark's own `.permark/.gitignore` says: missing ->
+/// shared (the private folders ignore themselves); someone else's text, a link (`.permark/` included), a folder, an
+/// unreadable | larger file -> custom.
+#[must_use]
+pub fn sharing(root: &Root) -> Sharing {
+    match ignore_of(&root.path().join(PERMARK_DIR)) {
+        Ignore::Missing => Sharing::Shared,
+        Ignore::Form { sharing, .. } => sharing,
+        Ignore::Other => Sharing::Custom,
+    }
+}
+
+/// Sets what git may see of `root`'s team folder: PerMark's own `.permark/.gitignore` is rewritten only from one of
+/// its forms (the file's line endings kept) or made when missing (private; shared needs no file). The form the file
+/// holds already writes nothing. Returns what git may see now.
+///
+/// # Errors
+/// No real team folder (`.permark` missing, a link or a file); someone else's file, one changed meanwhile, or `Custom`
+/// asked ([`StateError::Foreign`]); IO failure.
+pub fn set_sharing(root: &Root, to: Sharing) -> Result<Sharing, StateError> {
+    let permark = root.path().join(PERMARK_DIR);
+    match private::entry(&permark) {
+        private::Entry::Folder => {}
+        private::Entry::Missing => {
+            return Err(StateError::io(&permark, io::ErrorKind::NotFound.into()))
+        }
+        private::Entry::Other => return Err(in_the_way(&permark)),
+    }
+    let path = permark.join(".gitignore");
+    let foreign = || StateError::Foreign {
+        path: path.display().to_string(),
+    };
+    let form = to.form().ok_or_else(foreign)?;
+    let written = match ignore_of(&permark) {
+        Ignore::Missing if to == Sharing::Shared => return Ok(to),
+        Ignore::Missing => crate::fsx::write_atomic_if_absent(&path, form.as_bytes()),
+        Ignore::Form { sharing, .. } if sharing == to => return Ok(to),
+        Ignore::Form { crlf, seen, .. } => {
+            let bytes = if crlf {
+                form.replace('\n', "\r\n")
+            } else {
+                form.to_owned()
+            };
+            crate::fsx::write_atomic_if_unchanged(&path, bytes.as_bytes(), seen)
+        }
+        Ignore::Other => return Err(foreign()),
+    };
+    match written {
+        Ok(true) => Ok(to),
+        Ok(false) => Err(foreign()),
+        Err(error) => Err(StateError::io(&path, error)),
+    }
+}
+
 /// Removes a folder tree; a link is removed itself, never followed.
 fn remove_tree(path: &Path) -> io::Result<()> {
     match private::entry(path) {
@@ -1220,15 +1386,7 @@ pub fn init_project(dirs: &AppDirs, root: &Root) -> Result<StateStore, StateErro
     let made = match private::entry(&permark) {
         private::Entry::Missing => true,
         private::Entry::Folder => false,
-        private::Entry::Other => {
-            return Err(StateError::io(
-                &permark,
-                io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "a link or a file is in the way",
-                ),
-            ))
-        }
+        private::Entry::Other => return Err(in_the_way(&permark)),
     };
     // `local/` listed only as a real folder (never through a link: refused below before anything is written there)
     if carry
@@ -1271,7 +1429,7 @@ fn make_permark(permark: &Path) -> Result<(), StateError> {
     }
     for (name, content) in [
         ("config.toml", DEFAULT_CONFIG_TOML),
-        (".gitignore", PROJECT_GITIGNORE),
+        (".gitignore", SHARED_IGNORE),
     ] {
         let path = permark.join(name);
         private::create_if_missing(&path, content).map_err(|e| StateError::io(&path, e))?;
@@ -1322,7 +1480,9 @@ fn carry_in(
 }
 
 /// Takes back what [`init_project`] made, when it is untouched (`projects.md` §2.4, undo of a first include):
-/// `.permark/` holds only `config.toml` + `.gitignore` with the bytes init wrote, `local/`, `cache/`, no link anywhere.
+/// `.permark/` holds only `config.toml` with the bytes init wrote (this version's header or the one before),
+/// `.gitignore` in one of PerMark's forms (the sharing choice may have changed it), `local/`, `cache/`, no link
+/// anywhere; both files read as capped plain files inside `.permark/`.
 /// The project's private state (`local/`, the live state since init) is carried back into the profile (newer wins;
 /// never the files and plugin folders that always stay in the profile), then `.permark/` is removed in one step:
 /// renamed away first (a temp name the tree and the watch never show), then deleted; a file held open (antivirus,
@@ -1350,10 +1510,14 @@ pub fn uninit_project(dirs: &AppDirs, root: &Root) -> Result<bool, StateError> {
     if names.iter().any(|n| !allowed.contains(&n.as_str())) {
         return Ok(false);
     }
-    let same = |name: &str, want: &str| {
-        std::fs::read(permark.join(name)).is_ok_and(|bytes| bytes == want.as_bytes())
-    };
-    if !same("config.toml", DEFAULT_CONFIG_TOML) || !same(".gitignore", PROJECT_GITIGNORE) {
+    let config = crate::fsx::read_regular(
+        &permark.join("config.toml"),
+        FORM_MAX_BYTES,
+        Zone::Inside(&permark),
+    );
+    if !config.is_ok_and(|bytes| is_default_config(&bytes))
+        || !matches!(ignore_of(&permark), Ignore::Form { .. })
+    {
         return Ok(false);
     }
     for sub in ["local", "cache"] {

@@ -484,8 +484,275 @@ fn init_project_makes_exactly_these_files() {
     }
     assert_eq!(
         fs::read_to_string(permark.join(".gitignore")).unwrap(),
-        PROJECT_GITIGNORE
+        SHARED_IGNORE
     );
+    // the bytes earlier versions wrote: a folder made by any of them reads as shared
+    assert_eq!(
+        fs::read(permark.join(".gitignore")).unwrap(),
+        b"# PerMark private state: not shared.\nlocal/\ncache/\n"
+    );
+}
+
+/// A named change made in a fresh `.permark/`.
+type PermarkEdit = (&'static str, fn(&Path));
+
+/// Undo of an init takes `.permark/` back only while its two files hold the bytes PerMark wrote: an edited
+/// `config.toml`, another `.gitignore` or a missing one leave the folder as it is.
+#[test]
+fn uninit_project_keeps_a_folder_whose_files_changed() {
+    let edits: [PermarkEdit; 4] = [
+        ("config edited", |p| {
+            let mut text = fs::read_to_string(p.join("config.toml")).unwrap();
+            text.push_str("ignore = [\"drafts/\"]\n");
+            fs::write(p.join("config.toml"), text).unwrap();
+        }),
+        ("ignore edited", |p| {
+            fs::write(p.join(".gitignore"), "local/\n").unwrap();
+        }),
+        ("ignore gone", |p| {
+            fs::remove_file(p.join(".gitignore")).unwrap();
+        }),
+        ("config gone", |p| {
+            fs::remove_file(p.join("config.toml")).unwrap();
+        }),
+    ];
+    for (name, edit) in edits {
+        let f = fx();
+        init_project(&f.dirs, &f.root()).unwrap();
+        edit(&f.permark());
+        let listed = entries_below(&f.permark());
+        assert!(!uninit_project(&f.dirs, &f.root()).unwrap(), "{name}");
+        assert_eq!(entries_below(&f.permark()), listed, "{name}: kept whole");
+    }
+    // untouched: taken back
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+    assert!(!f.permark().exists());
+}
+
+/// A file symlink at `link` to `target` (Windows: only with the symlink privilege, else `false`: skipped).
+fn file_link(link: &Path, target: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_file(target, link).is_ok()
+    }
+}
+
+/// Undo of an init also takes the folder back after the sharing choice (either form PerMark writes, with the line
+/// endings git may give it) and with the settings header of the version before. Both files are read as capped plain
+/// files inside `.permark/`: a link in place of either one, or a file too large to be PerMark's, keeps the folder.
+#[test]
+fn uninit_project_takes_back_either_sharing_form_and_the_earlier_header() {
+    let taken: [PermarkEdit; 3] = [
+        ("private", |p| {
+            fs::write(p.join(".gitignore"), PRIVATE_IGNORE).unwrap();
+        }),
+        ("private crlf", |p| {
+            fs::write(p.join(".gitignore"), PRIVATE_IGNORE.replace('\n', "\r\n")).unwrap();
+        }),
+        ("earlier header", |p| {
+            let text = fs::read_to_string(p.join("config.toml")).unwrap();
+            let (_, rest) = text.split_once('\n').unwrap();
+            let earlier = format!(
+                "# PerMark project settings. Shared with your team: safe to commit.\n{rest}"
+            );
+            fs::write(p.join("config.toml"), earlier).unwrap();
+        }),
+    ];
+    for (name, edit) in taken {
+        let f = fx();
+        init_project(&f.dirs, &f.root()).unwrap();
+        edit(&f.permark());
+        assert!(uninit_project(&f.dirs, &f.root()).unwrap(), "{name}");
+        assert!(!f.permark().exists(), "{name}: taken back");
+    }
+    // a file too large to be PerMark's: never read whole
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    let mut text = DEFAULT_CONFIG_TOML.to_owned();
+    text.push_str(&"#\n".repeat(40 * 1024));
+    fs::write(f.permark().join("config.toml"), text).unwrap();
+    assert!(!uninit_project(&f.dirs, &f.root()).unwrap(), "too large");
+    // a link in place of either file, its target holding the bytes PerMark wrote
+    for (name, bytes) in [
+        (".gitignore", SHARED_IGNORE),
+        ("config.toml", DEFAULT_CONFIG_TOML),
+    ] {
+        let f = fx();
+        init_project(&f.dirs, &f.root()).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join(name);
+        fs::write(&target, bytes).unwrap();
+        fs::remove_file(f.permark().join(name)).unwrap();
+        if !file_link(&f.permark().join(name), &target) {
+            eprintln!("skipped {name} link: cannot be made here");
+            continue;
+        }
+        assert!(!uninit_project(&f.dirs, &f.root()).unwrap(), "{name} link");
+        assert!(f.permark().join("local").is_dir(), "{name} link: kept");
+        assert_eq!(fs::read(&target).unwrap(), bytes.as_bytes());
+    }
+}
+
+/// New team files start with the line that tells people to commit the folder; a folder's own file stays as it is.
+#[test]
+fn init_project_writes_the_commit_hint_header() {
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    let text = fs::read_to_string(f.permark().join("config.toml")).unwrap();
+    assert_eq!(text, DEFAULT_CONFIG_TOML);
+    assert_eq!(
+        text.lines().next(),
+        Some(
+            "# PerMark project settings. Commit the .permark folder to share these settings with your team."
+        )
+    );
+}
+
+/// What git may see of the team folder is read from PerMark's own `.permark/.gitignore`: missing or the shared form
+/// -> shared, the private form -> private (either with the line endings git may give it on checkout); anything else
+/// (other text, an empty file, a folder, a link, a file too large to be PerMark's) -> someone else's.
+#[test]
+fn sharing_reads_only_the_two_forms_it_writes() {
+    assert_eq!(
+        PRIVATE_IGNORE,
+        "# PerMark: git ignores this whole folder. Change it in Settings > This folder.\n*\n"
+    );
+    let crlf = |text: &str| text.replace('\n', "\r\n");
+    let cases: Vec<(&str, Option<String>, Sharing)> = vec![
+        ("missing", None, Sharing::Shared),
+        ("shared", Some(SHARED_IGNORE.to_owned()), Sharing::Shared),
+        ("shared crlf", Some(crlf(SHARED_IGNORE)), Sharing::Shared),
+        ("private", Some(PRIVATE_IGNORE.to_owned()), Sharing::Private),
+        ("private crlf", Some(crlf(PRIVATE_IGNORE)), Sharing::Private),
+        (
+            "mixed",
+            Some(format!("{SHARED_IGNORE}*\n")),
+            Sharing::Custom,
+        ),
+        (
+            "team's own",
+            Some("# the team's own\n".to_owned()),
+            Sharing::Custom,
+        ),
+        ("empty", Some(String::new()), Sharing::Custom),
+        ("too large", Some("#\n".repeat(40 * 1024)), Sharing::Custom),
+    ];
+    for (name, text, want) in cases {
+        let f = fx();
+        fs::create_dir(f.permark()).unwrap();
+        if let Some(text) = text {
+            fs::write(f.permark().join(".gitignore"), text).unwrap();
+        }
+        assert_eq!(sharing(&f.root()), want, "{name}");
+    }
+    let f = fx();
+    fs::create_dir_all(f.permark().join(".gitignore")).unwrap();
+    assert_eq!(sharing(&f.root()), Sharing::Custom, "a folder");
+    let f = fx();
+    fs::create_dir(f.permark()).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("ignore"), SHARED_IGNORE).unwrap();
+    if file_link(
+        &f.permark().join(".gitignore"),
+        &outside.path().join("ignore"),
+    ) {
+        assert_eq!(sharing(&f.root()), Sharing::Custom, "a link");
+    }
+}
+
+/// The sharing choice rewrites only PerMark's own `.permark/.gitignore`, and only from the forms it writes: shared <->
+/// private (the file's line endings kept), a missing file made private, a missing file left missing when shared (git
+/// sees the team files then already). Someone else's file is refused and stays byte for byte.
+#[test]
+fn set_sharing_writes_only_its_own_two_forms() {
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    let ignore = f.permark().join(".gitignore");
+    let set = |to| set_sharing(&f.root(), to);
+    assert_eq!(set(Sharing::Private).unwrap(), Sharing::Private);
+    assert_eq!(fs::read(&ignore).unwrap(), PRIVATE_IGNORE.as_bytes());
+    assert_eq!(set(Sharing::Private).unwrap(), Sharing::Private, "again");
+    assert_eq!(fs::read(&ignore).unwrap(), PRIVATE_IGNORE.as_bytes());
+    assert_eq!(set(Sharing::Shared).unwrap(), Sharing::Shared);
+    assert_eq!(fs::read(&ignore).unwrap(), SHARED_IGNORE.as_bytes());
+    // the line endings git gave the file on checkout stay
+    fs::write(&ignore, SHARED_IGNORE.replace('\n', "\r\n")).unwrap();
+    assert_eq!(set(Sharing::Private).unwrap(), Sharing::Private);
+    assert_eq!(
+        fs::read_to_string(&ignore).unwrap(),
+        PRIVATE_IGNORE.replace('\n', "\r\n")
+    );
+    fs::remove_file(&ignore).unwrap();
+    assert_eq!(set(Sharing::Shared).unwrap(), Sharing::Shared);
+    assert!(fs::symlink_metadata(&ignore).is_err(), "nothing made");
+    assert_eq!(set(Sharing::Private).unwrap(), Sharing::Private);
+    assert_eq!(fs::read(&ignore).unwrap(), PRIVATE_IGNORE.as_bytes());
+    // someone else's file: refused whatever is asked
+    fs::write(&ignore, "# the team's own\n").unwrap();
+    for to in [Sharing::Shared, Sharing::Private, Sharing::Custom] {
+        assert!(set(to).is_err(), "{to:?}");
+    }
+    assert_eq!(fs::read(&ignore).unwrap(), b"# the team's own\n");
+    // a form of someone else's is never written, even over PerMark's own
+    fs::write(&ignore, SHARED_IGNORE).unwrap();
+    assert!(set(Sharing::Custom).is_err());
+    assert_eq!(fs::read(&ignore).unwrap(), SHARED_IGNORE.as_bytes());
+    assert_eq!(
+        entries_below(&f.permark())
+            .into_iter()
+            .filter(|e| !e.contains('/'))
+            .collect::<Vec<_>>(),
+        [".gitignore", "config.toml"],
+        "no temp left"
+    );
+}
+
+/// The sharing choice needs a real team folder: none, a file, or a link in place of `.permark` (its target untouched),
+/// or a link in place of the file -> refused, nothing written anywhere.
+#[test]
+fn set_sharing_needs_a_real_team_folder_and_file() {
+    let f = fx();
+    assert!(set_sharing(&f.root(), Sharing::Private).is_err());
+    assert!(fs::symlink_metadata(f.permark()).is_err(), "nothing made");
+    let f = fx();
+    fs::write(f.permark(), b"x").unwrap();
+    assert!(set_sharing(&f.root(), Sharing::Private).is_err());
+    assert_eq!(fs::read(f.permark()).unwrap(), b"x");
+    let f = fx();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join(".gitignore"), SHARED_IGNORE).unwrap();
+    if crate::tree::tests::link_out(&f.permark(), outside.path()) {
+        assert_eq!(sharing(&f.root()), Sharing::Custom);
+        assert!(set_sharing(&f.root(), Sharing::Private).is_err());
+        assert_eq!(entries_below(outside.path()), [".gitignore"]);
+        assert_eq!(
+            fs::read(outside.path().join(".gitignore")).unwrap(),
+            SHARED_IGNORE.as_bytes()
+        );
+    } else {
+        eprintln!("skipped the folder link: cannot be made here");
+    }
+    let f = fx();
+    init_project(&f.dirs, &f.root()).unwrap();
+    let target = outside.path().join("ignore");
+    fs::write(&target, SHARED_IGNORE).unwrap();
+    fs::remove_file(f.permark().join(".gitignore")).unwrap();
+    if file_link(&f.permark().join(".gitignore"), &target) {
+        assert!(set_sharing(&f.root(), Sharing::Private).is_err());
+        assert_eq!(fs::read(&target).unwrap(), SHARED_IGNORE.as_bytes());
+        assert!(fs::symlink_metadata(f.permark().join(".gitignore"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    } else {
+        eprintln!("skipped the file link: cannot be made here");
+    }
 }
 
 #[test]

@@ -1826,6 +1826,14 @@ export default {
   "project.treeUnset": "Nesetat",
   "project.scopes":
     "Setările marcate cu Toată lumea sunt păstrate în .permark/config.toml al acestui dosar și partajate cu oricine îl deschide. Cele marcate cu Doar tu rămân pe acest computer.",
+  "project.shareGit": "Lasă git să vadă setările PerMark ale acestui dosar",
+  "project.shareGitCustom":
+    "Fișierul .permark/.gitignore al acestui dosar a fost scris de altcineva, așa că PerMark îl lasă așa cum este.",
+  "project.shareGitFailed": "Nu s-a putut schimba ce vede git în .permark: {message}",
+  "project.shareGitHint":
+    "Activat: git vede setările, etichetele, lista de proiecte și descrierile proiectelor din .permark, așa că le poți include într-un commit pentru echipa ta. Dezactivat: git ignoră tot dosarul .permark; fișierele care sunt deja într-un commit rămân acolo. Dacă .permark/.gitignore este într-un commit, echipa ta primește și ea această schimbare. Datele tale private și cache-urile rămân mereu în afara git.",
+  "project.shareGitOff": "Dezactivat",
+  "project.shareGitOn": "Activat",
   "project.shareInit": "Inițializează PerMark pentru a partaja asta cu toată lumea",
   "project.sharedFileHint": "Partajat cu oricine deschide acest dosar.",
   "settings.all": "Toate setările",
