@@ -351,7 +351,7 @@ In Claude Code, a `UserPromptSubmit` hook in `.claude/settings.json` (or your us
 When there is nothing to say (the connection is off, or PerMark is not open), the command prints nothing, so a hook never adds
 noise to a prompt. A project with a `.permark/` folder also has `.permark/local/agent-context.json` while the connection is on:
 the same answer as a file, for a script or a tool without MCP. **It holds the open document, the section on screen and your
-selected text, and any program running as you can read it, as can a folder-sync tool that watches the project.** It stays out of git and is deleted when the connection is turned off.
+selected text, and any program running as you can read it, as can a folder-sync tool that watches the project.** It stays out of git and is deleted when the connection is turned off. A copy that PerMark did not write on this computer for this folder, such as one that came with a copied or synced folder, is deleted when the folder opens.
 
 </details>
 
