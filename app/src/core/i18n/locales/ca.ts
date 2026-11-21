@@ -414,7 +414,7 @@ export default {
   "role.copilot": "Instruccions per a Copilot",
   "role.model-card": "Fitxa del model",
   "role.dataset-card": "Fitxa del conjunt de dades",
-  "structured.mode": "Vista",
+  "structured.mode": "Visualització",
   "structured.tree": "Arbre",
   "structured.source": "Codi font",
   "structured.invalid": "No és vàlid, així que es mostra com a text.",
@@ -3261,6 +3261,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "No s'ha pogut llegir un fitxer que defineix què poden veure els agents. L'agent no rep res fins que es corregeixi.",
   "acp.fail.startFailed": "No s'ha pogut iniciar el programa de l'agent.",
+  "acp.fail.notAllowed": "No heu permès que s'iniciï el programa de l'agent.",
   "acp.fail.timedOut": "L'agent no ha respost a temps.",
   "acp.fail.initFailed":
     "Aquest programa no ha respost com un agent amb què el PerMark pugui parlar. Comproveu l'ordre i torneu-ho a provar.",
@@ -3274,6 +3275,7 @@ export default {
   "acp.fail.exited": "El programa de l'agent s'ha tancat inesperadament.",
   "acp.fail.sendFailed": "No s'ha pogut lliurar el missatge a l'agent.",
   "acp.error.relativeProgram": "Escriviu el camí complet del programa, o només el seu nom.",
+  "acp.error.commandTooLong": "L'ordre és massa llarga (com a màxim 1000 caràcters).",
   "acp.error.networkProgram":
     "El PerMark només inicia programes d'aquest ordinador, no des d'una carpeta de xarxa.",
   "acp.error.oneChoice": "Trieu un agent o escriviu una ordre.",

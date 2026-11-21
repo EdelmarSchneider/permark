@@ -577,6 +577,17 @@ describe("the words of a view moved to another region", () => {
     }
   });
 
+  // the Tree | Source group sits in the same bar as the View | Edit mode button: one name would read as one control
+  it.each(LOCALES)(
+    "in %s name the Tree | Source group apart from the View mode",
+    async (locale) => {
+      const result = await loadTable(locale);
+      if (result.status !== "loaded") throw new Error(`${locale}: ${result.status}`);
+      const table: Record<string, string> = result.table;
+      expect(table["structured.mode"]?.toLowerCase()).not.toBe(table["mode.view"]?.toLowerCase());
+    },
+  );
+
   // where a participle | a verb would have to agree with the view's name (its gender, its number), the name stands
   // apart and nothing agrees with it
   it.each(["pt-BR", "pt-PT", "es", "fr", "it", "ca", "gl", "ro"] as const)(

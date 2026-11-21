@@ -419,7 +419,7 @@ export default {
   "role.copilot": "Copilot yönergeleri",
   "role.model-card": "Model kartı",
   "role.dataset-card": "Veri kümesi kartı",
-  "structured.mode": "Görünüm",
+  "structured.mode": "Gösterim",
   "structured.tree": "Ağaç",
   "structured.source": "Kaynak",
   "structured.invalid": "Bu geçerli değil, bu yüzden metin olarak gösteriliyor.",
@@ -3228,6 +3228,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "Ajanların neleri görebileceğini belirleyen bir dosya okunamadı. Dosya düzeltilene kadar ajan hiçbir şey almaz.",
   "acp.fail.startFailed": "Ajanın programı başlatılamadı.",
+  "acp.fail.notAllowed": "Ajanın programının başlatılmasına izin vermediniz.",
   "acp.fail.timedOut": "Ajan zamanında yanıt vermedi.",
   "acp.fail.initFailed":
     "Bu program, PerMark'ın konuşabildiği bir ajan gibi yanıt vermedi. Komutu kontrol edip yeniden deneyin.",
@@ -3240,6 +3241,7 @@ export default {
   "acp.fail.exited": "Ajanın programı beklenmedik şekilde kapandı.",
   "acp.fail.sendFailed": "Mesaj ajana iletilemedi.",
   "acp.error.relativeProgram": "Programın tam yolunu veya yalnızca adını yazın.",
+  "acp.error.commandTooLong": "Komut çok uzun (en fazla 1000 karakter).",
   "acp.error.networkProgram":
     "PerMark yalnızca bu bilgisayardaki programları başlatır, ağ klasöründen başlatmaz.",
   "acp.error.oneChoice": "Bir ajan seçin veya bir komut yazın.",

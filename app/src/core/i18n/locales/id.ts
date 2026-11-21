@@ -3223,6 +3223,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "File yang mengatur apa yang boleh dilihat agen tidak dapat dibaca. Agen tidak mendapat apa pun sampai file itu diperbaiki.",
   "acp.fail.startFailed": "Program agen tidak dapat dimulai.",
+  "acp.fail.notAllowed": "Anda tidak mengizinkan program agen dijalankan.",
   "acp.fail.timedOut": "Agen tidak menjawab tepat waktu.",
   "acp.fail.initFailed":
     "Program ini tidak menjawab seperti agen yang dapat diajak berkomunikasi oleh PerMark. Periksa perintah, lalu coba lagi.",
@@ -3235,6 +3236,7 @@ export default {
   "acp.fail.exited": "Program agen tertutup secara tidak terduga.",
   "acp.fail.sendFailed": "Pesan tidak dapat diserahkan kepada agen.",
   "acp.error.relativeProgram": "Tulis jalur lengkap program, atau hanya namanya.",
+  "acp.error.commandTooLong": "Perintahnya terlalu panjang (paling banyak 1000 karakter).",
   "acp.error.networkProgram":
     "PerMark hanya menjalankan program di komputer ini, bukan dari folder jaringan.",
   "acp.error.oneChoice": "Pilih satu agen atau ketik satu perintah.",

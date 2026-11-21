@@ -6,6 +6,7 @@
   import FileText from "@lucide/svelte/icons/file-text";
   import FolderPlus from "@lucide/svelte/icons/folder-plus";
   import Import from "@lucide/svelte/icons/import";
+  import { tick } from "svelte";
   import type { RecentFolder } from "../../api";
   import { keyHint } from "../commands/hint";
   import { conditions } from "../conditions/context.svelte";
@@ -22,6 +23,7 @@
 
   let active = $state(0);
   let list: HTMLElement | undefined = $state();
+  let openFolderButton: HTMLButtonElement | undefined = $state();
   const now = Date.now();
   /** Element ids of the list's parts: from the component, never the folder's path. */
   const uid = $props.id();
@@ -41,6 +43,19 @@
       void store.open(recent.path, newWindow ? "newWindow" : undefined);
   }
 
+  /** Removes a recent folder. The removed row's Remove button (or the whole list, with its last entry) leaves the page
+   *  holding the keyboard, which would drop to the body: it goes to the entry now in that place, or to Open folder. */
+  async function remove(index: number): Promise<void> {
+    const recent = recents[index];
+    if (!recent) return;
+    await store.removeRecent(recent.path);
+    active = Math.max(0, Math.min(index, recents.length - 1));
+    await tick();
+    // focus put elsewhere meanwhile (a click, Tab) stays where it is
+    const lost = document.activeElement === null || document.activeElement === document.body;
+    if (lost) (recents.length > 0 ? list : openFolderButton)?.focus({ preventScroll: true });
+  }
+
   function onkeydown(e: KeyboardEvent): void {
     if (e.isComposing || recents.length === 0) return;
     switch (e.key) {
@@ -53,14 +68,11 @@
         e.preventDefault();
         open(recents[active], e.shiftKey);
         return;
-      case "Delete": {
-        const recent = recents[active];
-        if (!recent) return;
+      case "Delete":
+        if (!recents[active]) return;
         e.preventDefault();
-        void store.removeRecent(recent.path);
-        active = Math.max(0, Math.min(active, recents.length - 2));
+        void remove(active);
         return;
-      }
       default:
         return;
     }
@@ -105,6 +117,7 @@
         type="button"
         class="btn btn--primary"
         disabled={opening}
+        bind:this={openFolderButton}
         onclick={() => void store.openFolder()}
       >
         <FolderOpen size={14} aria-hidden="true" />
@@ -191,7 +204,7 @@
                   class="btn btn--ghost btn--sm remove"
                   style:--at={i}
                   aria-describedby="{uid}-recent-{i}-name"
-                  onclick={() => void store.removeRecent(recent.path)}
+                  onclick={() => void remove(i)}
                 >
                   {t("welcome.remove")}
                 </button>

@@ -3216,6 +3216,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "Não foi possível ler um arquivo que define o que os agentes podem ver. O agente não recebe nada até que ele seja corrigido.",
   "acp.fail.startFailed": "Não foi possível iniciar o programa do agente.",
+  "acp.fail.notAllowed": "Você não permitiu que o programa do agente fosse iniciado.",
   "acp.fail.timedOut": "O agente não respondeu a tempo.",
   "acp.fail.initFailed":
     "Este programa não respondeu como um agente com quem o PerMark consegue conversar. Confira o comando e tente de novo.",
@@ -3228,6 +3229,7 @@ export default {
   "acp.fail.exited": "O programa do agente fechou de forma inesperada.",
   "acp.fail.sendFailed": "Não foi possível entregar a mensagem ao agente.",
   "acp.error.relativeProgram": "Escreva o caminho completo do programa, ou só o nome dele.",
+  "acp.error.commandTooLong": "O comando é longo demais (no máximo 1000 caracteres).",
   "acp.error.networkProgram":
     "O PerMark só inicia programas deste computador, não de uma pasta de rede.",
   "acp.error.oneChoice": "Escolha um agente ou digite um comando.",

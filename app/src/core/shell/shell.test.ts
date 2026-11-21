@@ -1817,6 +1817,48 @@ describe("the welcome screen", () => {
     expect(target.textContent).toContain("Drop folders or files here to open them.");
   });
 
+  it("a removed recent folder leaves the keyboard on the list; the last one, on Open folder", async () => {
+    await store.start().catch(() => {});
+    started = true;
+    await toWelcome();
+    await until(
+      () => store.view.state === "welcome" && store.recent.some((r) => r.missing),
+      "a missing folder listed",
+    );
+    component = mount(Welcome, { target, props: { store } });
+    flushSync();
+    const list = (): HTMLElement => {
+      const found = target.querySelector<HTMLElement>('[role="listbox"]');
+      if (!found) throw new Error("no list box");
+      return found;
+    };
+    const remove = Array.from(target.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Remove",
+    );
+    if (!remove) throw new Error("no Remove button");
+    // the button leaves the page with its row: the keyboard goes to the entry now in its place, not to the body
+    remove.focus();
+    remove.click();
+    await until(() => !store.recent.some((r) => r.missing), "removed");
+    await until(() => document.activeElement === list(), "the list has the keyboard");
+    const named = list().getAttribute("aria-activedescendant") ?? "";
+    expect(document.getElementById(named)?.getAttribute("role")).toBe("option");
+    // Delete keeps the keyboard on the list; with the last entry gone (no list), Open folder takes it
+    while (store.recent.length > 0) {
+      const count = store.recent.length;
+      expect(document.activeElement).toBe(list());
+      press(list(), "Delete");
+      await until(() => store.recent.length < count, "one removed");
+    }
+    await until(
+      () => document.activeElement === byText("button", "Open folder"),
+      "Open folder has the keyboard",
+    );
+    // the next test starts with a recent folder again
+    await mock.openPath(MOCK_FOLDER, "thisTab");
+    await until(() => store.view.state === "showing", "reopened");
+  });
+
   it("the recent folders list says its Delete key; with none, there is no list to land on", async () => {
     await store.start().catch(() => {});
     started = true;

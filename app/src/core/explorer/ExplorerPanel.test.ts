@@ -375,6 +375,41 @@ describe("what a screen reader hears", () => {
     expect(current(root)?.id).not.toMatch(/\s/);
   });
 
+  it("names a row as soon as the keyboard reaches the tree: the selected one, else the first", async () => {
+    const { root, store } = await render();
+    expect(current(root)).toBeNull();
+    tree(root).focus();
+    flushSync();
+    expect(current(root)).toBe(rows(root)[0]);
+    // the row is named, not chosen: nothing is selected by the keyboard arriving
+    expect(store.selection.size).toBe(0);
+    // a selection without a keyboard row (as after the row it was on went away): the selected row is named
+    tree(root).blur();
+    store.select("README.md", "single");
+    store.focus = null;
+    flushSync();
+    tree(root).focus();
+    flushSync();
+    expect(current(root)?.dataset["path"]).toBe("README.md");
+    // a row the keyboard is already on stays
+    tree(root).blur();
+    key(root, "End");
+    const end = store.focus;
+    tree(root).focus();
+    flushSync();
+    expect(current(root)?.dataset["path"]).toBe(end);
+  });
+
+  it("a click on the tree's empty part names no row (none chosen, none drawn)", async () => {
+    const { root, store } = await render();
+    const list = tree(root);
+    pointer(list, "pointerdown", 10, 390);
+    list.focus();
+    flushSync();
+    expect(store.focus).toBeNull();
+    expect(current(root)).toBeNull();
+  });
+
   it("rows are not focused one by one: a click leaves the keyboard on the tree", async () => {
     const { root } = await render();
     for (const drawn of rows(root)) expect(drawn.hasAttribute("tabindex")).toBe(false);

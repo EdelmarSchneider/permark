@@ -414,7 +414,7 @@ export default {
   "role.copilot": "Copilot-Anweisungen",
   "role.model-card": "Modellkarte",
   "role.dataset-card": "Datensatzkarte",
-  "structured.mode": "Ansicht",
+  "structured.mode": "Darstellung",
   "structured.tree": "Baum",
   "structured.source": "Quelltext",
   "structured.invalid": "Das ist nicht gültig und wird deshalb als Text gezeigt.",
@@ -3275,6 +3275,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "Eine Datei, die festlegt, was Agenten sehen dürfen, konnte nicht gelesen werden. Der Agent erhält nichts, bis sie korrigiert ist.",
   "acp.fail.startFailed": "Das Programm des Agenten konnte nicht gestartet werden.",
+  "acp.fail.notAllowed": "Du hast den Start des Programms des Agenten nicht erlaubt.",
   "acp.fail.timedOut": "Der Agent hat nicht rechtzeitig geantwortet.",
   "acp.fail.initFailed":
     "Dieses Programm hat nicht wie ein Agent geantwortet, mit dem PerMark sprechen kann. Prüfe den Befehl und versuche es erneut.",
@@ -3289,6 +3290,7 @@ export default {
   "acp.fail.sendFailed": "Die Nachricht konnte nicht an den Agenten übergeben werden.",
   "acp.error.relativeProgram":
     "Den vollständigen Pfad des Programms angeben oder nur seinen Namen.",
+  "acp.error.commandTooLong": "Der Befehl ist zu lang (höchstens 1000 Zeichen).",
   "acp.error.networkProgram":
     "PerMark startet nur Programme auf diesem Computer, nicht aus einem Netzwerkordner.",
   "acp.error.oneChoice": "Einen Agenten wählen oder einen Befehl eingeben.",

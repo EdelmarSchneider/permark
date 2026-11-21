@@ -1162,6 +1162,8 @@ function failKey(code: AcpErrorCode): MessageKey {
       return "acp.fail.rulesUnreadable";
     case "startFailed":
       return "acp.fail.startFailed";
+    case "notAllowed":
+      return "acp.fail.notAllowed";
     case "timedOut":
       return "acp.fail.timedOut";
     case "initFailed":
@@ -1270,6 +1272,8 @@ function detailKey(detail: string | null): MessageKey | null {
       return "acp.error.networkProgram";
     case "relativeProgram":
       return "acp.error.relativeProgram";
+    case "tooLong":
+      return "acp.error.commandTooLong";
     case "oneChoice":
       return "acp.error.oneChoice";
     case "noProfile":

@@ -416,7 +416,7 @@ export default {
   "role.copilot": "Instruções para o Copilot",
   "role.model-card": "Cartão de modelo",
   "role.dataset-card": "Cartão de conjunto de dados",
-  "structured.mode": "Vista",
+  "structured.mode": "Apresentação",
   "structured.tree": "Árvore",
   "structured.source": "Código-fonte",
   "structured.invalid": "Isto não é válido, por isso é apresentado como texto.",
@@ -3249,6 +3249,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "Não foi possível ler um ficheiro que define o que os agentes podem ver. O agente não recebe nada até ser corrigido.",
   "acp.fail.startFailed": "Não foi possível iniciar o programa do agente.",
+  "acp.fail.notAllowed": "Não permitiu que o programa do agente fosse iniciado.",
   "acp.fail.timedOut": "O agente não respondeu a tempo.",
   "acp.fail.initFailed":
     "Este programa não respondeu como um agente com o qual o PerMark consiga comunicar. Verifique o comando e tente novamente.",
@@ -3261,6 +3262,7 @@ export default {
   "acp.fail.exited": "O programa do agente fechou inesperadamente.",
   "acp.fail.sendFailed": "Não foi possível entregar a mensagem ao agente.",
   "acp.error.relativeProgram": "Escreva o caminho completo do programa, ou apenas o nome.",
+  "acp.error.commandTooLong": "O comando é demasiado longo (no máximo 1000 caracteres).",
   "acp.error.networkProgram":
     "O PerMark só inicia programas deste computador, não de uma pasta de rede.",
   "acp.error.oneChoice": "Escolha um agente ou escreva um comando.",

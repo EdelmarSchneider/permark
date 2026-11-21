@@ -426,7 +426,7 @@ export default {
   "role.copilot": "Instrucțiuni pentru Copilot",
   "role.model-card": "Fișa modelului",
   "role.dataset-card": "Fișa setului de date",
-  "structured.mode": "Vizualizare",
+  "structured.mode": "Afișare",
   "structured.tree": "Arbore",
   "structured.source": "Sursă",
   "structured.invalid": "Conținutul nu este valid, așa că este afișat ca text.",
@@ -3387,6 +3387,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "Un fișier care stabilește ce pot vedea agenții nu a putut fi citit. Agentul nu primește nimic până când nu este corectat.",
   "acp.fail.startFailed": "Programul agentului nu a putut fi pornit.",
+  "acp.fail.notAllowed": "Nu ai permis pornirea programului agentului.",
   "acp.fail.timedOut": "Agentul nu a răspuns la timp.",
   "acp.fail.initFailed":
     "Acest program nu a răspuns ca un agent cu care PerMark poate comunica. Verifică comanda și încearcă din nou.",
@@ -3400,6 +3401,7 @@ export default {
   "acp.fail.exited": "Programul agentului s-a închis neașteptat.",
   "acp.fail.sendFailed": "Mesajul nu a putut fi transmis agentului.",
   "acp.error.relativeProgram": "Scrie calea completă a programului sau doar numele lui.",
+  "acp.error.commandTooLong": "Comanda este prea lungă (cel mult 1000 de caractere).",
   "acp.error.networkProgram":
     "PerMark pornește doar programe de pe acest computer, nu dintr-un folder din rețea.",
   "acp.error.oneChoice": "Alege un singur agent sau scrie o singură comandă.",

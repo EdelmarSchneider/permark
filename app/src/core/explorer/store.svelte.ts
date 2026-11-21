@@ -534,6 +534,14 @@ export class ExplorerStore {
     }
   }
 
+  /** The keyboard reached the tree with no shown row to name: the first selected row shown, else the first row, so a
+   *  screen reader hears a row at once and not only the tree. Names it only: the selection stays as it is. */
+  enter(): void {
+    const keys = this.rows.filter((r) => r.type === "node").map(rowKey);
+    if (this.focus !== null && keys.includes(this.focus)) return;
+    this.focus = keys.find((key) => this.selection.has(key)) ?? keys[0] ?? null;
+  }
+
   /** Arrow keys: the row `step` away from the focused one (clamped). */
   move(step: number, extend: boolean): void {
     const keys = this.rows.filter((r) => r.type === "node").map(rowKey);

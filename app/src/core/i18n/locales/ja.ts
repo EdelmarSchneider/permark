@@ -414,7 +414,7 @@ export default {
   "role.copilot": "Copilot 向けの指示",
   "role.model-card": "モデルカード",
   "role.dataset-card": "データセットカード",
-  "structured.mode": "表示",
+  "structured.mode": "表示形式",
   "structured.tree": "ツリー",
   "structured.source": "ソース",
   "structured.invalid": "有効ではないため、テキストとして表示しています。",
@@ -3241,6 +3241,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "エージェントが見られる範囲を定めるファイルを読み込めませんでした。修正されるまで、エージェントには何も渡されません。",
   "acp.fail.startFailed": "エージェントのプログラムを起動できませんでした。",
+  "acp.fail.notAllowed": "エージェントのプログラムの起動は許可されませんでした。",
   "acp.fail.timedOut": "エージェントが時間内に応答しませんでした。",
   "acp.fail.initFailed":
     "このプログラムは、PerMark が通信できるエージェントとして応答しませんでした。コマンドを確認して、もう一度お試しください。",
@@ -3254,6 +3255,7 @@ export default {
   "acp.fail.exited": "エージェントのプログラムが予期せず終了しました。",
   "acp.fail.sendFailed": "メッセージをエージェントに渡せませんでした。",
   "acp.error.relativeProgram": "プログラムのフルパスか、名前だけを書いてください。",
+  "acp.error.commandTooLong": "コマンドが長すぎます（最大 1000 文字）。",
   "acp.error.networkProgram":
     "PerMark はこのコンピューター上のプログラムだけを起動します。ネットワーク フォルダーからは起動しません。",
   "acp.error.oneChoice": "エージェントを 1 つ選ぶか、コマンドを 1 つ入力してください。",

@@ -79,6 +79,9 @@
   let stopPress: (() => void) | null = null;
   let suppressClick = false;
   let handledScroll = 0;
+  /** A press inside the tree is under way: the focus it gives the tree names no row (the click chooses one, a click on
+   *  the empty part none; a row named then would be drawn only for the keyboard, and Delete would act on it unseen). */
+  let pressing = false;
 
   /** The keys of Refresh as the keyboard map has them now (`null`: none). */
   const refreshKeys = $derived(keyHint("explorer.refresh"));
@@ -908,6 +911,12 @@
       tabindex="0"
       onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}
       oncontextmenu={onbackground}
+      onpointerdown={() => (pressing = true)}
+      onpointerup={() => (pressing = false)}
+      onfocus={() => {
+        if (!pressing) store.enter();
+        pressing = false;
+      }}
       {onkeydown}
     >
       {#if display.length === 0}

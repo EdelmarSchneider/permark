@@ -436,7 +436,7 @@ export default {
   "role.copilot": "Інструкції для Copilot",
   "role.model-card": "Картка моделі",
   "role.dataset-card": "Картка набору даних",
-  "structured.mode": "Подання",
+  "structured.mode": "Відображення",
   "structured.tree": "Дерево",
   "structured.source": "Вихідний текст",
   "structured.invalid": "Вміст недійсний, тому його показано як текст.",
@@ -3350,6 +3350,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "Не вдалося прочитати файл, який визначає, що можуть бачити агенти. Агент нічого не отримає, доки файл не буде виправлено.",
   "acp.fail.startFailed": "Не вдалося запустити програму агента.",
+  "acp.fail.notAllowed": "Ви не дозволили запуск програми агента.",
   "acp.fail.timedOut": "Агент не відповів вчасно.",
   "acp.fail.initFailed":
     "Ця програма відповіла не як агент, з яким PerMark уміє спілкуватися. Перевірте команду і спробуйте ще раз.",
@@ -3362,6 +3363,7 @@ export default {
   "acp.fail.exited": "Програма агента несподівано закрилася.",
   "acp.fail.sendFailed": "Не вдалося передати повідомлення агентові.",
   "acp.error.relativeProgram": "Укажіть повний шлях до програми або лише її назву.",
+  "acp.error.commandTooLong": "Команда задовга (щонайбільше 1000 символів).",
   "acp.error.networkProgram":
     "PerMark запускає лише програми на цьому комп’ютері, а не з мережевої папки.",
   "acp.error.oneChoice": "Виберіть одного агента або введіть одну команду.",

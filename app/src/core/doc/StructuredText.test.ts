@@ -158,7 +158,8 @@ describe("StructuredText roles", () => {
     expect(target.querySelector("[role=radiogroup], [role=radio]")).toBeNull();
     const modes = target.querySelector(".segments");
     expect(modes?.getAttribute("role")).toBe("group");
-    expect(modes?.getAttribute("aria-label")).toBe("View");
+    // not "View": that is the name of the document's View | Edit mode button beside it
+    expect(modes?.getAttribute("aria-label")).toBe("Display");
     const pressed = (): (string | null)[] =>
       [...target.querySelectorAll(".segment")].map((el) => el.getAttribute("aria-pressed"));
     expect(pressed()).toEqual(["true", "false"]);
