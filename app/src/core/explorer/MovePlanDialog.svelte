@@ -136,6 +136,8 @@
     inset: 0;
     z-index: 50;
     display: grid;
+    /* one row as tall as the window: an auto row grows to the dialog's content and caps nothing */
+    grid-template-rows: minmax(0, 1fr);
     place-items: center;
     padding: var(--sp-5);
     background: var(--backdrop);
@@ -187,6 +189,10 @@
     border-radius: var(--radius-control);
     background: var(--surface);
   }
+  .skipped {
+    min-height: 0;
+    overflow: auto;
+  }
   ul {
     margin: 0;
     padding: 0;
@@ -216,6 +222,7 @@
   }
   footer {
     display: flex;
+    flex-shrink: 0;
     justify-content: flex-end;
     gap: var(--sp-2);
   }

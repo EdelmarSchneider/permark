@@ -18,6 +18,7 @@ const { ContributionRegistry, PluginHost, pluginLoaders, CORE_OWNER } =
   await import("../../core/plugins/registry.svelte");
 const { contributions } = await import("../../core/plugins/instance.svelte");
 const { ConvertStore, converter } = await import("./store.svelte");
+const { documents } = await import("../../core/doc/document.svelte");
 const model = await import("./model");
 const { default: ConvertDialog } = await import("./ConvertDialog.svelte");
 const { default: CodeBlock } = await import("../highlight/CodeBlock.svelte");
@@ -65,6 +66,57 @@ describe("what the plugin adds", () => {
     expect(menu?.applies("data", true)).toBe(false);
     expect(host.disable("convert"), "contributions left after deactivate").toBe(0);
     expect(registry.items).toHaveLength(0);
+  });
+});
+
+describe("the palette command", () => {
+  function select(node: Node): void {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const selection = document.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }
+
+  it("converts the selection of the page; text selected anywhere else leaves the file as the source", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    await host.enable("convert");
+    const command = registry.of("command").find((c) => c.id === "convert.open");
+    if (command === undefined) throw new Error("no command");
+    const shown = vi.spyOn(documents, "path", "get").mockReturnValue("data/users.json");
+    const open = vi.spyOn(converter, "open").mockImplementation(() => {});
+    try {
+      const panel = document.createElement("div");
+      panel.textContent = '{"in":"a panel"}';
+      const block = document.createElement("p");
+      block.setAttribute("data-b", "b1");
+      block.textContent = '{"in":"the page"}';
+      document.body.append(panel, block);
+
+      select(panel);
+      void command.run();
+      expect(open).toHaveBeenLastCalledWith({ kind: "file", path: "data/users.json" });
+
+      select(block);
+      void command.run();
+      expect(open).toHaveBeenLastCalledWith({
+        kind: "text",
+        text: '{"in":"the page"}',
+        language: null,
+        beside: "data/users.json",
+      });
+
+      // a document that is not data and a selection outside the page: nothing to convert
+      shown.mockReturnValue("notes/today.md");
+      select(panel);
+      expect(command.when?.()).toBe(false);
+    } finally {
+      document.getSelection()?.removeAllRanges();
+      shown.mockRestore();
+      open.mockRestore();
+      host.disable("convert");
+    }
   });
 });
 

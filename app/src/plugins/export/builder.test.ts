@@ -243,6 +243,34 @@ describe("export page", () => {
     expect(outcome.notes).toEqual([{ kind: "video", name: "big.mp4" }]);
   });
 
+  it("stops carrying files once the page holds its limit: later ones leave their stand-in and a note", async () => {
+    serve({
+      "a.png": { bytes: 8, type: "image/png" },
+      "b.png": { bytes: 8, type: "image/png" },
+      "c.png": { bytes: 8, type: "image/png" },
+      "clip.mp4": { bytes: 10, type: "video/mp4" },
+    });
+    // each picture is a data URI of 34 characters: two fit in 80, the third and the video do not
+    const outcome = await run(
+      await apiWith(
+        '<p><img src="pm-asset:a.png" alt="A"></p>',
+        '<p><img src="pm-asset:b.png" alt="B"></p>',
+        '<p><img src="pm-asset:c.png" alt="Third"></p>',
+        '<p><video src="pm-asset:clip.mp4" controls></video></p>',
+      ),
+      { maxPageBytes: 80 },
+    );
+    if (outcome.status !== "done") throw new Error("not built");
+    expect(outcome.html.match(/<img[^>]+src="data:image\/png;base64,/g)).toHaveLength(2);
+    expect(outcome.html).toContain("Third");
+    expect(outcome.html).not.toMatch(/<video/);
+    expect(outcome.html).toContain("Video left out: clip.mp4");
+    expect(outcome.notes).toEqual([
+      { kind: "picture", name: "c.png" },
+      { kind: "video", name: "clip.mp4" },
+    ]);
+  });
+
   it("paper: a video becomes its still, a sound a note", async () => {
     serve({
       "clip.mp4": { bytes: 10, type: "video/mp4" },
