@@ -1,5 +1,5 @@
 // Marks in Edit mode (session `marks`), one decoration set per layer: text offsets -> document positions
-// (`docRange`), an inline decoration per range found (an empty range: a caret-width widget), the current one with its
+// (`docRanges`), an inline decoration per range found (an empty range: a caret-width widget), the current one with its
 // own class; set by a meta transaction kept out of the undo history, each layer mapped through every change until its
 // next set, and a set of one layer never touches another's. A range not found in its block (markup inside, a locked
 // block) gets no mark. A click on one picks it and leaves the caret alone; a right-click opens its layer's menu when it
@@ -18,7 +18,7 @@ import {
 } from "../marks";
 import type { TextRange } from "../session.svelte";
 import type { Composed } from "./compose";
-import { docRange } from "./edits";
+import { docRanges } from "./edits";
 
 type Layer = MarkHandlers & { set: DecorationSet };
 /** Every layer, and all their decorations as one set (what the view draws). */
@@ -53,7 +53,11 @@ export function marksPlugin(): Plugin<Marks> {
         if (meta.marks === null) layers.delete(meta.layer);
         else layers.set(meta.layer, meta.marks);
         if (layers.size === 0) return NONE;
-        const all = [...layers.values()].flatMap((l) => l.set.find());
+        const sets = [...layers.values()];
+        // one layer: its own set is the one drawn (a set made again from its marks is the same, at the same cost as
+        // the first: every top-level block against every mark)
+        if (sets.length === 1 && sets[0]) return { layers, all: sets[0].set };
+        const all = sets.flatMap((l) => l.set.find());
         return { layers, all: DecorationSet.create(state.doc, all) };
       },
     },
@@ -95,8 +99,7 @@ export function setMarks(
   const doc = view.state.doc;
   const base = options.className;
   const decorations: Decoration[] = [];
-  ranges.forEach((range, index) => {
-    const found = docRange(doc, composed, range);
+  docRanges(doc, composed, ranges).forEach((found, index) => {
     if (found === null) return;
     const now = index === current;
     decorations.push(
@@ -129,4 +132,27 @@ export function markAt(state: EditorState, layer: string = DEFAULT_LAYER): numbe
   const found = marksKey.getState(state)?.layers.get(layer)?.set.find(head, head) ?? [];
   const index: unknown = found[0]?.spec.index;
   return typeof index === "number" ? index : null;
+}
+
+/** Index of the first of `ranges` (offsets of `composed.text`, sorted, not overlapping) holding the caret, also right
+ *  at its edges, among those `setMarks` would mark: what `markAt` answers once they are marked; `null`: none. Only
+ *  the ranges inside the caret's top-level block are placed (a mark never leaves its block). */
+export function rangeAt(
+  state: EditorState,
+  composed: Composed,
+  ranges: readonly TextRange[],
+): number | null {
+  const head = state.selection.head;
+  const block = composed.ranges[state.selection.$head.index(0)];
+  if (!block) return null;
+  const near: number[] = [];
+  const inBlock: TextRange[] = [];
+  ranges.forEach((range, index) => {
+    if (block.from > range.from || range.to > block.to) return;
+    near.push(index);
+    inBlock.push(range);
+  });
+  const found = docRanges(state.doc, composed, inBlock);
+  const at = found.findIndex((place) => place !== null && place.from <= head && head <= place.to);
+  return at < 0 ? null : (near[at] ?? null);
 }

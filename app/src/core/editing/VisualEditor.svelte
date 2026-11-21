@@ -586,6 +586,10 @@
             mod.setMarks(core.view, now, ranges, current, pick, layer, options);
         },
         markAt: (layer) => (core && mod ? mod.markAt(core.view.state, layer) : null),
+        rangeAt: (ranges) => {
+          const now = composed();
+          return core && mod && now ? mod.rangeAt(core.view.state, now, ranges) : null;
+        },
         spellcheck: (on) => core?.setSpellcheck(on),
         composing: () => core?.view.composing ?? false,
         lost: () => (composed()?.lost.length ?? 0) > 0,

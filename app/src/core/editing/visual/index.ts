@@ -23,7 +23,7 @@ export {
   scopeIn,
   selectRange,
 } from "./edits";
-export { markAt, marksPlugin, setMarks } from "./marks";
+export { markAt, marksPlugin, rangeAt, setMarks } from "./marks";
 export { editFinder } from "./find";
 export { emptyHint } from "./placeholder";
 export { repaintLooks } from "./inlineLooks";

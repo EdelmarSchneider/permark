@@ -156,3 +156,19 @@ export function markAt(state: EditorState, layer: string = DEFAULT_LAYER): numbe
     });
   return found;
 }
+
+/** Index of the first of `ranges` holding the caret (also right at its edges) among those `marksEffect` would mark:
+ *  what `markAt` answers once they are marked; `null`: none. */
+export function rangeAt(state: EditorState, ranges: readonly TextRange[]): number | null {
+  const head = state.selection.main.head;
+  const length = state.doc.length;
+  const at = ranges.findIndex(
+    (range) =>
+      range.from >= 0 &&
+      range.to <= length &&
+      range.from <= range.to &&
+      range.from <= head &&
+      head <= range.to,
+  );
+  return at < 0 ? null : at;
+}

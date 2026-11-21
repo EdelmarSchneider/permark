@@ -52,6 +52,7 @@ export type SpellingSession = Pick<
   | "apply"
   | "marks"
   | "markAt"
+  | "rangeAt"
   | "composing"
   | "setNativeSpellcheck"
   | "reveal"
@@ -630,17 +631,18 @@ export class SpellingStore {
 
   // ---- marks ---------------------------------------------------------------------------------------------------
 
-  /** Marks `list`; `typing`: the word at the caret is held back (`only`: just when it is still that word). */
+  /** Marks `list`; `typing`: the word at the caret is held back (`only`: just when it is still that word). One
+   *  drawing: the word at the caret is found before the marks are set. */
   #draw(list: readonly Word[], typing: boolean, only: Word | null = null): void {
     this.#found = list;
     this.#held = null;
-    this.#show(list);
-    if (!typing) return;
     // the word being typed is not done yet
-    const at = this.#session.markAt(LAYER);
+    const at = typing ? this.#session.rangeAt(list) : null;
     const word = at === null ? undefined : list[at];
-    if (word === undefined || (only !== null && (word.from !== only.from || word.to !== only.to)))
+    if (word === undefined || (only !== null && (word.from !== only.from || word.to !== only.to))) {
+      this.#show(list);
       return;
+    }
     this.#held = word;
     this.#show(list.filter((_, i) => i !== at));
   }

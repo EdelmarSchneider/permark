@@ -70,9 +70,12 @@ class FakeSession implements SpellingSession {
   };
   markAt = (layer = "correction"): number | null => {
     const last = this.last(layer);
+    return last === undefined ? null : this.rangeAt(last.ranges);
+  };
+  rangeAt = (ranges: readonly TextRange[]): number | null => {
     const caret = this.caret;
-    if (caret === null || last === undefined) return null;
-    const at = last.ranges.findIndex((r) => r.from <= caret && caret <= r.to);
+    if (caret === null) return null;
+    const at = ranges.findIndex((r) => r.from <= caret && caret <= r.to);
     return at < 0 ? null : at;
   };
   composing = (): boolean => this.composingNow;
@@ -192,6 +195,23 @@ describe("marks", () => {
     session.caret = 16;
     await settle();
     expect(session.marked()).toEqual(["wrold"]);
+  });
+
+  it("one drawing per pass while typing, the word at the caret left out of it", async () => {
+    await startWith("Hello wrold and teh");
+    expect(session.marked()).toEqual(["wrold", "teh"]);
+    const before = session.drawn.length;
+    session.text = "Hello wrold and teh nwe";
+    session.caret = 23;
+    await settle();
+    expect(session.drawn.length - before).toBe(1);
+    expect(session.marked()).toEqual(["wrold", "teh"]);
+    // the caret on no word: the whole list in one drawing
+    session.text = "Hello wrold and teh nwe text";
+    session.caret = 0;
+    await settle();
+    expect(session.drawn.length - before).toBe(2);
+    expect(session.marked()).toEqual(["wrold", "teh", "nwe"]);
   });
 
   it("nothing while text is composed; the pass waits for the composition to end", async () => {

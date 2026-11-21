@@ -85,6 +85,9 @@ export type ActiveEditor = {
   ): void;
   /** Index (in the last `marks` of `layer`) of the mark holding the caret; `null`: none. */
   markAt?(layer: string): number | null;
+  /** Index of the first of `ranges` (sorted, not overlapping) holding the caret, also right at its edges: what
+   *  `markAt` would answer were they marked, without marking them; `null`: none. */
+  rangeAt?(ranges: readonly TextRange[]): number | null;
   /** The webview's own spellcheck over the text on | off. */
   spellcheck?(on: boolean): void;
   /** Text is being composed (IME): edits wait. */
@@ -505,6 +508,12 @@ export class EditingSession {
   /** Index of the mark of `layer` holding the caret in the editor on screen (`null`: none, or no editor offers it). */
   markAt(layer: string = DEFAULT_LAYER): number | null {
     return this.#editor?.markAt?.(layer) ?? null;
+  }
+
+  /** Index of the first of `ranges` holding the caret in the editor on screen, as `markAt` would answer once they are
+   *  marked (`null`: none, or no editor offers it). Lets a layer leave a mark out without drawing twice. */
+  rangeAt(ranges: readonly TextRange[]): number | null {
+    return this.#editor?.rangeAt?.(ranges) ?? null;
   }
 
   /** The webview's own spellcheck over the editors' text (on unless a feature checks the words itself). */
