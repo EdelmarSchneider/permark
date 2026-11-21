@@ -96,6 +96,39 @@ afterEach(() => {
 });
 
 describe("the Assistant panel", () => {
+  it("names a rule file it could not read, why, and whether its last rules stand in or the agent is kept out", () => {
+    if (acp.status === null) throw new Error("no status");
+    acp.status = {
+      ...acp.status,
+      rules: { file: ".aiignore", why: "tooLarge", fallback: "lastGood" },
+    };
+    open();
+    const line = (): HTMLElement | null =>
+      [...root.querySelectorAll<HTMLElement>("header .note")].find((n) =>
+        n.textContent?.includes(".aiignore"),
+      ) ?? null;
+    expect(line()?.textContent).toBe(
+      "Couldn't read .aiignore: it's too large. PerMark uses the last rules from it that worked until you fix it.",
+    );
+    expect(line()?.classList.contains("warning")).toBe(true);
+    acp.status = {
+      ...acp.status,
+      rules: { file: "sub/.permark/config.toml", why: "notToml", fallback: "closed" },
+    };
+    flushSync();
+    const closed = [...root.querySelectorAll<HTMLElement>("header .note")].find((n) =>
+      n.textContent?.includes("sub/.permark/config.toml"),
+    );
+    expect(closed?.textContent).toBe(
+      "Couldn't read sub/.permark/config.toml: it isn't valid TOML. Agents get nothing it covers until you fix it.",
+    );
+    expect(closed?.classList.contains("refusal")).toBe(true);
+    const { rules: _gone, ...rest } = acp.status;
+    acp.status = rest;
+    flushSync();
+    expect(root.querySelector("header")?.textContent).not.toContain("Couldn't read");
+  });
+
   it("explains itself while the conversation is empty and names the agent", () => {
     open();
     expect(root.textContent).toContain(t("acp.empty"));

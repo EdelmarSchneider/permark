@@ -4,6 +4,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 
+use super::agent_view::{RulesFallback, RulesProblem};
 use super::fsm::ProjectMarker;
 use super::record::HiddenRule;
 use super::uid::ProjectUid;
@@ -15,12 +16,25 @@ pub struct AgentRules {
     pub aiignore: Vec<String>,
     pub deny_paths: Vec<String>,
     pub deny: BTreeSet<String>,
+    /// Its rule files that could not be read: each stands on its last good rules, or closes what the folder governs.
+    pub problems: Vec<RulesProblem>,
 }
 
 impl AgentRules {
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.aiignore.is_empty() && self.deny_paths.is_empty() && self.deny.is_empty()
+        self.aiignore.is_empty()
+            && self.deny_paths.is_empty()
+            && self.deny.is_empty()
+            && self.problems.is_empty()
+    }
+
+    /// A rule file of the folder could not be read and has no last good rules: nothing it governs is shared.
+    #[must_use]
+    pub fn closed(&self) -> bool {
+        self.problems
+            .iter()
+            .any(|p| p.fallback == RulesFallback::Closed)
     }
 }
 

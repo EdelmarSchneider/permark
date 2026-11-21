@@ -298,6 +298,11 @@ fn write(root: &Path, path: &str, text: &str) {
 }
 
 fn fx() -> Fx {
+    fx_with(|_| {})
+}
+
+/// [`fx`] with `prepare` run on the project folder before the app opens it.
+fn fx_with(prepare: impl FnOnce(&Path)) -> Fx {
     let dir = tempfile::Builder::new().prefix("pma").tempdir().unwrap();
     let root = dunce::canonicalize(dir.path()).unwrap().join("proj");
     for (path, text) in [
@@ -321,6 +326,7 @@ fn fx() -> Fx {
     ] {
         write(&root, path, text);
     }
+    prepare(&root);
     let dirs = AppDirs::under(&dir.path().join("state"));
     let sink = Arc::new(Rec::default());
     let env = Arc::new(CoreEnv::new(
@@ -704,6 +710,84 @@ fn device_names_huge_or_binary_files_and_other_spellings_never_get_through() {
     }
 }
 
+/// A rule file that cannot be read never counts as "no rules": with no earlier good read of it every tool refuses,
+/// saying why and that the person must fix it, never naming the file (its name and place are the rules' to keep);
+/// once read well, its last good rules stand in and tools answer. The settings name the file.
+#[test]
+fn an_unreadable_rule_file_refuses_every_tool_until_last_good_rules_stand_in() {
+    // never read well in this profile: a folder where the file belongs from the start
+    let fx = fx_with(|root| {
+        std::fs::remove_file(root.join(".aiignore")).unwrap();
+        std::fs::create_dir(root.join(".aiignore")).unwrap();
+    });
+    fx.on();
+    let tools = fx.tools();
+    for (tool, _) in crate::tools::TOOLS {
+        let refused = tools.call(
+            tool,
+            json!({ "path": "README.md", "id": "c1", "note": "n" }),
+        );
+        assert_eq!(
+            refused,
+            Err(ToolError::RulesUnreadable("not a file".to_owned())),
+            "{tool}"
+        );
+    }
+    let refusal = ToolError::RulesUnreadable("not a file".to_owned());
+    assert_eq!(
+        ToolError::from_wire(refusal.code(), &refusal.to_string()),
+        refusal
+    );
+    let line = crate::render::error("read", &refusal);
+    assert!(
+        line.starts_with("ERR rulesUnreadable: ")
+            && line.contains("(not a file)")
+            && !line.contains(".aiignore")
+            && line.contains("person"),
+        "{line}"
+    );
+    assert!(tools.guard_now(Duration::ZERO).is_err());
+    let status = fx.rpc("status", json!({})).unwrap();
+    assert_eq!(
+        status["rules"],
+        json!({ "file": ".aiignore", "why": "notAFile", "fallback": "closed" })
+    );
+
+    // read well: kept as the last good rules
+    std::fs::remove_dir(fx.root.join(".aiignore")).unwrap();
+    write(&fx.root, ".aiignore", "private/\n");
+    assert!(tools.call("read", json!({ "path": "README.md" })).is_ok());
+    assert!(fx.rpc("status", json!({})).unwrap().get("rules").is_none());
+
+    // too large now (a cut would lose rules): the last good ones hide what they hid, the rest answers
+    let big = format!("private/\n{}", "#".repeat(1_153_434));
+    write(&fx.root, ".aiignore", &big);
+    assert!(tools.call("read", json!({ "path": "README.md" })).is_ok());
+    assert!(not_found(
+        tools.call("read", json!({ "path": "private/secret.md" }))
+    ));
+    assert_eq!(
+        fx.rpc("status", json!({})).unwrap()["rules"],
+        json!({ "file": ".aiignore", "why": "tooLarge", "fallback": "lastGood" })
+    );
+
+    // the team file left with a merge conflict: its last good `deny_paths` still hide
+    write(
+        &fx.root,
+        ".permark/config.toml",
+        "<<<<<<< HEAD\n[agent]\ndeny_paths = []\n",
+    );
+    assert!(not_found(
+        tools.call("read", json!({ "path": "denied/x.md" }))
+    ));
+    assert!(tools.call("read", json!({ "path": "README.md" })).is_ok());
+    // the one told first: the team file has last good rules too, the `.aiignore` problem comes first
+    assert_eq!(
+        fx.rpc("status", json!({})).unwrap()["rules"]["file"],
+        ".aiignore"
+    );
+}
+
 /// The text and the JSON of an MCP answer.
 fn mcp_answer(tool: &str, value: &Value, structured: bool) -> (String, Option<Value>) {
     let done =
@@ -844,6 +928,29 @@ fn hidden_files_never_reach_any_list_or_snippet() {
     ));
     let search = tools.call("search", json!({ "query": "launch" })).unwrap();
     assert!(!search.to_string().contains("docs/plan.md"), "{search}");
+}
+
+/// A rule file names what agents may not see: no tool lists, reads, outlines or finds one (the folder's or any other).
+#[test]
+fn rule_files_never_reach_any_tool() {
+    let fx = fx_with(|root| write(root, "docs/.aiignore", "drafts/\n"));
+    fx.on();
+    let tools = fx.tools();
+    let map = tools.call("map", json!({ "depth": 5 })).unwrap();
+    assert!(map.to_string().contains("docs/plan.md"), "{map}");
+    assert!(!map.to_string().contains(".aiignore"), "{map}");
+    for path in [".aiignore", "docs/.aiignore"] {
+        for tool in ["read", "outline", "open"] {
+            assert!(
+                not_found(tools.call(tool, json!({ "path": path }))),
+                "{tool} {path}"
+            );
+        }
+    }
+    for query in ["aiignore", "drafts", "agents never"] {
+        let search = tools.call("search", json!({ "query": query })).unwrap();
+        assert!(!search.to_string().contains(".aiignore"), "{search}");
+    }
 }
 
 #[cfg(unix)]
@@ -2247,6 +2354,161 @@ fn the_agent_proxies_to_the_app_and_refuses_while_it_is_closed() {
 
 fn no_launch() -> crate::cli::Launcher {
     Arc::new(|_: &Path| Ok(()))
+}
+
+/// An answer far longer than a request line crosses the socket whole; the agent reads it cut at the ceiling.
+#[test]
+fn a_long_answer_crosses_the_socket_and_is_cut_at_the_ceiling() {
+    use crate::format::CEILING_CHARS;
+    let fx = fx();
+    fx.on();
+    fx.comments.0.lock().unwrap().extend(
+        (0..100).map(|i| comment(&format!("m{i}"), "README.md", &"quoted words ".repeat(77))),
+    );
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let agent = Agent::discover(&fx.dirs, &fx.root, no_launch());
+    let list = agent
+        .call("list_comments", &json!({ "which": "all" }))
+        .unwrap();
+    assert_eq!(list["comments"].as_array().unwrap().len(), 100);
+    assert!(list.to_string().len() as u64 > ipc_local::MAX_LINE);
+    for structured in [false, true] {
+        let (text, _) = mcp_answer("list_comments", &list, structured);
+        assert!(text.chars().count() <= CEILING_CHARS, "{structured}");
+        assert!(
+            text.ends_with(&format!("…cut ceiling={CEILING_CHARS}\n")),
+            "{structured}: {}",
+            &text[text.len() - 80..]
+        );
+    }
+}
+
+/// Unread markers whose first look never ends in time: each wait takes the whole time it is given.
+struct NeverReady;
+
+impl UnreadLookup for NeverReady {
+    fn unread(&self) -> UnreadNow {
+        UnreadNow {
+            ready: false,
+            paths: std::iter::empty().collect(),
+        }
+    }
+    fn wait_ready(&self, timeout: Duration) -> bool {
+        std::thread::sleep(timeout);
+        false
+    }
+}
+
+/// A call that waits its whole time for a first look still reaches the agent, as the partial answer it was made to be
+/// (the real waits fit the agent's call timeout: a const assert beside them).
+#[test]
+fn a_call_waiting_for_a_first_look_answers_partially_through_the_socket() {
+    let fx = fx();
+    fx.on();
+    let _slow = fx
+        .core()
+        .services()
+        .services
+        .provide(Arc::new(UnreadApi(Arc::new(NeverReady))));
+    let wait = Duration::from_millis(300);
+    let events = PluginCx::new(
+        PluginId::of("agent"),
+        CxWorkspace::Project(fx.core().vault().clone()),
+        fx.root.clone(),
+        None,
+        permark_core::conditions::Context::welcome(Distribution::Direct),
+        fx.sink.clone(),
+    )
+    .events()
+    .clone();
+    let hub = crate::server::Hub::new(
+        fx.tools().with_ready_wait(wait),
+        Arc::clone(&fx.core().services().facts),
+        events,
+    );
+    let switch = crate::server::Switch::new(hub, Ok(fx.endpoint()));
+    switch.apply();
+    let agent = Agent::discover(&fx.dirs, &fx.root, no_launch()).with_call_timeout(wait * 10);
+    let started = Instant::now();
+    let answer = agent.call("list_unread", &Value::Null).unwrap();
+    assert_eq!(answer["ready"], false);
+    assert!(started.elapsed() >= wait);
+}
+
+/// An app that answers later than the agent waits reads as busy, never as a broken pipe.
+#[test]
+fn an_answer_later_than_the_wait_reads_as_busy() {
+    let fx = fx();
+    fx.on();
+    let _listener = ipc_local::Server::spawn(fx.endpoint().listen().unwrap(), |_: Value| {
+        std::thread::sleep(Duration::from_millis(600));
+        Response::of(Ok(json!({})))
+    })
+    .unwrap();
+    let agent = Agent::discover(&fx.dirs, &fx.root, no_launch())
+        .with_call_timeout(Duration::from_millis(100));
+    assert_eq!(agent.call("map", &Value::Null), Err(ToolError::Busy));
+}
+
+/// An app started for `open` that answers slowly never stretches the launch wait by a whole call timeout: each try
+/// fits what is left of the launch wait.
+#[test]
+fn a_slow_app_started_for_open_never_outlasts_the_launch_wait() {
+    let fx = fx();
+    fx.on();
+    let listening: Arc<Mutex<Vec<ipc_local::Server>>> = Arc::default();
+    let launcher: crate::cli::Launcher = {
+        let listening = Arc::clone(&listening);
+        let endpoint = fx.endpoint();
+        Arc::new(move |_: &Path| {
+            let server = ipc_local::Server::spawn(endpoint.listen().unwrap(), |_: Value| {
+                std::thread::sleep(Duration::from_secs(3));
+                Response::of(Ok(json!({})))
+            })
+            .unwrap();
+            listening.lock().unwrap().push(server);
+            Ok(())
+        })
+    };
+    let agent =
+        Agent::discover(&fx.dirs, &fx.root, launcher).with_launch_wait(Duration::from_millis(400));
+    let started = Instant::now();
+    let answer = agent.call("open", &json!({ "path": "docs/plan.md" }));
+    assert!(matches!(answer, Err(ToolError::Failed(_))), "{answer:?}");
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+/// Folders past the depth are counted up to a cap; the rest are counted in one number.
+#[test]
+fn folders_past_the_depth_are_capped_and_the_rest_counted() {
+    let over = crate::map::MAX_DIRS_CUT + 7;
+    let fx = fx_with(|root| {
+        for i in 0..over {
+            write(root, &format!("many/f{i:03}/a.md"), "# A\n");
+        }
+    });
+    fx.on();
+    let tools = fx.tools();
+    let map = tools
+        .call("map", json!({ "path": "many", "depth": 1 }))
+        .unwrap();
+    assert_eq!(
+        map["dirs_cut"].as_array().unwrap().len(),
+        crate::map::MAX_DIRS_CUT
+    );
+    assert_eq!(map["dirs_more"], 7);
+    let text = crate::render::render("map", &map);
+    assert!(
+        text.contains(&format!(
+            "\n-- dirs_cut n={} more=7\n",
+            crate::map::MAX_DIRS_CUT
+        )),
+        "{text}"
+    );
 }
 
 impl Fx {

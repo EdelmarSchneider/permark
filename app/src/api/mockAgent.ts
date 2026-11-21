@@ -2,6 +2,7 @@
 // published context and a status that a probe can fill (a connected client, requests). In memory.
 
 import type { HandOffSessionView } from "./generated/HandOffSessionView";
+import type { RulesProblem } from "./generated/RulesProblem";
 import { MockPluginError } from "./mockOrganizing";
 import type {
   AgentRequest,
@@ -47,6 +48,8 @@ export type AgentProbe = {
   replaceFolder(): void;
   /** The server fails to start (`inUse`: another PerMark serves the project; any other text: the reason) | runs. */
   fail(reason: string | null): void;
+  /** A rule file on what agents may see cannot be read (`AgentStatus.rules`) | every one reads well (`null`). */
+  rules(problem: RulesProblem | null): void;
   status(): AgentStatus;
   /** The hand-offs confirmed, as `{ upto, checked }`. */
   handedOff: { upto: number; checked: number[] }[];
@@ -117,6 +120,7 @@ export function createMockAgent(
   let focused = 0;
   const handedOff: { upto: number; checked: number[] }[] = [];
   let withheld = false;
+  let rules: RulesProblem | null = null;
   const status = (): AgentStatus => ({
     enabled,
     replaced,
@@ -129,6 +133,7 @@ export function createMockAgent(
     groups: { ...groups },
     denied: [],
     recent,
+    ...(rules === null ? {} : { rules }),
   });
   const announce = (): void => emit("agent:status", status());
   const handlers: Handlers = {
@@ -219,6 +224,10 @@ export function createMockAgent(
       },
       fail: (reason) => {
         failure = reason;
+        announce();
+      },
+      rules: (problem) => {
+        rules = problem;
         announce();
       },
       connect: (client, id = "mocksession01") => {

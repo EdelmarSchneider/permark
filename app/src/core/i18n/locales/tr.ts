@@ -1561,6 +1561,20 @@ export default {
   "agent.outcome.off": "kapalı",
   "agent.outcome.notOpen": "açık değil",
   "agent.outcome.error": "başarısız",
+  "agentRules.lastGood":
+    "{file} okunamadı: {why}. Düzeltene kadar PerMark bu dosyanın en son çalışan kurallarını kullanır.",
+  "agentRules.closed":
+    "{file} okunamadı: {why}. Düzeltene kadar ajanlar bu dosyanın kapsadığı hiçbir şeyi almaz.",
+  "agentRules.why.tooLarge": "çok büyük",
+  "agentRules.why.notText": "düz metin değil",
+  "agentRules.why.notToml": "geçerli TOML değil",
+  "agentRules.why.badValue": "ayarlarından birinin değer türü yanlış",
+  "agentRules.why.badPattern": "kalıplarından biri geçersiz",
+  "agentRules.why.notAFile": "normal bir dosya değil",
+  "agentRules.why.locked": "başka bir program kullanıyor",
+  "agentRules.why.denied": "PerMark'ın okuma izni yok",
+  "agentRules.why.failed": "okuma başarısız oldu",
+  "agent.outcome.rulesUnreadable": "kurallar okunamadı",
   "agent.open.notice": "Bir ajan size {path} öğesini göstermek istiyor.",
   "agent.open.show": "Göster",
   "agent.ask.resolve":
@@ -3183,6 +3197,8 @@ export default {
   "acp.fail.copyFailed": "PerMark, ajan için bu klasörün kopyasını hazırlayamadı.",
   "acp.fail.tooLarge": "Bu klasör, ajan için kopyalanamayacak kadar büyük.",
   "acp.fail.projectsNotReady": "PerMark bu klasörü hâlâ okuyor. Biraz sonra yeniden deneyin.",
+  "acp.fail.rulesUnreadable":
+    "Ajanların neleri görebileceğini belirleyen bir dosya okunamadı. Dosya düzeltilene kadar ajan hiçbir şey almaz.",
   "acp.fail.startFailed": "Ajanın programı başlatılamadı.",
   "acp.fail.timedOut": "Ajan zamanında yanıt vermedi.",
   "acp.fail.initFailed":

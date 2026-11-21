@@ -1569,6 +1569,20 @@ export default {
   "agent.outcome.off": "desactivat",
   "agent.outcome.notOpen": "no obert",
   "agent.outcome.error": "ha fallat",
+  "agentRules.lastGood":
+    "No s'ha pogut llegir {file}: {why}. El PerMark fa servir les últimes regles d'aquest fitxer que funcionaven fins que el corregeixis.",
+  "agentRules.closed":
+    "No s'ha pogut llegir {file}: {why}. Els agents no reben res del que cobreix fins que el corregeixis.",
+  "agentRules.why.tooLarge": "és massa gran",
+  "agentRules.why.notText": "no és text pla",
+  "agentRules.why.notToml": "no és TOML vàlid",
+  "agentRules.why.badValue": "un dels seus paràmetres té un tipus de valor incorrecte",
+  "agentRules.why.badPattern": "un dels seus patrons no és vàlid",
+  "agentRules.why.notAFile": "no és un fitxer normal",
+  "agentRules.why.locked": "un altre programa l'està fent servir",
+  "agentRules.why.denied": "el PerMark no té permís per llegir-lo",
+  "agentRules.why.failed": "no s'ha pogut llegir",
+  "agent.outcome.rulesUnreadable": "regles il·legibles",
   "agent.open.notice": "Un agent us vol mostrar {path}.",
   "agent.open.show": "Mostra",
   "agent.ask.resolve":
@@ -3216,6 +3230,8 @@ export default {
   "acp.fail.tooLarge": "Aquesta carpeta és massa gran per a copiar-la per a l'agent.",
   "acp.fail.projectsNotReady":
     "El PerMark encara està llegint aquesta carpeta. Torneu-ho a provar d'aquí a un moment.",
+  "acp.fail.rulesUnreadable":
+    "No s'ha pogut llegir un fitxer que defineix què poden veure els agents. L'agent no rep res fins que es corregeixi.",
   "acp.fail.startFailed": "No s'ha pogut iniciar el programa de l'agent.",
   "acp.fail.timedOut": "L'agent no ha respost a temps.",
   "acp.fail.initFailed":

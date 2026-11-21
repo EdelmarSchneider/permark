@@ -13,13 +13,16 @@ use permark_core::projects::agent_view::Guard;
 use serde_json::{json, Map, Value};
 
 use crate::structure;
-use crate::tools::{Tools, MAX_READ_BYTES, READY_WAIT};
+use crate::tools::{Tools, MAX_READ_BYTES};
 use crate::ToolError;
 
 /// Deepest and default depth.
 pub const DEPTH: (usize, usize) = (6, 2);
 /// Most files listed, and the default.
 pub const LIMIT: (usize, usize) = (500, 200);
+/// Most folders past the depth listed (by path; the rest counted in `dirs_more`): a wide tree never makes the answer
+/// outgrow what the agent reads.
+pub const MAX_DIRS_CUT: usize = 200;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Size {
@@ -99,7 +102,7 @@ pub fn map(
     let depth = depth.unwrap_or(DEPTH.1).clamp(1, DEPTH.0);
     let max = limit.unwrap_or(LIMIT.1).clamp(1, LIMIT.0);
     let index = &tools.services().search;
-    let ready = index.wait_ready(READY_WAIT);
+    let ready = index.wait_ready(tools.ready_wait());
     let prefix = if folder.is_empty() {
         String::new()
     } else {
@@ -186,8 +189,10 @@ pub fn map(
             Value::Object(row)
         })
         .collect();
+    let dirs_more = cut.len().saturating_sub(MAX_DIRS_CUT);
     let dirs_cut: Vec<Value> = cut
         .into_iter()
+        .take(MAX_DIRS_CUT)
         // past the depth only bytes are known (chars / 4): reading every file would cost the time saved
         .map(|(dir, (files, bytes))| json!({ "path": dir, "files": files, "size_tok": bytes.div_ceil(4) }))
         .collect();
@@ -201,6 +206,9 @@ pub fn map(
     });
     if !dirs_cut.is_empty() {
         answer["dirs_cut"] = json!(dirs_cut);
+    }
+    if dirs_more > 0 {
+        answer["dirs_more"] = json!(dirs_more);
     }
     if !ready {
         answer["partial"] = json!(true);

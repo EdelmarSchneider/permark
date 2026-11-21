@@ -1618,6 +1618,20 @@ export default {
   "agent.outcome.off": "wyłączone",
   "agent.outcome.notOpen": "nieotwarte",
   "agent.outcome.error": "niepowodzenie",
+  "agentRules.lastGood":
+    "Nie udało się odczytać {file}: {why}. Do czasu poprawienia PerMark używa ostatnich działających reguł z tego pliku.",
+  "agentRules.closed":
+    "Nie udało się odczytać {file}: {why}. Do czasu poprawienia agenci nie dostają niczego, co ten plik obejmuje.",
+  "agentRules.why.tooLarge": "jest za duży",
+  "agentRules.why.notText": "nie jest zwykłym tekstem",
+  "agentRules.why.notToml": "nie jest poprawnym TOML",
+  "agentRules.why.badValue": "jedno z jego ustawień ma niewłaściwy rodzaj wartości",
+  "agentRules.why.badPattern": "jeden z jego wzorców jest niepoprawny",
+  "agentRules.why.notAFile": "nie jest zwykłym plikiem",
+  "agentRules.why.locked": "używa go inny program",
+  "agentRules.why.denied": "PerMark nie ma uprawnień do jego odczytu",
+  "agentRules.why.failed": "odczyt się nie powiódł",
+  "agent.outcome.rulesUnreadable": "nieczytelne reguły",
   "agent.open.notice": "Agent chce ci pokazać {path}.",
   "agent.open.show": "Pokaż",
   "agent.ask.resolve":
@@ -3304,6 +3318,8 @@ export default {
   "acp.fail.copyFailed": "PerMark nie mógł przygotować kopii tego folderu dla agenta.",
   "acp.fail.tooLarge": "Ten folder jest zbyt duży, aby go skopiować dla agenta.",
   "acp.fail.projectsNotReady": "PerMark nadal wczytuje ten folder. Spróbuj ponownie za chwilę.",
+  "acp.fail.rulesUnreadable":
+    "Nie udało się odczytać pliku, który określa, co mogą widzieć agenci. Agent nie dostanie niczego, dopóki plik nie zostanie poprawiony.",
   "acp.fail.startFailed": "Nie udało się uruchomić programu agenta.",
   "acp.fail.timedOut": "Agent nie odpowiedział na czas.",
   "acp.fail.initFailed":

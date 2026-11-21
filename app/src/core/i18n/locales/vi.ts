@@ -1552,6 +1552,20 @@ export default {
   "agent.outcome.off": "tắt",
   "agent.outcome.notOpen": "chưa mở",
   "agent.outcome.error": "thất bại",
+  "agentRules.lastGood":
+    "Không đọc được {file}: {why}. PerMark dùng các quy tắc gần nhất còn hoạt động của tệp đó cho đến khi bạn sửa nó.",
+  "agentRules.closed":
+    "Không đọc được {file}: {why}. Agent không nhận được gì mà tệp đó bao quát cho đến khi bạn sửa nó.",
+  "agentRules.why.tooLarge": "tệp quá lớn",
+  "agentRules.why.notText": "không phải văn bản thuần",
+  "agentRules.why.notToml": "không phải TOML hợp lệ",
+  "agentRules.why.badValue": "một thiết lập trong đó có kiểu giá trị sai",
+  "agentRules.why.badPattern": "một mẫu trong đó không hợp lệ",
+  "agentRules.why.notAFile": "không phải tệp thông thường",
+  "agentRules.why.locked": "một chương trình khác đang dùng nó",
+  "agentRules.why.denied": "PerMark không có quyền đọc nó",
+  "agentRules.why.failed": "đọc không thành công",
+  "agent.outcome.rulesUnreadable": "không đọc được quy tắc",
   "agent.open.notice": "Một agent muốn chỉ cho bạn {path}.",
   "agent.open.show": "Hiện",
   "agent.ask.resolve":
@@ -3165,6 +3179,8 @@ export default {
   "acp.fail.copyFailed": "PerMark không thể chuẩn bị bản sao của thư mục này cho agent.",
   "acp.fail.tooLarge": "Thư mục này quá lớn để sao chép cho agent.",
   "acp.fail.projectsNotReady": "PerMark vẫn đang đọc thư mục này. Hãy thử lại sau giây lát.",
+  "acp.fail.rulesUnreadable":
+    "Không đọc được một tệp quy định những gì agent được xem. Agent không nhận được gì cho đến khi tệp được sửa.",
   "acp.fail.startFailed": "Không thể khởi động chương trình của agent.",
   "acp.fail.timedOut": "Agent không trả lời kịp thời.",
   "acp.fail.initFailed":

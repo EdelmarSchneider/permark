@@ -259,10 +259,16 @@ impl Plugin for Acp {
         let picks = cx
             .store()
             .map(|store| store.app_file::<Picks>(OPTIONS_FILE));
+        // the profile keeps the last good rules of a rule file that cannot be read
+        let project = Project::of(vault, services);
+        let project = match cx.store() {
+            Some(store) => project.with_store(store.clone()),
+            None => project,
+        };
         let session = Session::new(Host {
             agents: Agents::new(choice),
             launch: person_launch(),
-            project: Project::of(vault, services),
+            project,
             place: place.clone(),
             run: run.clone(),
             copy: Arc::clone(&copy),

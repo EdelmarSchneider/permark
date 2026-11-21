@@ -35,9 +35,10 @@ pub const PERMARK_DIR: &str = ".permark";
 /// Per-project files that ALWAYS stay in the profile (a project's files must never switch them). Initialize never
 /// copies them (nor a copy of one moved aside as unreadable) into `.permark/local/` (a copy there would never be
 /// read) and undoing it never carries one back ([`is_profile_only`]).
-pub const PROFILE_ONLY: [&str; 9] = [
+pub const PROFILE_ONLY: [&str; 10] = [
     "agent.json",
     "agent-refused.json",
+    crate::projects::agent_view::LAST_GOOD_FILE,
     "plugins.json",
     "pictures.json",
     crate::projects::fsm::MEMBERSHIP_FILE,

@@ -10,7 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use permark_core::conditions::AgentCondition;
 use permark_core::ipc_local::{Endpoint, IpcLocalError, Reply, Server};
 use permark_core::plugins::{PluginEvents, ProjectFacts};
-use permark_core::settings::{is_unsafe_char, ProjectConfig};
+use permark_core::projects::agent_view::RulesProblem;
+use permark_core::settings::is_unsafe_char;
 use permark_core::state::{StateData, StateFile};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -135,9 +136,15 @@ pub struct AgentStatus {
     pub sessions: Vec<AgentSession>,
     /// Group id -> on (the person's choice, default when not chosen).
     pub groups: BTreeMap<String, bool>,
-    /// Groups the project's `.permark/config.toml` denies.
+    /// Groups the project's `.permark/config.toml` denies (as read checked: its last good ones while it cannot be
+    /// read).
     pub denied: Vec<String>,
     pub recent: Vec<RequestRecord>,
+    /// A rule file on what agents may see that cannot be read now (absent: every one reads well): it stands on its
+    /// last good rules, or keeps agents out of what it governs until the person fixes it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub rules: Option<RulesProblem>,
 }
 
 fn now_ms() -> u64 {
@@ -474,8 +481,8 @@ impl Hub {
     pub fn status(&self) -> AgentStatus {
         let choice = perms::load(self.tools.store());
         let root = self.tools.vault_root().path();
-        let config = ProjectConfig::load(self.tools.vault_root());
-        let effective = perms::effective(&choice.groups, &config.agent_deny);
+        let rules = self.tools.rules_now();
+        let effective = perms::effective(&choice.groups, rules.denied_groups());
         AgentStatus {
             enabled: choice.is_on(root),
             replaced: choice.replaced(root),
@@ -498,6 +505,7 @@ impl Hub {
                 .map(|(g, _)| g.id().to_owned())
                 .collect(),
             recent: lock(&self.recent).iter().cloned().collect(),
+            rules: rules.rules_problem().cloned(),
         }
     }
 

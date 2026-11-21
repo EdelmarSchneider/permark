@@ -188,6 +188,15 @@ impl ToolLine {
             _ => None,
         })
     }
+
+    /// Every file it names: its locations, `named` (the files its input names), the files it would write.
+    fn paths<'a>(&'a self, named: &'a [PathBuf]) -> impl Iterator<Item = &'a Path> {
+        self.locations
+            .iter()
+            .chain(named)
+            .map(PathBuf::as_path)
+            .chain(self.diffs().map(|diff| diff.path.as_path()))
+    }
 }
 
 /// Whether `path` (as the agent wrote it) is the copy's folder or inside it, also on its real location (a link the
@@ -227,12 +236,13 @@ fn kept_out_in(copy: &Vault, path: &Path) -> bool {
 
 /// Whether the tool call is plainly work on the copy's files, so the question can be allowed once by rule: nothing
 /// it names is agent settings | project machinery (whatever its kind); and it reads | searches | edits | deletes |
-/// moves, names at least one location, and every location and every file its input names (a move's destination
-/// among them) is inside the copy. Anything else (commands, fetches, mode switches, thinking (a subagent | task tool
-/// starts tools of its own), an unknown | missing kind, no locations) is the person's to answer.
+/// moves, names at least one location, and every location, every file its input names (a move's destination among
+/// them) and every file it shows it would write is inside the copy. Anything else (commands, fetches, mode switches,
+/// thinking (a subagent | task tool starts tools of its own), an unknown | missing kind, no locations) is the
+/// person's to answer.
 pub(super) fn plain_work(tool: &ToolLine, copy: &Vault) -> bool {
     let named = tool.input_paths(copy);
-    let all = || tool.locations.iter().chain(named.iter());
+    let all = || tool.paths(&named);
     if all().any(|path| kept_out_in(copy, path)) {
         return false;
     }
@@ -249,13 +259,7 @@ pub(super) fn plain_work(tool: &ToolLine, copy: &Vault) -> bool {
 /// project machinery in the copy -> `AgentSettings`; else `Copy`.
 pub(super) fn reach(tool: &ToolLine, copy: &Vault) -> AcpReach {
     let named = tool.input_paths(copy);
-    let paths = || {
-        tool.locations
-            .iter()
-            .chain(named.iter())
-            .map(PathBuf::as_path)
-            .chain(tool.diffs().map(|diff| diff.path.as_path()))
-    };
+    let paths = || tool.paths(&named);
     let on_files = matches!(
         tool.kind,
         Some(

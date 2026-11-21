@@ -1619,6 +1619,20 @@ export default {
   "agent.outcome.off": "вимкнено",
   "agent.outcome.notOpen": "не відкрито",
   "agent.outcome.error": "помилка",
+  "agentRules.lastGood":
+    "Не вдалося прочитати {file}: {why}. Доки файл не виправлено, PerMark використовує останні робочі правила з нього.",
+  "agentRules.closed":
+    "Не вдалося прочитати {file}: {why}. Доки файл не виправлено, агенти не отримують нічого з того, що він охоплює.",
+  "agentRules.why.tooLarge": "він завеликий",
+  "agentRules.why.notText": "це не звичайний текст",
+  "agentRules.why.notToml": "це не коректний TOML",
+  "agentRules.why.badValue": "одне з його налаштувань має неправильний тип значення",
+  "agentRules.why.badPattern": "один із його шаблонів некоректний",
+  "agentRules.why.notAFile": "це не звичайний файл",
+  "agentRules.why.locked": "його використовує інша програма",
+  "agentRules.why.denied": "PerMark не має дозволу на його читання",
+  "agentRules.why.failed": "читання не вдалося",
+  "agent.outcome.rulesUnreadable": "правила не читаються",
   "agent.open.notice": "Агент хоче показати вам {path}.",
   "agent.open.show": "Показати",
   "agent.ask.resolve":
@@ -3305,6 +3319,8 @@ export default {
   "acp.fail.copyFailed": "PerMark не вдалося підготувати копію цієї папки для агента.",
   "acp.fail.tooLarge": "Ця папка завелика, щоб скопіювати її для агента.",
   "acp.fail.projectsNotReady": "PerMark ще читає цю папку. Спробуйте ще раз за мить.",
+  "acp.fail.rulesUnreadable":
+    "Не вдалося прочитати файл, який визначає, що можуть бачити агенти. Агент нічого не отримає, доки файл не буде виправлено.",
   "acp.fail.startFailed": "Не вдалося запустити програму агента.",
   "acp.fail.timedOut": "Агент не відповів вчасно.",
   "acp.fail.initFailed":

@@ -1569,6 +1569,20 @@ export default {
   "agent.outcome.off": "オフ",
   "agent.outcome.notOpen": "開いていない",
   "agent.outcome.error": "失敗",
+  "agentRules.lastGood":
+    "{file} を読み込めませんでした：{why}。修正されるまで、PerMark はこのファイルで最後に機能したルールを使います。",
+  "agentRules.closed":
+    "{file} を読み込めませんでした：{why}。修正されるまで、エージェントはこのファイルが対象とするものを一切受け取りません。",
+  "agentRules.why.tooLarge": "大きすぎます",
+  "agentRules.why.notText": "プレーンテキストではありません",
+  "agentRules.why.notToml": "有効な TOML ではありません",
+  "agentRules.why.badValue": "設定の一つの値の種類が正しくありません",
+  "agentRules.why.badPattern": "パターンの一つが無効です",
+  "agentRules.why.notAFile": "通常のファイルではありません",
+  "agentRules.why.locked": "別のプログラムが使用中です",
+  "agentRules.why.denied": "PerMark に読み取り権限がありません",
+  "agentRules.why.failed": "読み取りに失敗しました",
+  "agent.outcome.rulesUnreadable": "ルール読み取り不可",
   "agent.open.notice": "エージェントが {path} を表示しようとしています。",
   "agent.open.show": "表示",
   "agent.ask.resolve":
@@ -3196,6 +3210,8 @@ export default {
   "acp.fail.tooLarge": "このフォルダーは大きすぎるため、エージェント用にコピーできません。",
   "acp.fail.projectsNotReady":
     "PerMark はまだこのフォルダーを読み込んでいます。しばらくしてから、もう一度お試しください。",
+  "acp.fail.rulesUnreadable":
+    "エージェントが見られる範囲を定めるファイルを読み込めませんでした。修正されるまで、エージェントには何も渡されません。",
   "acp.fail.startFailed": "エージェントのプログラムを起動できませんでした。",
   "acp.fail.timedOut": "エージェントが時間内に応答しませんでした。",
   "acp.fail.initFailed":

@@ -8,6 +8,7 @@ import type { CharacterEntry } from "./generated/CharacterEntry";
 import type { CharacterGroup } from "./generated/CharacterGroup";
 import type { Context } from "./generated/Context";
 import type { ErrorKind } from "./generated/ErrorKind";
+import type { RulesProblem } from "./generated/RulesProblem";
 import type { WindowView } from "./generated/WindowView";
 import type { WorkspaceRefDto } from "./generated/WorkspaceRefDto";
 import type { WorkspaceView } from "./generated/WorkspaceView";
@@ -1491,6 +1492,17 @@ if (import.meta.env.MODE === "mock") {
     ],
     false,
   );
+}
+
+// `dev:mock` opened with `?rules=lastGood` | `?rules=closed` shows a rule file on what agents may see that cannot be
+// read: Settings > Agent connection and the Assistant panel say which, why, and what stands in for it
+if (typeof location !== "undefined") {
+  const fallback = new URLSearchParams(location.search).get("rules");
+  if (fallback === "lastGood" || fallback === "closed") {
+    const problem: RulesProblem = { file: ".aiignore", why: "tooLarge", fallback };
+    mockApi.probe.plugins.agent.rules(problem);
+    mockApi.probe.plugins.acp.rules = problem;
+  }
 }
 
 // `dev:mock` opened with `?unshared` shows the notice about sharing an update turned off (once, like the app)

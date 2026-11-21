@@ -1530,6 +1530,20 @@ const en = {
   "agent.outcome.off": "off",
   "agent.outcome.notOpen": "not open",
   "agent.outcome.error": "failed",
+  "agentRules.lastGood":
+    "Couldn't read {file}: {why}. PerMark uses the last rules from it that worked until you fix it.",
+  "agentRules.closed":
+    "Couldn't read {file}: {why}. Agents get nothing it covers until you fix it.",
+  "agentRules.why.tooLarge": "it's too large",
+  "agentRules.why.notText": "it isn't plain text",
+  "agentRules.why.notToml": "it isn't valid TOML",
+  "agentRules.why.badValue": "one of its settings has the wrong kind of value",
+  "agentRules.why.badPattern": "one of its patterns isn't valid",
+  "agentRules.why.notAFile": "it isn't a regular file",
+  "agentRules.why.locked": "another program is using it",
+  "agentRules.why.denied": "PerMark isn't allowed to read it",
+  "agentRules.why.failed": "it couldn't be read",
+  "agent.outcome.rulesUnreadable": "rules unreadable",
   "agent.open.notice": "An agent wants to show you {path}.",
   "agent.open.show": "Show",
   "agent.ask.resolve": "An agent asked to mark your comments done. Allow it for this project?",
@@ -3122,6 +3136,8 @@ const en = {
   "acp.fail.copyFailed": "PerMark could not prepare the copy of this folder for the agent.",
   "acp.fail.tooLarge": "This folder is too large to copy for the agent.",
   "acp.fail.projectsNotReady": "PerMark is still reading this folder. Try again in a moment.",
+  "acp.fail.rulesUnreadable":
+    "A file that sets what agents may see couldn't be read. The agent gets nothing until it's fixed.",
   "acp.fail.startFailed": "The agent's program could not be started.",
   "acp.fail.timedOut": "The agent did not answer in time.",
   "acp.fail.initFailed":

@@ -70,8 +70,9 @@ fn indexed(fx: &Budget, path: &str) {
 fn map_lists_files_by_path_with_facts_and_counts_folders_past_depth() {
     let fx = Budget::new();
     let (value, text) = call(&fx, "map", json!({ "depth": 1 })).unwrap();
-    assert_eq!(paths(&value, "files"), [".aiignore", "README.md"]);
-    let readme = &value["files"][1];
+    // the rule file names what agents may not see: never listed
+    assert_eq!(paths(&value, "files"), ["README.md"]);
+    let readme = &value["files"][0];
     assert_eq!(readme["unread"], true);
     assert_eq!(readme["tags"], json!(["overview", "plan"]));
     assert_eq!(
@@ -101,7 +102,7 @@ fn map_lists_files_by_path_with_facts_and_counts_folders_past_depth() {
         ])
     );
     assert!(text.starts_with(
-        "map project=atlas path=. depth=1 n=2 total=2\n#cols path size_tok flags tags description\n"
+        "map project=atlas path=. depth=1 n=1 total=1\n#cols path size_tok flags tags description\n"
     ));
     assert!(text.contains("\n-- dirs_cut n=4\n#cols path files size_tok\n"));
     assert!(!text.contains("private"), "{text}");
@@ -129,6 +130,7 @@ fn map_lists_files_by_path_with_facts_and_counts_folders_past_depth() {
         ".git",
         ".permark",
         "README.md",
+        ".aiignore",
     ] {
         assert!(
             matches!(

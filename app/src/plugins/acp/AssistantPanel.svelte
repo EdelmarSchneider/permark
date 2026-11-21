@@ -34,6 +34,7 @@
   } from "../../api";
   import { runRows } from "../../core/editing/diffRows";
   import { t, tn, type MessageKey } from "../../core/i18n";
+  import { rulesProblemText } from "../../core/projects/agentRules";
   import { arrangement } from "../../core/shell/arrangement.svelte";
   import { adrift, closeView, placeView } from "../../core/shell/sides";
   import AgentPicker from "./AgentPicker.svelte";
@@ -129,6 +130,8 @@
   const said = $derived(acp.asking ? t("acp.state.waiting") : t(stateKey(now)));
   const changed = $derived(acp.changes.length + acp.moreChanges);
   const skipped = $derived(acp.status?.skippedFiles ?? 0);
+  /** A rule file on what agents may see that cannot be read (absent: none). */
+  const rules = $derived(acp.status?.rules ?? null);
 
   let section = $state<HTMLElement>();
   let scroller = $state<HTMLElement>();
@@ -496,6 +499,12 @@
         {/if}
       {/if}
     </p>
+    {#if rules !== null}
+      <!-- standing on last good rules is a warning; nothing shared until it is fixed keeps the agent out -->
+      <Note tone={rules.fallback === "closed" ? "refusal" : "warning"}
+        >{rulesProblemText(rules)}</Note
+      >
+    {/if}
     {#if settings.length > 0}
       <div class="settings" role="group" aria-label={t("acp.options")}>
         {#each settings as option (option.id)}

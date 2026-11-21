@@ -16,6 +16,7 @@ use super::*;
 use crate::agents::{platforms, Choice, Launch, Plan, CHOICE_FILE};
 use crate::dto::{AcpConfigValue, AcpReach, AgentNeed, PermissionDiff, SetOptionArgs};
 use crate::testing;
+use permark_core::projects::agent_view::{RulesFallback, RulesProblem, RulesWhy};
 use permark_core::state::{Loaded, StateFile};
 
 /// Longest wait for something a fake agent does.
@@ -1970,6 +1971,15 @@ fn only_plain_work_on_the_copy_is_allowed_by_rule() {
             "{kept}"
         );
     }
+    // a file it shows it would write (a diff) counts like a place it names
+    let writing = |path: &Path| ToolLine {
+        content: serde_json::from_value(json!([{ "type": "diff", "path": path, "newText": "x" }]))
+            .unwrap(),
+        ..tool(Some(ToolKind::Edit), &[&a], none.clone())
+    };
+    assert!(allowed(&writing(&root.join("b.md"))));
+    assert!(!allowed(&writing(&root.join(".claude/settings.json"))));
+    assert!(!allowed(&writing(&out)));
 }
 
 /// Windows reaches one file under several spellings: a trailing dot | space, a `::$DATA` stream name, an 8.3 short
@@ -2354,6 +2364,32 @@ fn stop_during_the_start_ends_the_turn_and_stops_the_agent() {
     assert_eq!(texts, [json!("Two.")]);
 }
 
+/// A start stopped while it waits for a copy that is already there (made by a turn before | by the next start that
+/// took the copy first) goes no further: its agent's program is never launched.
+#[test]
+fn a_start_stopped_while_it_waits_for_an_existing_copy_never_launches() {
+    let fx = Fx::new(|peer, message| {
+        peer.text(prompt_text(message));
+        Some("end_turn")
+    });
+    fx.ask("One.");
+    fx.turns_ended(1);
+    // new conversation: the agent stops, the copy stays for the next start
+    fx.session.reset();
+    let held = fx.copy.lock().unwrap();
+    fx.ask("Two.");
+    fx.session.cancel();
+    drop(held);
+    fx.ask("Three.");
+    fx.turns_ended(3);
+    // a launch for the stopped start would come once it got the copy, which the next start has let go by now
+    let deadline = Instant::now() + Duration::from_millis(500);
+    while fx.fake.launches.load(Ordering::SeqCst) == 2 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 2);
+}
+
 /// After Stop the agent may still ask before it ends its turn: answered `cancelled` at once, no card.
 #[test]
 fn a_question_after_stop_is_answered_cancelled_without_a_card() {
@@ -2437,6 +2473,50 @@ fn news_of_a_later_release_reads_as_other_and_a_refusal_keeps_its_words() {
     assert_eq!(
         list.last().unwrap()["error"],
         json!({ "code": "refused", "message": "Too long." })
+    );
+}
+
+/// A rule file that cannot be read (and was never read well) keeps the agent out: a passage is refused at once, a
+/// prompt never starts the program, both with the same reason; the status names the file.
+#[test]
+fn an_unreadable_rule_file_refuses_the_prompt_and_the_start_with_its_reason() {
+    let fx = Fx::new(|_, _| Some("end_turn"));
+    std::fs::create_dir(fx.project.path().join(".aiignore")).unwrap();
+    let refused = fx
+        .session
+        .prompt(PromptArgs {
+            text: "What is this?".to_owned(),
+            selection: Some(PromptSelection {
+                path: "notes.md".to_owned(),
+                from_line: 1,
+                to_line: 1,
+                text: "Line one of the notes.".to_owned(),
+            }),
+            document: None,
+        })
+        .unwrap_err();
+    assert_eq!(refused.kind, ErrorKind::Unavailable);
+    assert_eq!(refused.detail.as_deref(), Some("rulesUnreadable"));
+    assert_eq!(refused.subject.as_deref(), Some(".aiignore"));
+
+    fx.ask("Hello.");
+    fx.events.wait_for("the start refused", WAIT, |list| {
+        list.iter()
+            .any(|e| e["type"] == "status" && e["error"]["code"] == "rulesUnreadable")
+    });
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 0);
+    let status = fx.session.status();
+    assert_eq!(
+        status.error.map(|e| e.code),
+        Some(AcpErrorCode::RulesUnreadable)
+    );
+    assert_eq!(
+        status.rules,
+        Some(RulesProblem {
+            file: ".aiignore".to_owned(),
+            why: RulesWhy::NotAFile,
+            fallback: RulesFallback::Closed,
+        })
     );
 }
 
