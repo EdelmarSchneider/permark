@@ -27,7 +27,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Quick edits in a config sheet are now saved in the order you made them, and opening a config file at a line, for example from search, scrolls the sheet to that line and highlights it. <!-- f: config-sheets, search -->
 - **Find in page** in View now finds phrases that run across bold, links, inline code or highlighted code, as Edit does. <!-- f: find, view-mode -->
 - In long documents, the outline highlight follows your scrolling again, and going from Edit back to View keeps your reading place. <!-- f: outline, view-mode -->
-- Tables with formulas now settle to the right column widths once the formula fonts have loaded. <!-- f: view-mode -->
+- Tables with formulas now get the right column widths in narrow windows; before, they could keep widths measured before the formulas were drawn. <!-- f: view-mode -->
 - Very long documents, documents with many headings or links, and `.properties` files with many groups open and scroll faster. <!-- f: view-mode, config-sheets -->
 - **A broken settings file is never replaced without a word.** If your settings file isn't valid TOML, PerMark sets it aside when it starts and the notice says where the copy went. A broken `.permark/config.toml` is never overwritten: **Settings → This folder** shows the line where it stops being readable, and shared changes wait until it's fixed. <!-- f: settings, project-folder -->
 - Changes to `.permark/config.toml` made outside PerMark, for example by a git pull, now apply while the folder is open: the Explorer's filter and ignore list, plugins turned off for everyone, and the folder settings page. <!-- f: project-folder -->
