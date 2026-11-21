@@ -21,7 +21,8 @@ pub use characters::{
 };
 pub use installer::installer_language;
 pub use project::{
-    ProjectConfig, ProjectConfigFile, ProjectSettingChange, ProjectSettings, TreeConfig, TreeShow,
+    ConfigRead, ConfigUnreadable, ProjectConfig, ProjectConfigFile, ProjectSettingChange,
+    ProjectSettings, TreeConfig, TreeShow,
 };
 pub use region::system_region;
 
@@ -868,15 +869,16 @@ pub(crate) fn read_doc(path: &Path) -> Option<DocumentMut> {
     read_settings_text(path).ok()??.parse::<DocumentMut>().ok()
 }
 
-/// [`read_doc`] of the file `name` the team shares in `permark` (a project's `.permark/`, which arrives with the
-/// folder): only a plain file there is read, never through a link, and a FIFO never makes the read wait.
-pub(crate) fn read_team_doc(permark: &Path, name: &str) -> Option<DocumentMut> {
+/// The text of the settings file `name` the team shares in `permark` (a project's `.permark/`, which arrives with the
+/// folder): only a plain file there is read, never through a link, and a FIFO never makes the read wait. `None`:
+/// there is none.
+///
+/// # Errors
+/// See [`read_settings_text`]; `Io` `InvalidData` for a link | folder | FIFO.
+pub(crate) fn read_team_text(permark: &Path, name: &str) -> Result<Option<String>, SettingsError> {
     let path = permark.join(name);
     let read = read_regular(&path, MAX_SETTINGS_BYTES, Zone::Inside(permark));
     settings_text(&path, read)
-        .ok()??
-        .parse::<DocumentMut>()
-        .ok()
 }
 
 /// The text of a settings file; `None`: there is none.

@@ -8,8 +8,9 @@
 //!   listener is refused instead of stealing the socket). Client refuses a folder that is not private; both sides
 //!   check the peer's euid.
 //!
-//! Protocol: one JSON line each way per connection, line <= [`MAX_LINE`], the first line within
-//! [`FIRST_LINE_DEADLINE`]; a server may hold a connection after its answer (a session, see [`Reply::Hold`]).
+//! Protocol: one JSON line each way per connection, a request <= [`MAX_LINE`] (an answer <= [`MAX_ANSWER`]), the first
+//! line within [`FIRST_LINE_DEADLINE`]; a server may hold a connection after its answer (a session, see
+//! [`Reply::Hold`]).
 
 #[cfg(windows)]
 mod identity;
@@ -32,8 +33,12 @@ use serde::Serialize;
 
 use crate::state::AppDirs;
 
-/// Longest accepted line (bytes).
+/// Longest accepted line (bytes) from a peer that speaks first: requests, and the short answer to a session's hello.
 pub const MAX_LINE: u64 = 64 * 1024;
+/// Longest answer [`request`] reads (bytes): the server was shown to be this user's PerMark before anything was sent,
+/// and an answer (an agent tool's list, outline, map) can outgrow a request many times before its reader cuts it to
+/// the size it shows.
+pub const MAX_ANSWER: u64 = 4 * 1024 * 1024;
 /// How long a client waits for the answer.
 pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -435,15 +440,23 @@ pub fn write_line<T: Serialize>(stream: &mut impl Write, value: &T) -> Result<()
 /// # Errors
 /// Too long, not JSON of `T`, closed early.
 pub fn read_line<T: DeserializeOwned>(reader: &mut impl BufRead) -> Result<T, IpcLocalError> {
+    read_line_of(reader, MAX_LINE)
+}
+
+/// Reads one JSON line of at most `max` bytes.
+fn read_line_of<T: DeserializeOwned>(
+    reader: &mut impl BufRead,
+    max: u64,
+) -> Result<T, IpcLocalError> {
     let mut line = Vec::new();
     let read = reader
-        .take(MAX_LINE + 1)
+        .take(max + 1)
         .read_until(b'\n', &mut line)
         .map_err(|source| IpcLocalError::Io {
             place: "peer".to_owned(),
             source,
         })?;
-    if read as u64 > MAX_LINE {
+    if read as u64 > max {
         return Err(IpcLocalError::BadMessage("line too long".to_owned()));
     }
     if line.last() != Some(&b'\n') {
@@ -454,7 +467,7 @@ pub fn read_line<T: DeserializeOwned>(reader: &mut impl BufRead) -> Result<T, Ip
     serde_json::from_slice(&line).map_err(|e| IpcLocalError::BadMessage(e.to_string()))
 }
 
-/// Sends `request` to `endpoint`, waits for the answer (bounded by [`ANSWER_TIMEOUT`]).
+/// Sends `request` to `endpoint`, waits for the answer (bounded by [`ANSWER_TIMEOUT`]; at most [`MAX_ANSWER`] bytes).
 ///
 /// # Errors
 /// `Unreachable` (nothing listens), `Untrusted`, `NoAnswer`, `BadMessage`.
@@ -462,15 +475,27 @@ pub fn request<Req: Serialize, Resp: DeserializeOwned + Send + 'static>(
     endpoint: &Endpoint,
     request: &Req,
 ) -> Result<Resp, IpcLocalError> {
+    request_within(endpoint, request, ANSWER_TIMEOUT)
+}
+
+/// [`request`] waiting up to `timeout` for the answer.
+///
+/// # Errors
+/// See [`request`].
+pub fn request_within<Req: Serialize, Resp: DeserializeOwned + Send + 'static>(
+    endpoint: &Endpoint,
+    request: &Req,
+    timeout: Duration,
+) -> Result<Resp, IpcLocalError> {
     let mut stream = endpoint.connect()?;
     write_line(&mut stream, request)?;
     let (tx, rx) = mpsc::channel();
     // a peer that never answers must not hang the caller: read on a helper thread
     std::thread::spawn(move || {
         let mut reader = BufReader::new(stream);
-        let _ = tx.send(read_line::<Resp>(&mut reader));
+        let _ = tx.send(read_line_of::<Resp>(&mut reader, MAX_ANSWER));
     });
-    rx.recv_timeout(ANSWER_TIMEOUT)
+    rx.recv_timeout(timeout)
         .map_err(|_| IpcLocalError::NoAnswer(endpoint.describe()))?
 }
 

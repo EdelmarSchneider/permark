@@ -141,6 +141,65 @@ fn malformed_and_oversized_requests_get_no_answer() {
 }
 
 #[test]
+fn answers_may_outgrow_a_request_line_up_to_their_own_limit() {
+    let (_d, endpoint) = endpoint();
+    let long = usize::try_from(MAX_LINE).unwrap() * 4;
+    let _server = Server::spawn(endpoint.listen().unwrap(), move |ping: Ping| Ping {
+        text: if ping.text == "over" {
+            "x".repeat(usize::try_from(MAX_ANSWER).unwrap())
+        } else {
+            "x".repeat(long)
+        },
+    })
+    .unwrap();
+    let answer: Ping = request(
+        &endpoint,
+        &Ping {
+            text: "long".to_owned(),
+        },
+    )
+    .unwrap();
+    assert_eq!(answer.text.len(), long);
+    assert!(matches!(
+        request::<Ping, Ping>(
+            &endpoint,
+            &Ping {
+                text: "over".to_owned()
+            }
+        ),
+        Err(IpcLocalError::BadMessage(_))
+    ));
+    // the server still reads requests with the short limit
+    let mut stream = endpoint.connect().unwrap();
+    let _ = write_line(
+        &mut stream,
+        &Ping {
+            text: "y".repeat(long),
+        },
+    );
+    assert!(read_line::<Ping>(&mut BufReader::new(stream)).is_err());
+}
+
+#[test]
+fn a_caller_may_wait_longer_than_the_default_answer_time() {
+    let (_d, endpoint) = endpoint();
+    let _server = Server::spawn(endpoint.listen().unwrap(), |ping: Ping| {
+        std::thread::sleep(Duration::from_millis(300));
+        ping
+    })
+    .unwrap();
+    let ping = Ping {
+        text: "slow".to_owned(),
+    };
+    assert!(matches!(
+        request_within::<Ping, Ping>(&endpoint, &ping, Duration::from_millis(50)),
+        Err(IpcLocalError::NoAnswer(_))
+    ));
+    let answer: Ping = request_within(&endpoint, &ping, Duration::from_secs(5)).unwrap();
+    assert_eq!(answer, ping);
+}
+
+#[test]
 fn read_line_limits() {
     let mut ok = BufReader::new(&b"{\"text\":\"a\"}\nrest"[..]);
     assert_eq!(read_line::<Ping>(&mut ok).unwrap().text, "a");

@@ -1370,6 +1370,120 @@ fn every_store_of_a_folder_gives_one_answer() {
     }
 }
 
+/// A member's `.aiignore` saved as UTF-16 (PowerShell's `>`) hides what it lists; turned unreadable later (a folder
+/// in its place), the member stands on the rules last read well, kept in the profile.
+#[test]
+fn a_member_rule_file_reads_in_utf16_and_stands_on_its_last_good_rules() {
+    use crate::edit::lines::encode;
+    use crate::fsx::Encoding;
+    use crate::projects::agent_view::{Guard, RulesFallback, RulesProblem, RulesWhy};
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let r = dunce::canonicalize(dir.path()).unwrap();
+    permark(&r, "");
+    fs::write(
+        r.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"hubs/a\"\n",
+    )
+    .unwrap();
+    git(&r, "hubs/a");
+    mkdirs(&r, "hubs/a/private");
+    fs::write(r.join("hubs/a/private/x.md"), "# x").unwrap();
+    fs::write(
+        r.join("hubs/a/.aiignore"),
+        encode("private/\n", Encoding::Utf16Le),
+    )
+    .unwrap();
+    let (env, _sink) = env(base.path());
+    let root = Root::open(&r).unwrap();
+    let core = ProjectCore::open(root.clone(), &env);
+    ready(&core);
+    let projects = core.projects();
+    let member_rules = |p: &Projects| {
+        let map = p.agent_map(Duration::from_secs(5)).unwrap();
+        map.members()
+            .iter()
+            .find(|m| m.path.as_str() == "hubs/a")
+            .map(|m| m.agent.clone())
+            .unwrap()
+    };
+    assert_eq!(member_rules(projects).aiignore, ["private/"]);
+    let guard = |p: &Projects| {
+        Guard::new(&root, &[]).with_projects(p.agent_map(Duration::from_secs(5)).unwrap(), None)
+    };
+    assert!(guard(projects).hidden("hubs/a/private/x.md", false));
+    fs::remove_file(r.join("hubs/a/.aiignore")).unwrap();
+    fs::create_dir(r.join("hubs/a/.aiignore")).unwrap();
+    wait("the member reads its rules again", || {
+        !member_rules(projects).problems.is_empty()
+    });
+    assert_eq!(
+        member_rules(projects).problems,
+        [RulesProblem {
+            file: "hubs/a/.aiignore".to_owned(),
+            why: RulesWhy::NotAFile,
+            fallback: RulesFallback::LastGood,
+        }]
+    );
+    let guard = guard(projects);
+    assert!(
+        guard.hidden("hubs/a/private/x.md", false),
+        "last good rules"
+    );
+    assert!(!guard.closed() && !guard.hidden("hubs/a/README.md", false));
+    assert!(!r
+        .join(".permark/local")
+        .join(crate::projects::agent_view::LAST_GOOD_FILE)
+        .exists());
+}
+
+/// Opened alone below a listing ancestor: the ancestor's `.aiignore` in UTF-16 BE hides for the opened folder; turned
+/// unreadable, its last good rules stand, named from the opened folder.
+#[test]
+fn an_ancestor_rule_file_reads_in_utf16_and_stands_on_its_last_good_rules() {
+    use crate::edit::lines::encode;
+    use crate::fsx::Encoding;
+    use crate::projects::agent_view::{Guard, RulesFallback, RulesProblem, RulesWhy};
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let r = dunce::canonicalize(dir.path()).unwrap();
+    permark(&r, "");
+    fs::write(
+        r.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"hubs/a\"\n",
+    )
+    .unwrap();
+    git(&r, "hubs/a");
+    mkdirs(&r, "hubs/a/sub/docs/private");
+    fs::write(r.join(".aiignore"), encode("private/\n", Encoding::Utf16Be)).unwrap();
+    let (env, _sink) = env(base.path());
+    let opened = Root::open(&r.join("hubs/a/sub/docs")).unwrap();
+    let core = ProjectCore::open(opened.clone(), &env);
+    ready(&core);
+    let projects = core.projects();
+    let guard = || {
+        Guard::new(&opened, &[])
+            .with_projects(projects.agent_map(Duration::from_secs(5)).unwrap(), None)
+    };
+    assert!(guard().hidden("private/x.md", false));
+    assert_eq!(guard().rules_problems(), []);
+    fs::remove_file(r.join(".aiignore")).unwrap();
+    fs::create_dir(r.join(".aiignore")).unwrap();
+    lock(&projects.inner).ancestors.1 =
+        Instant::now().checked_sub(ANCESTORS_TTL + Duration::from_secs(1));
+    let guard = guard();
+    assert_eq!(
+        guard.rules_problems(),
+        [RulesProblem {
+            file: "../../../../.aiignore".to_owned(),
+            why: RulesWhy::NotAFile,
+            fallback: RulesFallback::LastGood,
+        }]
+    );
+    assert!(!guard.closed() && guard.hidden("private/x.md", false));
+    assert!(!guard.hidden("notes.md", false));
+}
+
 /// Live moves (real fs renames under the real watch).
 #[path = "rename_tests.rs"]
 mod rename;

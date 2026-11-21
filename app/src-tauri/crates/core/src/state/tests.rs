@@ -565,6 +565,7 @@ fn init_project_copies_profile_state_except_profile_only_files() {
         [
             "agent.json",
             "agent-refused.json",
+            "agent-rules.json",
             "plugins.json",
             "pictures.json",
             "membership.json",

@@ -1,7 +1,7 @@
 //! `.permark/config.toml`: project settings shared with the team. Read only when `.permark/` is a real folder.
 
 use std::collections::BTreeSet;
-
+use std::io;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -9,9 +9,10 @@ use toml_edit::{Array, DocumentMut, Item, Table, Value};
 use ts_rs::TS;
 
 use super::{
-    edit_file, plugin_tables, read_team_doc, set_keeping_decor, set_plugin_key, tokenizers_of,
+    edit_file, plugin_tables, read_team_text, set_keeping_decor, set_plugin_key, tokenizers_of,
     tokenizers_value, valid_tokenizers, SettingsError,
 };
+use crate::fsx;
 use crate::paths::Root;
 use crate::plugins::PluginId;
 use crate::state::{Sharing, PERMARK_DIR};
@@ -67,6 +68,9 @@ pub struct ProjectConfig {
     pub agent_deny: BTreeSet<String>,
     /// `[agent] deny_paths`: gitignore-style patterns of paths agents never get (narrowing only).
     pub agent_deny_paths: Vec<String>,
+    /// `agent` is no table, or its `deny` | `deny_paths` no list of texts: the lenient read drops such a value, so the
+    /// agent rules read takes the file as unreadable rather than as setting nothing.
+    pub agent_bad_value: bool,
     /// `[plugins.token-count] tokenizers`: the tokenizers this project counts with, first = primary (replaces the
     /// app's list when it has an entry).
     pub tokenizers: Vec<String>,
@@ -80,6 +84,14 @@ pub struct ProjectConfig {
 /// The one plugin key besides `enabled` a project file is read for.
 const TOKENIZERS: (&str, &str) = ("token-count", "tokenizers");
 
+/// Whether `item` is a list of texts only (absent counts: nothing set).
+fn only_strings(item: Option<&Item>) -> bool {
+    item.is_none_or(|item| {
+        item.as_array()
+            .is_some_and(|array| array.iter().all(|v| v.as_str().is_some()))
+    })
+}
+
 fn strings(item: Option<&Item>) -> Vec<String> {
     item.and_then(Item::as_array)
         .map(|array| {
@@ -91,17 +103,76 @@ fn strings(item: Option<&Item>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Why `.permark/config.toml` is there but gives no settings ([`ProjectConfig::load_checked`]).
+#[derive(Debug)]
+pub enum ConfigUnreadable {
+    /// Not read: larger than settings are, not UTF-8, held by another program, a link | folder, denied; `.permark/`
+    /// that cannot be looked at.
+    Read(SettingsError),
+    /// `.permark/` is a link: never followed, so the team file it may lead to stays unknown.
+    LinkedFolder,
+    /// Not TOML (a merge conflict left in it).
+    NotToml,
+}
+
+/// `.permark/config.toml` read checked ([`ProjectConfig::load_checked`]).
+#[derive(Debug)]
+pub enum ConfigRead {
+    /// No `.permark/` (or a plain file of that name), or no file in it.
+    Absent,
+    /// Its text and what it says.
+    Read(String, ProjectConfig),
+    Unreadable(ConfigUnreadable),
+}
+
 impl ProjectConfig {
     /// Reads `<root>/.permark/config.toml`; defaults when `.permark/` is no real folder | file missing | invalid.
     #[must_use]
     pub fn load(root: &Root) -> Self {
-        let permark = root.path().join(PERMARK_DIR);
-        let real = std::fs::symlink_metadata(&permark).is_ok_and(|m| m.file_type().is_dir());
-        if !real {
-            return Self::default();
+        match Self::load_checked(root) {
+            ConfigRead::Read(_, config) => config,
+            ConfigRead::Absent | ConfigRead::Unreadable(_) => Self::default(),
         }
-        read_team_doc(&permark, "config.toml")
-            .map_or_else(Self::default, |doc| Self::from_doc(&doc))
+    }
+
+    /// [`ProjectConfig::load`] for what a broken file must never turn into "nothing set" (the agent rules): a file
+    /// that is there but cannot be read is told apart from a missing one; so is a `.permark` that is a link or cannot
+    /// be looked at (it may hold one).
+    #[must_use]
+    pub fn load_checked(root: &Root) -> ConfigRead {
+        let permark = root.path().join(PERMARK_DIR);
+        match std::fs::symlink_metadata(&permark) {
+            Ok(meta) if fsx::is_link(&meta) => {
+                return ConfigRead::Unreadable(ConfigUnreadable::LinkedFolder)
+            }
+            Ok(meta) if meta.is_dir() => {}
+            // a plain file holds no team file
+            Ok(_) => return ConfigRead::Absent,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return ConfigRead::Absent,
+            Err(source) => {
+                return ConfigRead::Unreadable(ConfigUnreadable::Read(SettingsError::Io {
+                    path: permark.display().to_string(),
+                    source,
+                }))
+            }
+        }
+        let text = match read_team_text(&permark, "config.toml") {
+            Ok(Some(text)) => text,
+            Ok(None) => return ConfigRead::Absent,
+            Err(error) => return ConfigRead::Unreadable(ConfigUnreadable::Read(error)),
+        };
+        match Self::from_text(&text) {
+            Some(config) => ConfigRead::Read(text, config),
+            None => ConfigRead::Unreadable(ConfigUnreadable::NotToml),
+        }
+    }
+
+    /// What a config text says; `None`: not TOML.
+    #[must_use]
+    pub fn from_text(text: &str) -> Option<Self> {
+        text.parse::<DocumentMut>()
+            .ok()
+            .map(|doc| Self::from_doc(&doc))
     }
 
     /// Lenient: each key on its own; wrong types read as defaults.
@@ -116,7 +187,11 @@ impl ProjectConfig {
             include: strings(tree.and_then(|t| t.get("include"))),
             exclude: strings(tree.and_then(|t| t.get("exclude"))),
         };
-        let agent = doc.get("agent").and_then(Item::as_table_like);
+        let agent_item = doc.get("agent").filter(|item| !item.is_none());
+        let agent = agent_item.and_then(Item::as_table_like);
+        let agent_bad_value = (agent_item.is_some() && agent.is_none())
+            || !only_strings(agent.and_then(|t| t.get("deny")))
+            || !only_strings(agent.and_then(|t| t.get("deny_paths")));
         let plugin_tables = plugin_tables(doc);
         let plugins_off = plugin_tables
             .iter()
@@ -148,6 +223,7 @@ impl ProjectConfig {
                 .into_iter()
                 .collect(),
             agent_deny_paths: strings(agent.and_then(|t| t.get("deny_paths"))),
+            agent_bad_value,
             tokenizers: tokenizers_of(
                 PluginId::parse(TOKENIZERS.0)
                     .and_then(|id| plugin_tables.get(&id))
