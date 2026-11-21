@@ -54,6 +54,15 @@ pub struct StateRecovered {
     pub backup: Option<String>,
 }
 
+/// `project-config-changed`: the shared settings of the folder at `root` changed (a setting written here, the file
+/// changed on disk); the window of that folder reads `project_config_get` again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProjectConfigChanged {
+    pub root: String,
+}
+
 /// An open that came from outside (command line, OS) failed; shown in `window`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -105,6 +114,8 @@ pub enum CoreEvent {
     IndexProgress(crate::search::IndexProgress),
     /// The projects of a folder changed (all windows; the payload names the folder): read `projects_view` again.
     ProjectsChanged(crate::projects::ProjectsChanged),
+    /// The shared settings of a folder changed (all windows; the payload names the folder).
+    ProjectConfigChanged(ProjectConfigChanged),
     PluginsChanged,
     /// All windows; the payload names the project (none: an App-scope plugin).
     PluginFailed(PluginFailed),
@@ -129,6 +140,7 @@ impl CoreEvent {
             Self::DocumentChanged(_) => "document-changed",
             Self::IndexProgress(_) => "index-progress",
             Self::ProjectsChanged(_) => "projects-changed",
+            Self::ProjectConfigChanged(_) => "project-config-changed",
             Self::PluginsChanged => "plugins-changed",
             Self::PluginFailed(_) => "plugin-failed",
             Self::Plugin { name, .. } => name,

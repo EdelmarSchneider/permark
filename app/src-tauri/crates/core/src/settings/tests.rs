@@ -176,6 +176,159 @@ fn plugin_switches_add_and_remove_cleanly() {
     );
 }
 
+fn git_enabled(enabled: Option<bool>) -> SettingChange {
+    SettingChange::PluginEnabled {
+        plugin: PluginId::of("git"),
+        enabled,
+    }
+}
+
+#[test]
+fn an_inline_plugins_table_keeps_its_other_plugins_and_stays_inline() {
+    let both = "plugins = { git = { enabled = true }, notes = { folder = \"/x\" } }\n";
+    let off = applied(both, &git_enabled(Some(false)));
+    assert_eq!(
+        off,
+        "plugins = { git = { enabled = false }, notes = { folder = \"/x\" } }\n"
+    );
+    assert_eq!(
+        AppSettings::from_doc(&doc(&off))
+            .plugins
+            .get(&PluginId::of("git")),
+        Some(&false)
+    );
+    // back to the default: only that key goes (with the plugin table it emptied)
+    assert_eq!(
+        applied(both, &git_enabled(None)),
+        "plugins = { notes = { folder = \"/x\" } }\n"
+    );
+    // a plugin written inline under a normal [plugins] table
+    assert_eq!(
+        applied(
+            "[plugins]\ngit = { enabled = true, backend = \"system\" }\n",
+            &git_enabled(None)
+        ),
+        "[plugins]\ngit = { backend = \"system\" }\n"
+    );
+    assert_eq!(
+        applied(
+            "[plugins]\ngit = { backend = \"system\" }\n",
+            &git_enabled(Some(false))
+        ),
+        "[plugins]\ngit = { backend = \"system\", enabled = false }\n"
+    );
+    // a plugin the inline table lacks is added inside it
+    assert_eq!(
+        applied(
+            "plugins = { notes = { folder = \"/x\" } }\n",
+            &git_enabled(Some(false))
+        ),
+        "plugins = { notes = { folder = \"/x\" }, git = { enabled = false } }\n"
+    );
+    // removing what an inline table lacks writes nothing
+    let lacks = "plugins = { notes = { folder = \"/x\" } }\n";
+    assert_eq!(applied(lacks, &git_enabled(None)), lacks);
+}
+
+#[test]
+fn an_inline_keymap_keeps_its_other_entries() {
+    let text = "keymap = { \"doc.find\" = \"Mod+G\", \"search.quickOpen\" = \"Mod+K\" }\n";
+    assert_eq!(
+        applied(text, &bind("doc.find", None)),
+        "keymap = { \"search.quickOpen\" = \"Mod+K\" }\n"
+    );
+    assert_eq!(
+        applied(text, &bind("search.quickOpen", None)),
+        "keymap = { \"doc.find\" = \"Mod+G\" }\n"
+    );
+    assert_eq!(
+        applied(text, &bind("doc.find", Some("Mod+J"))),
+        "keymap = { \"doc.find\" = \"Mod+J\", \"search.quickOpen\" = \"Mod+K\" }\n"
+    );
+    // the entry under its earlier name goes inside the inline table too
+    assert_eq!(
+        applied(
+            "keymap = { \"app.closeWorkspace\" = \"Mod+W\", \"doc.find\" = \"Mod+G\" }\n",
+            &bind("tab.close", Some("Mod+Q"))
+        ),
+        "keymap = { \"doc.find\" = \"Mod+G\", \"tab.close\" = \"Mod+Q\" }\n"
+    );
+    // the last entry takes the table with it
+    assert_eq!(
+        applied(
+            "a = 1\nkeymap = { \"doc.find\" = \"Mod+G\" }\n",
+            &bind("doc.find", None)
+        ),
+        "a = 1\n"
+    );
+}
+
+#[test]
+fn an_inline_agent_table_keeps_its_other_key_and_stays_inline() {
+    let both = "agent = { deny = [\"notes\"], deny_paths = [\"private/\"] }\n";
+    let out = project_applied(both, &ProjectSettingChange::AgentDeny(Vec::new()));
+    assert_eq!(out, "agent = { deny_paths = [\"private/\"] }\n");
+    let config = ProjectConfig::from_doc(&doc(&out));
+    assert_eq!(config.agent_deny_paths, list(&["private/"]));
+    assert!(config.agent_deny.is_empty());
+    assert_eq!(
+        project_applied(both, &ProjectSettingChange::AgentDenyPaths(Vec::new())),
+        "agent = { deny = [\"notes\"] }\n"
+    );
+    assert_eq!(
+        project_applied(both, &ProjectSettingChange::AgentDeny(list(&["comments"]))),
+        "agent = { deny = [\"comments\"], deny_paths = [\"private/\"] }\n"
+    );
+    assert_eq!(
+        project_applied(
+            "agent = { deny = [\"notes\"] }\n",
+            &ProjectSettingChange::AgentDenyPaths(list(&["x/"]))
+        ),
+        "agent = { deny = [\"notes\"], deny_paths = [\"x/\"] }\n"
+    );
+    // the last key takes the inline table with it
+    assert_eq!(
+        project_applied(
+            "ignore = [\"a\"]\nagent = { deny = [\"notes\"] }\n",
+            &ProjectSettingChange::AgentDeny(Vec::new())
+        ),
+        "ignore = [\"a\"]\n"
+    );
+    // a team plugin switch inside inline plugins
+    assert_eq!(
+        project_applied(
+            "plugins = { git = { enabled = false }, notes = { folder = \"/x\" } }\n",
+            &plugin_off("git", false)
+        ),
+        "plugins = { notes = { folder = \"/x\" } }\n"
+    );
+    assert_eq!(
+        project_applied(
+            "plugins = { notes = { folder = \"/x\" } }\n",
+            &plugin_off("git", true)
+        ),
+        "plugins = { notes = { folder = \"/x\" }, git = { enabled = false } }\n"
+    );
+}
+
+#[test]
+fn an_inline_edit_changes_only_its_own_bytes() {
+    let team = "# team file\r\nignore = [\"a\"] # mine\r\nagent = { deny = [\"notes\"], deny_paths = [\"private/\"] } # keep\r\n\r\n[tree]\r\nshow = \"everything\" # all\r\n";
+    assert_eq!(
+        project_applied(team, &ProjectSettingChange::AgentDeny(Vec::new())),
+        team.replace("deny = [\"notes\"], ", "")
+    );
+    let app = "# mine\r\ntheme = \"dark\" # keep\r\nplugins = { git = { enabled = true }, notes = { folder = \"/x\" } } # both\r\nkeymap = { \"doc.find\" = \"Mod+G\", \"search.quickOpen\" = \"Mod+K\" } # keys\r\n\r\n[editor]\r\nx = 1\r\n";
+    assert_eq!(
+        applied(app, &git_enabled(Some(false))),
+        app.replace("enabled = true", "enabled = false")
+    );
+    assert_eq!(
+        applied(app, &bind("doc.find", None)),
+        app.replace("\"doc.find\" = \"Mod+G\", ", "")
+    );
+}
+
 #[test]
 fn invalid_plugin_ids_in_files_are_ignored() {
     let s = AppSettings::from_doc(&doc(
@@ -227,18 +380,66 @@ fn settings_file_apply_reads_fresh_and_keeps_hand_edits() {
 }
 
 #[test]
+fn a_write_that_lands_meanwhile_is_kept_and_the_change_applied_on_top() {
+    let base = tempfile::tempdir().unwrap();
+    let file = SettingsFile::app(&AppDirs::under(base.path()));
+    file.apply(&SettingChange::Theme(ThemePref::Dark)).unwrap();
+    // another program saves between this change's read and its write
+    let path = file.path().to_path_buf();
+    crate::fsx::slip::before_check(file.path(), move || {
+        fs::write(&path, "theme = \"dark\"\nlanguage = \"de\"\n").unwrap();
+    });
+    let s = file.apply(&SettingChange::Tone(Tone::Paper)).unwrap();
+    assert_eq!(
+        (s.theme, s.language, s.tone),
+        (ThemePref::Dark, LanguagePref::De, Tone::Paper)
+    );
+    assert_eq!(
+        fs::read_to_string(file.path()).unwrap(),
+        "theme = \"dark\"\nlanguage = \"de\"\ntone = \"paper\"\n"
+    );
+}
+
+#[test]
+fn a_file_that_keeps_changing_under_a_write_is_a_conflict_and_holds_the_other_writer_bytes() {
+    let base = tempfile::tempdir().unwrap();
+    let file = SettingsFile::app(&AppDirs::under(base.path()));
+    file.apply(&SettingChange::Theme(ThemePref::Dark)).unwrap();
+    let saves = ["language = \"de\"\n", "language = \"fr\"\n"];
+    for text in saves {
+        let path = file.path().to_path_buf();
+        crate::fsx::slip::before_check(file.path(), move || fs::write(&path, text).unwrap());
+    }
+    let error = file.apply(&SettingChange::Tone(Tone::Paper)).unwrap_err();
+    assert!(
+        matches!(&error, SettingsError::Conflict { path } if *path == file.path().display().to_string()),
+        "{error:?}"
+    );
+    assert_eq!(
+        IpcError::from(error).kind,
+        crate::error::ErrorKind::Conflict
+    );
+    // the saves wait in a shared list other tests take from too, so which one lands last may vary
+    let text = fs::read_to_string(file.path()).unwrap();
+    assert!(saves.contains(&text.as_str()), "{text}");
+}
+
+#[test]
 fn a_settings_file_that_is_there_but_cannot_be_read_says_why_a_missing_one_does_not() {
     let base = tempfile::tempdir().unwrap();
     let file = SettingsFile::app(&AppDirs::under(base.path()));
-    assert!(file.read_failure().is_none(), "no file yet");
+    assert!(
+        matches!(file.set_aside_if_broken(), Ok(None)),
+        "no file yet"
+    );
     std::fs::create_dir_all(file.path().parent().unwrap()).unwrap();
     std::fs::write(file.path(), "theme = \"dark\"\n").unwrap();
-    assert!(file.read_failure().is_none());
+    assert!(matches!(file.set_aside_if_broken(), Ok(None)));
     let latin1 = b"theme = \"dark\"\n# caf\xe9\n";
     std::fs::write(file.path(), latin1).unwrap();
     assert!(matches!(
-        file.read_failure(),
-        Some(SettingsError::Unreadable {
+        file.set_aside_if_broken(),
+        Err(SettingsError::Unreadable {
             why: Unreadable::NotText,
             ..
         })
@@ -246,6 +447,27 @@ fn a_settings_file_that_is_there_but_cannot_be_read_says_why_a_missing_one_does_
     // the defaults run meanwhile, and the file stays as it is
     assert_eq!(file.load().theme, AppSettings::default().theme);
     assert_eq!(std::fs::read(file.path()).unwrap(), latin1);
+}
+
+#[test]
+fn a_settings_file_that_is_not_toml_is_set_aside_at_start_and_the_backup_named() {
+    let base = tempfile::tempdir().unwrap();
+    let file = SettingsFile::app(&AppDirs::under(base.path()));
+    std::fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    let broken = "theme = \"dark\"\n<<<<<<< HEAD\n";
+    std::fs::write(file.path(), broken).unwrap();
+    let backup = file.set_aside_if_broken().unwrap().unwrap();
+    assert_eq!(backup.parent(), file.path().parent());
+    assert!(backup
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .starts_with("settings.toml.broken-"));
+    // the person's bytes, as they were, under the backup's name; the app runs on the defaults
+    assert_eq!(std::fs::read_to_string(&backup).unwrap(), broken);
+    assert!(!file.path().exists());
+    assert_eq!(file.load().theme, AppSettings::default().theme);
+    assert!(matches!(file.set_aside_if_broken(), Ok(None)));
 }
 
 #[test]
@@ -406,10 +628,19 @@ fn project_config_only_from_a_real_permark_folder() {
     assert_eq!(ProjectConfig::load(&root).ignore, ["x"]);
     std::fs::write(
         dir.path().join(".permark").join("config.toml"),
-        "ignore = [\n",
+        "# team\nignore = [\n",
     )
     .unwrap();
-    assert_eq!(ProjectConfig::load(&root), ProjectConfig::default());
+    // nothing is read from a file that is not TOML; where the parser stopped is told
+    let broken = ProjectConfig::load(&root);
+    assert!(broken.unreadable_line.is_some_and(|line| line >= 2));
+    assert_eq!(
+        ProjectConfig {
+            unreadable_line: None,
+            ..broken
+        },
+        ProjectConfig::default()
+    );
 }
 
 #[test]
@@ -1020,7 +1251,7 @@ fn the_installer_language_is_adopted_once_and_never_over_a_choice() {
 }
 
 #[test]
-fn the_installer_language_keeps_other_keys_and_a_corrupt_file_is_set_aside() {
+fn the_installer_language_keeps_other_keys_and_never_touches_a_file_that_is_not_toml() {
     let dir = tempfile::tempdir().unwrap();
     let file = settings_file(dir.path());
     fs::write(file.path(), "# mine\r\ntheme = \"dark\" # night\r\n").unwrap();
@@ -1031,18 +1262,22 @@ fn the_installer_language_keeps_other_keys_and_a_corrupt_file_is_set_aside() {
     assert!(text.contains("theme = \"dark\" # night\r\n"), "{text:?}");
     assert!(text.contains("# mine\r\n") && !text.replace("\r\n", "").contains('\n'));
     assert_eq!(file.load().language, LanguagePref::Es);
-    // not TOML: moved aside, defaults + the language written
-    fs::write(file.path(), "language = [[[").unwrap();
-    file.adopt_language(Some(LanguagePref::It))
+    // not TOML: the person's file, whatever it says, is neither replaced nor set aside by the installer's choice
+    fs::write(file.path(), "theme = \"dark\"\nlanguage = [[[").unwrap();
+    assert!(file
+        .adopt_language(Some(LanguagePref::It))
         .unwrap()
-        .unwrap();
-    assert_eq!(file.load().language, LanguagePref::It);
+        .is_none());
+    assert_eq!(
+        fs::read_to_string(file.path()).unwrap(),
+        "theme = \"dark\"\nlanguage = [[["
+    );
     let backups = fs::read_dir(file.path().parent().unwrap())
         .unwrap()
         .flatten()
         .filter(|e| e.file_name().to_string_lossy().contains(".broken-"))
         .count();
-    assert_eq!(backups, 1);
+    assert_eq!(backups, 0);
 }
 
 fn project_applied(text: &str, change: &ProjectSettingChange) -> String {
@@ -1335,16 +1570,57 @@ fn the_project_file_is_written_only_inside_a_real_permark_folder() {
         list(&["x/"]),
         "the file on disk says it"
     );
-    // a hand-broken file is set aside, the setting is still written
-    fs::write(dir.path().join(".permark/config.toml"), "ignore = [[[").unwrap();
-    file.apply(&change).unwrap();
-    assert_eq!(ProjectConfig::load(&root).ignore, list(&["x/"]));
-    let aside = fs::read_dir(dir.path().join(".permark"))
+    // a hand-broken file is shared with everyone who opens the folder: never set aside or replaced, every write is
+    // refused and the bytes stay as they are
+    let broken = "ignore = [\"a/\"]\n<<<<<<< HEAD\ntree.show = \"documents\"\n=======\n";
+    fs::write(dir.path().join(".permark/config.toml"), broken).unwrap();
+    for change in [change, plugin_off("comments", true)] {
+        let refused = file.apply(&change).unwrap_err();
+        assert!(
+            matches!(
+                refused,
+                SettingsError::Unreadable {
+                    why: Unreadable::NotToml { line: 2 },
+                    ..
+                }
+            ),
+            "{refused:?}"
+        );
+        let told = IpcError::from(refused);
+        assert_eq!(told.kind, crate::error::ErrorKind::SettingsUnreadable);
+        assert_eq!(told.detail.as_deref(), Some("notToml"));
+    }
+    assert_eq!(
+        fs::read_to_string(dir.path().join(".permark/config.toml")).unwrap(),
+        broken
+    );
+    let names: Vec<String> = fs::read_dir(dir.path().join(".permark"))
         .unwrap()
         .flatten()
-        .filter(|e| e.file_name().to_string_lossy().contains(".broken-"))
-        .count();
-    assert_eq!(aside, 1);
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["config.toml"]);
+    // the settings page hears where the file stops being TOML
+    let config = ProjectConfig::load(&root);
+    assert_eq!(config.unreadable_line, Some(2));
+    assert_eq!(
+        ProjectSettings::of(true, Sharing::Shared, &config).unreadable_line,
+        Some(2)
+    );
+    // fixed by hand: written again, and nothing is unreadable any more
+    fs::write(
+        dir.path().join(".permark/config.toml"),
+        "ignore = [\"a/\"]\n",
+    )
+    .unwrap();
+    let config = file
+        .apply(&ProjectSettingChange::Ignore(list(&["x/"])))
+        .unwrap();
+    assert_eq!(config.unreadable_line, None);
+    assert_eq!(
+        ProjectSettings::of(true, Sharing::Shared, &config).unreadable_line,
+        None
+    );
 }
 
 #[test]
@@ -1378,6 +1654,80 @@ fn a_config_file_that_is_a_link_is_not_written_through() {
         fs::read_to_string(&outside).unwrap(),
         "ignore = [\"keep/\"]\n"
     );
+}
+
+/// Another program saves between the read and the write of a team-file change, leaving `config.toml` a link to a file
+/// outside the folder: the second pass never reads through it, so the outside text never lands in the team file.
+#[test]
+fn a_team_file_turned_into_a_link_between_passes_never_brings_outside_text_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    let path = dir.path().join(".permark/config.toml");
+    fs::create_dir(dir.path().join(".permark")).unwrap();
+    fs::write(&path, "ignore = [\"a/\"]\n").unwrap();
+    let outside = dir.path().join("outside.toml");
+    fs::write(&outside, "secret = \"outside\"\n").unwrap();
+    let probe = dir.path().join("probe.toml");
+    if !crate::fsx::tests::file_link(&probe, &outside) {
+        eprintln!("skipped: no file links here");
+        return;
+    }
+    fs::remove_file(&probe).unwrap();
+    crate::fsx::slip::before_check(&path, {
+        let (path, outside) = (path.clone(), outside.clone());
+        move || {
+            fs::remove_file(&path).unwrap();
+            assert!(crate::fsx::tests::file_link(&path, &outside));
+        }
+    });
+    let result = ProjectConfigFile::of(&root).apply(&ProjectSettingChange::Ignore(list(&["x/"])));
+    assert!(result.is_err(), "{result:?}");
+    assert!(fs::symlink_metadata(&path)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(
+        fs::read_to_string(&outside).unwrap(),
+        "secret = \"outside\"\n"
+    );
+}
+
+/// A team file holding a value of the wrong type where a table belongs (a hand edit, a bad merge) never turns the
+/// person's change into a silent no-op: the change lands as a table holding it, and the file reads back with it.
+#[test]
+fn a_team_change_over_a_wrong_typed_table_value_lands_and_reads_back() {
+    let git = PluginId::of("git");
+    let paths = ProjectSettingChange::AgentDenyPaths(list(&["private/"]));
+    let off = ProjectSettingChange::PluginOff {
+        plugin: git.clone(),
+        off: true,
+    };
+    let holds = |config: &ProjectConfig, change: &ProjectSettingChange| match change {
+        ProjectSettingChange::AgentDenyPaths(entries) => config.agent_deny_paths == *entries,
+        _ => config.plugins_off.contains(&git),
+    };
+    for (text, change) in [
+        ("agent = \"x\"\n", &paths),
+        ("[[agent]]\nname = \"a\"\n", &paths),
+        ("plugins = 3\n", &off),
+        ("plugins = { git = \"on\" }\n", &off),
+        ("[[plugins]]\nid = \"git\"\n", &off),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Root::open(dir.path()).unwrap();
+        fs::create_dir(dir.path().join(".permark")).unwrap();
+        fs::write(dir.path().join(".permark/config.toml"), text).unwrap();
+        let written = ProjectConfigFile::of(&root).apply(change);
+        assert!(
+            written.as_ref().is_ok_and(|c| holds(c, change)),
+            "{text}: {written:?}"
+        );
+        let ConfigRead::Read(now, config) = ProjectConfig::load_checked(&root) else {
+            panic!("{text}: not read back");
+        };
+        assert!(holds(&config, change), "{text}: {now}");
+        assert!(!config.agent_bad_value, "{text}: {now}");
+    }
 }
 
 #[test]

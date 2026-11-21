@@ -632,7 +632,7 @@ const NEWER: &str = "written by a newer version of PerMark";
 
 /// `<name>.broken-<ms>` next to `path` (the entry itself: a link is moved, never followed); never overwrites an older
 /// backup.
-fn move_aside(path: &Path) -> Option<PathBuf> {
+pub(crate) fn move_aside(path: &Path) -> Option<PathBuf> {
     let name = path.file_name()?.to_string_lossy().into_owned();
     let ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
