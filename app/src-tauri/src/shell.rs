@@ -82,30 +82,71 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The startup notice for a settings file that is there but cannot be read: the app runs on the defaults and the file
-/// is left untouched (no backup), so the person knows why their choices are missing.
+/// The startup notice for a settings file that is there but cannot be used, so the person knows why their choices
+/// are missing: one that is not TOML is set aside now (`backup`: where it went); one that cannot be read as text is
+/// left untouched (no backup). The app runs on the defaults either way.
 fn unreadable_settings(file: &SettingsFile) -> Option<StateRecovered> {
-    file.read_failure().map(|_| StateRecovered {
+    let backup = match file.set_aside_if_broken() {
+        Ok(None) => return None,
+        Ok(Some(backup)) => Some(backup.display().to_string()),
+        Err(_) => None,
+    };
+    Some(StateRecovered {
         file: file.path().display().to_string(),
-        backup: None,
+        backup,
     })
 }
 
-/// The groups file read again (nothing watches it): changed -> the cached settings take it, app plugins and every
-/// window are told (`true`); unchanged -> nothing. `writes` keeps a settings write from landing between the read of the
-/// cached settings and their replacement.
-fn refresh_characters(env: &CoreEnv, file: &SettingsFile, writes: &Mutex<()>) -> bool {
-    let settings = {
-        let _guard = lock(writes);
-        let fresh = file.refresh_characters(&env.settings());
-        if let Some(settings) = &fresh {
-            env.set_settings(settings.clone());
+/// One setting change (file read fresh), then plugins re-applied when a switch changed, every window told. All of it
+/// inside `writes`: the cached settings and the windows' news follow the order of the writes, so a write that finished
+/// earlier never lands over a newer one, and a window never ends on older settings than the file holds. `writes` stays
+/// held while plugins start | stop: nothing reachable from a plugin's start may write a setting (it would wait on
+/// `writes` forever); only the IPC commands call this.
+fn change_setting(
+    env: &CoreEnv,
+    registry: &WorkspaceRegistry,
+    file: &SettingsFile,
+    writes: &Mutex<()>,
+    change: &SettingChange,
+) -> Result<AppSettings, SettingsError> {
+    let _guard = lock(writes);
+    let settings = file.apply(change)?;
+    env.set_settings(settings.clone());
+    env.settings_changed();
+    if matches!(change, SettingChange::GitBackend(_)) {
+        // the git plugin of every open project starts again with the other backend
+        for core in registry.cores() {
+            core.restart_plugin(env, &PluginId::of("git"));
         }
-        fresh
-    };
-    let Some(settings) = settings else {
+        registry.refresh();
+    }
+    if matches!(change, SettingChange::PluginEnabled { .. }) {
+        let before = env.app_plugins_on();
+        env.apply_app_plugins();
+        withdraw_if_switched_off(&before, &env.app_plugins_on());
+        for core in registry.cores() {
+            core.apply_plugins(env);
+        }
+        env.sink.emit(CoreEvent::PluginsChanged);
+        registry.refresh();
+    }
+    env.sink
+        .emit(CoreEvent::SettingsChanged(Box::new(SettingsChanged {
+            keys: vec![change.key()],
+            settings: settings.clone(),
+        })));
+    Ok(settings)
+}
+
+/// The groups file read again (nothing watches it): changed -> the cached settings take it, app plugins and every
+/// window are told (`true`); unchanged -> nothing. Inside `writes`, as a setting change: no write lands between the
+/// read of the cached settings and their replacement, and the news keep the order of the changes.
+fn refresh_characters(env: &CoreEnv, file: &SettingsFile, writes: &Mutex<()>) -> bool {
+    let _guard = lock(writes);
+    let Some(settings) = file.refresh_characters(&env.settings()) else {
         return false;
     };
+    env.set_settings(settings.clone());
     env.settings_changed();
     env.sink
         .emit(CoreEvent::SettingsChanged(Box::new(SettingsChanged {
@@ -149,10 +190,11 @@ impl Shell {
         if let Some(older) = permark_core::state::older::older_profile(dirs) {
             let _ = settings_file.adopt_older(&older.join("settings.json"));
         }
-        // first start: the language the installer recorded (a failed write leaves the system language)
+        // first start: the language the installer recorded (a failed write leaves the system language; a file that is
+        // not TOML is left to the check below)
         let _ = settings_file.adopt_language(installer_language());
-        let settings = settings_file.load();
         let unreadable = unreadable_settings(&settings_file);
+        let settings = settings_file.load();
         let sink: Arc<dyn EventSink> = Arc::new(TauriSink::new(handle.clone()));
         let env = Arc::new(CoreEnv::new(
             dirs.clone(),
@@ -311,36 +353,13 @@ impl Shell {
     /// # Errors
     /// Settings file write failure.
     pub fn change_setting(&self, change: &SettingChange) -> Result<AppSettings, SettingsError> {
-        let settings = {
-            let _guard = lock(&self.settings_lock);
-            self.settings_file.apply(change)?
-        };
-        self.env.set_settings(settings.clone());
-        self.env.settings_changed();
-        if matches!(change, SettingChange::GitBackend(_)) {
-            // the git plugin of every open project starts again with the other backend
-            for core in self.registry.cores() {
-                core.restart_plugin(&self.env, &PluginId::of("git"));
-            }
-            self.registry.refresh();
-        }
-        if matches!(change, SettingChange::PluginEnabled { .. }) {
-            let before = self.env.app_plugins_on();
-            self.env.apply_app_plugins();
-            withdraw_if_switched_off(&before, &self.env.app_plugins_on());
-            for core in self.registry.cores() {
-                core.apply_plugins(&self.env);
-            }
-            self.env.sink.emit(CoreEvent::PluginsChanged);
-            self.registry.refresh();
-        }
-        self.env
-            .sink
-            .emit(CoreEvent::SettingsChanged(Box::new(SettingsChanged {
-                keys: vec![change.key()],
-                settings: settings.clone(),
-            })));
-        Ok(settings)
+        change_setting(
+            &self.env,
+            &self.registry,
+            &self.settings_file,
+            &self.settings_lock,
+            change,
+        )
     }
 
     /// Reads the groups file again; a change reaches every window as `SettingsChanged`.
@@ -426,6 +445,31 @@ mod tests {
                 backup: None,
             })
         );
+        assert_eq!(
+            std::fs::read(file.path()).unwrap(),
+            b"theme = \"dark\"\n# caf\xe9\n"
+        );
+    }
+
+    #[test]
+    fn a_settings_file_that_is_not_toml_is_set_aside_at_start_and_the_notice_names_the_backup() {
+        let base = tempfile::tempdir().unwrap();
+        let file = SettingsFile::app(&AppDirs::under(base.path()));
+        std::fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+        let broken = "theme = \"dark\"\n<<<<<<< HEAD\n";
+        std::fs::write(file.path(), broken).unwrap();
+        // the installer's language never replaces it, as at a start
+        assert!(file
+            .adopt_language(Some(permark_core::settings::LanguagePref::De))
+            .unwrap()
+            .is_none());
+        let notice = unreadable_settings(&file).unwrap();
+        assert_eq!(notice.file, file.path().display().to_string());
+        let backup = notice.backup.unwrap();
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), broken);
+        assert!(!file.path().exists());
+        // told once: the next start finds nothing to tell
+        assert_eq!(unreadable_settings(&file), None);
     }
 
     #[derive(Default)]
@@ -484,6 +528,60 @@ mod tests {
         // read again with nothing new: no second notice
         assert!(!refresh_characters(&env, &file, &writes));
         assert_eq!(told.statuses(), vec![]);
+    }
+
+    /// Records the keyboard map size each `SettingsChanged` carried; every tenth one is slow to deliver (a busy
+    /// window), so news sent outside the writes' turn would be recorded out of order.
+    #[derive(Default)]
+    struct Slow {
+        sizes: Mutex<Vec<usize>>,
+        seen: AtomicU64,
+    }
+
+    impl EventSink for Slow {
+        fn emit(&self, event: CoreEvent) {
+            if let CoreEvent::SettingsChanged(changed) = event {
+                if self.seen.fetch_add(1, Ordering::Relaxed).is_multiple_of(10) {
+                    std::thread::sleep(std::time::Duration::from_millis(15));
+                }
+                lock(&self.sizes).push(changed.settings.keymap.len());
+            }
+        }
+    }
+
+    #[test]
+    fn settings_changed_from_two_threads_keep_every_change_in_the_file_the_cache_and_the_news_order(
+    ) {
+        let base = tempfile::tempdir().unwrap();
+        let dirs = AppDirs::under(base.path());
+        let file = SettingsFile::app(&dirs);
+        let told = Arc::new(Slow::default());
+        let env = Arc::new(CoreEnv::new(
+            dirs,
+            Arc::new(crate::plugins::registry()),
+            Arc::clone(&told) as Arc<dyn EventSink>,
+            Distribution::Direct,
+            file.load(),
+        ));
+        let registry = WorkspaceRegistry::new(Arc::clone(&env));
+        let writes = Mutex::new(());
+        std::thread::scope(|scope| {
+            for thread in 0..2 {
+                let (env, registry, file, writes) = (&env, &registry, &file, &writes);
+                scope.spawn(move || {
+                    for n in 0..100 {
+                        let change = SettingChange::Keymap {
+                            command: format!("test.t{thread}.c{n}"),
+                            combo: Some(format!("Ctrl+{n}")),
+                        };
+                        change_setting(env, registry, file, writes, &change).unwrap();
+                    }
+                });
+            }
+        });
+        assert_eq!(file.load().keymap.len(), 200);
+        assert_eq!(env.settings().keymap.len(), 200);
+        assert_eq!(*lock(&told.sizes), (1..=200).collect::<Vec<_>>());
     }
 
     #[test]
