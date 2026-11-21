@@ -41,12 +41,55 @@ pub fn hash(bytes: &[u8]) -> ContentHash {
     ContentHash(xxhash_rust::xxh3::xxh3_64(bytes))
 }
 
-/// Sends files to the system recycle bin (the files stay where they are when it fails).
+/// Sends files to the system recycle bin. A refusal may come after the bin took some of them: [`recycle_each`] names
+/// those.
 ///
 /// # Errors
 /// The bin refused (the reason as text).
 pub fn recycle(paths: &[PathBuf]) -> Result<(), String> {
-    trash::delete_all(paths).map_err(|e| e.to_string())
+    recycle_each(paths).map_err(|refused| refused.reason)
+}
+
+/// A refusal of the recycle bin, with what it had taken before it refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unrecycled {
+    pub reason: String,
+    /// One per path given, same order: no longer there after the refusal.
+    pub gone: Vec<bool>,
+}
+
+impl Unrecycled {
+    /// `items` (one per path given, same order) split into those the bin took and those still in place.
+    #[must_use]
+    pub fn split<T>(&self, items: impl IntoIterator<Item = T>) -> (Vec<T>, Vec<T>) {
+        let (mut taken, mut left) = (Vec::new(), Vec::new());
+        for (at, item) in items.into_iter().enumerate() {
+            if self.gone.get(at).copied().unwrap_or(false) {
+                taken.push(item);
+            } else {
+                left.push(item);
+            }
+        }
+        (taken, left)
+    }
+}
+
+/// [`recycle`] with the outcome per item. The bins stop part way: the freedesktop one moves item after item and
+/// stops at the first failure, a Windows file operation goes on past an item it cannot take and then fails. So after
+/// a refusal each path is looked at again; only one that is surely absent counts as taken.
+///
+/// # Errors
+/// The bin refused; [`Unrecycled::gone`] lists the items it took all the same.
+pub fn recycle_each(paths: &[PathBuf]) -> Result<(), Unrecycled> {
+    trash::delete_all(paths).map_err(|error| Unrecycled {
+        reason: error.to_string(),
+        gone: paths
+            .iter()
+            .map(|path| {
+                std::fs::symlink_metadata(path).is_err_and(|e| e.kind() == io::ErrorKind::NotFound)
+            })
+            .collect(),
+    })
 }
 
 /// Identity of a file | folder on its volume, `(volume, file)`: kept across a rename on the same volume (unix

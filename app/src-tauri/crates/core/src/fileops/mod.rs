@@ -38,15 +38,19 @@ pub use import::{
 pub use names::{check_name, new_file_name, NameProblem};
 pub use plan::replacement_href;
 
+// crate-visible: the measurements time the delete checks without deleting anything
+pub(crate) use self::ops::check_deletes;
 use self::ops::{
-    announced_pairs, check_deletes, check_moves, execute_moves, io_error, is_protected, locate,
-    locate_undoable, ValidMove,
+    announced_pairs, check_moves, execute_moves, io_error, is_protected, locate, locate_undoable,
+    ValidMove,
 };
 use self::plan::{apply_edits, invert_edits, mentions, split_root, DocPlan, Mover, Planner};
 use self::undo::{DocUndo, Entry, History, Journal, Op, UndoEdit, JOURNAL_FILE, MARKS_FILE};
 use crate::error::{ErrorKind, IpcError};
 use crate::format::{FormatRegistry, MarkdownFeatures};
-use crate::fsx::{hash, write_atomic_if_unchanged, ContentHash, IDENTITY_UNKNOWN};
+use crate::fsx::{
+    hash, recycle_each, write_atomic_if_unchanged, ContentHash, Unrecycled, IDENTITY_UNKNOWN,
+};
 use crate::paths::{Vault, VaultError, VaultPath};
 use crate::state::{AppDirs, StateError};
 use crate::tree::{Explorer, Renamed};
@@ -709,8 +713,18 @@ impl FileOps {
     /// Sends files and folders to the recycle bin.
     ///
     /// # Errors
-    /// A refusal, or `Trash` (the files stay where they are).
+    /// A refusal, or `Trash`: the items the bin took before it refused are journaled (Undo brings them back), the
+    /// rest stays where it is.
     pub fn delete(&self, paths: &[String]) -> Result<DeleteOutcome, FileOpError> {
+        self.delete_with(paths, recycle_each)
+    }
+
+    /// [`FileOps::delete`] with the bin given, so a test can make it stop part way.
+    fn delete_with(
+        &self,
+        paths: &[String],
+        recycle: impl Fn(&[PathBuf]) -> Result<(), Unrecycled>,
+    ) -> Result<DeleteOutcome, FileOpError> {
         let parsed: Vec<VaultPath> = paths
             .iter()
             .map(|p| Self::parse(p))
@@ -718,13 +732,19 @@ impl FileOps {
         let checked = check_deletes(&self.vault, &parsed)?;
         let announced: Vec<String> = checked.iter().map(|(p, _)| p.to_string()).collect();
         self.own.expect_removals(&announced);
-        let result = trash::delete_all(checked.iter().map(|(_, abs)| abs));
+        let places: Vec<PathBuf> = checked.into_iter().map(|(_, abs)| abs).collect();
+        let result = recycle(&places);
         let shown: Vec<String> = announced.clone();
         // whatever the bin did, the tree shows what the disk now holds
         self.explorer.sync_paths(&shown, &[]);
-        if let Err(error) = result {
-            self.own.retract_moves(&announced);
-            return Err(FileOpError::Trash(error.to_string()));
+        if let Err(refused) = result {
+            // what the bin took before it refused is journaled, so Undo brings it back
+            let (gone, left) = refused.split(announced);
+            self.own.retract_moves(&left);
+            if !gone.is_empty() {
+                self.record(Op::Delete { paths: gone });
+            }
+            return Err(FileOpError::Trash(refused.reason));
         }
         self.record(Op::Delete {
             paths: announced.clone(),
@@ -1017,28 +1037,36 @@ impl FileOps {
     }
 
     fn undo_delete(&self, paths: &[String]) -> UndoOutcome {
-        let abs: Vec<PathBuf> = paths
+        let places: Vec<Option<PathBuf>> = paths
             .iter()
-            .filter_map(|p| VaultPath::parse(p).ok())
-            .filter_map(|p| locate_undoable(&self.vault, &p))
+            .map(|p| {
+                VaultPath::parse(p)
+                    .ok()
+                    .and_then(|p| locate_undoable(&self.vault, &p))
+            })
             .collect();
-        let restored = restore_from_bin(&abs);
-        self.own.expect_creations(paths);
+        let outcome = restore_from_bin(&places);
+        let back: Vec<String> = paths
+            .iter()
+            .zip(&outcome)
+            .filter(|(_, why)| why.is_none())
+            .map(|(path, _)| path.clone())
+            .collect();
+        self.own.expect_creations(&back);
         self.explorer.sync_paths(paths, &[]);
-        let skipped = if restored {
-            Vec::new()
-        } else {
-            paths
-                .iter()
-                .map(|p| Skip {
-                    path: p.clone(),
-                    reason: SkipReason::Missing,
+        let skipped = paths
+            .iter()
+            .zip(outcome)
+            .filter_map(|(path, why)| {
+                why.map(|reason| Skip {
+                    path: path.clone(),
+                    reason,
                 })
-                .collect()
-        };
+            })
+            .collect();
         UndoOutcome {
             kind: UndoKind::Delete,
-            restored: if restored { count(paths.len()) } else { 0 },
+            restored: count(back.len()),
             skipped,
         }
     }
@@ -1111,7 +1139,9 @@ fn build_dto(
     }
 }
 
-/// Puts deleted items back from the system's recycle bin (Windows, Linux). `false`: not possible here.
+/// Puts deleted items back from the system's recycle bin (Windows, Linux), each on its own: `None` = back, else why
+/// not. A place something else took since is `Occupied` and left as it is; an item the bin no longer holds, or a place
+/// no undo may use (`None` in `places`), is `Missing`.
 #[cfg(any(
     target_os = "windows",
     all(
@@ -1121,23 +1151,76 @@ fn build_dto(
         not(target_os = "android")
     )
 ))]
-fn restore_from_bin(paths: &[PathBuf]) -> bool {
+fn restore_from_bin(places: &[Option<PathBuf>]) -> Vec<Option<SkipReason>> {
+    let mut outcome = vec![Some(SkipReason::Missing); places.len()];
     let Ok(items) = trash::os_limited::list() else {
-        return false;
+        return outcome;
     };
-    let wanted: Vec<trash::TrashItem> = paths
-        .iter()
-        .filter_map(|path| {
-            items
-                .iter()
-                .filter(|item| item.original_path() == *path)
-                .max_by_key(|item| item.time_deleted)
-                .cloned()
-        })
-        .collect();
-    wanted.len() == paths.len()
-        && !wanted.is_empty()
-        && trash::os_limited::restore_all(wanted).is_ok()
+    let mut wanted: Vec<(usize, trash::TrashItem)> = Vec::new();
+    let mut ids: HashSet<&std::ffi::OsStr> = HashSet::new();
+    for (at, place) in places.iter().enumerate() {
+        let Some(place) = place else {
+            continue;
+        };
+        let newest = items
+            .iter()
+            .filter(|item| item.original_path() == *place)
+            .max_by_key(|item| item.time_deleted);
+        let Some(item) = newest else {
+            continue;
+        };
+        if fs::symlink_metadata(place).is_ok() {
+            outcome[at] = Some(SkipReason::Occupied);
+        } else if ids.insert(item.id.as_os_str()) {
+            wanted.push((at, item.clone()));
+        }
+    }
+    // a place taken while the bin works stops it: what it put back counts, that place is left, the rest goes again
+    while !wanted.is_empty() {
+        let batch: Vec<trash::TrashItem> = wanted.iter().map(|(_, item)| item.clone()).collect();
+        match trash::os_limited::restore_all(batch) {
+            Ok(()) => {
+                for (at, _) in &wanted {
+                    outcome[*at] = None;
+                }
+                break;
+            }
+            Err(trash::Error::RestoreCollision {
+                path,
+                remaining_items,
+            }) => {
+                let left: HashSet<&std::ffi::OsStr> = remaining_items
+                    .iter()
+                    .map(|item| item.id.as_os_str())
+                    .collect();
+                let before = wanted.len();
+                let mut again = Vec::new();
+                for (at, item) in wanted {
+                    if !left.contains(item.id.as_os_str()) {
+                        outcome[at] = None;
+                    } else if item.original_path() == path {
+                        outcome[at] = Some(SkipReason::Occupied);
+                    } else {
+                        again.push((at, item));
+                    }
+                }
+                if again.len() == before {
+                    break;
+                }
+                wanted = again;
+            }
+            Err(_) => {
+                // stopped for another reason: an item that stands at its (empty before) place again is back
+                for (at, item) in &wanted {
+                    if fs::symlink_metadata(item.original_path()).is_ok() {
+                        outcome[*at] = None;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    outcome
 }
 
 #[cfg(not(any(
@@ -1149,6 +1232,6 @@ fn restore_from_bin(paths: &[PathBuf]) -> bool {
         not(target_os = "android")
     )
 )))]
-fn restore_from_bin(_paths: &[PathBuf]) -> bool {
-    false
+fn restore_from_bin(places: &[Option<PathBuf>]) -> Vec<Option<SkipReason>> {
+    vec![Some(SkipReason::Missing); places.len()]
 }

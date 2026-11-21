@@ -68,35 +68,43 @@ fn segments(inner: &str) -> Vec<&str> {
 
 /// The moves, answering "where does this path end up?".
 pub(crate) struct Mover {
-    /// `from` segments (folded), `to`, and the position of the move; longest `from` first.
-    entries: Vec<(Vec<String>, String, usize)>,
+    /// Folded `from` segments -> `to` and the position of the move (the first one given for a `from` named twice).
+    entries: HashMap<Vec<String>, (String, usize)>,
+    /// Segments of the longest `from`: a longer start of a path matches none.
+    longest: usize,
 }
 
 impl Mover {
     pub(crate) fn new(moves: &[(String, String)]) -> Self {
-        let mut entries: Vec<(Vec<String>, String, usize)> = moves
-            .iter()
-            .enumerate()
-            .map(|(at, (from, to))| (from.split('/').map(key_of).collect(), to.clone(), at))
-            .collect();
-        entries.sort_by_key(|(from, _, _)| std::cmp::Reverse(from.len()));
-        Self { entries }
+        let mut entries = HashMap::with_capacity(moves.len());
+        let mut longest = 0;
+        for (at, (from, to)) in moves.iter().enumerate() {
+            let segments: Vec<String> = from.split('/').map(key_of).collect();
+            longest = longest.max(segments.len());
+            entries.entry(segments).or_insert_with(|| (to.clone(), at));
+        }
+        Self { entries, longest }
     }
 
-    /// The move that takes `path` along and the place it gives it.
+    /// The move that takes `path` along and the place it gives it: the longest `from` the path starts with. Only the
+    /// starts of the path itself are looked up, so the cost follows its depth, not the number of moves.
     fn find(&self, path: &str) -> Option<(usize, String)> {
         let parts: Vec<&str> = path.split('/').collect();
-        for (from, to, at) in &self.entries {
-            if parts.len() >= from.len() && parts.iter().zip(from).all(|(p, f)| key_of(p) == *f) {
-                let mut out = to.clone();
-                for rest in &parts[from.len()..] {
-                    out.push('/');
-                    out.push_str(rest);
-                }
-                return Some((*at, out));
+        let keys: Vec<String> = parts
+            .iter()
+            .take(self.longest)
+            .copied()
+            .map(key_of)
+            .collect();
+        (1..=keys.len()).rev().find_map(|len| {
+            let (to, at) = self.entries.get(&keys[..len])?;
+            let mut out = to.clone();
+            for rest in &parts[len..] {
+                out.push('/');
+                out.push_str(rest);
             }
-        }
-        None
+            Some((*at, out))
+        })
     }
 
     pub(crate) fn map(&self, path: &str) -> Option<String> {
