@@ -127,6 +127,14 @@ opt-level = 3
 panic = "abort"
 strip = true
 
+# Measurements (`--profile perf`: the ignored `perf_*` tests, a measured app build): release code with debug assertions
+# on. `AppDirs::system` picks its folder by `debug_assertions`, so a measured app uses the development profile folder
+# (`PerMark-dev`) and never reads or writes the person's real profile. Local measuring only, never shipped: debug
+# assertions also turn on the development overrides (updater endpoint and key, worker path, dev origin, devtools).
+[profile.perf]
+inherits = "release"
+debug-assertions = true
+
 # The Store package's shell extension DLL (`-p permark-shell --profile release-shell`): it unwinds so no panic crosses
 # the COM boundary (a panic setting cannot be given per package), and it is small (a system process loads it).
 [profile.release-shell]
