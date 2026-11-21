@@ -56,4 +56,28 @@ describe("the page selection", () => {
     document.getSelection()?.removeAllRanges();
     expect(pageSelection()).toBeNull();
   });
+
+  it("keeps a triple-clicked last block whose selection ends at the start of what follows the page", () => {
+    const first = block("b1", "First");
+    const last = block("b2", "Last");
+    const panel = document.createElement("nav");
+    panel.textContent = "Outline item";
+    document.body.append(panel);
+    vi.spyOn(documents, "referenceAt").mockImplementation((node) => ({
+      path: "a.md",
+      section: null,
+      line: node === first || node?.parentElement === first ? 3 : 9,
+    }));
+    const range = document.createRange();
+    range.setStart(last.firstChild as Node, 0);
+    range.setEnd(panel, 0);
+    document.getSelection()?.removeAllRanges();
+    document.getSelection()?.addRange(range);
+    expect(pageSelection()).toEqual({ text: "Last", lines: [9, 9] });
+    // a selection reaching into the panel's own text stays outside the page
+    range.setEnd(panel.firstChild as Node, 4);
+    document.getSelection()?.removeAllRanges();
+    document.getSelection()?.addRange(range);
+    expect(pageSelection()).toBeNull();
+  });
 });

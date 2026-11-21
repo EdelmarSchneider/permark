@@ -9,15 +9,27 @@ export type PageSelection = { text: string; lines: [number, number] | null } | n
 /** The selection in the page (reading view): its text and lines; `null` when collapsed or outside the page. */
 export function pageSelection(): PageSelection {
   const selection = document.getSelection();
-  if (selection === null || selection.isCollapsed) return null;
-  const inPage = (node: Node | null): boolean => {
-    const element = node instanceof Element ? node : (node?.parentElement ?? null);
-    return element?.closest("[data-b]") != null;
-  };
-  if (!inPage(selection.anchorNode) || !inPage(selection.focusNode)) return null;
-  const a = documents.referenceAt(selection.anchorNode)?.line ?? null;
-  const b = documents.referenceAt(selection.focusNode)?.line ?? null;
+  if (selection === null || selection.isCollapsed || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  if (blockOf(range.startContainer) === null) return null;
+  let end: Node | null = range.endContainer;
+  if (blockOf(end) === null) {
+    // a triple-click on the page's last block ends the selection at the very start of what follows the page (a
+    // panel): no character of it is selected, so the selection still ends in the last page block it reaches
+    if (range.endOffset !== 0) return null;
+    end =
+      [...document.querySelectorAll("[data-b]")].filter((b) => range.intersectsNode(b)).at(-1) ??
+      null;
+    if (end === null) return null;
+  }
+  const a = documents.referenceAt(range.startContainer)?.line ?? null;
+  const b = documents.referenceAt(end)?.line ?? null;
   const lines: [number, number] | null =
     a !== null && b !== null ? [Math.min(a, b), Math.max(a, b)] : null;
   return { text: selection.toString(), lines };
+}
+
+function blockOf(node: Node | null): Element | null {
+  const element = node instanceof Element ? node : (node?.parentElement ?? null);
+  return element?.closest("[data-b]") ?? null;
 }
