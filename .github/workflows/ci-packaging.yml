@@ -70,6 +70,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Rust (pinned)
         run: rustup toolchain install
@@ -119,6 +121,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # `cargo about` reads the dependency tree through cargo, which needs the toolchain app/rust-toolchain.toml pins.
       - name: Install Rust (pinned)

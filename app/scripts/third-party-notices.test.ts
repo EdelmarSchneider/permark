@@ -6,9 +6,11 @@ import {
   bundledKeys,
   fenceFor,
   groupNotices,
+  licenseAccepted,
   licenseOf,
   licenseText,
   nameOfKey,
+  npmAccepted,
   npmNotices,
   registryHeader,
   renderGroup,
@@ -17,6 +19,9 @@ import {
 } from "./third-party-notices.mjs";
 
 const pkg = (extra: Record<string, unknown> = {}) => ({ version: "1.0.0", ...extra });
+
+const ABOUT_TOML = readFileSync(join(import.meta.dirname, "..", "src-tauri", "about.toml"), "utf8");
+const ACCEPTED = npmAccepted(ABOUT_TOML);
 
 // app -> a -> b (hoisted); a -> c (nested under a, another version of c also hoisted); tool = dev only
 const LOCK = {
@@ -90,6 +95,39 @@ describe("nameOfKey + licenseOf", () => {
   });
 });
 
+describe("accepted npm licenses", () => {
+  it("are the Rust crates' list plus the fonts' and two packages' licenses", () => {
+    expect(ACCEPTED).toEqual(expect.arrayContaining(["MIT", "Apache-2.0", "MPL-2.0", "ISC"]));
+    expect(ACCEPTED).toEqual(expect.arrayContaining(["OFL-1.1", "EPL-2.0", "Unlicense"]));
+    expect(ACCEPTED).not.toContain("GPL-3.0");
+  });
+
+  it("follows about.toml, comments and line breaks included", () => {
+    const toml = 'x = 1\naccepted = [\n  "MIT", # most\n  "Zlib",\n]\n[private]\nignore = true\n';
+    expect(npmAccepted(toml)).toEqual(["MIT", "Zlib", "OFL-1.1", "EPL-2.0", "Unlicense"]);
+    expect(() => npmAccepted("accepted = []")).toThrow(/accepted/);
+    expect(() => npmAccepted("x = 1")).toThrow(/accepted/);
+  });
+
+  it.each([
+    ["MIT", true],
+    ["MIT OR GPL-3.0", true],
+    ["GPL-3.0 OR MIT", true],
+    ["(MPL-2.0 OR Apache-2.0)", true],
+    ["Apache-2.0 WITH LLVM-exception", true],
+    ["MIT AND Zlib", true],
+    ["GPL-3.0", false],
+    ["MIT AND GPL-3.0", false],
+    ["(MIT AND GPL-3.0) OR AGPL-3.0", false],
+    ["SEE LICENSE IN LICENSE.txt", false],
+    ["MIT OR", false],
+    ["(MIT", false],
+    ["mit", false],
+  ])("%s -> accepted: %s", (license, accepted) => {
+    expect(licenseAccepted(license, ACCEPTED)).toBe(accepted);
+  });
+});
+
 describe("with packages on disk", () => {
   const dirs: string[] = [];
   afterEach(() => {
@@ -135,7 +173,7 @@ describe("with packages on disk", () => {
       c: { "package.json": '{"name":"c","version":"1.0.0","license":"MIT"}', LICENSE: "text a" },
       p: { "package.json": '{"name":"p","version":"1.0.0","license":"MIT"}', LICENSE: "text p" },
     });
-    const { notices, warnings } = npmNotices(LOCK, ["a"], root);
+    const { notices, warnings } = npmNotices(LOCK, ["a"], root, ACCEPTED);
     expect(notices.map((n) => `${n.name} ${n.version}`)).toEqual([
       "a 1.0.0",
       "c 2.0.0",
@@ -148,12 +186,38 @@ describe("with packages on disk", () => {
   it("fails on a package that says nothing about its license, and on a broken install", () => {
     const silent = modules({ a: { "package.json": '{"name":"a","version":"1.0.0"}' } });
     expect(() =>
-      npmNotices({ packages: { "": {}, "node_modules/a": pkg() } }, ["a"], silent),
+      npmNotices({ packages: { "": {}, "node_modules/a": pkg() } }, ["a"], silent, ACCEPTED),
     ).toThrow(/no license/);
     const empty = modules({});
     expect(() =>
-      npmNotices({ packages: { "": {}, "node_modules/a": pkg() } }, ["a"], empty),
+      npmNotices({ packages: { "": {}, "node_modules/a": pkg() } }, ["a"], empty, ACCEPTED),
     ).toThrow(/not installed/);
+  });
+
+  const single = { packages: { "": {}, "node_modules/a": pkg() } };
+  const declaring = (license: string) =>
+    modules({
+      a: {
+        "package.json": JSON.stringify({ name: "a", version: "1.0.0", license }),
+        LICENSE: "text",
+      },
+    });
+
+  it("fails on a package whose license is not accepted", () => {
+    expect(() => npmNotices(single, ["a"], declaring("GPL-3.0"), ACCEPTED)).toThrow(
+      /a 1.0.0: license GPL-3.0 is not accepted/,
+    );
+  });
+
+  it("takes a package when one branch of its license choice is accepted", () => {
+    const { notices } = npmNotices(single, ["a"], declaring("MIT OR GPL-3.0"), ACCEPTED);
+    expect(notices.map((n) => n.license)).toEqual(["MIT OR GPL-3.0"]);
+  });
+
+  it("takes a package that only ships a license file (no license field)", () => {
+    const root = modules({ a: { "package.json": '{"name":"a","version":"1.0.0"}', LICENSE: "x" } });
+    const { notices } = npmNotices(single, ["a"], root, ACCEPTED);
+    expect(notices.map((n) => n.text)).toEqual(["x"]);
   });
 });
 

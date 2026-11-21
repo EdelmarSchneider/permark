@@ -5,9 +5,13 @@ name: Release
 # updater reads.
 #
 # Flow: `draft` makes the release (a draft, invisible to the updater) -> the three `release` jobs build and upload their
-# installers + `.sig` files in parallel -> `publish` writes `latest.json` once, from all the `.sig` files
-# (app/scripts/updater-json.mjs; same shape as tauri-action's), and publishes the release. Installed copies only ever
+# installers + `.sig` files in parallel -> `publish` checks every installer against its `.sig` with the updater key,
+# writes `latest.json` once, from all the `.sig` files (app/scripts/updater-json.mjs; same shape as tauri-action's),
+# attests the installers' build provenance, attaches the SBOMs and publishes the release. Installed copies only ever
 # see a complete release; a failed platform leaves a draft (re-run the failed jobs, `publish` then runs).
+#
+# The updater signing key reaches one step only, after the build: npm and cargo run third-party code (install and
+# build scripts, macros, bundler plugins) in a step without secrets, then tauri-action only bundles and signs.
 #
 # No Rust cache here: a tag run can restore only caches of its own tag or of develop, and develop has no release-profile
 # build, so it never hit (and its saves crowded develop's caches out of the 10 GB budget).
@@ -61,9 +65,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.TAG }}
+          persist-credentials: false
 
       # The release notes are this version's section of CHANGELOG.md, followed by the install notes below.
       # Feature id tags (`<!-- f: ... -->`, for Hub-D's catalog) are dropped: the in-app update chip shows the notes as plain text.
+      # The end marker is random: a fixed one written in CHANGELOG.md would end the notes there and set the lines after
+      # it as variables of the next steps.
       - name: Release notes from the changelog
         shell: bash
         run: |
@@ -73,10 +80,11 @@ jobs:
             on && index($0, "## [") == 1 { exit }
             on { gsub(/ *<!-- f: [^>]*-->/, ""); print }
           ' CHANGELOG.md > release-notes.md
+          end="NOTES_$(openssl rand -hex 16)"
           {
-            echo "RELEASE_NOTES<<__NOTES__"
+            echo "RELEASE_NOTES<<$end"
             cat release-notes.md
-            echo "__NOTES__"
+            echo "$end"
           } >> "$GITHUB_ENV"
 
       # `$(printf ...)` drops the trailing newline, as tauri-action did with its `releaseBody` input up to 0.6.1.
@@ -161,6 +169,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.TAG }}
+          persist-credentials: false
 
       # The system libraries the Tauri crates link against and the AppImage bundler needs.
       - name: Install Linux dependencies
@@ -213,11 +222,25 @@ jobs:
         working-directory: app
         run: npm run notices
 
-      # Builds, signs the updater artifacts and uploads installers + `.sig` files to the release (tauri-action names
-      # them: the CLI's file names, macOS updater bundle `PerMark_<version>_universal.app.tar.gz`). Given `releaseId`, it
-      # leaves the release's name and notes alone. `latest.json` is written once by `publish`: `uploadUpdaterJson` is on
-      # by default and would make each platform job upload its own copy in parallel.
-      - name: Build and upload the installers
+      # The interface and the program, built without any secret: this is where third-party code runs. The overlay
+      # src-tauri/tauri.signing.conf.json empties `beforeBuildCommand` (the interface is built just before), and the
+      # signing step passes the same overlay, so cargo finds the program up to date there and compiles nothing again.
+      - name: Build the program
+        if: env.RUN_THIS == 'true'
+        working-directory: app
+        shell: bash
+        env:
+          ARGS: ${{ matrix.args }}
+        run: |
+          npm run build
+          # shellcheck disable=SC2086 # ARGS holds several words or none
+          npx tauri build $ARGS --config src-tauri/tauri.signing.conf.json --no-bundle
+
+      # Bundles the program built above, signs the updater artifacts and uploads installers + `.sig` files to the release
+      # (tauri-action names them: the CLI's file names, macOS updater bundle `PerMark_<version>_universal.app.tar.gz`).
+      # Given `releaseId`, it leaves the release's name and notes alone. `latest.json` is written once by `publish`:
+      # `uploadUpdaterJson` is on by default and would make each platform job upload its own copy in parallel.
+      - name: Bundle, sign and upload the installers
         if: env.RUN_THIS == 'true'
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
@@ -229,17 +252,21 @@ jobs:
           projectPath: app
           releaseId: ${{ needs.draft.outputs.id }}
           uploadUpdaterJson: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} --config src-tauri/tauri.signing.conf.json
 
   # `latest.json` from every `.sig` of the release (all platforms, also after a rebuild of some), then the release goes
-  # public. The script refuses a release with a platform missing, so the draft stays a draft.
+  # public. The script refuses a release with a platform missing or an installer its `.sig` does not verify, so the
+  # draft stays a draft.
   publish:
     name: Publish the release
     needs: [draft, release]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
       contents: write
+      # The build provenance attestations of the installers (`gh attestation verify`).
+      id-token: write
+      attestations: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       ID: ${{ needs.draft.outputs.id }}
@@ -248,34 +275,88 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.TAG }}
+          persist-credentials: false
 
-      - name: Download the updater signatures
+      # Every asset but the ones this job writes: the `.sig` files and the installers they sign, checked below.
+      - name: Download the installers and their signatures
         shell: bash
         run: |
           gh api "repos/$GITHUB_REPOSITORY/releases/$ID" > "$RUNNER_TEMP/release.json"
-          mkdir -p "$RUNNER_TEMP/sigs"
-          jq -r '.assets[] | select(.name | endswith(".sig")) | "\(.id) \(.name)"' "$RUNNER_TEMP/release.json" |
+          mkdir -p "$RUNNER_TEMP/assets"
+          jq -r '.assets[] | select(.name != "latest.json" and (.name | endswith(".cdx.json") | not)) | "\(.id) \(.name)"' \
+            "$RUNNER_TEMP/release.json" |
             while read -r asset name; do
               case "$name" in */* | *\\*) echo "unexpected asset name: $name"; exit 1 ;; esac
               gh api -H "Accept: application/octet-stream" "repos/$GITHUB_REPOSITORY/releases/assets/$asset" \
-                > "$RUNNER_TEMP/sigs/$name"
+                > "$RUNNER_TEMP/assets/$name"
             done
 
       - name: Write latest.json
-        run: node app/scripts/updater-json.mjs "$RUNNER_TEMP/release.json" "$RUNNER_TEMP/sigs" "$GITHUB_REPOSITORY" "$RUNNER_TEMP/latest.json"
+        run: node app/scripts/updater-json.mjs "$RUNNER_TEMP/release.json" "$RUNNER_TEMP/assets" "$GITHUB_REPOSITORY" "$RUNNER_TEMP/latest.json"
 
-      - name: Upload latest.json
+      # Not blocking: a failed attestation leaves the installers as they were before attestations existed.
+      - name: Attest the installers' build provenance
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/assets/*.exe
+            ${{ runner.temp }}/assets/*.dmg
+            ${{ runner.temp }}/assets/*.app.tar.gz
+            ${{ runner.temp }}/assets/*.AppImage
+            ${{ runner.temp }}/assets/*.deb
+            ${{ runner.temp }}/assets/*.rpm
+
+      # The software bills of materials (CycloneDX) of what ships: the Rust crates compiled in (all three systems) and
+      # the npm packages the interface bundles. Both tools read the lockfiles only: no build, no install script.
+      # cargo-cyclonedx = pinned prebuilt binary, checked against its published sha256 (bumping: new version + the
+      # sha256 published beside that release's x86_64-unknown-linux-musl asset). Not blocking: without them the release
+      # still goes out, with a warning.
+      - name: Make the SBOMs
+        id: sbom
+        continue-on-error: true
         shell: bash
+        env:
+          VERSION: "0.5.10"
+          SHA256: "528be9dd99ae522c3ee14fb881fd0cbf51767e8f12b74248f437e6a66b1a3c1b"
         run: |
-          old=$(jq -r '.assets[] | select(.name == "latest.json") | .id' "$RUNNER_TEMP/release.json")
-          if [ -n "$old" ]; then gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old"; fi
-          curl -fsS -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "Content-Type: application/json" \
-            --data-binary "@$RUNNER_TEMP/latest.json" \
-            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$ID/assets?name=latest.json" |
-            jq -r .browser_download_url
+          set -euo pipefail
+          tool="$RUNNER_TEMP/cargo-cyclonedx"
+          mkdir -p "$tool" "$RUNNER_TEMP/sbom"
+          curl -fsSL --retry 3 -o "$tool/cyclonedx.tar.xz" \
+            "https://github.com/CycloneDX/cyclonedx-rust-cargo/releases/download/cargo-cyclonedx-${VERSION}/cargo-cyclonedx-x86_64-unknown-linux-musl.tar.xz"
+          echo "${SHA256}  $tool/cyclonedx.tar.xz" | sha256sum -c -
+          tar -xJf "$tool/cyclonedx.tar.xz" --strip-components 1 -C "$tool"
+          # Writes <crate>.cdx.json beside the Cargo.toml of every workspace member; `permark` is the program.
+          PATH="$tool:$PATH" cargo cyclonedx --manifest-path app/src-tauri/Cargo.toml --format json --spec-version 1.5 --target all
+          name="PerMark_${TAG#v}"
+          mv app/src-tauri/permark.cdx.json "$RUNNER_TEMP/sbom/${name}_rust.cdx.json"
+          (cd app && npm sbom --omit dev --sbom-format cyclonedx --sbom-type application --package-lock-only) \
+            > "$RUNNER_TEMP/sbom/${name}_npm.cdx.json"
+
+      # A re-run replaces what an earlier run uploaded.
+      - name: Upload latest.json and the SBOMs
+        shell: bash
+        env:
+          SBOM: ${{ steps.sbom.outcome }}
+        run: |
+          upload() { # <file> <asset name>
+            old=$(jq -r --arg name "$2" '.assets[] | select(.name == $name) | .id' "$RUNNER_TEMP/release.json")
+            if [ -n "$old" ]; then gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old"; fi
+            curl -fsS -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/json" \
+              --data-binary "@$1" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$ID/assets?name=$2" |
+              jq -r .browser_download_url
+          }
+          upload "$RUNNER_TEMP/latest.json" latest.json
+          if [ "$SBOM" = "success" ]; then
+            for file in "$RUNNER_TEMP"/sbom/*.cdx.json; do upload "$file" "$(basename "$file")"; done
+          else
+            echo "::warning::The release goes out without its SBOM files: making them failed (see the step above)."
+          fi
 
       # A rebuild of an already public release leaves it as it is (it may not be the latest one).
       - name: Publish the release
@@ -297,8 +378,7 @@ jobs:
     uses: ./.github/workflows/snap.yml
     with:
       ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-    # The Store credentials come from the `release` environment of the called job; repository secrets still pass.
-    secrets: inherit
+    # No secrets passed: the Store credentials are a secret of the `release` environment, which the called job uses.
 
   # The Microsoft Store package: the Store flavor of the program, packed as an unsigned .msix by scripts/build-msix.ps1.
   # It goes up as an artifact of this run, which is where the person who submits to the Store downloads it (the Store
@@ -323,6 +403,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.REF }}
+          persist-credentials: false
 
       - name: Install Rust (pinned)
         working-directory: app
@@ -406,8 +487,9 @@ jobs:
         shell: pwsh
         env:
           UPLOADED: ${{ steps.store.outcome == 'success' }}
+          PACKAGE: ${{ steps.pack.outputs.msix }}
         run: |
-          $package = Get-Item "${{ steps.pack.outputs.msix }}"
+          $package = Get-Item -LiteralPath $env:PACKAGE
           $commit = git rev-parse HEAD
           $next = if ($env:UPLOADED -eq 'true') {
             "It is in a draft submission in Partner Center: add the release notes there and submit it."

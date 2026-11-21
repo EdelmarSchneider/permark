@@ -234,6 +234,8 @@ Installers are not code-signed, so your system shows a warning the first time yo
 | Linux | The `.AppImage`, `.deb` or `.rpm` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest), or the snap (64-bit Intel and AMD): `sudo snap install permark`. To print on your printers from the snap, also install the CUPS snap: `sudo snap install cups` |
 
 Copies from GitHub check for updates when they start and once a day, and offer to download and restart. The Microsoft Store and the snap update their copies themselves.
+
+Starting with version 0.18, each installer on the Releases page has a build provenance attestation: a record, signed by GitHub, that the file was built by this repository's release workflow from the tagged commit. To check a download with the [GitHub CLI](https://cli.github.com), run `gh attestation verify <file> -R EdelmarSchneider/permark`. Each release also lists the third-party software inside the program (SBOM files in the CycloneDX format, one for the Rust crates and one for the npm packages).
 PerMark becomes your default app for Markdown only if you choose it: it asks once, with Markdown files checked and other types
 unchecked. On Windows, you confirm the choice in Windows Settings.
 

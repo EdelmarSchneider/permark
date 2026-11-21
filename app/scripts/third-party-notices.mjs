@@ -5,7 +5,8 @@
 //
 // Needs `cargo-about` on PATH (scripts/get-cargo-about.sh in CI; config src-tauri/about.toml + about.hbs) and `npm ci`
 // done. Fails (no file written) when a Rust crate's license is not accepted in about.toml, when `cargo-about` or `cargo`
-// are missing, or when a bundled npm package says nothing about its license.
+// are missing, when a bundled npm package says nothing about its license, or when the license it declares is not
+// accepted (about.toml's list + NPM_EXTRA_ACCEPTED).
 //
 // Four sources:
 // - Rust crates (what is compiled into the program): `cargo about generate`, per license text with the crates using it.
@@ -39,6 +40,83 @@ import { fileURLToPath } from "node:url";
  * devDependencies is tooling.
  */
 export const BUNDLED_DEV = ["svelte"];
+
+/**
+ * Licenses accepted for bundled npm packages on top of the Rust crates' list (about.toml `accepted`): the fonts
+ * (OFL-1.1), elkjs, which Mermaid draws with (EPL-2.0, used unmodified), and robust-predicates (Unlicense).
+ */
+export const NPM_EXTRA_ACCEPTED = ["OFL-1.1", "EPL-2.0", "Unlicense"];
+
+/**
+ * The licenses accepted for bundled npm packages: about.toml's `accepted` list, then NPM_EXTRA_ACCEPTED.
+ * @param {string} aboutToml the text of src-tauri/about.toml
+ * @returns {string[]}
+ */
+export function npmAccepted(aboutToml) {
+  const list = /^accepted\s*=\s*\[([^\]]*)\]/m.exec(aboutToml)?.[1] ?? "";
+  const names = [...list.replace(/#.*$/gm, "").matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? "");
+  if (names.length === 0) throw new Error("about.toml: no accepted licenses");
+  return [...names, ...NPM_EXTRA_ACCEPTED];
+}
+
+/**
+ * Whether an SPDX license expression lets PerMark ship the package: an accepted license on at least one side of each
+ * OR, on both sides of each AND (a WITH exception only adds rights). Anything that is not an SPDX expression is not
+ * accepted.
+ * @param {string} expression
+ * @param {readonly string[]} accepted
+ * @returns {boolean}
+ */
+export function licenseAccepted(expression, accepted) {
+  const tokens = expression.replace(/[()]/g, " $& ").trim().split(/\s+/);
+  let at = 0;
+  const fail = () => {
+    throw new Error("not an SPDX expression");
+  };
+  const id = () => {
+    const token = tokens[at++] ?? "";
+    if (!/^[A-Za-z0-9][\w.+-]*$/.test(token) || ["AND", "OR", "WITH"].includes(token)) fail();
+    return token;
+  };
+  /** @returns {boolean} */
+  const atom = () => {
+    if (tokens[at] === "(") {
+      at++;
+      const inside = or();
+      if (tokens[at++] !== ")") fail();
+      return inside;
+    }
+    const license = id();
+    if (tokens[at] === "WITH") {
+      at++;
+      id();
+    }
+    return accepted.includes(license);
+  };
+  /** @returns {boolean} */
+  const and = () => {
+    let all = atom();
+    while (tokens[at] === "AND") {
+      at++;
+      all = atom() && all;
+    }
+    return all;
+  };
+  /** @returns {boolean} */
+  const or = () => {
+    let any = and();
+    while (tokens[at] === "OR") {
+      at++;
+      any = and() || any;
+    }
+    return any;
+  };
+  try {
+    return or() && at === tokens.length;
+  } catch {
+    return false;
+  }
+}
 
 /** @typedef {{ dependencies?: Record<string, string>, optionalDependencies?: Record<string, string>,
  *   peerDependencies?: Record<string, string>, optional?: boolean, version?: string }} LockEntry */
@@ -153,13 +231,15 @@ export function licenseText(dir) {
 }
 
 /**
- * Collects the notices of the bundled npm packages from the lockfile and the installed node_modules.
+ * Collects the notices of the bundled npm packages from the lockfile and the installed node_modules. A package that
+ * declares a license must declare an accepted one; one that only ships a license file passes (its text is listed).
  * @param {Lock} lock
  * @param {readonly string[]} roots
  * @param {string} modulesDir the app's node_modules folder
+ * @param {readonly string[]} accepted licenses a package may declare (npmAccepted)
  * @returns {{ notices: Notice[], warnings: string[] }}
  */
-export function npmNotices(lock, roots, modulesDir) {
+export function npmNotices(lock, roots, modulesDir, accepted) {
   /** @type {Notice[]} */
   const notices = [];
   /** @type {string[]} */
@@ -179,6 +259,11 @@ export function npmNotices(lock, roots, modulesDir) {
     const text = licenseText(dir);
     if (license === "" && text === "") {
       throw new Error(`${name} ${version}: no license in package.json and no license file`);
+    }
+    if (license !== "" && !licenseAccepted(license, accepted)) {
+      throw new Error(
+        `${name} ${version}: license ${license} is not accepted (src-tauri/about.toml + NPM_EXTRA_ACCEPTED)`,
+      );
     }
     if (text === "") warnings.push(`${name} ${version}: no license file (declares ${license})`);
     notices.push({ name, version, license, text });
@@ -369,7 +454,8 @@ function main(argv) {
     JSON.parse(readFileSync(join(app, "package-lock.json"), "utf8"))
   );
   const roots = [...Object.keys(manifest.dependencies ?? {}), ...BUNDLED_DEV];
-  const { notices, warnings } = npmNotices(lock, roots, modules);
+  const accepted = npmAccepted(readFileSync(join(tauri, "about.toml"), "utf8"));
+  const { notices, warnings } = npmNotices(lock, roots, modules, accepted);
   for (const warning of warnings) console.warn(`warning: ${warning}`);
 
   // cargo-about refuses to write to a redirected stdout on Windows: it writes the file itself
