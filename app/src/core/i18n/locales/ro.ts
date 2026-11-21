@@ -33,6 +33,7 @@ export default {
   "welcome.noRecents": "Încă nu există dosare recente.",
   "welcome.notFound": "(nu a fost găsit)",
   "welcome.remove": "Elimină",
+  "welcome.recentKeys": "Apasă Delete ca să elimini din listă dosarul selectat.",
   "welcome.dropHint": "Trage aici dosare sau fișiere pentru a le deschide.",
   "welcome.openFailed": "Nu se poate deschide {path}: {message}",
 
@@ -2317,6 +2318,7 @@ export default {
   "toon.notValid": "Nu este TOON 4.4 valid",
   "convert.menu": "Convertește…",
   "convert.table": "Convertește…",
+  "convert.tableCommand": "Convertește tabelul…",
   "convert.title": "Convertește {name}",
   "convert.fromPage": "textul din pagină",
   "convert.close": "Închide",

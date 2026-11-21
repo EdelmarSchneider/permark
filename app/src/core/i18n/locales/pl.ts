@@ -45,6 +45,7 @@ export default {
   "welcome.noRecents": "Nie ma jeszcze ostatnich folderów.",
   "welcome.notFound": "(nie znaleziono)",
   "welcome.remove": "Usuń",
+  "welcome.recentKeys": "Naciśnij Delete, aby usunąć zaznaczony folder z listy.",
   "welcome.dropHint": "Upuść tutaj foldery lub pliki, aby je otworzyć.",
   "welcome.openFailed": "Nie można otworzyć {path}: {message}",
 
@@ -2290,6 +2291,7 @@ export default {
   "toon.notValid": "Nieprawidłowy TOON 4.4",
   "convert.menu": "Konwertuj…",
   "convert.table": "Konwertuj…",
+  "convert.tableCommand": "Konwertuj tabelę…",
   "convert.title": "Konwertuj {name}",
   "convert.fromPage": "tekst ze strony",
   "convert.close": "Zamknij",

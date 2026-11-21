@@ -33,6 +33,7 @@ export default {
   "welcome.noRecents": "Encara no hi ha carpetes recents.",
   "welcome.notFound": "(no s'ha trobat)",
   "welcome.remove": "Elimina",
+  "welcome.recentKeys": "Premeu Supr per treure de la llista la carpeta seleccionada.",
   "welcome.dropHint": "Deixeu anar carpetes o fitxers aquí per a obrir-los.",
   "welcome.openFailed": "No s'ha pogut obrir {path}: {message}",
 
@@ -2224,6 +2225,7 @@ export default {
   "toon.notValid": "No és TOON 4.4 vàlid",
   "convert.menu": "Converteix…",
   "convert.table": "Converteix…",
+  "convert.tableCommand": "Converteix la taula…",
   "convert.title": "Converteix {name}",
   "convert.fromPage": "text de la pàgina",
   "convert.close": "Tanca",

@@ -339,6 +339,152 @@ describe("the list", () => {
   });
 });
 
+describe("what a screen reader hears", () => {
+  function tree(root: HTMLElement): HTMLElement {
+    const found = root.querySelector<HTMLElement>('[role="tree"]');
+    if (!found) throw new Error("no tree");
+    return found;
+  }
+
+  /** The element the tree names as the row the keyboard is on (`null`: none named | no such element). */
+  function current(root: HTMLElement): HTMLElement | null {
+    const id = tree(root).getAttribute("aria-activedescendant");
+    return id === null ? null : document.getElementById(id);
+  }
+
+  it("the tree names the row the keyboard is on, by an id that is never the path", async () => {
+    const { root, store } = await render("never", ["docs/my notes.md"]);
+    expect(tree(root).getAttribute("aria-activedescendant")).toBeNull();
+    key(root, "ArrowDown");
+    const first = current(root);
+    expect(first?.getAttribute("role")).toBe("treeitem");
+    expect(first?.dataset["path"]).toBe(store.focus);
+    key(root, "ArrowDown");
+    const second = current(root);
+    expect(second?.dataset["path"]).toBe(store.focus);
+    expect(second).not.toBe(first);
+    for (const id of [first?.id ?? "", second?.id ?? ""]) {
+      expect(id).toMatch(/^tree-[\w-]+-\d+$/);
+      expect(id).not.toContain(store.focus ?? "?");
+    }
+    // a path with a space is no problem for the id either
+    await store.toggle("docs");
+    store.select("docs/my notes.md", "single");
+    flushSync();
+    expect(current(root)?.dataset["path"]).toBe("docs/my notes.md");
+    expect(current(root)?.id).not.toMatch(/\s/);
+  });
+
+  it("rows are not focused one by one: a click leaves the keyboard on the tree", async () => {
+    const { root } = await render();
+    for (const drawn of rows(root)) expect(drawn.hasAttribute("tabindex")).toBe(false);
+  });
+
+  it("the row the keyboard is on stays drawn when the list scrolls away from it", async () => {
+    const api = createMockApi();
+    for (let n = 0; n < 3000; n++)
+      api.probe.project.add(`bulk/f${String(n).padStart(4, "0")}.md`, "x");
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    const store = new ExplorerStore(api, 1, {
+      fail: () => {},
+      note: () => {},
+      view: () => "main",
+      linkUpdate: () => "never",
+      openProject: () => {},
+    });
+    const stop = await store.start();
+    await store.toggle("bulk");
+    const root = document.createElement("div");
+    document.body.append(root);
+    const app = mount(ExplorerPanel, {
+      target: root,
+      props: { store, registry: new ContributionRegistry() },
+    });
+    mounted.push(() => {
+      void unmount(app);
+      stop();
+    });
+    await tick();
+    store.select("bulk/f0002.md", "single");
+    flushSync();
+    const list = tree(root);
+    list.scrollTop = 26 * 1500;
+    list.dispatchEvent(new Event("scroll"));
+    await tick();
+    expect(rows(root).some((r) => r.dataset["path"] === "bulk/f1500.md")).toBe(true);
+    const named = current(root);
+    expect(named?.dataset["path"]).toBe("bulk/f0002.md");
+    // drawn where it belongs in the list
+    const at = store.rows.findIndex((r) => r.type === "node" && r.node.path === "bulk/f0002.md");
+    expect(named?.style.top).toBe(`${at * 26}px`);
+  });
+
+  it("each row says its place among the rows of its folder", async () => {
+    const { root, store } = await render();
+    await store.toggle("docs");
+    flushSync();
+    const top = rows(root).filter((r) => r.getAttribute("aria-level") === "1");
+    expect(top.length).toBeGreaterThan(2);
+    top.forEach((r, n) => {
+      expect(r.getAttribute("aria-posinset"), r.dataset["path"]).toBe(String(n + 1));
+      expect(r.getAttribute("aria-setsize"), r.dataset["path"]).toBe(String(top.length));
+    });
+    const inside = rows(root).filter((r) => (r.dataset["path"] ?? "").startsWith("docs/"));
+    expect(inside.length).toBeGreaterThan(0);
+    const direct = inside.filter((r) => r.getAttribute("aria-level") === "2");
+    direct.forEach((r, n) => {
+      expect(r.getAttribute("aria-posinset"), r.dataset["path"]).toBe(String(n + 1));
+      expect(r.getAttribute("aria-setsize"), r.dataset["path"]).toBe(String(direct.length));
+    });
+  });
+
+  it("a worktree's header is a tree item of the top level that opens and closes, by keyboard too", async () => {
+    const { root, store } = await render();
+    store.roots = [
+      { name: "demo", kind: "main", path: "" },
+      { name: "feature", kind: "worktree", path: "@wt/feature" },
+    ];
+    store.nodes = [
+      ...store.nodes,
+      {
+        path: "@wt/feature/plan.md",
+        name: "plan.md",
+        kind: { type: "file", category: "markdown" },
+        hidden: false,
+        ignored: false,
+        forced: false,
+      },
+    ];
+    flushSync();
+    const header = root.querySelector<HTMLElement>('[role="treeitem"][data-root="@wt/feature"]');
+    if (!header) throw new Error("no worktree header");
+    expect(header.getAttribute("aria-level")).toBe("1");
+    expect(header.getAttribute("aria-expanded")).toBe("true");
+    const top = rows(root).filter((r) => r.getAttribute("aria-level") === "1");
+    expect(header.getAttribute("aria-posinset")).toBe(String(top.indexOf(header) + 1));
+    expect(header.getAttribute("aria-setsize")).toBe(String(top.length));
+    // the worktree's own rows sit one level below its header
+    expect(row(root, "@wt/feature/plan.md").getAttribute("aria-level")).toBe("2");
+    header.focus();
+    header.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }),
+    );
+    flushSync();
+    expect(store.collapsedRoots.has("@wt/feature")).toBe(true);
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    header.dispatchEvent(enter);
+    flushSync();
+    // Enter is the header's own (its button press), not the Explorer's "open the focused row"
+    expect(enter.defaultPrevented).toBe(false);
+    header.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+    );
+    flushSync();
+    expect(store.collapsedRoots.has("@wt/feature")).toBe(false);
+  });
+});
+
 describe("keyboard", () => {
   it("arrows move, Enter opens, F2 renames, Delete deletes, Ctrl+Z undoes", async () => {
     const { root, store, api, notes } = await render();

@@ -40,6 +40,7 @@ export default {
   "welcome.noRecents": "Belum ada folder terbaru.",
   "welcome.notFound": "(tidak ditemukan)",
   "welcome.remove": "Hapus dari daftar",
+  "welcome.recentKeys": "Tekan Delete untuk menghapus folder yang dipilih dari daftar.",
   "welcome.dropHint": "Letakkan folder atau file di sini untuk membukanya.",
   "welcome.openFailed": "Tidak dapat membuka {path}: {message}",
 
@@ -2209,6 +2210,7 @@ export default {
   "toon.notValid": "Bukan TOON 4.4 yang valid",
   "convert.menu": "Konversi…",
   "convert.table": "Konversi…",
+  "convert.tableCommand": "Konversi tabel…",
   "convert.title": "Konversi {name}",
   "convert.fromPage": "teks dari halaman",
   "convert.close": "Tutup",

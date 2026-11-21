@@ -31,6 +31,7 @@ export default {
   "welcome.noRecents": "还没有最近打开的文件夹。",
   "welcome.notFound": "（未找到）",
   "welcome.remove": "移除",
+  "welcome.recentKeys": "按 Delete 键可从列表中移除所选文件夹。",
   "welcome.dropHint": "将文件夹或文件拖放到这里即可打开。",
   "welcome.openFailed": "无法打开 {path}：{message}",
 
@@ -2099,6 +2100,7 @@ export default {
   "toon.notValid": "不是有效的 TOON 4.4",
   "convert.menu": "转换…",
   "convert.table": "转换…",
+  "convert.tableCommand": "转换表格…",
   "convert.title": "转换 {name}",
   "convert.fromPage": "页面中的文本",
   "convert.close": "关闭",

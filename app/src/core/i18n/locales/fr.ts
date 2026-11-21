@@ -34,6 +34,7 @@ export default {
   "welcome.noRecents": "Aucun dossier récent pour l'instant.",
   "welcome.notFound": "(introuvable)",
   "welcome.remove": "Retirer",
+  "welcome.recentKeys": "Appuyez sur Suppr pour retirer de la liste le dossier sélectionné.",
   "welcome.dropHint": "Déposez des dossiers ou des fichiers ici pour les ouvrir.",
   "welcome.openFailed": "Impossible d'ouvrir {path} : {message}",
 
@@ -2260,6 +2261,7 @@ export default {
   "toon.notValid": "TOON 4.4 non valide",
   "convert.menu": "Convertir…",
   "convert.table": "Convertir…",
+  "convert.tableCommand": "Convertir le tableau…",
   "convert.title": "Convertir {name}",
   "convert.fromPage": "texte de la page",
   "convert.close": "Fermer",

@@ -41,6 +41,7 @@ export default {
   "welcome.noRecents": "尚無最近開啟的資料夾。",
   "welcome.notFound": "（找不到）",
   "welcome.remove": "移除",
+  "welcome.recentKeys": "按 Delete 鍵即可從清單中移除所選資料夾。",
   "welcome.dropHint": "將資料夾或檔案拖放到這裡即可開啟。",
   "welcome.openFailed": "無法開啟 {path}：{message}",
 
@@ -2114,6 +2115,7 @@ export default {
   "toon.notValid": "不是有效的 TOON 4.4",
   "convert.menu": "轉換…",
   "convert.table": "轉換…",
+  "convert.tableCommand": "轉換表格…",
   "convert.title": "轉換 {name}",
   "convert.fromPage": "頁面中的文字",
   "convert.close": "關閉",

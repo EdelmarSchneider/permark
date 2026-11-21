@@ -43,6 +43,7 @@ export default {
   "welcome.noRecents": "Chưa có thư mục gần đây.",
   "welcome.notFound": "(không tìm thấy)",
   "welcome.remove": "Gỡ bỏ",
+  "welcome.recentKeys": "Nhấn Delete để gỡ thư mục đã chọn khỏi danh sách.",
   "welcome.dropHint": "Thả thư mục hoặc tệp vào đây để mở.",
   "welcome.openFailed": "Không thể mở {path}: {message}",
 
@@ -2197,6 +2198,7 @@ export default {
   "toon.notValid": "Không phải TOON 4.4 hợp lệ",
   "convert.menu": "Chuyển đổi…",
   "convert.table": "Chuyển đổi…",
+  "convert.tableCommand": "Chuyển đổi bảng…",
   "convert.title": "Chuyển đổi {name}",
   "convert.fromPage": "văn bản từ trang",
   "convert.close": "Đóng",

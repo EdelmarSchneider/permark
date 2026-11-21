@@ -32,6 +32,7 @@ export default {
   "welcome.noRecents": "Aún no hay carpetas recientes.",
   "welcome.notFound": "(no se encontró)",
   "welcome.remove": "Quitar",
+  "welcome.recentKeys": "Pulsa Supr para quitar de la lista la carpeta seleccionada.",
   "welcome.dropHint": "Suelta carpetas o archivos aquí para abrirlos.",
   "welcome.openFailed": "No se pudo abrir {path}: {message}",
 
@@ -2202,6 +2203,7 @@ export default {
   "toon.notValid": "TOON 4.4 no válido",
   "convert.menu": "Convertir…",
   "convert.table": "Convertir…",
+  "convert.tableCommand": "Convertir la tabla…",
   "convert.title": "Convertir {name}",
   "convert.fromPage": "texto de la página",
   "convert.close": "Cerrar",

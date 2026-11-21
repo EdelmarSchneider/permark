@@ -45,6 +45,7 @@ export default {
   "welcome.noRecents": "Нещодавніх папок поки немає.",
   "welcome.notFound": "(не знайдено)",
   "welcome.remove": "Прибрати",
+  "welcome.recentKeys": "Натисніть Delete, щоб прибрати вибрану папку зі списку.",
   "welcome.dropHint": "Перетягніть сюди папки або файли, щоб відкрити їх.",
   "welcome.openFailed": "Не вдається відкрити {path}: {message}",
 
@@ -2289,6 +2290,7 @@ export default {
   "toon.notValid": "Недійсний TOON 4.4",
   "convert.menu": "Перетворити…",
   "convert.table": "Перетворити…",
+  "convert.tableCommand": "Перетворити таблицю…",
   "convert.title": "Перетворити {name}",
   "convert.fromPage": "текст зі сторінки",
   "convert.close": "Закрити",

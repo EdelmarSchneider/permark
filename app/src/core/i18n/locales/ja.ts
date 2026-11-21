@@ -33,6 +33,7 @@ export default {
   "welcome.noRecents": "最近使ったフォルダーはまだありません。",
   "welcome.notFound": "（見つかりません）",
   "welcome.remove": "削除",
+  "welcome.recentKeys": "Delete キーを押すと、選択したフォルダーを一覧から削除します。",
   "welcome.dropHint": "フォルダーやファイルをここにドロップすると開きます。",
   "welcome.openFailed": "{path} を開けません：{message}",
 
@@ -2216,6 +2217,7 @@ export default {
   "toon.notValid": "有効な TOON 4.4 ではありません",
   "convert.menu": "変換…",
   "convert.table": "変換…",
+  "convert.tableCommand": "表を変換…",
   "convert.title": "{name} を変換",
   "convert.fromPage": "ページのテキスト",
   "convert.close": "閉じる",

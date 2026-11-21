@@ -33,6 +33,7 @@ export default {
   "welcome.noRecents": "Aínda non hai cartafoles recentes.",
   "welcome.notFound": "(non se atopou)",
   "welcome.remove": "Quitar",
+  "welcome.recentKeys": "Prema Supr para quitar da lista o cartafol seleccionado.",
   "welcome.dropHint": "Solte aquí cartafoles ou ficheiros para abrilos.",
   "welcome.openFailed": "Non é posíbel abrir {path}: {message}",
 
@@ -2206,6 +2207,7 @@ export default {
   "toon.notValid": "Non é TOON 4.4 válido",
   "convert.menu": "Converter…",
   "convert.table": "Converter…",
+  "convert.tableCommand": "Converter a táboa…",
   "convert.title": "Converter {name}",
   "convert.fromPage": "texto da páxina",
   "convert.close": "Pechar",

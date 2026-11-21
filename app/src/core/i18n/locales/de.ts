@@ -32,6 +32,7 @@ export default {
   "welcome.noRecents": "Noch keine zuletzt geöffneten Ordner.",
   "welcome.notFound": "(nicht gefunden)",
   "welcome.remove": "Entfernen",
+  "welcome.recentKeys": "Entf entfernt den gewählten Ordner aus der Liste.",
   "welcome.dropHint": "Ordner oder Dateien hier ablegen, um sie zu öffnen.",
   "welcome.openFailed": "{path} konnte nicht geöffnet werden: {message}",
 
@@ -2237,6 +2238,7 @@ export default {
   "toon.notValid": "Kein gültiges TOON 4.4",
   "convert.menu": "Umwandeln …",
   "convert.table": "Umwandeln …",
+  "convert.tableCommand": "Tabelle umwandeln …",
   "convert.title": "{name} umwandeln",
   "convert.fromPage": "Text der Seite",
   "convert.close": "Schließen",

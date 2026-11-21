@@ -146,6 +146,30 @@ function heads(): string[] {
   );
 }
 
+describe("StructuredText roles", () => {
+  it("names the tree as a group of disclosure rows, and Tree | Source as pressed toggles", () => {
+    show(text);
+    // rows are buttons that open and close (aria-expanded), not tree items: no tree role without them
+    expect(target.querySelector("[role=tree]")).toBeNull();
+    const tree = target.querySelector(".tree");
+    expect(tree?.getAttribute("role")).toBe("group");
+    expect(tree?.getAttribute("aria-label")).toBe("Tree");
+    // two toggles, no radio group without arrow keys
+    expect(target.querySelector("[role=radiogroup], [role=radio]")).toBeNull();
+    const modes = target.querySelector(".segments");
+    expect(modes?.getAttribute("role")).toBe("group");
+    expect(modes?.getAttribute("aria-label")).toBe("View");
+    const pressed = (): (string | null)[] =>
+      [...target.querySelectorAll(".segment")].map((el) => el.getAttribute("aria-pressed"));
+    expect(pressed()).toEqual(["true", "false"]);
+    press("Source");
+    expect(pressed()).toEqual(["false", "true"]);
+    expect(target.querySelector(".tree")).toBeNull();
+    press("Tree");
+    expect(pressed()).toEqual(["true", "false"]);
+  });
+});
+
 describe("StructuredText expand and collapse all", () => {
   it("offers both in Tree, also without the interpret button, and not in Source", () => {
     show(text);

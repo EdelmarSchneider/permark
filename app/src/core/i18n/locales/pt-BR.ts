@@ -32,6 +32,7 @@ export default {
   "welcome.noRecents": "Nenhuma pasta recente ainda.",
   "welcome.notFound": "(não encontrada)",
   "welcome.remove": "Remover",
+  "welcome.recentKeys": "Pressione Delete para remover da lista a pasta selecionada.",
   "welcome.dropHint": "Solte pastas ou arquivos aqui para abri-los.",
   "welcome.openFailed": "Não foi possível abrir {path}: {message}",
 
@@ -2196,6 +2197,7 @@ export default {
   "toon.notValid": "TOON 4.4 inválido",
   "convert.menu": "Converter…",
   "convert.table": "Converter…",
+  "convert.tableCommand": "Converter tabela…",
   "convert.title": "Converter {name}",
   "convert.fromPage": "texto da página",
   "convert.close": "Fechar",

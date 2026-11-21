@@ -41,6 +41,7 @@ export default {
   "welcome.noRecents": "Henüz son kullanılan klasör yok.",
   "welcome.notFound": "(bulunamadı)",
   "welcome.remove": "Kaldır",
+  "welcome.recentKeys": "Seçili klasörü listeden kaldırmak için Delete tuşuna basın.",
   "welcome.dropHint": "Açmak için klasörleri veya dosyaları buraya bırakın.",
   "welcome.openFailed": "{path} açılamıyor: {message}",
 
@@ -2208,6 +2209,7 @@ export default {
   "toon.notValid": "Geçerli TOON 4.4 değil",
   "convert.menu": "Dönüştür…",
   "convert.table": "Dönüştür…",
+  "convert.tableCommand": "Tabloyu dönüştür…",
   "convert.title": "Dönüştür: {name}",
   "convert.fromPage": "sayfadaki metin",
   "convert.close": "Kapat",

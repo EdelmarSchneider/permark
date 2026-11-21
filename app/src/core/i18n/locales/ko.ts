@@ -31,6 +31,7 @@ export default {
   "welcome.noRecents": "최근 폴더가 아직 없습니다.",
   "welcome.notFound": "(찾을 수 없음)",
   "welcome.remove": "제거",
+  "welcome.recentKeys": "Delete 키를 누르면 선택한 폴더를 목록에서 제거합니다.",
   "welcome.dropHint": "폴더나 파일을 여기에 끌어다 놓으면 열립니다.",
   "welcome.openFailed": "{path}을(를) 열 수 없습니다: {message}",
 
@@ -2159,6 +2160,7 @@ export default {
   "toon.notValid": "올바른 TOON 4.4가 아님",
   "convert.menu": "변환…",
   "convert.table": "변환…",
+  "convert.tableCommand": "표 변환…",
   "convert.title": "{name} 변환",
   "convert.fromPage": "페이지의 텍스트",
   "convert.close": "닫기",

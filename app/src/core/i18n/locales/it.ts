@@ -32,6 +32,7 @@ export default {
   "welcome.noRecents": "Ancora nessuna cartella recente.",
   "welcome.notFound": "(non trovata)",
   "welcome.remove": "Rimuovi",
+  "welcome.recentKeys": "Premi Canc per rimuovere dall'elenco la cartella selezionata.",
   "welcome.dropHint": "Trascina qui cartelle o file per aprirli.",
   "welcome.openFailed": "Impossibile aprire {path}: {message}",
 
@@ -2215,6 +2216,7 @@ export default {
   "toon.notValid": "TOON 4.4 non valido",
   "convert.menu": "Converti…",
   "convert.table": "Converti…",
+  "convert.tableCommand": "Converti la tabella…",
   "convert.title": "Converti {name}",
   "convert.fromPage": "testo della pagina",
   "convert.close": "Chiudi",

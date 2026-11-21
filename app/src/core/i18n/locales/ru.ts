@@ -43,6 +43,7 @@ export default {
   "welcome.noRecents": "Недавних папок пока нет.",
   "welcome.notFound": "(не найдено)",
   "welcome.remove": "Убрать",
+  "welcome.recentKeys": "Нажмите Delete, чтобы убрать выбранную папку из списка.",
   "welcome.dropHint": "Перетащите сюда папки или файлы, чтобы открыть их.",
   "welcome.openFailed": "Не удается открыть {path}: {message}",
 
@@ -2306,6 +2307,7 @@ export default {
   "toon.notValid": "Недопустимый TOON 4.4",
   "convert.menu": "Преобразовать…",
   "convert.table": "Преобразовать…",
+  "convert.tableCommand": "Преобразовать таблицу…",
   "convert.title": "Преобразование {name}",
   "convert.fromPage": "текст со страницы",
   "convert.close": "Закрыть",

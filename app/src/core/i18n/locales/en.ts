@@ -30,6 +30,7 @@ const en = {
   "welcome.noRecents": "No recent folders yet.",
   "welcome.notFound": "(not found)",
   "welcome.remove": "Remove",
+  "welcome.recentKeys": "Press Delete to remove the selected folder from the list.",
   "welcome.dropHint": "Drop folders or files here to open them.",
   "welcome.openFailed": "Can't open {path}: {message}",
 
@@ -2160,6 +2161,7 @@ const en = {
   "toon.notValid": "Not valid TOON 4.4",
   "convert.menu": "Convert…",
   "convert.table": "Convert…",
+  "convert.tableCommand": "Convert table…",
   "convert.title": "Convert {name}",
   "convert.fromPage": "text from the page",
   "convert.close": "Close",
