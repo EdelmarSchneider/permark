@@ -138,6 +138,50 @@ fn multi_line_values_are_read_only() {
 }
 
 #[test]
+fn a_value_with_an_escape_the_sheet_cannot_keep_is_read_only() {
+    // `\$` and a backslash before a backquote are a shell's own: a rewrite in other quotes would change them
+    let text =
+        "PRICE=\"a \\$B\"\nCMD=\"run \\`x\\`\"\nANSI=\"\\e[1m\"\nLINE=\"one\\ntwo \\\"q\\\"\"\n";
+    let sheet = format().sheet(text).expect("parses");
+    for path in ["PRICE", "CMD", "ANSI"] {
+        assert_eq!(
+            sheet.scalar(path).map(|s| s.edit.clone()),
+            Some(Editability::ReadOnly {
+                reason: "escape".to_owned()
+            }),
+            "{path}"
+        );
+    }
+    assert_eq!(
+        sheet.scalar("LINE").map(|s| (s.text.as_str(), &s.edit)),
+        Some(("one\ntwo \"q\"", &Editability::Surgical))
+    );
+    let set = |path: &str, to: &str| {
+        format()
+            .edit(
+                text,
+                &ConfigEdit::Set {
+                    path: path.to_owned(),
+                    value: NewValue::Text {
+                        text: to.to_owned(),
+                    },
+                },
+            )
+            .map(|splice| splice.apply(text))
+    };
+    assert_eq!(
+        set("PRICE", "a $B"),
+        Err(EditRefusal::ReadOnly("escape".to_owned()))
+    );
+    assert_eq!(
+        set("LINE", "three \"q\"").as_deref(),
+        Ok(text
+            .replace("\"one\\ntwo \\\"q\\\"\"", "\"three \\\"q\\\"\"")
+            .as_str())
+    );
+}
+
+#[test]
 fn repeated_keys_get_their_own_paths() {
     let sheet = format().sheet("A=1\nA=2\n").expect("parses");
     assert_eq!(sheet.scalar("A").map(|s| s.text.as_str()), Some("1"));

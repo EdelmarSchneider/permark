@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use permark_core::format::config::util::{
-    comment_above, escape_double, is_number, join_index, join_key, trailing_comment,
-    unescape_double, Lines,
+    comment_above, escape_double, foreign_escape, is_number, join_index, join_key,
+    trailing_comment, unescape_double, Lines,
 };
 use permark_core::format::config::{
     Group, Quote, Row, RowValue, Scalar, ScalarKind, Sheet, SheetKind,
@@ -239,14 +239,14 @@ fn entry(
     }
     let raw = &text[span.clone()];
     let (kind, shown) = if quote == Quote::Double {
-        (
-            ScalarKind::String,
-            unescape_double(
-                raw.strip_prefix('"')
-                    .and_then(|r| r.strip_suffix('"'))
-                    .unwrap_or(raw),
-            ),
-        )
+        let body = raw
+            .strip_prefix('"')
+            .and_then(|r| r.strip_suffix('"'))
+            .unwrap_or(raw);
+        if foreign_escape(body) {
+            read_only = read_only.or(Some("escape"));
+        }
+        (ScalarKind::String, unescape_double(body))
     } else if raw.is_empty() {
         (ScalarKind::Null, String::new())
     } else if BOOLS.contains(&raw) {

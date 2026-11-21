@@ -246,18 +246,15 @@ pub fn unescape_double(text: &str) -> String {
             Some('\\') | None => out.push('\\'),
             Some('/') => out.push('/'),
             Some('0') => out.push('\0'),
-            Some('u') => {
-                let hex: String = chars.clone().take(4).collect();
-                match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
-                    Some(ch) if hex.len() == 4 => {
-                        out.push(ch);
-                        for _ in 0..4 {
-                            chars.next();
-                        }
+            Some('u') => match hex4(chars.as_str()) {
+                Some(ch) => {
+                    out.push(ch);
+                    for _ in 0..4 {
+                        chars.next();
                     }
-                    _ => out.push_str("\\u"),
                 }
-            }
+                None => out.push_str("\\u"),
+            },
             Some(other) => {
                 out.push('\\');
                 out.push(other);
@@ -265,6 +262,38 @@ pub fn unescape_double(text: &str) -> String {
         }
     }
     out
+}
+
+/// The character named by the 4 hex digits that start `s` (after `\u`); none for fewer digits or a surrogate.
+fn hex4(s: &str) -> Option<char> {
+    let hex = s.get(..4)?;
+    if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
+}
+
+/// Whether a double-quoted body holds an escape [`unescape_double`] keeps as written (YAML `\e` `\xE7` `\U0001F600`
+/// `\ `, a surrogate `\uD800`, a shell's `\$`): the shown text is not what the file means, and a rewrite through
+/// [`escape_double`] would change it. Such a value is left to Source.
+#[must_use]
+pub fn foreign_escape(body: &str) -> bool {
+    let mut chars = body.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            continue;
+        }
+        match chars.next() {
+            Some('n' | 'r' | 't' | '"' | '\\' | '/' | '0') => {}
+            Some('u') if hex4(chars.as_str()).is_some() => {
+                for _ in 0..4 {
+                    chars.next();
+                }
+            }
+            _ => return true,
+        }
+    }
+    false
 }
 
 /// A decimal number: optional sign, digits, optional fraction, optional exponent.
@@ -371,6 +400,33 @@ mod tests {
             assert_eq!(unescape_double(&escape_double(text)), text, "{text}");
         }
         assert_eq!(unescape_double("\\u00e9\\q"), "é\\q");
+        assert_eq!(unescape_double("\\u+041"), "\\u+041");
+    }
+
+    #[test]
+    fn escapes_outside_the_written_set_are_foreign() {
+        for known in [
+            "plain",
+            "\\n\\r\\t\\\"\\\\\\/\\0",
+            "\\u00e9 \\uFFFD",
+            escape_double("a \u{1}\u{7f} \"q\" \\ \n").as_str(),
+        ] {
+            assert!(!foreign_escape(known), "{known}");
+        }
+        for foreign in [
+            "\\e[1m",
+            "Configura\\xE7\\xE3o",
+            "\\U0001F600",
+            "\\uD800",
+            "\\u12",
+            "\\u+041",
+            "a \\$B",
+            "\\`x\\`",
+            "\\ ",
+            "end\\",
+        ] {
+            assert!(foreign_escape(foreign), "{foreign}");
+        }
     }
 
     #[test]

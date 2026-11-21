@@ -44,6 +44,8 @@ impl ConfigSyntax for Properties {
     fn parse(&self, text: &str) -> Sheet {
         let lines = Lines::new(text);
         let mut groups: Vec<Group> = Vec::new();
+        // group path -> its place in `groups`: a file of many dotted keys stays linear
+        let mut group_at: HashMap<String, usize> = HashMap::new();
         let mut seen: HashMap<String, usize> = HashMap::new();
         let mut n = 0;
         while n < lines.count() {
@@ -56,19 +58,19 @@ impl ConfigSyntax for Properties {
                 continue;
             }
             let (row, last, group) = entry(text, &lines, n, start + lead, end, &mut seen);
-            match groups.iter_mut().find(|g| g.path == group.0) {
-                Some(found) => {
-                    found.end = found.end.max(row.end);
-                    found.rows.push(row);
-                }
-                None => groups.push(Group {
+            if let Some(found) = group_at.get(&group.0).and_then(|&at| groups.get_mut(at)) {
+                found.end = found.end.max(row.end);
+                found.rows.push(row);
+            } else {
+                group_at.insert(group.0.clone(), groups.len());
+                groups.push(Group {
                     path: group.0,
                     title: group.1,
                     line: row.line,
                     end: row.end,
                     comment: None,
                     rows: vec![row],
-                }),
+                });
             }
             n = last + 1;
         }
