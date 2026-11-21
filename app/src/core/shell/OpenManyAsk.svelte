@@ -14,11 +14,12 @@
 
 <DropPopover {at} labelledby="open-many-title" close={cancel}>
   <h2 id="open-many-title">{t("drop.many.title", { n: count })}</h2>
+  <!-- the order of every dialog: Cancel first, the main answer last -->
   <footer>
+    <button type="button" class="btn" onclick={cancel}>{t("common.cancel")}</button>
     <button type="button" class="btn btn--primary" data-autofocus onclick={confirm}>
       {t("drop.many.open")}
     </button>
-    <button type="button" class="btn" onclick={cancel}>{t("common.cancel")}</button>
   </footer>
 </DropPopover>
 

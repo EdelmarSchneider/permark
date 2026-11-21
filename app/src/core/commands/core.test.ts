@@ -13,7 +13,7 @@ Object.defineProperty(window, "matchMedia", {
 const { ContributionRegistry, CORE_OWNER } = await import("../plugins/registry.svelte");
 const { registerCoreCommands } = await import("./core");
 const { buildKeymap, conflicts } = await import("./keymap");
-const { installKeys, isTypingTarget } = await import("./dispatch");
+const { installKeys, isTypingTarget, resolveKey } = await import("./dispatch");
 const { neutralContext } = await import("../conditions/context.svelte");
 const { parseCombo } = await import("./combo");
 const { en } = await import("../i18n/table");
@@ -60,8 +60,48 @@ describe("the core's commands", () => {
       true,
     );
     expect(conflicts(mac, requiresOf)).toEqual([]);
-    expect(mac.combos.get("tab.next")).toEqual(["Ctrl+Tab", "Mod+Alt+ArrowRight"]);
-    expect(map.combos.get("tab.next")).toEqual(["Mod+Tab", "Mod+Alt+ArrowRight"]);
+    expect(mac.combos.get("tab.next")).toEqual(["Ctrl+Tab", "Mod+PageDown", "Mod+Alt+ArrowRight"]);
+    expect(map.combos.get("tab.next")).toEqual(["Mod+Tab", "Mod+PageDown", "Mod+Alt+ArrowRight"]);
+    expect(map.combos.get("tab.previous")).toEqual([
+      "Mod+Shift+Tab",
+      "Mod+PageUp",
+      "Mod+Alt+ArrowLeft",
+    ]);
+  });
+
+  it("switch tabs with Mod+PageDown | Mod+PageUp, also from an editor; the Mod+Alt+Arrow keys still work", () => {
+    // Ctrl+Alt+Arrow switches workspaces on several Linux desktops: the app never sees it there
+    const ids = commands.map((c) => c.id);
+    const switchable = commands.map((c) =>
+      c.id === "tab.next" || c.id === "tab.previous" ? { ...c, when: () => true } : c,
+    );
+    for (const mac of [false, true]) {
+      const env = {
+        mac,
+        keymap: buildKeymap(
+          shortcuts.map((s) => ({ command: s.command, keys: s.keys })),
+          {},
+          ids,
+          mac,
+        ),
+        commands: switchable,
+        context: { ...neutralContext(), workspace: "project" as const },
+        typing: true,
+        overlay: "none" as const,
+        dialog: false,
+      };
+      const press = (key: string, init: KeyboardEventInit): string | null => {
+        const decision = resolveKey(new KeyboardEvent("keydown", { key, code: key, ...init }), env);
+        return decision.kind === "run" ? decision.command.id : null;
+      };
+      const mod = mac ? { metaKey: true } : { ctrlKey: true };
+      expect(press("PageDown", mod), `mac=${mac}`).toBe("tab.next");
+      expect(press("PageUp", mod), `mac=${mac}`).toBe("tab.previous");
+      expect(press("ArrowRight", { ...mod, altKey: true }), `mac=${mac}`).toBe("tab.next");
+      expect(press("ArrowLeft", { ...mod, altKey: true }), `mac=${mac}`).toBe("tab.previous");
+      // plain PageDown | PageUp stay the page's and the editor's
+      expect(press("PageDown", {}), `mac=${mac}`).toBeNull();
+    }
   });
 
   it("keep the box commands out of the palette and name the keys the app is known by", () => {
