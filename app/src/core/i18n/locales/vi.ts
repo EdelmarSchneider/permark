@@ -63,7 +63,7 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Không đọc được một số dữ liệu đã lưu của PerMark nên đã chuyển chúng sang chỗ khác: {file}",
+    "Không đọc được một số dữ liệu đã lưu của PerMark nên đã chuyển chúng sang chỗ khác: {file}. Bản sao cũ nằm ở đây: {backup}",
   "notice.stateUnreadable":
     "Không đọc được một số dữ liệu đã lưu của PerMark. Dữ liệu được giữ nguyên và PerMark sẽ không thay đổi cho đến khi đọc lại được, thường là sau khi khởi động lại: {file}",
 
@@ -1765,6 +1765,8 @@ export default {
   "project.shareGitOn": "Bật",
   "project.shareInit": "Khởi tạo PerMark để chia sẻ mục này với mọi người",
   "project.sharedFileHint": "Được chia sẻ với bất kỳ ai mở thư mục này.",
+  "project.sharedFileUnreadable":
+    "PerMark không đọc được tệp này ở dòng {line}, nên không thể đổi các cài đặt được đánh dấu Mọi người cho đến khi tệp được sửa.",
   "settings.all": "Toàn bộ cài đặt",
   "settings.editorPreview": "Ví dụ:",
   "settings.linkUpdateHint": "Điều gì xảy ra với liên kết khi một tệp bị di chuyển hoặc đổi tên.",
@@ -1802,6 +1804,8 @@ export default {
   "settings.problem.noPath": "Lệnh cần có {path}.",
   "settings.problem.notInitialized": "Thư mục này chưa có cài đặt PerMark.",
   "settings.problem.tomlOnly": "Hãy dùng tên tệp kết thúc bằng .toml.",
+  "settings.problem.notToml":
+    "PerMark không đọc được .permark/config.toml, nên không có gì được thay đổi.",
   "settings.problem.other": "Giá trị này không được chấp nhận.",
   "welcome.newProject": "Dự án mới…",
   "welcome.newProjectHint": "Chọn một thư mục; PerMark sẽ thiết lập thư mục đó thành dự án.",

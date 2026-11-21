@@ -104,7 +104,7 @@ function refusal<T>(
     | "plugin_remove_data"
     | "plugin_data_bytes"
     | "plugin_set_project",
-  kind: "unavailable" | "invalidData" | "unsupported" | "conflict",
+  kind: "unavailable" | "invalidData" | "unsupported" | "conflict" | "settingsUnreadable",
   subject: string,
   detail: string | null = null,
 ): Promise<Result<T>> {
@@ -124,6 +124,7 @@ function emptyProject(): ProjectSettings {
     agentDenyPaths: [],
     tokenizers: [],
     ignoredPluginKeys: [],
+    unreadableLine: null,
   };
 }
 
@@ -169,6 +170,8 @@ export function createMockShell(deps: {
   const initializedPaths = new Set<string>();
   /** What a folder's window offers about the place of its data (none listed: nothing). */
   const offers = new Map<string, DataOffer>();
+  /** Folders whose shared file is not TOML: the line where it stops being TOML. */
+  const brokenTeamFiles = new Map<string, number>();
   let currentPath = "";
   const choices = new Map<string, boolean>();
   /** Plugins the project's shared file turns off for everyone (`enabled = false`). */
@@ -200,7 +203,11 @@ export function createMockShell(deps: {
     /** A project is shown: its settings are what its folder holds (nothing set, unless initialized before). */
     reset(path: string): void {
       currentPath = path;
-      project = { ...emptyProject(), initialized: initializedPaths.has(path) };
+      project = {
+        ...emptyProject(),
+        initialized: initializedPaths.has(path),
+        unreadableLine: brokenTeamFiles.get(path) ?? null,
+      };
       choices.clear();
       teamOff.clear();
     },
@@ -226,10 +233,18 @@ export function createMockShell(deps: {
       ignorePluginKeys(keys: string[]): void {
         project = { ...project, ignoredPluginKeys: keys };
       },
+      /** The shared file of the folder at `path` is not TOML from `line` on: the folder is set up, its settings page
+       *  says so and every change of a shared setting is refused (the file stays as it is). */
+      teamFileBroken(path: string, line: number): void {
+        brokenTeamFiles.set(path, line);
+        initializedPaths.add(path);
+        if (path === currentPath) project = { ...project, initialized: true, unreadableLine: line };
+      },
       /** Every folder is as new: nothing is initialized. */
       forgetInit(): void {
         initializedPaths.clear();
         offers.clear();
+        brokenTeamFiles.clear();
         project = emptyProject();
       },
       /** The folder at `path` offers `offer` about its data when it opens; with Move | Keep and both places holding
@@ -271,6 +286,14 @@ export function createMockShell(deps: {
         }
         if (!project.initialized)
           return refusal<ProjectSettings>("project_config_set", "unavailable", "permark");
+        if (project.unreadableLine !== null) {
+          return refusal<ProjectSettings>(
+            "project_config_set",
+            "settingsUnreadable",
+            ".permark/config.toml",
+            "notToml",
+          );
+        }
         const problem = listProblem(change);
         if (problem !== null) {
           return refusal<ProjectSettings>("project_config_set", "invalidData", change.key, problem);

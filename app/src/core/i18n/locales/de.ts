@@ -52,7 +52,7 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Einige gespeicherte PerMark-Daten konnten nicht gelesen werden und wurden beiseitegelegt: {file}",
+    "Einige gespeicherte PerMark-Daten konnten nicht gelesen werden und wurden beiseitegelegt: {file}. Die alte Kopie finden Sie hier: {backup}",
   "notice.stateUnreadable":
     "Einige gespeicherte PerMark-Daten konnten nicht gelesen werden. Sie bleiben unverändert, und PerMark ändert sie nicht, solange es sie nicht wieder lesen kann, meist bis zu einem Neustart: {file}",
 
@@ -1790,6 +1790,8 @@ export default {
   "project.shareGitOn": "An",
   "project.shareInit": "PerMark einrichten, um dies mit allen zu teilen",
   "project.sharedFileHint": "Geteilt mit allen, die diesen Ordner öffnen.",
+  "project.sharedFileUnreadable":
+    "PerMark kann diese Datei in Zeile {line} nicht lesen. Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn sie korrigiert ist.",
   "settings.all": "Alle Einstellungen",
   "settings.editorPreview": "Beispiel:",
   "settings.linkUpdateHint":
@@ -1827,6 +1829,8 @@ export default {
   "settings.problem.noPath": "Der Befehl braucht {path}.",
   "settings.problem.notInitialized": "Dieser Ordner hat noch keine PerMark-Einstellungen.",
   "settings.problem.tomlOnly": "Verwende einen Dateinamen, der auf .toml endet.",
+  "settings.problem.notToml":
+    "PerMark kann .permark/config.toml nicht lesen, daher wurde nichts geändert.",
   "settings.problem.other": "Dieser Wert wurde nicht angenommen.",
   "welcome.newProject": "Neues Projekt …",
   "welcome.newProjectHint": "Ordner wählen; PerMark richtet ihn als Projekt ein.",

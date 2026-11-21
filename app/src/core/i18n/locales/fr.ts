@@ -54,7 +54,7 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Des données enregistrées de PerMark n'ont pas pu être lues et ont été mises de côté : {file}",
+    "Des données enregistrées de PerMark n'ont pas pu être lues et ont été mises de côté : {file}. L'ancienne copie se trouve ici : {backup}",
   "notice.stateUnreadable":
     "Des données enregistrées de PerMark n'ont pas pu être lues. Elles ont été laissées intactes, et PerMark ne les modifiera pas tant qu'il ne pourra pas les relire, en général après un redémarrage : {file}",
 
@@ -1807,6 +1807,8 @@ export default {
   "project.shareGitOn": "Activé",
   "project.shareInit": "Initialisez PerMark pour partager ceci avec tout le monde",
   "project.sharedFileHint": "Partagé avec quiconque ouvre ce dossier.",
+  "project.sharedFileUnreadable":
+    "PerMark ne peut pas lire ce fichier à la ligne {line} : les paramètres marqués Tout le monde ne peuvent pas être modifiés tant qu'il n'est pas corrigé.",
   "settings.all": "Tous les paramètres",
   "settings.editorPreview": "Exemple :",
   "settings.linkUpdateHint": "Ce qui arrive aux liens quand un fichier est déplacé ou renommé.",
@@ -1845,6 +1847,8 @@ export default {
   "settings.problem.noPath": "La commande doit contenir {path}.",
   "settings.problem.notInitialized": "Ce dossier n'a pas encore de paramètres PerMark.",
   "settings.problem.tomlOnly": "Utilisez un nom de fichier se terminant par .toml.",
+  "settings.problem.notToml":
+    "PerMark ne peut pas lire .permark/config.toml, rien n'a donc été modifié.",
   "settings.problem.other": "Cette valeur n'a pas été acceptée.",
   "welcome.newProject": "Nouveau projet…",
   "welcome.newProjectHint": "Choisissez un dossier ; PerMark le configure comme projet.",

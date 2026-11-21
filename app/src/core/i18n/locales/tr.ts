@@ -61,7 +61,7 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Kaydedilmiş bazı PerMark verileri okunamadı ve bir kenara ayrıldı: {file}",
+    "Kaydedilmiş bazı PerMark verileri okunamadı ve bir kenara ayrıldı: {file}. Eski kopyayı burada bulabilirsiniz: {backup}",
   "notice.stateUnreadable":
     "Kaydedilmiş bazı PerMark verileri okunamadı. Veriler olduğu gibi bırakıldı; PerMark onları yeniden okuyabilene kadar, genellikle yeniden başlatmadan sonraya kadar, değiştirmeyecek: {file}",
 
@@ -1769,6 +1769,8 @@ export default {
   "project.shareGitOn": "Açık",
   "project.shareInit": "Bunu herkesle paylaşmak için PerMark'ı başlatın",
   "project.sharedFileHint": "Bu klasörü açan herkesle paylaşılır.",
+  "project.sharedFileUnreadable":
+    "PerMark bu dosyayı {line}. satırda okuyamıyor; dosya düzeltilene kadar Herkes olarak işaretli ayarlar değiştirilemez.",
   "settings.all": "Tüm ayarlar",
   "settings.editorPreview": "Örnek:",
   "settings.linkUpdateHint":
@@ -1807,6 +1809,8 @@ export default {
   "settings.problem.noPath": "Komutun {path} içermesi gerekir.",
   "settings.problem.notInitialized": "Bu klasörün henüz PerMark ayarları yok.",
   "settings.problem.tomlOnly": ".toml ile biten bir dosya adı kullanın.",
+  "settings.problem.notToml":
+    "PerMark .permark/config.toml dosyasını okuyamıyor, bu yüzden hiçbir şey değiştirilmedi.",
   "settings.problem.other": "Bu değer kabul edilmedi.",
   "welcome.newProject": "Yeni proje…",
   "welcome.newProjectHint": "Bir klasör seçin; PerMark onu bir proje olarak ayarlar.",

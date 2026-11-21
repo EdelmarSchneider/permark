@@ -343,6 +343,7 @@ export function createMockApi(): Api & {
     "plugin-failed": new Set(),
     "index-progress": new Set(),
     "projects-changed": new Set(),
+    "project-config-changed": new Set(),
   };
   const pluginListeners: { [E in PluginEventName]: Set<(payload: PluginEnvelope<E>) => void> } = {
     "git:snapshot": new Set(),
@@ -1503,6 +1504,15 @@ if (typeof location !== "undefined") {
     mockApi.probe.plugins.agent.rules(problem);
     mockApi.probe.plugins.acp.rules = problem;
   }
+}
+
+// `dev:mock` opened with `?teamFile=broken`: the mock folder's shared settings file is not TOML from line 7 on (a
+// merge conflict left in it): Settings > This folder says so, and every change of a shared setting is refused
+if (
+  typeof location !== "undefined" &&
+  new URLSearchParams(location.search).get("teamFile") === "broken"
+) {
+  mockApi.probe.shell.teamFileBroken(MOCK_FOLDER, 7);
 }
 
 // `dev:mock` opened with `?unshared` shows the notice about sharing an update turned off (once, like the app)

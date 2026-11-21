@@ -60,7 +60,7 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Sebagian data PerMark yang tersimpan tidak dapat dibaca dan telah disisihkan: {file}",
+    "Sebagian data PerMark yang tersimpan tidak dapat dibaca dan telah disisihkan: {file}. Salinan lamanya ada di sini: {backup}",
   "notice.stateUnreadable":
     "Sebagian data PerMark yang tersimpan tidak dapat dibaca. Data itu dibiarkan apa adanya, dan PerMark tidak akan mengubahnya sampai dapat membacanya lagi, biasanya setelah dimulai ulang: {file}",
 
@@ -1773,6 +1773,8 @@ export default {
   "project.shareGitOn": "Aktif",
   "project.shareInit": "Inisialisasi PerMark untuk membagikan ini kepada semua orang",
   "project.sharedFileHint": "Dibagikan dengan siapa pun yang membuka folder ini.",
+  "project.sharedFileUnreadable":
+    "PerMark tidak dapat membaca file ini di baris {line}, jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
   "settings.all": "Semua pengaturan",
   "settings.editorPreview": "Contoh:",
   "settings.linkUpdateHint":
@@ -1811,6 +1813,8 @@ export default {
   "settings.problem.noPath": "Perintah memerlukan {path}.",
   "settings.problem.notInitialized": "Folder ini belum memiliki pengaturan PerMark.",
   "settings.problem.tomlOnly": "Gunakan nama file yang diakhiri .toml.",
+  "settings.problem.notToml":
+    "PerMark tidak dapat membaca .permark/config.toml, jadi tidak ada yang diubah.",
   "settings.problem.other": "Nilai ini tidak diterima.",
   "welcome.newProject": "Proyek baru…",
   "welcome.newProjectHint": "Pilih folder; PerMark akan menyiapkannya sebagai proyek.",

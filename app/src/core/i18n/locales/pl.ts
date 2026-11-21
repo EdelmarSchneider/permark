@@ -65,7 +65,7 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Części zapisanych danych PerMark nie udało się odczytać i odłożono je na bok: {file}",
+    "Części zapisanych danych PerMark nie udało się odczytać i odłożono je na bok: {file}. Starą kopię znajdziesz tutaj: {backup}",
   "notice.stateUnreadable":
     "Części zapisanych danych PerMark nie udało się odczytać. Pozostawiono je bez zmian i PerMark nie zmieni ich, dopóki znów nie będzie mógł ich odczytać (zwykle po ponownym uruchomieniu): {file}",
 
@@ -1830,6 +1830,8 @@ export default {
   "project.shareGitOn": "Włączone",
   "project.shareInit": "Zainicjuj PerMark, aby udostępnić to wszystkim",
   "project.sharedFileHint": "Współdzielone z każdym, kto otwiera ten folder.",
+  "project.sharedFileUnreadable":
+    "PerMark nie może odczytać tego pliku w wierszu {line}, więc ustawień oznaczonych jako Wszyscy nie można zmienić, dopóki nie zostanie poprawiony.",
   "settings.all": "Wszystkie ustawienia",
   "settings.editorPreview": "Przykład:",
   "settings.linkUpdateHint":
@@ -1868,6 +1870,8 @@ export default {
   "settings.problem.noPath": "Polecenie wymaga {path}.",
   "settings.problem.notInitialized": "Ten folder nie ma jeszcze ustawień PerMark.",
   "settings.problem.tomlOnly": "Użyj nazwy pliku kończącej się na .toml.",
+  "settings.problem.notToml":
+    "PerMark nie może odczytać pliku .permark/config.toml, więc nic nie zostało zmienione.",
   "settings.problem.other": "Ta wartość nie została zaakceptowana.",
   "welcome.newProject": "Nowy projekt…",
   "welcome.newProjectHint": "Wybierz folder; PerMark skonfiguruje go jako projekt.",

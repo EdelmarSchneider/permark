@@ -53,7 +53,7 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Unele date salvate de PerMark nu au putut fi citite și au fost puse deoparte: {file}",
+    "Unele date salvate de PerMark nu au putut fi citite și au fost puse deoparte: {file}. Copia veche se află aici: {backup}",
   "notice.stateUnreadable":
     "Unele date salvate de PerMark nu au putut fi citite. Au fost lăsate neatinse, iar PerMark nu le va modifica până nu le va putea citi din nou, de obicei după o repornire: {file}",
 
@@ -1850,6 +1850,8 @@ export default {
   "project.shareGitOn": "Activat",
   "project.shareInit": "Inițializează PerMark pentru a partaja asta cu toată lumea",
   "project.sharedFileHint": "Partajat cu oricine deschide acest dosar.",
+  "project.sharedFileUnreadable":
+    "PerMark nu poate citi acest fișier la linia {line}, așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
   "settings.all": "Toate setările",
   "settings.editorPreview": "Exemplu:",
   "settings.linkUpdateHint": "Ce se întâmplă cu linkurile când un fișier este mutat sau redenumit.",
@@ -1887,6 +1889,8 @@ export default {
   "settings.problem.noPath": "Comanda are nevoie de {path}.",
   "settings.problem.notInitialized": "Acest dosar nu are încă setări PerMark.",
   "settings.problem.tomlOnly": "Folosește un nume de fișier care se termină cu .toml.",
+  "settings.problem.notToml":
+    "PerMark nu poate citi .permark/config.toml, așa că nu s-a schimbat nimic.",
   "settings.problem.other": "Această valoare nu a fost acceptată.",
   "welcome.newProject": "Proiect nou…",
   "welcome.newProjectHint": "Alege un dosar; PerMark îl configurează ca proiect.",
