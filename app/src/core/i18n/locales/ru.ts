@@ -43,6 +43,7 @@ export default {
   "welcome.noRecents": "Недавних папок пока нет.",
   "welcome.notFound": "(не найдено)",
   "welcome.remove": "Убрать",
+  "welcome.recentKeys": "Нажмите Delete, чтобы убрать выбранную папку из списка.",
   "welcome.dropHint": "Перетащите сюда папки или файлы, чтобы открыть их.",
   "welcome.openFailed": "Не удается открыть {path}: {message}",
 
@@ -434,7 +435,7 @@ export default {
   "role.copilot": "Инструкции для Copilot",
   "role.model-card": "Карточка модели",
   "role.dataset-card": "Карточка набора данных",
-  "structured.mode": "Просмотр",
+  "structured.mode": "Отображение",
   "structured.tree": "Дерево",
   "structured.source": "Исходный текст",
   "structured.invalid": "Содержимое недопустимо, поэтому показано как текст.",
@@ -2306,6 +2307,7 @@ export default {
   "toon.notValid": "Недопустимый TOON 4.4",
   "convert.menu": "Преобразовать…",
   "convert.table": "Преобразовать…",
+  "convert.tableCommand": "Преобразовать таблицу…",
   "convert.title": "Преобразование {name}",
   "convert.fromPage": "текст со страницы",
   "convert.close": "Закрыть",
@@ -3367,6 +3369,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "Не удалось прочитать файл, который определяет, что могут видеть агенты. Агент ничего не получит, пока файл не будет исправлен.",
   "acp.fail.startFailed": "Не удалось запустить программу агента.",
+  "acp.fail.notAllowed": "Вы не разрешили запуск программы агента.",
   "acp.fail.timedOut": "Агент не ответил вовремя.",
   "acp.fail.initFailed":
     "Эта программа ответила не как агент, с которым PerMark умеет общаться. Проверьте команду и повторите попытку.",
@@ -3379,6 +3382,7 @@ export default {
   "acp.fail.exited": "Программа агента неожиданно закрылась.",
   "acp.fail.sendFailed": "Не удалось передать сообщение агенту.",
   "acp.error.relativeProgram": "Укажите полный путь к программе или только ее имя.",
+  "acp.error.commandTooLong": "Команда слишком длинная (не больше 1000 символов).",
   "acp.error.networkProgram":
     "PerMark запускает только программы на этом компьютере, а не из сетевой папки.",
   "acp.error.oneChoice": "Выберите одного агента или введите одну команду.",

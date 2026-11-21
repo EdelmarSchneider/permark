@@ -17,7 +17,7 @@ on:
         description: "The tag to build from"
         type: string
         required: true
-    # SNAPCRAFT_STORE_CREDENTIALS: from the `release` environment of the job below (or inherited from the caller).
+    # SNAPCRAFT_STORE_CREDENTIALS: a secret of the `release` environment of the job below.
   workflow_dispatch:
     inputs:
       channel:
@@ -26,6 +26,10 @@ on:
         default: edge
         type: choice
         options: [edge, stable]
+      latest_release:
+        description: "Package the latest release's .deb when the branch's version has none (else the build fails)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -43,6 +47,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      # snap/snapcraft.yaml packages the .deb of the version in app/package.json and fails when that release has none;
+      # this file (read from the build's copy of the source) lets it take the latest release's .deb instead.
+      - name: Allow the latest release's .deb
+        if: github.event_name == 'workflow_dispatch' && inputs.latest_release
+        run: |
+          mkdir -p snap/local
+          echo latest > snap/local/deb-release
 
       - name: Build the snap
         id: build

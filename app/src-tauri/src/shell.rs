@@ -65,6 +65,8 @@ pub struct Shell {
     _downloads: ServiceLease,
     /// PDF | HTML | print through the system web view (`HtmlPrinterApi`), for the export plugin.
     _print: ServiceLease,
+    /// The question before a program the person set up first starts (`ProgramConsentApi`).
+    _consent: ServiceLease,
 }
 
 /// The file manager entries go with their plugin (off = leaves nothing behind); quitting the app leaves them.
@@ -202,6 +204,9 @@ impl Shell {
         let _ = settings_file.adopt_language(installer_language());
         let unreadable = unreadable_settings(&settings_file);
         let settings = settings_file.load();
+        let app_store = StateStore::app(dirs);
+        // before any window: what was set up before approvals existed counts as allowed, nothing a page sets up later
+        crate::consent::adopt(&app_store, &settings.editor);
         let sink: Arc<dyn EventSink> = Arc::new(TauriSink::new(handle.clone()));
         let env = Arc::new(CoreEnv::new(
             dirs.clone(),
@@ -218,8 +223,8 @@ impl Shell {
         let files = crate::files::provide(&env, &handle);
         let downloads = crate::downloads_http::provide(&env);
         let print = crate::print::provide(&env, &handle);
+        let consent = crate::consent::provide(&env, &handle);
         env.apply_app_plugins();
-        let app_store = StateStore::app(dirs);
         // also removes all but the newest reports (never done by the panic hook)
         let crash = permark_core::crash::offer(&app_store);
         Self {
@@ -243,6 +248,7 @@ impl Shell {
             _files: files,
             _downloads: downloads,
             _print: print,
+            _consent: consent,
         }
     }
 

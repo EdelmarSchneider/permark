@@ -219,6 +219,11 @@ describe("Make official in {root}", () => {
       "PerMark saves the official list in this folder (.permark/vocabulary.toml).",
     );
     await until(() => document.activeElement?.textContent?.trim() === "Make official", "focus");
+    // the order of every dialog of the app: Cancel first, the main answer last
+    expect([...ask.querySelectorAll("button")].map((b) => b.textContent?.trim())).toEqual([
+      "Cancel",
+      "Make official",
+    ]);
     button("Make official", pop)!.click();
     await until(() => statusOf("roadmap") === "official", "official now");
     expect(mock.probe.projects.calls).toContain("vocabulary_promote tag roadmap");

@@ -328,6 +328,86 @@ describe("the table button", () => {
     stop();
     expect(document.querySelector(".pm-convert-table")).toBeNull();
   });
+
+  it("shows for the keyboard too: focus inside a table brings it, focus leaving the table takes it away", async () => {
+    const { decorateTables } = await import("./tables");
+    const root = document.createElement("div");
+    root.innerHTML =
+      '<p><a href="#a" id="out">out</a></p><table><tr><th>a</th></tr><tr><td><a href="#b" id="in">1</a></td></tr></table>';
+    document.body.append(root);
+    const stop = decorateTables(root, () => {});
+    const button = document.querySelector<HTMLButtonElement>(".pm-convert-table");
+    const inside = root.querySelector<HTMLElement>("#in");
+    const outside = root.querySelector<HTMLElement>("#out");
+    expect(button?.hidden).toBe(true);
+    inside?.focus();
+    expect(button?.hidden).toBe(false);
+    outside?.focus();
+    expect(button?.hidden).toBe(true);
+    // a table a plugin draws inside the page (a TOON block's sheet) is not offered
+    root.innerHTML =
+      '<div class="sheet"><table><tr><td><a href="#c" id="sheet">c</a></td></tr></table></div>';
+    root.querySelector<HTMLElement>("#sheet")?.focus();
+    expect(button?.hidden).toBe(true);
+    stop();
+  });
+
+  it("the palette's Convert table takes the table holding the selection, and is not offered without one", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    await host.enable("convert");
+    try {
+      const command = registry.of("command").find((c) => c.id === "convert.table");
+      const decoration = registry.of("docDecoration").find((c) => c.id === "convert.tables");
+      if (!command || !decoration) throw new Error("no table command | decoration");
+      expect(command.label).toBe("convert.tableCommand");
+      const page = document.createElement("div");
+      page.innerHTML =
+        "<p id='p'>text</p><table><tr><th>a</th><th>b</th></tr><tr><td id='cell'>1</td><td>2</td></tr></table>";
+      document.body.append(page);
+      const field = document.createElement("input");
+      document.body.append(field);
+      const stop = decoration.decorate(page);
+      const select = (node: Node): void => {
+        document.getSelection()?.collapse(node, 0);
+        document.dispatchEvent(new Event("selectionchange"));
+      };
+      expect(command.when?.()).toBe(false);
+      const cell = page.querySelector("#cell")?.firstChild;
+      if (!cell) throw new Error("no cell");
+      select(cell);
+      expect(command.when?.()).toBe(true);
+      // the palette's field takes the selection: the table it was in stays the one meant
+      select(field);
+      expect(command.when?.()).toBe(true);
+      await command.run();
+      const state = converter.state;
+      expect(state.status === "closed" ? null : state.origin).toEqual({
+        kind: "text",
+        text: "a,b\n1,2\n",
+        language: "csv",
+        beside: null,
+      });
+      // a selection elsewhere in the page: no table, nothing offered
+      const para = page.querySelector("#p")?.firstChild;
+      if (!para) throw new Error("no paragraph");
+      select(para);
+      expect(command.when?.()).toBe(false);
+      // a click in a cell counts at once, before its selectionchange (a shortcut pressed right after it)
+      cell.parentElement?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+      expect(command.when?.()).toBe(true);
+      select(para);
+      // a page hidden behind the editor offers none of its tables
+      select(cell);
+      page.hidden = true;
+      expect(command.when?.()).toBe(false);
+      page.hidden = false;
+      stop();
+      expect(command.when?.()).toBe(false);
+    } finally {
+      host.disable("convert");
+    }
+  });
 });
 
 describe("the mock backend", () => {

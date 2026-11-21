@@ -5,6 +5,7 @@
   import ArrowRightLeft from "@lucide/svelte/icons/arrow-right-left";
   import FilePen from "@lucide/svelte/icons/file-pen";
   import FilePlus from "@lucide/svelte/icons/file-plus";
+  import Eraser from "@lucide/svelte/icons/eraser";
   import FileX from "@lucide/svelte/icons/file-x";
   import FolderDot from "@lucide/svelte/icons/folder-dot";
   import FolderGit2 from "@lucide/svelte/icons/folder-git-2";
@@ -24,6 +25,7 @@
   import { projects } from "../../core/projects/instance.svelte";
   import { middleCut, relativeTo } from "../../core/projects/model";
   import LiveOffNote from "../../core/shell/LiveOffNote.svelte";
+  import Segments from "../../core/shell/settings/Segments.svelte";
   import { closeView } from "../../core/shell/sides";
   import { followStore } from "./followLink.svelte";
   import { mineLabel, pathOf, type FeedShow } from "./mine";
@@ -161,7 +163,7 @@
         aria-label={t("feed.clear")}
         onclick={() => void feed.clear()}
       >
-        <RefreshCw size={14} />
+        <Eraser size={14} />
       </button>
       {@render viewMenu?.()}
       <button
@@ -175,16 +177,14 @@
     <p class="last">
       {latest > 0 ? t("live.last", { ago: ago(latest, now) }) : t("live.none")}
     </p>
-    <div class="show" role="radiogroup" aria-label={t("feed.show.label")}>
-      {#each SHOWS as show (show.id)}
-        <button
-          type="button"
-          role="radio"
-          aria-checked={feed.show === show.id}
-          class:on={feed.show === show.id}
-          onclick={() => (feed.show = show.id)}>{t(show.label)}</button
-        >
-      {/each}
+    <!-- the shared radio group: arrows move the choice and the focus, one Tab stop -->
+    <div class="show">
+      <Segments
+        label={t("feed.show.label")}
+        value={feed.show}
+        options={SHOWS.map((show) => ({ value: show.id, label: t(show.label) }))}
+        onchange={(show) => (feed.show = show)}
+      />
     </div>
     <label class="docs" title={t("live.docsOnlyHint")}>
       <input type="checkbox" bind:checked={feed.docsOnly} />
@@ -397,29 +397,15 @@
     color: var(--muted);
     font-size: var(--fs-ui-xs);
   }
+  /* the filter keeps the panel's width, its choices share it equally */
   .show {
-    display: inline-flex;
     flex-basis: 100%;
-    gap: 2px;
-    padding: 2px;
-    border-radius: var(--radius-control);
-    background: var(--surface-2);
   }
-  .show button {
+  .show > :global(.segments) {
+    display: flex;
+  }
+  .show :global(.segment) {
     flex: 1;
-    padding: 2px var(--sp-2);
-    border: 0;
-    border-radius: var(--radius-control);
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    font-size: var(--fs-ui-xs);
-    cursor: pointer;
-  }
-  .show button.on {
-    background: var(--bg);
-    color: var(--text);
-    box-shadow: 0 0 0 1px var(--border);
   }
   .docs {
     flex-basis: 100%;

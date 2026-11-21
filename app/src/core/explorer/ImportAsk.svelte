@@ -94,6 +94,13 @@
         {t("common.close")}
       </button>
     {:else}
+      <!-- the order of every dialog: Cancel first, the main answer last (Copy keeps the originals: the safe one) -->
+      <button type="button" class="btn" onclick={cancel}>{t("common.cancel")}</button>
+      {#if plan === null || movable}
+        <button type="button" class="btn" disabled={plan === null} onclick={() => confirm("move")}>
+          {t("import.moveHere")}
+        </button>
+      {/if}
       <button
         type="button"
         class="btn btn--primary"
@@ -103,12 +110,6 @@
       >
         {t("import.copyHere")}
       </button>
-      {#if plan === null || movable}
-        <button type="button" class="btn" disabled={plan === null} onclick={() => confirm("move")}>
-          {t("import.moveHere")}
-        </button>
-      {/if}
-      <button type="button" class="btn" onclick={cancel}>{t("common.cancel")}</button>
     {/if}
   </footer>
 </DropPopover>

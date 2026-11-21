@@ -32,6 +32,7 @@ export default {
   "welcome.noRecents": "Aún no hay carpetas recientes.",
   "welcome.notFound": "(no se encontró)",
   "welcome.remove": "Quitar",
+  "welcome.recentKeys": "Pulsa Supr para quitar de la lista la carpeta seleccionada.",
   "welcome.dropHint": "Suelta carpetas o archivos aquí para abrirlos.",
   "welcome.openFailed": "No se pudo abrir {path}: {message}",
 
@@ -412,7 +413,7 @@ export default {
   "role.copilot": "Instrucciones de Copilot",
   "role.model-card": "Ficha del modelo",
   "role.dataset-card": "Ficha del conjunto de datos",
-  "structured.mode": "Vista",
+  "structured.mode": "Visualización",
   "structured.tree": "Árbol",
   "structured.source": "Fuente",
   "structured.invalid": "Esto no es válido, así que se muestra como texto.",
@@ -2202,6 +2203,7 @@ export default {
   "toon.notValid": "TOON 4.4 no válido",
   "convert.menu": "Convertir…",
   "convert.table": "Convertir…",
+  "convert.tableCommand": "Convertir la tabla…",
   "convert.title": "Convertir {name}",
   "convert.fromPage": "texto de la página",
   "convert.close": "Cerrar",
@@ -3224,6 +3226,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "No se pudo leer un archivo que define lo que pueden ver los agentes. El agente no recibe nada hasta que se corrija.",
   "acp.fail.startFailed": "No se pudo iniciar el programa del agente.",
+  "acp.fail.notAllowed": "No permitiste que se iniciara el programa del agente.",
   "acp.fail.timedOut": "El agente no respondió a tiempo.",
   "acp.fail.initFailed":
     "Este programa no respondió como un agente con el que PerMark pueda hablar. Revisa el comando y vuelve a intentarlo.",
@@ -3236,6 +3239,7 @@ export default {
   "acp.fail.exited": "El programa del agente se cerró inesperadamente.",
   "acp.fail.sendFailed": "No se pudo entregar el mensaje al agente.",
   "acp.error.relativeProgram": "Escribe la ruta completa del programa, o solo su nombre.",
+  "acp.error.commandTooLong": "El comando es demasiado largo (como máximo 1000 caracteres).",
   "acp.error.networkProgram":
     "PerMark solo inicia programas de este equipo, no desde una carpeta de red.",
   "acp.error.oneChoice": "Elige un agente o escribe un comando.",

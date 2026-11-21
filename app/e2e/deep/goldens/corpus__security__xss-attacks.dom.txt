@@ -118,3 +118,4 @@ div.reading
               "HTML, XML"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only

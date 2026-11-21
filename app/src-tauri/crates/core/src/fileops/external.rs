@@ -118,6 +118,33 @@ mod tests {
     }
 
     #[test]
+    fn legacy_office_files_never_open_from_a_click_and_their_successors_do() {
+        // the older binary formats carry macros in every file (VBA, Excel 4 sheets), unlike `docx` | `xlsx` | `pptx`;
+        // Word opens an `.rtf` that is really a `.doc` inside without a word
+        let legacy = [
+            "a.doc", "a.dot", "a.xls", "a.xlt", "a.xla", "a.ppt", "a.pot", "a.pps", "B.DOC",
+            "a.rtf",
+        ];
+        let current = ["a.docx", "a.xlsx", "a.pptx"];
+        let (_d, v) = vault(&[legacy.as_slice(), current.as_slice()].concat());
+        for no in legacy {
+            assert_eq!(
+                kind(external_target(&v, no, OpenMode::DefaultApp)),
+                Some(ErrorKind::Unsupported),
+                "{no}"
+            );
+            // still shown in the file manager
+            assert!(external_target(&v, no, OpenMode::Reveal).is_ok(), "{no}");
+        }
+        for ok in current {
+            assert!(
+                external_target(&v, ok, OpenMode::DefaultApp).is_ok(),
+                "{ok}"
+            );
+        }
+    }
+
+    #[test]
     fn the_browser_gets_html_only() {
         let (_d, v) = vault(&["page.html", "old.HTM", "a.md", "run.exe"]);
         assert!(external_target(&v, "page.html", OpenMode::Browser).is_ok());

@@ -1,7 +1,8 @@
 <script lang="ts">
-  // A small button: the data as JSON on the clipboard (a check mark when it worked, a word when it did not).
+  // "Copy as JSON": the data of a TOON text on the clipboard, through the shared copy button (its result shown and
+  // said).
   import Braces from "@lucide/svelte/icons/braces";
-  import Check from "@lucide/svelte/icons/check";
+  import CopyButton from "../../core/doc/CopyButton.svelte";
   import { t } from "../../core/i18n";
   import { copyAsJson } from "./copyJson";
 
@@ -13,28 +14,17 @@
   };
   let { text, compact = false }: Props = $props();
 
-  let state = $state<"idle" | "done" | "failed">("idle");
-
-  async function copy(): Promise<void> {
+  async function copy(): Promise<boolean> {
     const source = await text();
-    state = source !== null && (await copyAsJson(source)) ? "done" : "failed";
+    return source !== null && (await copyAsJson(source));
   }
-
-  // the check mark (or the word) goes after a moment
-  $effect(() => {
-    if (state === "idle") return;
-    const timer = setTimeout(() => (state = "idle"), 1500);
-    return () => clearTimeout(timer);
-  });
 </script>
 
-<button
-  type="button"
-  class={compact ? "icon-btn icon-btn--sm copy-json" : "btn btn--sm copy-json"}
-  title={t("toon.copyJson")}
-  aria-label={t("toon.copyJson")}
-  onclick={() => void copy()}
->
-  {#if state === "done"}<Check size={14} />{:else}<Braces size={14} />{/if}
-  {#if !compact}{state === "failed" ? t("toon.copyFailed") : t("toon.copyJson")}{/if}
-</button>
+<CopyButton
+  {copy}
+  label={t("toon.copyJson")}
+  failedLabel={t("toon.copyFailed")}
+  icon={Braces}
+  {compact}
+  class="copy-json"
+/>

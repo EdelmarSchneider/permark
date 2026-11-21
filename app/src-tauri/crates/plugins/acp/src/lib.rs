@@ -35,13 +35,14 @@ use std::sync::{Arc, Mutex};
 use permark_core::conditions::Requirement;
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
-    PluginScope, ProjectServices, RpcRegistration, Running,
+    PluginScope, ProgramConsentApi, ProjectServices, RpcRegistration, Running,
 };
+use permark_core::process::ProgramApprovals;
 use permark_core::{ErrorKind, IpcError};
 
 use crate::client::lock;
 
-pub use agents::{person_launch, Agents, Choice, Plan, CHOICE_FILE};
+pub use agents::{own_command, person_launch, Agents, Choice, Plan, CHOICE_FILE};
 pub use dto::{
     AcpConfigCategory, AcpConfigChoice, AcpConfigKind, AcpConfigOption, AcpConfigValue, AcpError,
     AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason, AcpToolKind, AcpToolStatus,
@@ -265,9 +266,25 @@ impl Plugin for Acp {
             Some(store) => project.with_store(store.clone()),
             None => project,
         };
+        // the person's own command starts only once they allowed it (registry agents start as the app pins them)
+        let consent = services
+            .app_services
+            .get::<ProgramConsentApi>()
+            .map(|api| Arc::clone(&api.0));
+        let approvals = match cx.store() {
+            Some(store) => ProgramApprovals::of(store, consent),
+            None => ProgramApprovals::new(None, consent),
+        };
+        // a program inside the project (its folder | a worktree) is none the person set up: never started
+        let folders = std::iter::once(vault.main())
+            .chain(vault.worktrees().iter().map(|worktree| &worktree.root))
+            .map(|root| root.path().to_path_buf())
+            .collect();
+        let approvals = approvals.outside(folders);
         let session = Session::new(Host {
             agents: Agents::new(choice),
             launch: person_launch(),
+            approvals,
             project,
             place: place.clone(),
             run: run.clone(),
@@ -354,6 +371,7 @@ mod tests {
             launch: Arc::new(|_: &Plan, _: &std::path::Path| {
                 Err(std::io::Error::other("never started"))
             }),
+            approvals: ProgramApprovals::new(None, None),
             project: testing::project(&vault, &documents),
             place: Some(work.clone()),
             run: Some(run.clone()),

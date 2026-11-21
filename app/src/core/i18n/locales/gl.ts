@@ -33,6 +33,7 @@ export default {
   "welcome.noRecents": "Aínda non hai cartafoles recentes.",
   "welcome.notFound": "(non se atopou)",
   "welcome.remove": "Quitar",
+  "welcome.recentKeys": "Prema Supr para quitar da lista o cartafol seleccionado.",
   "welcome.dropHint": "Solte aquí cartafoles ou ficheiros para abrilos.",
   "welcome.openFailed": "Non é posíbel abrir {path}: {message}",
 
@@ -412,7 +413,7 @@ export default {
   "role.copilot": "Instrucións para Copilot",
   "role.model-card": "Ficha do modelo",
   "role.dataset-card": "Ficha do conxunto de datos",
-  "structured.mode": "Vista",
+  "structured.mode": "Visualización",
   "structured.tree": "Árbore",
   "structured.source": "Fonte",
   "structured.invalid": "Isto non é válido, así que se mostra como texto.",
@@ -2206,6 +2207,7 @@ export default {
   "toon.notValid": "Non é TOON 4.4 válido",
   "convert.menu": "Converter…",
   "convert.table": "Converter…",
+  "convert.tableCommand": "Converter a táboa…",
   "convert.title": "Converter {name}",
   "convert.fromPage": "texto da páxina",
   "convert.close": "Pechar",
@@ -3223,6 +3225,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "Non se puido ler un ficheiro que define o que poden ver os axentes. O axente non recibe nada ata que se corrixa.",
   "acp.fail.startFailed": "Non foi posíbel iniciar o programa do axente.",
+  "acp.fail.notAllowed": "Non permitiu que se iniciase o programa do axente.",
   "acp.fail.timedOut": "O axente non respondeu a tempo.",
   "acp.fail.initFailed":
     "Este programa non respondeu como un axente co que PerMark poida falar. Comprobe a orde e ténteo de novo.",
@@ -3235,6 +3238,7 @@ export default {
   "acp.fail.exited": "O programa do axente pechouse de forma inesperada.",
   "acp.fail.sendFailed": "Non foi posíbel entregarlle a mensaxe ao axente.",
   "acp.error.relativeProgram": "Escriba a ruta completa do programa, ou só o seu nome.",
+  "acp.error.commandTooLong": "A orde é longa de máis (como máximo 1000 caracteres).",
   "acp.error.networkProgram":
     "PerMark só inicia programas deste ordenador, non desde un cartafol de rede.",
   "acp.error.oneChoice": "Escolla un axente ou escriba unha orde.",

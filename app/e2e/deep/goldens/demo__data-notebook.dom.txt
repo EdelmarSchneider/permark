@@ -126,6 +126,7 @@ div.reading
               "Python"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         h2 id="station-by-station" dir="auto"
           a.anchor href="#station-by-station" aria-label="Link to Station by station"
             "#"

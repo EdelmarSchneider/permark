@@ -144,6 +144,7 @@ div.reading
               icon lucide-arrow-left-right
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         p dir="auto"
           "Lines 4 to 6 are the whole policy: the order of the checks, the one failure that rejects a reading outright, and the promise that flagged readings are still pub…"
           code

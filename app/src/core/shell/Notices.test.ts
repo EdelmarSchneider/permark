@@ -30,6 +30,29 @@ describe("the notices", () => {
     expect(region?.style.getPropertyValue("--notices-right")).toBe("300px");
   });
 
+  it("keep their live region on the page before the first notice, so screen readers hear that one too", () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    const store = new WindowStore(createMockApi());
+    component = mount(Notices, { target, props: { store } });
+    flushSync();
+    const region = target.querySelector<HTMLElement>('[role="status"][aria-live="polite"]');
+    if (!region) throw new Error("no live region before the first notice");
+    expect(region.textContent?.trim()).toBe("");
+    // no notice takes no room at the bottom of the pages
+    expect(document.documentElement.style.getPropertyValue("--notices-h")).toBe("");
+    store.notifyNote("Saved, 1 change.");
+    flushSync();
+    // the same element: the words land inside the region the screen reader already watches
+    expect(target.querySelector('[role="status"]')).toBe(region);
+    expect(region.textContent).toContain("Saved, 1 change.");
+    expect(document.documentElement.style.getPropertyValue("--notices-h")).not.toBe("");
+    for (const notice of store.notices) store.dismiss(notice.id, "dismissed");
+    flushSync();
+    expect(target.querySelector('[role="status"]')).toBe(region);
+    expect(document.documentElement.style.getPropertyValue("--notices-h")).toBe("");
+  });
+
   it("are told politely to screen readers, and their buttons take the keyboard", () => {
     const { store, target } = shown(0);
     store.notifyAction("Deleted a.md", { label: "Undo", run: () => {} });

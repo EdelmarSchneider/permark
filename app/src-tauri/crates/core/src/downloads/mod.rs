@@ -26,6 +26,7 @@ use ts_rs::TS;
 use crate::state::shared_write::{lock_within, FileLock};
 
 pub use error::DownloadError;
+pub(crate) use part::sha_hex;
 pub use secret::{MemorySecrets, Secret, SecretError, SecretStore};
 use transport::open;
 pub use transport::{Asked, Request, Response, Scripted, ScriptedTransport, Transport};

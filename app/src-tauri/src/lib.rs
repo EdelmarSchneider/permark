@@ -4,6 +4,7 @@
 pub mod agent;
 mod assets;
 mod commands;
+mod consent;
 pub mod crash;
 mod default_app;
 mod downloads_http;

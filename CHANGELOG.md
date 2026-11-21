@@ -9,6 +9,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **A crash leaves a report on your computer.** If PerMark closes unexpectedly, it saves a report on this computer, with your home folder shown as `~`, and offers it the next time it starts: **Copy report**, **Report on GitHub** (copies the report and opens a prefilled issue in your browser; you review it, paste the report and submit it yourself) and **Open folder**. PerMark sends nothing. <!-- f: shell -->
 - **Comments removed outside PerMark can come back.** When something other than PerMark removes comments from a folder's comments file — a sync tool, another program, a copy of the folder from elsewhere — the Comments panel says how many went, with **Restore** and **Dismiss**. When many go at once, a notice says so too. Restore adds back only the comments that are missing and never changes the ones that are there. PerMark keeps the removed comments for 30 days. <!-- f: comments -->
 - **Choose whether git sees PerMark's settings.** **Settings → This folder** can keep the whole `.permark` folder out of git, or let git see its shared settings and tags so you can commit them. Your private data and caches always stay out of git. <!-- f: project-folder -->
+- **New keys for tabs and notes.** **Ctrl+PageDown** and **Ctrl+PageUp** switch tabs, and **Alt+PageDown** and **Alt+PageUp** move to the next or previous note; the **Ctrl+Alt** arrow keys still work. Shortcuts with a digit, such as **Ctrl+1**, now also work on keyboard layouts like AZERTY. <!-- f: keyboard-shortcuts, tabs, notes -->
 
 ### Changed
 - **AI agents get folder data labeled as such.** Comments, done replies, activity and the hand-off that agents receive are now described as data from the folder, which may hold text from other people, other computers or copies of the folder, and never as instructions. <!-- f: agent-connection -->
@@ -21,6 +22,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Remove data** for a plugin now also removes what the plugin kept for this computer in each open project. <!-- f: plugins -->
 - **Large folders and many files at once are faster.** Opening a folder with tens of thousands of files, git merges and checkouts, copying or deleting many files (also inside ignored folders such as `node_modules`), and moving, deleting or selecting thousands of files in the Explorer now take a fraction of the time. Search answers faster in documents with long sections, and spelling and review marks appear faster in long documents in Edit. <!-- f: explorer, search, file-ops, edit-mode, watch -->
 - Word and token counts of a very long selection now appear after a short pause instead of slowing the window down. <!-- f: word-count, token-count -->
+- Dialogs that ask you something now all put **Cancel** first and the main button last. <!-- f: shell -->
+- Old Office files (`.doc`, `.xls`, `.ppt` and their templates) and `.rtf` files no longer open in another program from PerMark; open them from your file manager. `.docx`, `.xlsx` and `.pptx` open as before. <!-- f: file-ops -->
 
 ### Removed
 - **The Windows `.msi` installer.** Version 0.17 was the last one with an `.msi`: use the `-setup.exe` or the Microsoft Store. A copy installed from an `.msi` moves to the `-setup.exe` at its next update in PerMark: Windows asks to remove the old copy and asks for administrator permission (if you say no, it asks again at the next update). Your settings and notes stay. If you connected an AI agent, copy its connection lines again from **Settings → Integration → Agent connection**, because the program now runs from your user folder. <!-- f: windows-installer -->
@@ -67,6 +70,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - When the recycle bin takes only some of the files you delete, **Undo** (**Ctrl+Z**) now brings back the ones it took. <!-- f: file-ops -->
 - After PerMark moves thousands of files at once, the other panels now see them as moved instead of removed and added. <!-- f: file-ops, watch -->
 - Switching to another long document no longer shows the previous document's word count until the new one is counted. <!-- f: word-count -->
+- **Better with a keyboard and a screen reader.** The Explorer says which row the keyboard is on and its place in the list, as soon as you reach it. Focus rings now show in every theme and in Windows High Contrast. Notices are read out when they appear. The recent folders list keeps the keyboard after you remove a folder. Copy buttons say when they copied, the live feed filters move with the arrow keys, and the Convert table command is in the command palette. <!-- f: accessibility, explorer, start-screen, live-feed -->
+- Slow actions, such as opening or saving a large file, importing files or fetching a web picture, no longer make other actions wait. <!-- f: shell -->
 
 ### Security
 - **A document can no longer freeze PerMark with deeply nested HTML.** PerMark now measures how deep a document's HTML goes with the same parser that cleans it, so every document that is too deep to show safely falls back to plain text at once, with a note. Documents with slightly broken inline SVG or MathML keep showing as before. <!-- f: view-mode -->
@@ -76,6 +81,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Git never reaches a network share through a repository's settings.** PerMark's git features no longer open a repository whose settings, included settings or object lists point to a network share or through a link, or whose settings are written in a way that different git programs could read differently. They also stop when the repository's `.git` folder is replaced by a file or a link while the folder is open. Git features stay off for such a repository, and agents get no comments, activity or hand-off from it. <!-- f: git-status, agent-connection -->
 - An activity record with impossible numbers is set aside, and a fresh one starts. <!-- f: agent-connection -->
 - Updated the libraries that check HTTPS certificates for downloads and updates, and other libraries with published security fixes. <!-- f: updates -->
+- **PerMark asks before it starts a program for the first time.** The first time **Open in editor** starts an editor, or the Assistant starts the command you set up yourself, PerMark shows the program's full path and arguments and asks you. It asks again when they change, and a "no" holds until you restart PerMark. The editor and command you already use are accepted once after this update. A program inside an open folder, on a network share or given by a relative path is never started. <!-- f: editing, assistant -->
+- Pages inside PerMark can no longer start downloads. <!-- f: shell -->
+- Releases are now signed in a step that runs no build code, their signatures are checked before they are published, and they come with build provenance and a software bill of materials. <!-- f: updates -->
 
 ## [0.17.0] - 2026-11-19
 

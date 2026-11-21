@@ -688,6 +688,30 @@ fn an_own_command_with_a_relative_program_path_is_refused() {
     assert!(!profile.path().join(CHOICE_FILE).exists());
 }
 
+/// An own command longer than the cap is refused by the preview and by a choice; one at the cap is kept.
+#[test]
+fn an_own_command_longer_than_the_cap_is_refused() {
+    let profile = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let agents = testing::agents(profile.path(), bin.path());
+    let at_cap = format!("agent {}", "x".repeat(MAX_COMMAND - "agent ".len()));
+    let over = format!("{at_cap}x");
+    assert_eq!(
+        agents.preview(&over),
+        ResolvedCommand {
+            program: None,
+            error: Some("tooLong".to_owned())
+        }
+    );
+    let error = agents.choose(&command(&over)).unwrap_err();
+    assert_eq!(
+        (error.kind, error.detail.as_deref()),
+        (ErrorKind::InvalidData, Some("tooLong"))
+    );
+    assert!(!profile.path().join(CHOICE_FILE).exists());
+    agents.choose(&command(&at_cap)).unwrap();
+}
+
 /// A program on a share | device path: even a lookup of it would connect to the server (Windows sends the person's
 /// sign-in to whoever answers). Refused by the preview and by a choice before the program is looked up at all.
 #[test]
@@ -840,4 +864,29 @@ fn inside_a_snap_no_agent_can_start() {
         (error.kind, error.detail.as_deref()),
         (ErrorKind::Unavailable, Some("snap"))
     );
+}
+
+/// What an update takes as already allowed: the own command chosen, as it would start (a registry agent | nothing
+/// chosen | a program not found: nothing).
+#[test]
+fn the_own_command_chosen_is_what_an_update_adopts() {
+    let profile = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let program = testing::program(bin.path(), "my-agent");
+    let store = testing::app_store(profile.path());
+    assert_eq!(own_command(&store), None);
+    let file = store.app_file::<Choice>(CHOICE_FILE);
+    file.save(&Choice::Command(format!("\"{}\" --acp", program.display())))
+        .unwrap();
+    let call = own_command(&store).unwrap();
+    same_file(&call.program, &program);
+    assert_eq!(call.args, ["--acp"]);
+    assert_eq!(call.env, []);
+    file.save(&Choice::Agent("claude-acp".to_owned())).unwrap();
+    assert_eq!(own_command(&store), None);
+    file.save(&Choice::Command(
+        "definitely-not-a-program-xyz --acp".to_owned(),
+    ))
+    .unwrap();
+    assert_eq!(own_command(&store), None);
 }

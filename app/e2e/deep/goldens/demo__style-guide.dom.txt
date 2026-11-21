@@ -86,6 +86,7 @@ div.reading
               "Markdown"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         p dir="auto"
           "You get:"
         ol
@@ -371,6 +372,7 @@ div.reading
               icon lucide-arrow-left-right
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         p dir="auto"
           "Prefer TOML? Open and close with"
           code
@@ -395,6 +397,7 @@ div.reading
               "Markdown"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         p dir="auto"
           "Try them:"
           a href="season-plan.md"

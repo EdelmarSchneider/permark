@@ -248,6 +248,29 @@ export function rowsOf(
   return rows;
 }
 
+/** Where a row sits for a screen reader: its level (the project's top level and worktree headers = 1, a worktree's own
+ *  rows one below its header) and its place among the rows of its folder (`aria-posinset` of `aria-setsize`). */
+export type TreePlace = { level: number; pos: number; size: number };
+
+/** The place of every row, by row key. Siblings are counted among the rows shown: an open folder shows all of its. */
+export function treePlaces(rows: readonly Row[]): Map<string, TreePlace> {
+  const folderOf = (row: Row): string => (row.type === "root" ? "" : parentOf(row.node.path));
+  const sizes = new Map<string, number>();
+  for (const row of rows) sizes.set(folderOf(row), (sizes.get(folderOf(row)) ?? 0) + 1);
+  const headers = new Set(rows.flatMap((r) => (r.type === "root" ? [r.root.path] : [])));
+  const counted = new Map<string, number>();
+  const places = new Map<string, TreePlace>();
+  for (const row of rows) {
+    const folder = folderOf(row);
+    const pos = (counted.get(folder) ?? 0) + 1;
+    counted.set(folder, pos);
+    const level =
+      row.type === "root" ? 1 : row.depth + (headers.has(rootOf(row.node.path)) ? 2 : 1);
+    places.set(rowKey(row), { level, pos, size: sizes.get(folder) ?? pos });
+  }
+  return places;
+}
+
 // ---- selection -------------------------------------------------------------------------------------------------------
 
 /** Keys of the rows between two keys (inclusive, either order). Unknown keys -> just `to`. */

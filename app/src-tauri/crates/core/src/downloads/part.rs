@@ -68,7 +68,7 @@ impl PartMeta {
 }
 
 /// Lowercase hex of a sha256.
-pub(super) fn sha_hex(sha: &[u8; 32]) -> String {
+pub(crate) fn sha_hex(sha: &[u8; 32]) -> String {
     use std::fmt::Write as _;
     sha.iter().fold(String::with_capacity(64), |mut hex, b| {
         let _ = write!(hex, "{b:02x}");
