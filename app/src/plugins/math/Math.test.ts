@@ -26,6 +26,22 @@ async function drawn(source: string, display = false): Promise<HTMLElement> {
   throw new Error(`not drawn: ${source}`);
 }
 
+describe("drawing", () => {
+  // the reading view measures a table again once an embed mounts in one of its cells: a formula that drew later
+  // would leave the columns measured on its TeX source, far wider than the formula
+  it("draws the formula as it mounts, never its source first", () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    mounted = mount(MathFormula, {
+      target,
+      props: { source: "\\mathrm{pH_T}", info: "", display: false },
+    });
+    // what is laid out (the MathML copy keeps the source as an annotation, unseen)
+    expect(target.querySelector(".katex-html")?.textContent).toContain("pH");
+    expect(target.querySelector(".katex-html")?.textContent).not.toContain("\\mathrm");
+  });
+});
+
 describe("chemistry formulas", () => {
   it.each([
     ["\\ce{H2O}", "H"],

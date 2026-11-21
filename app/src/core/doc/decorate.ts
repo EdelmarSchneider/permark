@@ -162,7 +162,7 @@ export class Decorator {
 
   /**
    * Settles once every embed started so far is loaded and mounted (a failed library counts: its block keeps the
-   * plain text). An embed may still draw after it is mounted (a diagram, a formula): that is the embed's own state,
+   * plain text). An embed may still draw after it is mounted (a diagram): that is the embed's own state,
    * seen in its markup (a diagram's figure holds `is-pending` until drawn).
    */
   async idle(): Promise<void> {
