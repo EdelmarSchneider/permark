@@ -179,25 +179,44 @@ pub(super) fn file_identity(path: &Path) -> io::Result<(u64, u64)> {
 // live writable buffer whose length in UTF-16 units is the size passed.
 #[allow(unsafe_code)]
 pub(super) fn final_path(file: &std::fs::File) -> io::Result<PathBuf> {
-    use std::os::windows::ffi::OsStringExt;
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
         GetFinalPathNameByHandleW, FILE_NAME_NORMALIZED, VOLUME_NAME_DOS,
     };
-    let mut buf: Vec<u16> = vec![0; 512];
-    // a buffer too small answers the size needed: one retry with that size
-    for _ in 0..2 {
-        let size = u32::try_from(buf.len()).unwrap_or(u32::MAX);
+    path_answer(|buf, size| {
         // SAFETY: `file` keeps the handle open for the call; `buf` holds `size` writable units.
-        let n = unsafe {
+        unsafe {
             GetFinalPathNameByHandleW(
                 file.as_raw_handle(),
-                buf.as_mut_ptr(),
+                buf,
                 size,
                 FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
             )
-        };
-        let n = usize::try_from(n).unwrap_or(usize::MAX);
+        }
+    })
+}
+
+/// The 8.3 spelling of the existing `path` (`GetShortPathNameW`); a name with no short one stays long.
+// Documented FFI: std has no short-name lookup. `path` is a NUL-terminated wide string owned by this function and
+// alive for the whole call; `buf` is a live writable buffer whose length in UTF-16 units is the size passed.
+#[allow(unsafe_code)]
+pub(super) fn short_path(path: &Path) -> io::Result<PathBuf> {
+    use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+    let path = wide(path)?;
+    path_answer(|buf, size| {
+        // SAFETY: `path` is a live NUL-terminated buffer; `buf` holds `size` writable units.
+        unsafe { GetShortPathNameW(path.as_ptr(), buf, size) }
+    })
+}
+
+/// A path a system call writes into a buffer of `size` units, answering its length, the size needed when the buffer
+/// is too small (one retry with that size), or 0 on failure.
+fn path_answer(mut call: impl FnMut(*mut u16, u32) -> u32) -> io::Result<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    let mut buf: Vec<u16> = vec![0; 512];
+    for _ in 0..2 {
+        let size = u32::try_from(buf.len()).unwrap_or(u32::MAX);
+        let n = usize::try_from(call(buf.as_mut_ptr(), size)).unwrap_or(usize::MAX);
         if n == 0 {
             return Err(io::Error::last_os_error());
         }
@@ -207,7 +226,7 @@ pub(super) fn final_path(file: &std::fs::File) -> io::Result<PathBuf> {
         }
         buf.resize(n, 0);
     }
-    Err(io::Error::other("path of the open file keeps growing"))
+    Err(io::Error::other("the path keeps growing"))
 }
 
 pub(super) fn wide(path: &Path) -> io::Result<Vec<u16>> {

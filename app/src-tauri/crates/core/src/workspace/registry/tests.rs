@@ -1501,6 +1501,31 @@ fn the_last_window_on_screen_counts_shown_windows_only() {
     );
 }
 
+/// Outside opens go to a window on screen before one still being made (hidden until its first view paints), however
+/// recently made or focused; with none on screen, to the one being made (it shows once its view paints).
+#[test]
+fn outside_opens_go_to_a_window_on_screen_first() {
+    let f = fx();
+    assert_eq!(
+        f.registry.last_focused_work().as_deref(),
+        Some("w-1"),
+        "none on screen: the newest"
+    );
+    f.registry.window_shown("main");
+    assert!(f.registry.is_window_shown("main"));
+    assert!(!f.registry.is_window_shown("w-1"));
+    assert!(!f.registry.is_window_shown("gone"));
+    assert_eq!(f.registry.last_focused_work().as_deref(), Some("main"));
+    f.registry.focused("w-1", 50);
+    assert_eq!(
+        f.registry.last_focused_work().as_deref(),
+        Some("main"),
+        "a hidden window focused later still waits"
+    );
+    f.registry.window_shown("w-1");
+    assert_eq!(f.registry.last_focused_work().as_deref(), Some("w-1"));
+}
+
 // ---- live reload of the project state (PerMark initialized while the project is open) ---------------------------------
 
 fn open_project(f: &Fx, dir: &Path) -> (Arc<ProjectCore>, String) {

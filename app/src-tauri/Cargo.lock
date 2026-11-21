@@ -3457,6 +3457,7 @@ name = "permark-core"
 version = "0.17.0"
 dependencies = [
  "ammonia",
+ "chrono",
  "comrak",
  "dirs",
  "dunce",

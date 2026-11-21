@@ -396,6 +396,15 @@ impl WorkspaceRegistry {
         }
     }
 
+    /// The native window was shown once (minimized still counts); `false` while being made | unknown.
+    #[must_use]
+    pub fn is_window_shown(&self, window: &str) -> bool {
+        lock(&self.inner)
+            .windows
+            .get(window)
+            .is_some_and(|w| w.shown)
+    }
+
     /// No other window is on screen: `window` closing ends the session (it is saved as this one). Windows closing
     /// and windows still being made (not shown yet) do not count; a minimized one does.
     #[must_use]
@@ -415,7 +424,9 @@ impl WorkspaceRegistry {
         self.publish(&mut inner);
     }
 
-    /// The work window focused last (open, not asking to close): where outside opens go.
+    /// The work window focused last (open, not asking to close): where outside opens go. Windows on screen come first:
+    /// one still being made (hidden until its first view paints) is taken only when none is on screen, so an open never
+    /// lands out of sight while a shown window is there, and opens during startup still join the window being made.
     #[must_use]
     pub fn last_focused_work(&self) -> Option<String> {
         let inner = lock(&self.inner);
@@ -423,7 +434,7 @@ impl WorkspaceRegistry {
             .windows
             .iter()
             .filter(|(_, w)| matches!(w.fsm, WindowState::Open(_)))
-            .max_by_key(|(_, w)| (w.focused_ms, w.created))
+            .max_by_key(|(_, w)| (w.shown, w.focused_ms, w.created))
             .map(|(label, _)| label.clone())
     }
 
