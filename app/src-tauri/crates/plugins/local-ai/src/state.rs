@@ -1,4 +1,4 @@
-//! What the plugin keeps in the profile (D-6): `<profile>/plugins/local-ai/state.json` (`state::StateFile`). Written
+//! What the plugin keeps in the profile: `<profile>/plugins/local-ai/state.json` (`state::StateFile`). Written
 //! ONLY after a person's action (accept terms, assign, a download that finished, remove); never at start.
 
 use std::collections::BTreeMap;
@@ -14,7 +14,7 @@ use crate::tasks::Task;
 /// File name in the plugin's namespace.
 pub const FILE: &str = "state.json";
 
-/// Terms the person accepted before a download (AC-4): one record per license address + terms revision.
+/// Terms the person accepted before a download: one record per license address + terms revision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Acceptance {

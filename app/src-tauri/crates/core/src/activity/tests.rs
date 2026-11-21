@@ -1264,7 +1264,7 @@ fn journal_of(store: &StateStore) -> Journal {
     }
 }
 
-/// N4 (verifier 2026-10-25): while the owners are not known at most [`MAX_WAITING`] facts wait, the oldest go first;
+/// While the owners are not known at most [`MAX_WAITING`] facts wait, the oldest go first;
 /// the opened folder's journal keeps them all.
 #[test]
 fn at_most_the_newest_waiting_facts_reach_the_project_journal() {
@@ -1289,7 +1289,7 @@ fn at_most_the_newest_waiting_facts_reach_the_project_journal() {
     assert_eq!(facts, newest);
 }
 
-/// N4 (verifier 2026-10-25): a change made outside PerMark before the owners are known reaches the project's own
+/// A change made outside PerMark before the owners are known reaches the project's own
 /// journal once told, its path relative to the project; one outside every project stays in the folder's journal.
 #[test]
 fn an_outside_change_before_the_owners_are_known_reaches_the_project_journal_once_told() {
@@ -1319,7 +1319,7 @@ fn an_outside_change_before_the_owners_are_known_reaches_the_project_journal_onc
     );
 }
 
-/// N4 (verifier 2026-10-25): across a Pause and a Resume the project's journal keeps the order and the time of every
+/// Across a Pause and a Resume the project's journal keeps the order and the time of every
 /// fact: the ones before, the ones that waited (actions and outside changes mixed), the ones after.
 #[test]
 fn facts_keep_their_order_and_time_across_a_pause_and_a_resume() {

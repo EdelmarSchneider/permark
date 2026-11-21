@@ -215,6 +215,10 @@ fn read_entries(
             continue;
         };
         let link = file_type.is_symlink() || is_reparse_point(&entry);
+        if !(file_type.is_file() || file_type.is_dir() || link) {
+            // a FIFO, socket or device: nothing a person reads, and a read of one can wait forever
+            continue;
+        }
         let is_dir = file_type.is_dir() && !link;
         if is_dir && named(&name, PERMARK) {
             hints.permark = true;

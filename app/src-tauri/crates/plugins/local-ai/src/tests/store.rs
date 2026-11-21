@@ -1,4 +1,4 @@
-//! Store location (AC-7): choice, project boundary, move | keep, gone store, bytes; Remove data (AC-13); orphans.
+//! Store location: choice, project boundary, move | keep, gone store, bytes; Remove data; orphans.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -64,7 +64,7 @@ fn start_in(lab: &Lab, cat: &Catalog, places: &Arc<Places>, revealed: &Arc<Revea
 }
 
 /// A directory link at `link` to `to`; `false`: the system does not let this user make one (test skipped).
-fn link_dir(to: &Path, link: &Path) -> bool {
+pub(crate) fn link_dir(to: &Path, link: &Path) -> bool {
     #[cfg(windows)]
     let made = std::os::windows::fs::symlink_dir(to, link);
     #[cfg(unix)]
@@ -145,7 +145,7 @@ fn saved(path: &Path) -> String {
     paths::canonicalize(path).unwrap().display().to_string()
 }
 
-/// AC-7: a store inside | holding an open or recent project, inside the default store, or relative: refused.
+/// A store inside | holding an open or recent project, inside the default store, or relative: refused.
 #[test]
 fn a_store_must_stay_clear_of_projects_and_stores() {
     let lab = Lab::new();
@@ -191,7 +191,7 @@ fn a_store_must_stay_clear_of_projects_and_stores() {
     assert_eq!(state["store"]["isDefault"], true);
 }
 
-/// AC-7: no store change while a download runs.
+/// No store change while a download runs.
 #[test]
 fn the_store_cannot_change_while_a_download_runs() {
     let lab = Lab::new();
@@ -219,7 +219,7 @@ fn the_store_cannot_change_while_a_download_runs() {
     run.wait(WHISPER, "installed");
 }
 
-/// AC-7: installed models -> mode asked; keep = new empty folder, old files stay; back again = listed again.
+/// Installed models -> mode asked; keep = new empty folder, old files stay; back again = listed again.
 #[test]
 fn keep_starts_an_empty_store_and_leaves_the_old_files() {
     let lab = Lab::new();
@@ -246,7 +246,7 @@ fn keep_starts_an_empty_store_and_leaves_the_old_files() {
     assert_eq!(assigned(&state, "dictation"), WHISPER);
 }
 
-/// AC-7: move copies + verifies into the new store (non-ASCII path), then removes the old copy; assignments
+/// Move copies + verifies into the new store (non-ASCII path), then removes the old copy; assignments
 /// follow; progress told.
 #[test]
 fn move_copies_checks_and_removes_the_old_copy() {
@@ -286,7 +286,7 @@ fn move_copies_checks_and_removes_the_old_copy() {
     assert!(names.iter().any(|n| n == "local-ai:move"));
 }
 
-/// AC-7: a copy that fails its check -> move failed, copies removed, old store in use and intact.
+/// A copy that fails its check -> move failed, copies removed, old store in use and intact.
 #[test]
 fn a_corrupted_copy_fails_and_keeps_the_old_store() {
     let lab = Lab::new();
@@ -311,7 +311,7 @@ fn a_corrupted_copy_fails_and_keeps_the_old_store() {
     assert_eq!(state["storeMove"], Value::Null);
 }
 
-/// AC-7: cancel mid-copy -> copies removed, old store in use; installs refused while moving.
+/// Cancel mid-copy -> copies removed, old store in use; installs refused while moving.
 #[test]
 fn a_move_can_be_cancelled() {
     let lab = Lab::new();
@@ -345,7 +345,7 @@ fn a_move_can_be_cancelled() {
         .is_file());
 }
 
-/// AC-7: a chosen store that is gone -> unavailable (not "not installed"), nothing made there; back -> listed.
+/// A chosen store that is gone -> unavailable (not "not installed"), nothing made there; back -> listed.
 #[test]
 fn a_gone_store_is_unavailable_not_empty() {
     let lab = Lab::new();
@@ -752,7 +752,7 @@ fn keep_removes_the_old_stores_parts() {
     assert!(left.iter().all(|n| !n.contains(".part")), "{left:?}");
 }
 
-/// AC-13: Remove data tells the bytes, then removes the models of a chosen store ONLY (its other files stay);
+/// Remove data tells the bytes, then removes the models of a chosen store ONLY (its other files stay);
 /// default store: left to core (its namespace).
 #[test]
 fn remove_data_removes_the_models_of_a_chosen_store_only() {

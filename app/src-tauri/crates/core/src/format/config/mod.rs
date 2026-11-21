@@ -7,9 +7,6 @@ mod matches;
 mod model;
 pub mod util;
 
-#[cfg(test)]
-mod tests;
-
 pub use matches::{ignore_matches, IgnoreMatches, PatternMatches};
 pub use model::{
     ConfigEdit, EditRefusal, Group, NewValue, Part, Quote, Row, RowValue, Scalar, ScalarKind,

@@ -1,4 +1,4 @@
-//! "Test model" (AC-7): proves an installed model runs on this computer, end to end.
+//! "Test model": proves an installed model runs on this computer, end to end.
 //!
 //! - One test at a time per plugin instance: a second start while one runs -> [`TestError::Busy`] (never cancels the
 //!   running one). Start answers at once; the test runs on its own thread, phases go out as event `local-ai:test`
@@ -11,7 +11,7 @@
 //! - Device: the load runs where the person chose ([`ModelHost`]: GPU when the model fits | processor only); result
 //!   `gpu` = the session really runs on it ([`crate::host::ModelSession::on_gpu`]; processor only: never). Memory =
 //!   the engine's estimate (lower bound: file bytes). The choice changed mid-test: session unloaded, test cancelled.
-//! - Load, unload, `Blocked` (D-14) + engine error codes: [`crate::host`].
+//! - Load, unload, `Blocked` (security software) + engine error codes: [`crate::host`].
 //! - Dormant: nothing runs | is created before a start; plugin off ([`Tester::shutdown`]) cancels + joins.
 //! - Tests: `src/tests/testrun.rs` (shares the installs lab).
 

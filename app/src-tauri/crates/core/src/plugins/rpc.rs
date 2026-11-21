@@ -22,8 +22,8 @@ pub struct RpcCall {
 pub type RpcHandler = Arc<dyn Fn(&RpcCall) -> Result<Value, IpcError> + Send + Sync>;
 
 /// Told the caller (`RpcCall.window`) that let go of the table's project (tab closed, another folder opened in it,
-/// window gone): what a plugin keeps per caller goes (teardown symmetry). Called under the window registry's lock:
-/// must be quick and must not call back into windows.
+/// window gone), or, on the app's table, whose view closed: what a plugin keeps per caller goes (teardown symmetry).
+/// Called under the window registry's lock: must be quick and must not call back into windows.
 pub type GoneHandler = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// Arguments of a method that takes none.

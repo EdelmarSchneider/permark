@@ -159,6 +159,8 @@ fn round_trip_gives_the_file_back_byte_for_byte() {
 struct Fake {
     table: RefCell<BTreeMap<String, String>>,
     refuse: Option<&'static str>,
+    /// Like macOS `LaunchServices`: "no choice" cannot be recorded.
+    no_none: bool,
 }
 
 impl Fake {
@@ -171,6 +173,7 @@ impl Fake {
                     .collect(),
             ),
             refuse: None,
+            no_none: false,
         }
     }
 }
@@ -185,6 +188,9 @@ impl Handlers for Fake {
     fn set(&self, key: &str, handler: Option<&str>) -> Result<(), IpcError> {
         if self.refuse == Some(key) {
             return Err(IpcError::new(ErrorKind::Denied));
+        }
+        if self.no_none && handler.is_none() {
+            return Err(no_handler_to_restore(key));
         }
         match handler {
             Some(h) => self.table.borrow_mut().insert(key.to_owned(), h.to_owned()),
@@ -258,6 +264,21 @@ fn a_refused_key_stops_with_the_keys_before_it_recorded() {
     assert_eq!(fake.get("text/xml").as_deref(), Some("b;"));
 }
 
+/// macOS cannot give a type back to "no choice": turning PerMark off there is refused with what to do instead, and
+/// PerMark's record stays (the switch shows the type still opens with PerMark).
+#[test]
+fn off_without_a_handler_to_give_back_is_refused_and_the_record_stays() {
+    let mut fake = Fake::new(&[]);
+    fake.no_none = true;
+    let mut state = DefaultAppState::default();
+    choose(&fake, &mut state, FileGroup::Markdown, true).unwrap();
+    let error = choose(&fake, &mut state, FileGroup::Markdown, false).unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Unsupported);
+    assert_eq!(error.detail.as_deref(), Some(NO_HANDLER_TO_RESTORE));
+    assert!(is_ours(&fake, FileGroup::Markdown));
+    assert_eq!(state.previous.get("text/markdown"), Some(&None));
+}
+
 #[test]
 fn the_state_round_trips_through_json() {
     let mut state = DefaultAppState {
@@ -324,6 +345,54 @@ fn mimeapps_that_is_not_utf8_is_refused_untouched() {
         std::fs::read(&path).unwrap(),
         b"[Default Applications]\n\xff\xfe=x\n"
     );
+}
+
+/// A dotfile manager (stow, chezmoi, home-manager) links `mimeapps.list` into its own folder: the change lands in the
+/// file the link names, and the link stays.
+#[test]
+fn a_linked_mimeapps_keeps_its_link_and_the_file_it_names_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let dotfiles = dir.path().join("dotfiles");
+    std::fs::create_dir(&dotfiles).unwrap();
+    let target = dotfiles.join("mimeapps.list");
+    std::fs::write(&target, LIST).unwrap();
+    let link = dir.path().join("mimeapps.list");
+    #[cfg(unix)]
+    let linked = std::os::unix::fs::symlink(&target, &link);
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_file(&target, &link);
+    if linked.is_err() {
+        eprintln!("no file links here; skipped");
+        return;
+    }
+    let apps = MimeApps::new(link.clone(), DESKTOP_ID);
+    apps.set("text/markdown", Some(DESKTOP_ID)).unwrap();
+    assert!(std::fs::symlink_metadata(&link)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert!(std::fs::read_to_string(&target)
+        .unwrap()
+        .contains("text/markdown=PerMark.desktop;"));
+    let names: Vec<_> = std::fs::read_dir(&dotfiles).unwrap().flatten().collect();
+    assert_eq!(names.len(), 1, "no temp left beside the file");
+}
+
+#[test]
+fn a_read_only_mimeapps_is_refused_and_nothing_is_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mimeapps.list");
+    std::fs::write(&path, LIST).unwrap();
+    let mut perms = std::fs::metadata(&path).unwrap().permissions();
+    perms.set_readonly(true);
+    std::fs::set_permissions(&path, perms.clone()).unwrap();
+    let apps = MimeApps::new(path.clone(), DESKTOP_ID);
+    let error = apps.set("text/markdown", Some(DESKTOP_ID)).unwrap_err();
+    #[allow(clippy::permissions_set_readonly_false)]
+    perms.set_readonly(false);
+    std::fs::set_permissions(&path, perms).unwrap();
+    assert_eq!(error.kind, ErrorKind::ReadOnly);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), LIST);
 }
 
 fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {

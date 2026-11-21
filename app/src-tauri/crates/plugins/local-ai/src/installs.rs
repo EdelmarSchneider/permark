@@ -18,7 +18,7 @@
 //! and NEVER drops an engine under it (drop joins the engine's worker, whose listener takes the lock). Disk reads
 //! (installed checks, free space, project overlap) run on a copy taken under the lock, never under it.
 //!
-//! Store (AC-7, [`moves`]): default `<profile>/plugins/local-ai/models/` | a folder the person chose. A chosen store
+//! Store ([`moves`]): default `<profile>/plugins/local-ai/models/` | a folder the person chose. A chosen store
 //! that is gone (drive unplugged) | overlaps a project opened since: `storeUnavailable`, never `notInstalled`;
 //! nothing created there.
 
@@ -408,7 +408,7 @@ pub struct Installs {
     links: StoreLinks,
     /// Worker this app ships for this computer (`None`: none, nothing runs): which models are offered.
     pin: Option<&'static WorkerPin>,
-    /// Engine host: sessions of a model unloaded before its files are removed | moved (D-11; `None`: tests).
+    /// Engine host: sessions of a model unloaded before its files are removed | moved (Windows mmap lock; `None`: tests).
     runtime: Option<Arc<Runtime>>,
     inner: Mutex<Inner>,
     /// One engine start (sweep) at a time.
@@ -957,7 +957,7 @@ impl Installs {
         self.announce();
     }
 
-    /// Get (AC-3): queues the catalog version of `id`. Refused: the shipped engine cannot run it, terms not
+    /// Get: queues the catalog version of `id`. Refused: the shipped engine cannot run it, terms not
     /// accepted, gated without token, withdrawn. Already installed | queued | running: nothing.
     ///
     /// # Errors
@@ -1013,7 +1013,7 @@ impl Installs {
         Ok(self.snapshot(Some(&engine)))
     }
 
-    /// Update (AC-6): Get of the catalog version while an older one is installed (kept until the new one verified).
+    /// Update: Get of the catalog version while an older one is installed (kept until the new one verified).
     ///
     /// # Errors
     /// [`InstallError::NoUpdate`]: no older version installed; else as [`Installs::get`].
@@ -1098,7 +1098,7 @@ impl Installs {
         Ok(self.snapshot(Some(&engine)))
     }
 
-    /// Remove (AC-6): every installed version of `id`'s lineage (files + parts; Windows locks retried by the engine);
+    /// Remove: every installed version of `id`'s lineage (files + parts; Windows locks retried by the engine);
     /// tasks assigned to it unassigned.
     ///
     /// # Errors
@@ -1228,7 +1228,7 @@ impl Installs {
         }
     }
 
-    /// The installed model assigned to `task` (AC-8), for PerMark's own features.
+    /// The installed model assigned to `task`, for PerMark's own features.
     #[must_use]
     pub fn model_for(&self, task: Task) -> ModelFor {
         let Some(lineage) = self.inner().state.assignments.get(&task).cloned() else {

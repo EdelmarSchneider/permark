@@ -210,8 +210,8 @@ impl Owners {
     }
 }
 
-/// The writes of a plugin keeping state per owner wait here while it starts before the owners are known (verifier
-/// round 4 S3): a write made then would land in the opened folder's file and be hidden once the owners are known.
+/// The writes of a plugin keeping state per owner wait here while it starts before the owners are known: a write
+/// made then would land in the opened folder's file and be hidden once the owners are known.
 /// Open by default; [`OwnersGate::close`] at a start before the owners are known, [`OwnersGate::open`] after the first
 /// `Resume` was applied.
 #[derive(Debug)]

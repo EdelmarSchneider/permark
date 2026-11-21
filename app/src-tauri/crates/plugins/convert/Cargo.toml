@@ -21,8 +21,5 @@ quick-xml = "0.42"
 csv = "1.4"
 yaml-rust2 = { version = "0.13", default-features = false }
 
-[dev-dependencies]
-tempfile.workspace = true
-
 [lints]
 workspace = true

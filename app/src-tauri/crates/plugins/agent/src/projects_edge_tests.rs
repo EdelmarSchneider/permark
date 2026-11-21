@@ -252,7 +252,7 @@ fn not_included_project_never_readable_before_walk_ends_body() {
 }
 
 /// Person said "No thanks" (declined all); a record arriving by pull | agent edit lists the project -> it stays out
-/// and hidden from the agent (spec §2.1 + D28: the person's answer beats a later entry).
+/// and hidden from the agent (the person's answer beats a later entry).
 #[test]
 fn record_written_after_decline_keeps_project_out() {
     let (dir, root) = tmp();

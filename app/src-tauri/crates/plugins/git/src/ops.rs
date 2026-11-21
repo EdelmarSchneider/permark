@@ -6,7 +6,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use permark_core::conditions::RepoState;
+use permark_core::conditions::{GitErrorCode, RepoState};
 use permark_core::fsx::{same_file, SameFile};
 use permark_core::plugins::{CommitId, FileVersion, FileVersions, NoBlob, NoTracking, NoVersions};
 
@@ -24,7 +24,7 @@ pub const MAX_RENAME_PATHS: usize = 1000;
 /// Most co-authors kept of a commit message.
 pub const MAX_CO_AUTHORS: usize = 16;
 
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum GitError {
     #[error("cannot run git: {0}")]
     Spawn(String),
@@ -36,6 +36,30 @@ pub enum GitError {
     TooLarge(usize),
     #[error("unreadable git output: {0}")]
     Parse(String),
+}
+
+impl GitError {
+    /// Why, as the windows put it in words.
+    #[must_use]
+    pub fn code(&self) -> GitErrorCode {
+        match self {
+            Self::Spawn(_) => GitErrorCode::Spawn,
+            Self::Failed(_) => GitErrorCode::Failed,
+            Self::Timeout => GitErrorCode::Timeout,
+            Self::TooLarge(_) => GitErrorCode::TooLarge,
+            Self::Parse(_) => GitErrorCode::Parse,
+        }
+    }
+
+    /// The words that came with it (git's own for a failure, e.g. "dubious ownership"); none for a timeout | an
+    /// answer too long.
+    #[must_use]
+    pub fn reason(&self) -> String {
+        match self {
+            Self::Spawn(words) | Self::Failed(words) | Self::Parse(words) => words.clone(),
+            Self::Timeout | Self::TooLarge(_) => String::new(),
+        }
+    }
 }
 
 impl From<git2::Error> for GitError {
@@ -62,8 +86,8 @@ pub enum Discovery {
     /// A `.git` is there, but opening it would make git look up a path off this computer | through a link: git
     /// features stay off as without a repository, yet nothing can be told of its index.
     Refused,
-    /// A repository is there but cannot be used (the sentence says why).
-    Error(String),
+    /// A repository is there but cannot be used.
+    Error(GitError),
 }
 
 /// What status is measured against.
@@ -587,6 +611,37 @@ pub fn finish(mut files: Vec<RawFile>) -> (Vec<RawFile>, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_git_error_has_a_code_the_windows_translate_and_only_git_words_as_reason() {
+        let cases = [
+            (GitError::Timeout, GitErrorCode::Timeout, ""),
+            (GitError::TooLarge(4096), GitErrorCode::TooLarge, ""),
+            (
+                GitError::Spawn("not found".to_owned()),
+                GitErrorCode::Spawn,
+                "not found",
+            ),
+            (
+                GitError::Failed("dubious ownership".to_owned()),
+                GitErrorCode::Failed,
+                "dubious ownership",
+            ),
+            (
+                GitError::Parse("line 3".to_owned()),
+                GitErrorCode::Parse,
+                "line 3",
+            ),
+        ];
+        for (error, code, reason) in cases {
+            assert_eq!((error.code(), error.reason().as_str()), (code, reason));
+        }
+        // the code reaches the windows in their own spelling
+        assert_eq!(
+            serde_json::to_value(crate::service::condition_of(&GitError::TooLarge(1))).unwrap(),
+            serde_json::json!({"status": "error", "code": "tooLarge", "reason": ""})
+        );
+    }
 
     #[test]
     fn paths_below_the_project_prefix() {

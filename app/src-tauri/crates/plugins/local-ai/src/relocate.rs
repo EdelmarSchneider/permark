@@ -1,4 +1,4 @@
-//! Store move (D-8, AC-7): every installed version copied into the new store (same `<lineage>/<version>/` layout),
+//! Store move: every installed version copied into the new store (same `<lineage>/<version>/` layout),
 //! sha256-checked against its pins WHILE copying, engine manifest written LAST ([`Downloads::adopt`]). Any failure |
 //! cancel: what THIS move made is removed ([`Made`]), nothing else; the old store untouched. Removing the old copies
 //! is the caller's step once the new store is in use. Always a copy (also on one volume: the old files stay until the

@@ -3516,7 +3516,6 @@ version = "0.17.0"
 dependencies = [
  "chrono",
  "dunce",
- "ignore",
  "permark-core",
  "rmcp",
  "serde",
@@ -3561,7 +3560,6 @@ dependencies = [
  "quick-xml",
  "serde",
  "serde_json",
- "tempfile",
  "toml_edit 0.25.17+spec-1.1.0",
  "ts-rs",
  "yaml-rust2",
@@ -3813,8 +3811,6 @@ dependencies = [
  "dunce",
  "permark-core",
  "serde",
- "serde_json",
- "tempfile",
  "ts-rs",
  "windows-sys 0.61.2",
  "winreg",
@@ -3852,7 +3848,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "toml_edit 0.25.17+spec-1.1.0",
  "ts-rs",
 ]
 

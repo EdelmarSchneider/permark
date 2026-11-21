@@ -18,7 +18,7 @@ use permark_core::conditions::RepoState;
 use permark_core::state::StateFile;
 
 use crate::cheap::{cheap_facts, member_location, Cheap};
-use crate::ops::{repo_state, GitOps, RepoLocation};
+use crate::ops::{repo_state, GitError, GitOps, RepoLocation};
 use crate::service::{measured_status, next_seq, BackendCell, Timings, Visit, Visiting};
 use crate::types::{
     BackendKind, BaselineInfo, BaselineKind, CommitLine, GitFile, GitSnapshot, HeadInfo,
@@ -69,7 +69,7 @@ pub enum RepoFsm {
         level: InterestLevel,
     },
     Failed {
-        reason: String,
+        reason: GitError,
     },
 }
 
@@ -83,7 +83,7 @@ pub enum RepoEvent {
     /// Something changed widely (rescan) and nobody looks: the answer may be old.
     Outdated,
     /// The pool thread's answer.
-    Done(Result<(), String>),
+    Done(Result<(), GitError>),
 }
 
 /// When the queued work may run.
@@ -184,7 +184,7 @@ pub type FirstCommits = Arc<dyn Fn(&[(String, String)]) + Send + Sync>;
 pub type RootCommits = Arc<dyn Fn(&[(String, Option<String>)]) + Send + Sync>;
 
 /// What a member folder says when first seen | moved: where its repository is + its cheap facts.
-type Read = (Result<RepoLocation, String>, Option<Cheap>);
+type Read = (Result<RepoLocation, GitError>, Option<Cheap>);
 
 /// What the pool needs from around it.
 #[derive(Clone)]
@@ -226,7 +226,7 @@ struct Slot {
     path: String,
     key: String,
     folder: PathBuf,
-    location: Result<RepoLocation, String>,
+    location: Result<RepoLocation, GitError>,
     cheap: Option<Cheap>,
     fsm: RepoFsm,
     /// FIFO position (set when queued).
@@ -254,7 +254,7 @@ impl Slot {
     fn new(
         member: &MemberRef,
         generation: u64,
-        location: Result<RepoLocation, String>,
+        location: Result<RepoLocation, GitError>,
         cheap: Option<Cheap>,
     ) -> Self {
         Self {
@@ -414,8 +414,9 @@ impl State {
             .or_else(|| slot.status.as_ref().map(|s| s.head.clone()))
             .unwrap_or_default();
         let error = match (&slot.location, &slot.fsm) {
-            (Err(reason), _) | (_, RepoFsm::Failed { reason }) => Some(RepoError::Failed {
-                reason: reason.clone(),
+            (Err(error), _) | (_, RepoFsm::Failed { reason: error }) => Some(RepoError::Failed {
+                code: error.code(),
+                reason: error.reason(),
             }),
             _ => None,
         };
@@ -463,7 +464,7 @@ struct Answer {
     generation: u64,
     path: String,
     visiting: Visiting,
-    facts: Result<Facts, String>,
+    facts: Result<Facts, GitError>,
     root: Option<String>,
 }
 
@@ -856,7 +857,7 @@ impl Members {
     /// Where the repository of a followed project is; `Err`: followed, but its repository may not be used (the reason:
     /// refused, its `.git` unreadable). `None`: not followed.
     #[must_use]
-    pub fn location(&self, uid: &str) -> Option<Result<RepoLocation, String>> {
+    pub fn location(&self, uid: &str) -> Option<Result<RepoLocation, GitError>> {
         lock(&self.pool.state)
             .slots
             .get(uid)
@@ -982,7 +983,7 @@ fn pick(st: &mut State, now: Instant, env: &Env, backend: Option<&Arc<dyn GitOps
         };
         let reason = match (&slot.location, backend) {
             (Err(reason), _) => Some(reason.clone()),
-            (Ok(_), None) => Some("git is not available".to_owned()),
+            (Ok(_), None) => Some(GitError::Spawn("git is not available".to_owned())),
             (Ok(_), Some(_)) => None,
         };
         if let Some(reason) = reason {
@@ -1038,9 +1039,8 @@ fn run_job(env: &Env, job: Job) -> Answer {
     let mut visiting = job.visiting.unwrap_or_else(|| {
         Visiting::new((env.visit_file)(&job.path).and_then(|file| file.load().into_value().head))
     });
-    let facts = measured_status(backend.as_ref(), &job.location, job.kind, &mut visiting)
-        .map_err(|e| e.to_string())
-        .map(|(status, compared)| {
+    let facts = measured_status(backend.as_ref(), &job.location, job.kind, &mut visiting).map(
+        |(status, compared)| {
             let detail = (job.level == InterestLevel::Detail).then(|| {
                 (
                     backend.ahead_behind(&job.location).ok().flatten(),
@@ -1055,7 +1055,8 @@ fn run_job(env: &Env, job: Job) -> Answer {
                 backend: backend.kind(),
                 detail,
             }
-        });
+        },
+    );
     let root = (job.want_root && facts.is_ok() && !job.cancel.load(Ordering::SeqCst))
         .then(|| backend.root_commit(&job.location).ok().flatten())
         .flatten();

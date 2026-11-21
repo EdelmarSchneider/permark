@@ -785,22 +785,22 @@ impl GitOps for SystemGit {
             self.cancel.as_deref(),
         ) {
             Ok(out) => out,
-            Err(error) => return Discovery::Error(error.to_string()),
+            Err(error) => return Discovery::Error(error),
         };
         if out.code != Some(0) {
             let message = out.stderr.to_lowercase();
             return if message.contains("not a git repository") || message.contains("work tree") {
                 Discovery::NoRepo
             } else if message.contains("dubious ownership") {
-                Discovery::Error("dubious ownership".to_owned())
+                Discovery::Error(GitError::Failed("dubious ownership".to_owned()))
             } else {
-                Discovery::Error(first_line(&out.stderr))
+                Discovery::Error(GitError::Failed(first_line(&out.stderr)))
             };
         }
         let text = String::from_utf8_lossy(&out.stdout);
         let mut lines = text.lines();
         let (Some(top), Some(git_dir)) = (lines.next(), lines.next()) else {
-            return Discovery::Error("unreadable answer of git".to_owned());
+            return Discovery::Error(GitError::Parse("unreadable answer of git".to_owned()));
         };
         let prefix = lines.next().unwrap_or("").trim_end_matches('/').to_owned();
         let workdir = PathBuf::from(top);

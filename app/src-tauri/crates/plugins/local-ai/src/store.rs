@@ -43,7 +43,7 @@ struct Found {
 }
 
 /// A real folder (not a link | junction | file).
-fn real_dir(path: &Path) -> bool {
+pub(crate) fn real_dir(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
 }
 
@@ -101,20 +101,34 @@ fn names(dir: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// `dir` holds an engine install (manifest) | a download part (`.part`, `.part.meta`; not a scratch name): another
-/// profile | app version may own it. Unreadable: held (never removed).
-fn held(dir: &Path) -> bool {
+/// `dir` holds an entry `is` picks. Unreadable: `true` (never removed).
+fn holds(dir: &Path, is: impl Fn(&str) -> bool) -> bool {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return true;
     };
-    entries.flatten().any(|e| {
-        let name = e.file_name().to_string_lossy().into_owned();
-        // `.part` | `.part.meta` (any case; a stray `.meta` counts too: kept rather than removed)
-        let part = Path::new(&name)
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("part") || e.eq_ignore_ascii_case("meta"));
-        name.ends_with(MANIFEST_SUFFIX) || (part && !fsx::is_scratch_name(&name))
-    })
+    entries
+        .flatten()
+        .any(|e| is(&e.file_name().to_string_lossy()))
+}
+
+/// `name` = a download part (`.part` | `.part.meta`, any case; a stray `.meta` counts too: kept rather than removed;
+/// not a scratch name).
+fn is_part(name: &str) -> bool {
+    let part = Path::new(name)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("part") || e.eq_ignore_ascii_case("meta"));
+    part && !fsx::is_scratch_name(name)
+}
+
+/// `dir` holds a download part (a download of it may be running | resumed). Unreadable: `true` (never removed).
+pub(crate) fn has_part(dir: &Path) -> bool {
+    holds(dir, is_part)
+}
+
+/// `dir` holds an engine install (manifest) | a download part: another profile | app version may own it.
+/// Unreadable: held (never removed).
+fn held(dir: &Path) -> bool {
+    holds(dir, |name| name.ends_with(MANIFEST_SUFFIX) || is_part(name))
 }
 
 /// Bytes of the files in the version folders of `lineages` (installed files + parts; links not followed).

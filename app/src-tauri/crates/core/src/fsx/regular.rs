@@ -117,12 +117,12 @@ pub(crate) fn symlink_metadata_below(folder: &Path, path: &Path) -> io::Result<M
 }
 
 /// A file left unread on purpose: `InvalidData` (the caller names the file).
-fn refused(why: &str) -> io::Error {
+pub(super) fn refused(why: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, why)
 }
 
 #[cfg(unix)]
-fn open(path: &Path, zone: Zone<'_>) -> io::Result<std::fs::File> {
+pub(super) fn open(path: &Path, zone: Zone<'_>) -> io::Result<std::fs::File> {
     use rustix::fs::OFlags;
     use std::os::unix::fs::OpenOptionsExt;
     let flags = match zone {
@@ -138,7 +138,7 @@ fn open(path: &Path, zone: Zone<'_>) -> io::Result<std::fs::File> {
 }
 
 #[cfg(not(unix))]
-fn open(path: &Path, _: Zone<'_>) -> io::Result<std::fs::File> {
+pub(super) fn open(path: &Path, _: Zone<'_>) -> io::Result<std::fs::File> {
     std::fs::File::open(path)
 }
 

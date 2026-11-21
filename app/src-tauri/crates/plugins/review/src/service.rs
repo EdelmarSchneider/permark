@@ -130,6 +130,9 @@ struct Shared {
     seen: Mutex<Vec<SeenEntry>>,
     prefs: Mutex<Prefs>,
     undo: Mutex<HashMap<String, Vec<Undo>>>,
+    /// The version each document was last at rest in (folded key -> hash): when it moves on (the person's own save),
+    /// the copy of the version before goes unless something still needs it.
+    rest: Mutex<HashMap<String, u64>>,
 }
 
 /// `entry` as the newest look; at most `cap` looks are kept, the oldest goes first.
@@ -970,6 +973,70 @@ impl Shared {
     fn release(&self, path: &str) {
         self.set_held(path, None);
         lock(&self.undo).remove(&key_of(path));
+        lock(&self.rest).remove(&key_of(path));
+    }
+
+    // ---- copies nothing needs --------------------------------------------------------------------------------
+
+    /// The versions copies are kept for: what anybody read, the reviews open, the files last looked at, and the
+    /// versions an undo would bring back. Asked with the store held ([`CopyStore::hold`]).
+    fn needed(&self) -> HashSet<u64> {
+        let mut keep = self.hub.read_hashes();
+        keep.extend(lock(&self.held).values().map(|h| h.hash));
+        keep.extend(lock(&self.seen).iter().map(|e| e.hash));
+        keep.extend(
+            lock(&self.undo)
+                .values()
+                .flatten()
+                .filter_map(|step| match step {
+                    Undo::Keep { prev } => *prev,
+                    Undo::Revert { .. } => None,
+                }),
+        );
+        keep
+    }
+
+    /// Deletes the copy of `hash` unless a version still needs it. Returns whether it went.
+    fn drop_copy(&self, hash: u64) -> bool {
+        let _held = self.store.hold();
+        !self.needed().contains(&hash) && self.store.remove(hash)
+    }
+
+    /// Deletes every copy nothing needs.
+    fn remove_unneeded(&self) {
+        let _held = self.store.hold();
+        self.store.remove_unused(&self.needed());
+    }
+}
+
+/// How many copies there are (the copier counts them) and whether the last clean at the cap freed none.
+struct Room {
+    kept: usize,
+    stuck: bool,
+}
+
+impl Room {
+    fn counted(shared: &Shared) -> Self {
+        Self {
+            kept: shared.store.count(),
+            stuck: false,
+        }
+    }
+
+    /// Whether one more copy fits. At the cap, the copies nothing needs go first; when every copy is needed the folder
+    /// is not cleaned again until a copy goes.
+    fn fits(&mut self, shared: &Shared) -> bool {
+        if self.kept >= MAX_COPIES && !self.stuck {
+            shared.remove_unneeded();
+            *self = Self::counted(shared);
+            self.stuck = self.kept >= MAX_COPIES;
+        }
+        self.kept < MAX_COPIES
+    }
+
+    fn removed(&mut self) {
+        self.kept = self.kept.saturating_sub(1);
+        self.stuck = false;
     }
 }
 
@@ -1098,7 +1165,12 @@ fn load_seen(files: &Files) -> Vec<SeenEntry> {
 // ---- the observer and the copier ----------------------------------------------------------------------------------
 
 enum CopyMsg {
-    Copy { hash: u64, bytes: Vec<u8> },
+    /// A document is at rest in `hash`: its bytes when no copy is kept yet, and the version it was at rest in before.
+    Copy {
+        hash: u64,
+        bytes: Option<Vec<u8>>,
+        before: Option<u64>,
+    },
     Stop,
 }
 
@@ -1108,11 +1180,16 @@ struct Observer {
 }
 
 impl ReadObserver for Observer {
-    fn at_rest(&self, _path: &str, hash: u64, bytes: &[u8]) {
-        if bytes.len() <= MAX_COPY_BYTES && !self.shared.store.has(hash) {
+    fn at_rest(&self, path: &str, hash: u64, bytes: &[u8]) {
+        let before = lock(&self.shared.rest)
+            .insert(key_of(path), hash)
+            .filter(|b| *b != hash);
+        let copy = bytes.len() <= MAX_COPY_BYTES && !self.shared.store.has(hash);
+        if copy || before.is_some() {
             let _ = self.copies.send(CopyMsg::Copy {
                 hash,
-                bytes: bytes.to_vec(),
+                bytes: copy.then(|| bytes.to_vec()),
+                before,
             });
         }
     }
@@ -1127,6 +1204,11 @@ impl ReadObserver for Observer {
     }
 
     fn moved(&self, from: &str, to: &str) {
+        let mut rest = lock(&self.shared.rest);
+        if let Some(hash) = rest.remove(&key_of(from)) {
+            rest.insert(key_of(to), hash);
+        }
+        drop(rest);
         let moved = lock(&self.shared.held).remove(&key_of(from));
         if let Some(held) = moved {
             lock(&self.shared.held).insert(
@@ -1143,6 +1225,66 @@ impl ReadObserver for Observer {
     fn settled(&self, paths: &[String]) {
         for path in paths {
             self.shared.set_held(path, None);
+        }
+    }
+}
+
+/// The copier thread: keeps the copies of the versions documents are at rest in, and drops a version's copy when its
+/// document moved on and nothing needs it.
+fn copier(shared: &Shared, rx: &mpsc::Receiver<CopyMsg>, stop: &AtomicBool) {
+    let mut cleaned = false;
+    let mut room = Room::counted(shared);
+    loop {
+        if stop.load(Ordering::SeqCst) {
+            break;
+        }
+        match rx.recv_timeout(Duration::from_millis(250)) {
+            Ok(CopyMsg::Copy {
+                hash,
+                bytes,
+                before,
+            }) => {
+                if let Some(bytes) = bytes.filter(|_| !shared.store.has(hash)) {
+                    let text = fsx::decode(&bytes)
+                        .filter(|d| !d.lossy)
+                        .map(|d| permark_core::edit::lines::normalized(&d.text));
+                    if let Some(text) = text {
+                        if room.fits(shared) && shared.store.put(hash, &text) {
+                            room.kept += 1;
+                        }
+                    }
+                }
+                if before.is_some_and(|before| shared.drop_copy(before)) {
+                    room.removed();
+                }
+            }
+            Ok(CopyMsg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+        // once the first look is done: copy what it showed before this review listened, then drop the copies nobody
+        // needs any more
+        if !cleaned && !stop.load(Ordering::SeqCst) && shared.hub.ready() {
+            cleaned = true;
+            for (path, hash) in shared.hub.at_rest() {
+                if stop.load(Ordering::SeqCst) {
+                    break;
+                }
+                lock(&shared.rest).entry(key_of(&path)).or_insert(hash);
+                if shared.store.has(hash) {
+                    continue;
+                }
+                if !room.fits(shared) {
+                    break;
+                }
+                // only while the disk still holds the version read
+                if let Ok(Some(current)) = shared.current(&path) {
+                    if current.hash == hash && shared.store.put(hash, &current.text) {
+                        room.kept += 1;
+                    }
+                }
+            }
+            shared.remove_unneeded();
+            room = Room::counted(shared);
         }
     }
 }
@@ -1189,6 +1331,7 @@ impl ReviewService {
             seen: Mutex::new(seen),
             prefs: Mutex::new(prefs),
             undo: Mutex::new(HashMap::new()),
+            rest: Mutex::new(HashMap::new()),
         });
         let (copies, rx) = mpsc::sync_channel::<CopyMsg>(QUEUE);
         let stop = Arc::new(AtomicBool::new(false));
@@ -1197,64 +1340,7 @@ impl ReviewService {
             let stop = Arc::clone(&stop);
             thread::Builder::new()
                 .name("permark-review".to_owned())
-                .spawn(move || {
-                    let mut cleaned = false;
-                    let mut kept = shared.store.count();
-                    loop {
-                        if stop.load(Ordering::SeqCst) {
-                            break;
-                        }
-                        match rx.recv_timeout(Duration::from_millis(250)) {
-                            Ok(CopyMsg::Copy { hash, bytes }) => {
-                                if kept >= MAX_COPIES || shared.store.has(hash) {
-                                    continue;
-                                }
-                                if let Some(text) = fsx::decode(&bytes)
-                                    .filter(|d| !d.lossy)
-                                    .map(|d| permark_core::edit::lines::normalized(&d.text))
-                                {
-                                    if shared.store.put(hash, &text) {
-                                        kept += 1;
-                                    }
-                                }
-                            }
-                            Ok(CopyMsg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
-                            Err(RecvTimeoutError::Timeout) => {}
-                        }
-                        // once the first look is done: copy what it showed before this review listened, then drop
-                        // the copies nobody needs any more
-                        if !cleaned && !stop.load(Ordering::SeqCst) && shared.hub.ready() {
-                            cleaned = true;
-                            for (path, hash) in shared.hub.at_rest() {
-                                if stop.load(Ordering::SeqCst) || kept >= MAX_COPIES {
-                                    break;
-                                }
-                                if shared.store.has(hash) {
-                                    continue;
-                                }
-                                // only while the disk still holds the version read
-                                if let Ok(Some(current)) = shared.current(&path) {
-                                    if current.hash == hash && shared.store.put(hash, &current.text)
-                                    {
-                                        kept += 1;
-                                    }
-                                }
-                            }
-                            let _held = shared.store.hold();
-                            let mut keep = shared.hub.read_hashes();
-                            keep.extend(lock(&shared.held).values().map(|h| h.hash));
-                            keep.extend(lock(&shared.seen).iter().map(|e| e.hash));
-                            keep.extend(lock(&shared.undo).values().flatten().filter_map(|step| {
-                                match step {
-                                    Undo::Keep { prev } => *prev,
-                                    Undo::Revert { .. } => None,
-                                }
-                            }));
-                            shared.store.remove_unused(&keep);
-                            kept = shared.store.count();
-                        }
-                    }
-                })
+                .spawn(move || copier(&shared, &rx, &stop))
                 .ok()
         };
         let lease = hub.subscribe(Arc::new(Observer {

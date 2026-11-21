@@ -536,12 +536,17 @@ impl PluginCx {
         Some(table.register(&self.id, method, handler))
     }
 
-    /// Hears the callers (`RpcCall.window`) that let go of the project (Project scope: tab closed, another folder
-    /// opened in it, window gone) until the registration is dropped: per-caller state goes with them. `None` for
-    /// App-scope instances (their callers have no project to let go of).
+    /// Hears the callers (`RpcCall.window`) that are gone until the registration is dropped: per-caller state goes
+    /// with them. Project scope: a caller let go of the project (tab closed, another folder opened in it, window
+    /// gone); App scope: the caller's view closed. `None` when the instance has neither table.
     #[must_use]
     pub fn on_caller_gone(&self, handler: GoneHandler) -> Option<RpcRegistration> {
-        Some(self.project.as_ref()?.rpc.on_caller_gone(handler))
+        let table = self
+            .project
+            .as_ref()
+            .map(|project| &project.rpc)
+            .or_else(|| self.app.as_ref().map(|app| &app.rpc))?;
+        Some(table.on_caller_gone(handler))
     }
 
     /// Gives a Project-scope instance the file watch of its project.

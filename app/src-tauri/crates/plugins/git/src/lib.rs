@@ -361,7 +361,7 @@ impl Plugin for GitPlugin {
         });
         let root_path = vault.main().path().to_path_buf();
         let projects: Option<Arc<Projects>> = project.projects().cloned();
-        // members leave the root status from its first look (verifier N2), read on the git worker: nothing per
+        // members leave the root status from its first look, read on the git worker: nothing per
         // project at open
         let excluded: ExcludedAtStart = {
             let projects = projects.as_ref().map(Arc::downgrade);

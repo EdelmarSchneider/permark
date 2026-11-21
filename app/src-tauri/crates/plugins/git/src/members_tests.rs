@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
+use permark_core::conditions::GitErrorCode;
 use permark_core::plugins::{CommitId, FileVersions, NoTracking, NoVersions};
 use permark_core::state::{AppDirs, StateStore};
 
@@ -23,7 +24,7 @@ fn the_repository_machine_table() {
     use RepoEvent as E;
     use RepoFsm as S;
     let failed = S::Failed {
-        reason: "x".to_owned(),
+        reason: GitError::Failed("x".to_owned()),
     };
     let cases: Vec<(RepoFsm, RepoEvent, RepoFsm, Schedule)> = vec![
         // interest: asked at once, ahead of the queue
@@ -159,7 +160,7 @@ fn the_repository_machine_table() {
                 level: Glance,
                 again: None,
             },
-            E::Done(Err("x".to_owned())),
+            E::Done(Err(GitError::Failed("x".to_owned()))),
             failed.clone(),
             Schedule::Keep,
         ),
@@ -168,7 +169,7 @@ fn the_repository_machine_table() {
                 level: Glance,
                 again: Some(Detail),
             },
-            E::Done(Err("x".to_owned())),
+            E::Done(Err(GitError::Failed("x".to_owned()))),
             S::Queued { level: Detail },
             Schedule::Debounced,
         ),
@@ -184,7 +185,7 @@ fn the_repository_machine_table() {
         (S::Cold, E::Done(Ok(())), S::Cold, Schedule::Keep),
         (
             S::Fresh { level: Glance },
-            E::Done(Err("late".to_owned())),
+            E::Done(Err(GitError::Failed("late".to_owned()))),
             S::Fresh { level: Glance },
             Schedule::Keep,
         ),
@@ -208,7 +209,7 @@ fn random_walks_keep_the_machine_whole() {
         RepoEvent::Changed(Detail),
         RepoEvent::Outdated,
         RepoEvent::Done(Ok(())),
-        RepoEvent::Done(Err("e".to_owned())),
+        RepoEvent::Done(Err(GitError::Failed("e".to_owned()))),
     ];
     let mut state = RepoFsm::Cold;
     let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
@@ -426,6 +427,7 @@ fn quick() -> Timings {
         quiet: Duration::from_millis(30),
         max_wait: Duration::from_millis(200),
         lock_wait: Duration::from_millis(150),
+        ..Timings::default()
     }
 }
 
@@ -699,7 +701,7 @@ fn one_failing_repository_fails_alone() {
     for s in members.summaries() {
         if s.id == "ubad" {
             assert!(
-                matches!(&s.error, Some(RepoError::Failed { reason }) if reason.contains("dubious")),
+                matches!(&s.error, Some(RepoError::Failed { code: GitErrorCode::Failed, reason }) if reason.contains("dubious")),
                 "{s:?}"
             );
             assert_eq!(s.branch.as_deref(), Some("main"), "cheap facts stay");
@@ -895,7 +897,7 @@ fn a_stale_index_lock_delays_the_look_by_the_wait_and_no_more() {
     );
 }
 
-// ---- fix round (verifier round 3: S2, S3, N3) ------------------------------------------------------------------------
+// ---- fix round ------------------------------------------------------------------------
 
 /// Folders to look up (`(key, folder)`), each a repository on disk.
 fn lookups_in(root: &Path, n: usize) -> Vec<(String, PathBuf)> {

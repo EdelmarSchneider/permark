@@ -30,7 +30,7 @@ ts = ["dep:ts-rs"]
 # `LlamaEngine` + worker binary. NEVER in default | workspace gates (cmake build).
 llama = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2", "dep:libc", "dep:windows-sys"]
 # Release worker: ggml + backends as shared libs, best CPU variant picked at run time, GPU backend libs loaded when
-# their system driver is present (D-6).
+# their system driver is present.
 dynamic-backends = ["llama", "llama-cpp-2/dynamic-backends"]
 vulkan = ["llama", "llama-cpp-2/vulkan"]
 metal = ["llama", "llama-cpp-2/metal"]

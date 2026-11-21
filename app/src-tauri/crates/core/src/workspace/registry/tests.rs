@@ -2349,7 +2349,7 @@ fn a_team_file_turned_into_a_link_while_open_changes_nothing() {
     assert!(core.plugins_on().contains(&PluginId::of("git")));
     assert_eq!(take(&f.log), Vec::<String>::new());
 }
-// ---- move to window: adversarial (verifier) ---------------------------------------------------------------------
+// ---- move to window: adversarial ---------------------------------------------------------------------
 
 fn saved_count(f: &Fx, reference: &WorkspaceRef) -> usize {
     let dto = reference.to_dto();

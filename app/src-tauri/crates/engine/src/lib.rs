@@ -491,7 +491,7 @@ pub enum EngineError {
     /// Session unknown (never loaded | unloaded | lost in a crash).
     NotLoaded,
     Io(String),
-    /// The system refused to start the worker (host side only; D-14: security software | quarantine).
+    /// The system refused to start the worker (host side only: security software | quarantine).
     Blocked,
 }
 

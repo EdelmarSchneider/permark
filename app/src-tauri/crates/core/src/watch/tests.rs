@@ -868,6 +868,43 @@ fn a_file_made_through_the_projects_own_editor_is_listed_before_the_watch_report
     assert!(told, "the window is told");
 }
 
+#[test]
+fn a_file_the_app_wrote_inside_the_project_is_listed_at_once_and_one_outside_is_ignored() {
+    let base = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    fs::write(project.path().join("a.md"), "a").unwrap();
+    fs::create_dir(project.path().join("out")).unwrap();
+    let seen: Seen = Arc::default();
+    let sink = Arc::new(Recorder::default());
+    let env = project_env(base.path(), &seen, sink.clone());
+    let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
+    tree_shown(&core, &seen);
+    sink.take();
+    // an export saved through the system's Save dialog: the tree is told with the write, not by the watch, whose
+    // report waits for a quiet moment (150 ms); as above, a stalled runner may let the watch report first
+    let inside = core.root().path().join("out").join("a.pdf");
+    fs::write(&inside, "pdf").unwrap();
+    core.announce_written(&inside);
+    assert!(
+        core.explorer().listed("out/a.pdf").is_some(),
+        "listed at once"
+    );
+    let tree_news = |sink: &Recorder| {
+        sink.take()
+            .into_iter()
+            .filter(|event| matches!(event, CoreEvent::TreeChanged(_)))
+            .count()
+    };
+    assert_eq!(tree_news(&sink), 1, "the window is told");
+    // a file outside the project (and the project folder itself) changes nothing in the tree
+    let outside = elsewhere.path().join("b.pdf");
+    fs::write(&outside, "pdf").unwrap();
+    core.announce_written(&outside);
+    core.announce_written(core.root().path());
+    assert_eq!(tree_news(&sink), 0);
+}
+
 /// The project's tree as window `w` shows it: built, and the OS watch settled (what it still tells of the time before
 /// it began is waited out and forgotten).
 fn tree_shown(core: &ProjectCore, seen: &Seen) {

@@ -317,7 +317,7 @@ impl Model {
         assets_of(&self.id, &self.repo, &self.commit, &self.files)
     }
 
-    /// Install unit of this version: id = model id, folder `<lineage>/<catalog_version>` (D-2).
+    /// Install unit of this version: id = model id, folder `<lineage>/<catalog_version>`.
     ///
     /// # Errors
     /// [`CatalogError::Pin`] | [`CatalogError::Address`] | [`CatalogError::Folder`].

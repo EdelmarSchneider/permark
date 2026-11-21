@@ -342,12 +342,14 @@ fn start_watcher(
             })
         }
     }));
-    // the tree is known before anything goes away (a window would list it now anyway; a core without one too)
+    // the tree is known before anything goes away (a window would list it now anyway; a core without one too); then
+    // the temps a crash left in the listed folders go to the recycle bin
     let explorer = Arc::clone(explorer);
     let _ = std::thread::Builder::new()
         .name("permark-tree".to_owned())
         .spawn(move || {
             let _ = explorer.listed("");
+            let _ = crate::fsx::sweep_stale_temps(&explorer.listed_folders());
         });
     watcher
 }
@@ -1016,6 +1018,15 @@ impl ProjectCore {
                 .sync_paths(&[format!("{}/.gitignore", crate::state::PERMARK_DIR)], &[]);
         }
         Ok(now)
+    }
+
+    /// The app wrote the file `abs` without the project's editor (an export saved where the person chose): inside the
+    /// project, the tree lists it now instead of when the watch reports it (a report can be late or lost); anywhere
+    /// else, nothing happens.
+    pub fn announce_written(&self, abs: &std::path::Path) {
+        if let Some(path) = self.vault.relativize(abs).filter(|p| !p.is_root()) {
+            self.explorer.sync_paths(&[path.as_str().to_owned()], &[]);
+        }
     }
 
     /// The person asked to read the folder again: the tree is walked, and the index, git and every plugin that keeps a

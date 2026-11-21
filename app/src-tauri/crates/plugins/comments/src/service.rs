@@ -944,6 +944,17 @@ impl CommentsService {
         Ok(views)
     }
 
+    /// The document and heading comment `id` holds as stored: no document is read and nothing is written (`list`
+    /// would look for every passage again and may write the places that moved).
+    #[must_use]
+    pub fn about(&self, id: &str) -> Option<(String, Vec<String>)> {
+        self.shared
+            .comments()
+            .into_iter()
+            .find(|c| c.id == id)
+            .map(|c| (c.path, c.anchor.heading_path))
+    }
+
     /// Writes a comment on a passage. The document decides where the passage is when it holds the quote; the window's
     /// values are the fallback.
     ///

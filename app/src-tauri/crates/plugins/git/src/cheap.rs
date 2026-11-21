@@ -7,7 +7,7 @@ use std::path::Path;
 use permark_core::conditions::RepoState;
 use permark_core::plugins::CommitId;
 
-use crate::ops::{repo_state, RepoLocation};
+use crate::ops::{repo_state, GitError, RepoLocation};
 use crate::types::HeadInfo;
 use crate::worktrees::{
     common_dir, git_dir_stays_local, named_path, read_git_file, read_line, NOT_LOCAL,
@@ -15,6 +15,11 @@ use crate::worktrees::{
 
 /// Most bytes of `packed-refs` read looking for one ref (a bigger file is not read: the ref counts as missing).
 const MAX_PACKED: u64 = 8 * 1024 * 1024;
+
+/// A member's repository that may not be used, and why.
+fn refused(why: &str) -> GitError {
+    GitError::Failed(why.to_owned())
+}
 
 #[cfg(test)]
 thread_local! {
@@ -31,38 +36,38 @@ pub struct Cheap {
 
 /// The repository whose working tree is `folder` (an included project with a `.git` marker): its `.git` folder, or
 /// the folder a gitfile names (`gitdir: <path>`, relative to `folder`; may point outside the opened folder: read
-/// only). `Err`: why it cannot be used (the sentence names the cause).
+/// only). `Err`: why it cannot be used (a failure whose words name the cause).
 ///
 /// # Errors
 /// No `.git` | a gitfile without a `gitdir:` line | its target missing | not on this computer (also a path its git
 /// folder's files name, or a link there: [`git_dir_stays_local`]).
-pub fn member_location(folder: &Path) -> Result<RepoLocation, String> {
+pub fn member_location(folder: &Path) -> Result<RepoLocation, GitError> {
     #[cfg(test)]
     LOCATIONS_READ.with(|c| c.set(c.get() + 1));
     let entry = folder.join(".git");
-    let meta = std::fs::symlink_metadata(&entry).map_err(|_| "no .git".to_owned())?;
+    let meta = std::fs::symlink_metadata(&entry).map_err(|_| refused("no .git"))?;
     let git_dir = if meta.is_dir() {
         entry
     } else if meta.is_file() {
-        let line = read_line(&entry).ok_or_else(|| "unreadable .git file".to_owned())?;
+        let line = read_line(&entry).ok_or_else(|| refused("unreadable .git file"))?;
         let target = line
             .strip_prefix("gitdir:")
             .map(str::trim)
             .filter(|t| !t.is_empty())
-            .ok_or_else(|| "a .git file without gitdir".to_owned())?;
+            .ok_or_else(|| refused("a .git file without gitdir"))?;
         // a share | a mapped network drive named here would be looked up below, and by git on every open
         let target = named_path(folder, target)
-            .ok_or_else(|| "the repository named by .git is not on this computer".to_owned())?;
+            .ok_or_else(|| refused("the repository named by .git is not on this computer"))?;
         if !target.is_dir() {
-            return Err("the repository named by .git is missing".to_owned());
+            return Err(refused("the repository named by .git is missing"));
         }
         permark_core::paths::canonicalize(&target).unwrap_or(target)
     } else {
         // a link (symlink | junction) too: a member is read from files only, never through a link
-        return Err("no .git".to_owned());
+        return Err(refused("no .git"));
     };
     if !git_dir_stays_local(&git_dir) {
-        return Err(NOT_LOCAL.to_owned());
+        return Err(refused(NOT_LOCAL));
     }
     Ok(RepoLocation {
         workdir: folder.to_path_buf(),
@@ -187,7 +192,7 @@ mod tests {
         assert!(cheap_facts(git).unwrap().head.unborn, "a short id in a ref");
         std::fs::write(git.join("HEAD"), "garbage\n").unwrap();
         assert_eq!(cheap_facts(git), None);
-        // a HEAD naming anything outside the git folder is invalid: nothing read there (verifier N1)
+        // a HEAD naming anything outside the git folder is invalid: nothing read there
         let outside = dir.path().join("outside.txt");
         std::fs::write(&outside, format!("{A}\n")).unwrap();
         let drive = outside.display().to_string().replace('\\', "/");

@@ -13,7 +13,7 @@ mod write;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use permark_core::activity::Fact;
 use permark_core::conditions::Requirement;
@@ -597,10 +597,17 @@ struct Convert {
 struct Job {
     window: String,
     id: u64,
-    value: Value,
+    /// Shared with a target written on demand, which is written outside the jobs lock.
+    value: Arc<Value>,
     outputs: HashMap<Target, String>,
     /// The source file (none: a text from the page).
     path: Option<String>,
+}
+
+/// What a job holds for one target: its text, or the data to write it from.
+enum Kept {
+    Text(String),
+    Data(Arc<Value>),
 }
 
 #[derive(Default)]
@@ -655,6 +662,14 @@ struct SaveArgs {
     beside: Option<String>,
 }
 
+fn refused(reason: &str, line: u32, detail: String) -> Answer {
+    Answer::Refused {
+        reason: reason.to_owned(),
+        line,
+        detail,
+    }
+}
+
 fn bad(what: &str) -> IpcError {
     IpcError::new(ErrorKind::InvalidData).detail(what.to_owned())
 }
@@ -675,30 +690,114 @@ fn stem_of(path: &str) -> &str {
 }
 
 impl Shared {
+    fn lock_jobs(&self) -> MutexGuard<'_, Vec<Job>> {
+        self.jobs.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn lock_running(&self) -> MutexGuard<'_, HashMap<(String, u64), Cancel>> {
+        self.running.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// What the job keeps for `target`, and its source file. Only this look-up holds the jobs lock.
+    fn kept(
+        &self,
+        window: &str,
+        job: u64,
+        target: Target,
+    ) -> Result<(Kept, Option<String>), IpcError> {
+        let jobs = self.lock_jobs();
+        let found = jobs
+            .iter()
+            .find(|j| j.window == window && j.id == job)
+            .ok_or_else(|| IpcError::new(ErrorKind::NotFound).detail("job"))?;
+        let kept = found.outputs.get(&target).map_or_else(
+            || Kept::Data(Arc::clone(&found.value)),
+            |text| Kept::Text(text.clone()),
+        );
+        Ok((kept, found.path.clone()))
+    }
+
+    /// One target's text: kept, or written now (a big write never holds up the other windows).
     fn output(
         &self,
         window: &str,
         job: u64,
         target: Target,
     ) -> Result<(String, Option<String>), IpcError> {
-        let jobs = self.jobs.lock().unwrap_or_else(PoisonError::into_inner);
-        let found = jobs
-            .iter()
-            .find(|j| j.window == window && j.id == job)
-            .ok_or_else(|| IpcError::new(ErrorKind::NotFound).detail("job"))?;
-        let text = if let Some(text) = found.outputs.get(&target) {
-            text.clone()
-        } else {
-            let cancel = Cancel::default();
-            write(
-                target,
-                &found.value,
-                &mut Tick::new(&cancel),
-                &mut Losses::default(),
-            )
-            .map_err(|_| bad("failed"))?
+        let (kept, path) = self.kept(window, job, target)?;
+        let text = match kept {
+            Kept::Text(text) => text,
+            Kept::Data(value) => {
+                let cancel = Cancel::default();
+                write(
+                    target,
+                    &value,
+                    &mut Tick::new(&cancel),
+                    &mut Losses::default(),
+                )
+                .map_err(|_| bad("failed"))?
+            }
         };
-        Ok((text, found.path.clone()))
+        Ok((text, path))
+    }
+
+    /// The window gave up on job `job`: a run stops at its next check, a finished one is let go of (the window never
+    /// asks to close a job it stopped waiting for).
+    fn cancel(&self, window: &str, job: u64) {
+        if let Some(cancel) = self.lock_running().get(&(window.to_owned(), job)) {
+            cancel.cancel();
+        }
+        self.lock_jobs()
+            .retain(|j| !(j.window == window && j.id == job));
+    }
+
+    /// The window is gone: its runs stop and its job goes.
+    fn gone(&self, window: &str) {
+        for ((caller, _), cancel) in self.lock_running().iter() {
+            if caller == window {
+                cancel.cancel();
+            }
+        }
+        self.lock_jobs().retain(|j| j.window != window);
+    }
+
+    /// The answer to a run that ended: a finished analysis becomes the window's job unless the window gave up on it
+    /// meanwhile (a cancel after the work's last check). The run is let go of after the job is stored, so a cancel
+    /// that comes in between finds the job and drops it.
+    fn finish(
+        &self,
+        key: &(String, u64),
+        cancel: &Cancel,
+        outcome: Result<Done, Failure>,
+        path: Option<String>,
+    ) -> Answer {
+        let answer = match outcome {
+            Ok(done) => {
+                let mut jobs = self.lock_jobs();
+                // checked under the jobs lock: a cancel either sees the job stored or is seen here
+                if cancel.is_cancelled() {
+                    Answer::Cancelled
+                } else {
+                    // one job per window: a new analysis lets go of the one before
+                    jobs.retain(|j| j.window != key.0);
+                    jobs.push(Job {
+                        window: key.0.clone(),
+                        id: key.1,
+                        value: Arc::new(done.value),
+                        outputs: done.outputs,
+                        path,
+                    });
+                    Answer::Ready {
+                        analysis: done.analysis,
+                    }
+                }
+            }
+            Err(Failure::Cancelled) => Answer::Cancelled,
+            Err(Failure::TooLarge) => refused("tooLarge", 0, String::new()),
+            Err(Failure::Invalid { line, detail }) => refused("invalid", line, detail),
+        };
+        self.lock_running().remove(key);
+        answer
     }
 
     fn analyze(
@@ -707,11 +806,6 @@ impl Shared {
         args: AnalyzeArgs,
         window: &str,
     ) -> Result<Answer, IpcError> {
-        let refused = |reason: &str, line: u32, detail: String| Answer::Refused {
-            reason: reason.to_owned(),
-            line,
-            detail,
-        };
         let (text, path) = match args.source {
             SourceArg::Text { text } => (text, None),
             SourceArg::File { path } => {
@@ -735,36 +829,10 @@ impl Shared {
             .unwrap_or_else(|| Source::sniff(&text));
         let cancel = Cancel::default();
         let key = (window.to_owned(), args.job);
-        self.running
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.clone(), cancel.clone());
+        self.lock_running().insert(key.clone(), cancel.clone());
         let count = counter_of(app);
         let outcome = analyze(&text, source, &cancel, &count);
-        self.running
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&key);
-        Ok(match outcome {
-            Ok(done) => {
-                let mut jobs = self.jobs.lock().unwrap_or_else(PoisonError::into_inner);
-                // one job per window: a new analysis lets go of the one before
-                jobs.retain(|j| j.window != window);
-                jobs.push(Job {
-                    window: window.to_owned(),
-                    id: args.job,
-                    value: done.value,
-                    outputs: done.outputs,
-                    path,
-                });
-                Answer::Ready {
-                    analysis: done.analysis,
-                }
-            }
-            Err(Failure::Cancelled) => Answer::Cancelled,
-            Err(Failure::TooLarge) => refused("tooLarge", 0, String::new()),
-            Err(Failure::Invalid { line, detail }) => refused("invalid", line, detail),
-        })
+        Ok(self.finish(&key, &cancel, outcome, path))
     }
 }
 
@@ -788,14 +856,7 @@ impl Plugin for Convert {
         rpc.extend(cx.rpc(
             "cancel",
             typed(move |args: JobArgs, call| {
-                if let Some(cancel) = s
-                    .running
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .get(&(call.window.clone(), args.job))
-                {
-                    cancel.cancel();
-                }
+                s.cancel(&call.window, args.job);
                 Ok(())
             }),
         ));
@@ -804,13 +865,14 @@ impl Plugin for Convert {
         rpc.extend(cx.rpc(
             "close",
             typed(move |args: JobArgs, call| {
-                s.jobs
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
+                s.lock_jobs()
                     .retain(|j| !(j.window == call.window && j.id == args.job));
                 Ok(())
             }),
         ));
+
+        let s = Arc::clone(&shared);
+        rpc.extend(cx.on_caller_gone(Arc::new(move |window: &str| s.gone(window))));
 
         let (s, a) = (Arc::clone(&shared), app.clone());
         rpc.extend(cx.rpc(
