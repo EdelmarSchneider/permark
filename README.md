@@ -440,7 +440,7 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 | Action | Shortcut |
 |---|---|
-| Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+Alt+→` / `Ctrl+Alt+←`) |
+| Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+PageDown` / `Ctrl+PageUp`, or `Ctrl+Alt+→` / `Ctrl+Alt+←`) |
 | Go to tab 1 to 8 / the last tab | `Ctrl+1` … `Ctrl+8` / `Ctrl+9` |
 | Close the tab | `Ctrl+W` |
 
