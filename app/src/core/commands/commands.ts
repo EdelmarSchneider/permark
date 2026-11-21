@@ -7,7 +7,7 @@ import { t, type MessageKey } from "../i18n";
 import { fuzzyMatch } from "../search/fuzzy";
 import type { Contribution, ContributionOf } from "../plugins/registry.svelte";
 import { comboLabel } from "./combo";
-import { comboOf, type Keymap } from "./keymap";
+import type { Keymap } from "./keymap";
 
 export type CommandItem = ContributionOf<"command">;
 
@@ -96,11 +96,6 @@ export function matchCommands(
   });
   ranked.sort((a, b) => b.score - a.score || a.at - b.at);
   return ranked.map(({ entry, positions }) => ({ entry, positions }));
-}
-
-/** The first combo of a command in the map (what a row shows). */
-export function shortcutOf(keymap: Keymap, command: string): string | null {
-  return comboOf(keymap, command);
 }
 
 /** Whether a command may run now: `when` true and `available` not `unavailable`. */

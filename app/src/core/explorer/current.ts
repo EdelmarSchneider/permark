@@ -99,11 +99,6 @@ export const treeDrop = {
   placed: (paths: readonly string[]): void => current?.placed(paths),
 };
 
-/** Takes the newest file operation back. */
-export async function undoInTree(): Promise<void> {
-  await current?.undo();
-}
-
 /** Takes back exactly the file operation `id` (the notice of an import offers it). */
 export async function undoEntryInTree(id: number): Promise<void> {
   await current?.undoEntry(id);

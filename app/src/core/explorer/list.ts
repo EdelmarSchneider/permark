@@ -41,10 +41,6 @@ export function ancestorsOf(path: string): string[] {
   return out.filter((p) => p !== "@wt").reverse();
 }
 
-export function isWithin(path: string, folder: string): boolean {
-  return folder === "" || path === folder || path.startsWith(`${folder}/`);
-}
-
 /** Depth of a node below its root (top level = 0). */
 export function depthOf(path: string): number {
   const rel = belowRoot(path);
