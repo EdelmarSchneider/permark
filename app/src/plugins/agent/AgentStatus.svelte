@@ -64,6 +64,7 @@
     invalid: "agent.outcome.invalid",
     off: "agent.outcome.off",
     notOpen: "agent.outcome.notOpen",
+    rulesUnreadable: "agent.outcome.rulesUnreadable",
     error: "agent.outcome.error",
   };
 

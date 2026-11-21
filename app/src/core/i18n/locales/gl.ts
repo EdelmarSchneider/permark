@@ -1556,6 +1556,20 @@ export default {
   "agent.outcome.off": "desactivado",
   "agent.outcome.notOpen": "non aberto",
   "agent.outcome.error": "fallou",
+  "agentRules.lastGood":
+    "Non se puido ler {file}: {why}. PerMark usa as últimas regras dese ficheiro que funcionaron ata que o corrixas.",
+  "agentRules.closed":
+    "Non se puido ler {file}: {why}. Os axentes non reciben nada do que abrangue ata que o corrixas.",
+  "agentRules.why.tooLarge": "é demasiado grande",
+  "agentRules.why.notText": "non é texto simple",
+  "agentRules.why.notToml": "non é TOML válido",
+  "agentRules.why.badValue": "un dos seus axustes ten un tipo de valor incorrecto",
+  "agentRules.why.badPattern": "un dos seus padróns non é válido",
+  "agentRules.why.notAFile": "non é un ficheiro normal",
+  "agentRules.why.locked": "outro programa está a usalo",
+  "agentRules.why.denied": "PerMark non ten permiso para lelo",
+  "agentRules.why.failed": "non se puido ler",
+  "agent.outcome.rulesUnreadable": "regras ilexibles",
   "agent.open.notice": "Un axente quere mostrarlle {path}.",
   "agent.open.show": "Mostrar",
   "agent.ask.resolve":
@@ -3180,6 +3194,8 @@ export default {
   "acp.fail.tooLarge": "Este cartafol é grande de máis para copialo para o axente.",
   "acp.fail.projectsNotReady":
     "PerMark aínda está lendo este cartafol. Ténteo de novo nun momento.",
+  "acp.fail.rulesUnreadable":
+    "Non se puido ler un ficheiro que define o que poden ver os axentes. O axente non recibe nada ata que se corrixa.",
   "acp.fail.startFailed": "Non foi posíbel iniciar o programa do axente.",
   "acp.fail.timedOut": "O axente non respondeu a tempo.",
   "acp.fail.initFailed":

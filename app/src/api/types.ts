@@ -190,6 +190,9 @@ import type { AgentServerState } from "./generated/AgentServerState";
 import type { AgentSession } from "./generated/AgentSession";
 import type { AgentStatus } from "./generated/AgentStatus";
 import type { AgentWindowContext } from "./generated/AgentWindowContext";
+import type { RulesFallback } from "./generated/RulesFallback";
+import type { RulesProblem } from "./generated/RulesProblem";
+import type { RulesWhy } from "./generated/RulesWhy";
 import type { ActivityEntry } from "./generated/ActivityEntry";
 import type { ActivityFact } from "./generated/ActivityFact";
 import type { HandOffDone } from "./generated/HandOffDone";
@@ -1113,6 +1116,9 @@ export type {
   AgentSession,
   AgentStatus,
   AgentWindowContext,
+  RulesFallback,
+  RulesProblem,
+  RulesWhy,
 };
 export type { ActivityEntry, ActivityFact, HandOffDone, HandOffPreview, HandOffSessionView };
 export type {

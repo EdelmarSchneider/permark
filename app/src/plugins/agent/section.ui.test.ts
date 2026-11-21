@@ -98,6 +98,7 @@ afterEach(async () => {
   mock.probe.plugins.agent.fail(null);
   mock.probe.plugins.agent.connect(null);
   mock.probe.plugins.agent.refused.clear();
+  mock.probe.plugins.agent.rules(null);
   await store.changeSetting({ key: "pluginEnabled", value: { plugin: "agent", enabled: null } });
 });
 
@@ -197,6 +198,31 @@ describe("Settings > AI agents", () => {
     shareSwitch().click();
     await until(() => text(target).includes("On · waiting for an agent"), "on");
     expect(text(target)).not.toContain("This folder changed since you connected it.");
+  });
+
+  it("names a rule file it could not read, why, and what stands in for it", async () => {
+    await open();
+    mock.probe.plugins.agent.rules({ file: ".aiignore", why: "locked", fallback: "lastGood" });
+    mountPage(AGENT_PAGE);
+    await until(() => target.querySelector(".rules") !== null, "the rules line");
+    const line = target.querySelector(".rules");
+    expect(text(line)).toBe(
+      "Couldn't read .aiignore: another program is using it. PerMark uses the last rules from it that worked until you fix it.",
+    );
+    expect(line?.classList.contains("lastGood")).toBe(true);
+    expect(line?.querySelector("svg")).not.toBeNull();
+    mock.probe.plugins.agent.rules({
+      file: ".permark/config.toml",
+      why: "notToml",
+      fallback: "closed",
+    });
+    await until(() => text(target).includes(".permark/config.toml"), "the closed line");
+    expect(text(target.querySelector(".rules"))).toBe(
+      "Couldn't read .permark/config.toml: it isn't valid TOML. Agents get nothing it covers until you fix it.",
+    );
+    expect(target.querySelector(".rules")?.classList.contains("closed")).toBe(true);
+    mock.probe.plugins.agent.rules(null);
+    await until(() => target.querySelector(".rules") === null, "the line gone");
   });
 
   it("names the connected client, and a server error with its reason and a mark (not color only)", async () => {

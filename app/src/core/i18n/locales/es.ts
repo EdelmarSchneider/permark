@@ -1556,6 +1556,20 @@ export default {
   "agent.outcome.off": "desactivado",
   "agent.outcome.notOpen": "no abierto",
   "agent.outcome.error": "falló",
+  "agentRules.lastGood":
+    "No se pudo leer {file}: {why}. PerMark usa las últimas reglas de ese archivo que funcionaron hasta que lo corrijas.",
+  "agentRules.closed":
+    "No se pudo leer {file}: {why}. Los agentes no reciben nada de lo que abarca hasta que lo corrijas.",
+  "agentRules.why.tooLarge": "es demasiado grande",
+  "agentRules.why.notText": "no es texto sin formato",
+  "agentRules.why.notToml": "no es TOML válido",
+  "agentRules.why.badValue": "un ajuste tiene un tipo de valor incorrecto",
+  "agentRules.why.badPattern": "uno de sus patrones no es válido",
+  "agentRules.why.notAFile": "no es un archivo normal",
+  "agentRules.why.locked": "otro programa lo está usando",
+  "agentRules.why.denied": "PerMark no tiene permiso para leerlo",
+  "agentRules.why.failed": "no se pudo leer",
+  "agent.outcome.rulesUnreadable": "reglas ilegibles",
   "agent.open.notice": "Un agente quiere mostrarte {path}.",
   "agent.open.show": "Mostrar",
   "agent.ask.resolve":
@@ -3181,6 +3195,8 @@ export default {
   "acp.fail.tooLarge": "Esta carpeta es demasiado grande para copiarla para el agente.",
   "acp.fail.projectsNotReady":
     "PerMark todavía está leyendo esta carpeta. Vuelve a intentarlo en un momento.",
+  "acp.fail.rulesUnreadable":
+    "No se pudo leer un archivo que define lo que pueden ver los agentes. El agente no recibe nada hasta que se corrija.",
   "acp.fail.startFailed": "No se pudo iniciar el programa del agente.",
   "acp.fail.timedOut": "El agente no respondió a tiempo.",
   "acp.fail.initFailed":

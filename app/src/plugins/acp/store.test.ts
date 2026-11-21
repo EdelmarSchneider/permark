@@ -62,10 +62,11 @@ async function until(done: () => boolean): Promise<void> {
 const stops: (() => void)[] = [];
 
 /** The mock project with the store following it; `choice`: the agent chosen before (`null`: none, a first run).
- *  `root`: the project the window shows (a test changes it to show another). */
+ *  `root`: the project the window shows (a test changes it to show another); `shown`: the panel is on screen. */
 async function setup(
   choice: MockAcpChoice | null = { agent: "claude-acp" },
   root = new Box<string | null>(MOCK_FOLDER),
+  shown = new Box(true),
 ) {
   const api = createMockApi();
   await api.openPath(MOCK_FOLDER, "thisTab");
@@ -74,7 +75,11 @@ async function setup(
   const client = new PluginClient(api, () => root.value);
   const say = vi.fn<(text: string) => void>();
   const notifyKeyed = vi.fn();
-  const store = new AcpStore(client, () => root.value, { say, notices: { notifyKeyed } });
+  const store = new AcpStore(client, () => root.value, {
+    say,
+    notices: { notifyKeyed },
+    onScreen: () => shown.value,
+  });
   stops.push(store.start(), () => api.probe.plugins.acp.stopAll());
   await settle();
   return { api, store, acp: api.probe.plugins.acp, client, root, say, notifyKeyed };
@@ -291,6 +296,53 @@ describe("a message and its reply", () => {
         text: t("acp.notSent", { reason: t("acp.error.busy") }),
       }),
     );
+  });
+
+  it("a rule file that keeps the agent out refuses the message in words, which comes back; the status names the file", async () => {
+    const { store, acp: probe } = await setup();
+    expect(store.status?.rules).toBeUndefined();
+    probe.rules = { file: ".aiignore", why: "notAFile", fallback: "closed" };
+    store.draft = "Summarize";
+    await store.send();
+    await settle();
+    expect(store.draft).toBe("Summarize");
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({
+        kind: "notice",
+        text: t("acp.notSent", { reason: t("acp.fail.rulesUnreadable") }),
+      }),
+    );
+    expect(store.status?.rules).toEqual(probe.rules);
+    // news of the agent keeps the line; a start reads it again (fixed meanwhile: gone)
+    store.take({ type: "status", state: "error", error: null });
+    expect(store.status?.rules).toEqual(probe.rules);
+    probe.rules = null;
+    store.take({ type: "status", state: "starting", error: null });
+    await settle();
+    expect(store.status?.rules).toBeUndefined();
+    // a start refused for the rules says so in words
+    store.take({ type: "status", state: "error", error: { code: "rulesUnreadable" } });
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({ kind: "notice", text: t("acp.fail.rulesUnreadable") }),
+    );
+  });
+
+  it("the rules line is read again when the panel comes back on screen: a file fixed meanwhile leaves it", async () => {
+    const shown = new Box(true);
+    const { store, acp: probe } = await setup(undefined, undefined, shown);
+    probe.rules = { file: ".aiignore", why: "notAFile", fallback: "closed" };
+    shown.value = false;
+    await settle();
+    expect(store.status?.rules).toBeUndefined();
+    shown.value = true;
+    await settle();
+    expect(store.status?.rules).toEqual(probe.rules);
+    probe.rules = null;
+    shown.value = false;
+    await settle();
+    shown.value = true;
+    await settle();
+    expect(store.status?.rules).toBeUndefined();
   });
 
   it("a passage from a file agents may not see goes at the refusal and is never attached again; the message comes back", async () => {
@@ -910,6 +962,7 @@ describe("words of the panel", () => {
       "tooManyFiles",
       "tooManyBytes",
       "projectsNotReady",
+      "rulesUnreadable",
       "noText",
       "edits",
       "starting",

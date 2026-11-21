@@ -1565,6 +1565,20 @@ export default {
   "agent.outcome.off": "nonaktif",
   "agent.outcome.notOpen": "tidak terbuka",
   "agent.outcome.error": "gagal",
+  "agentRules.lastGood":
+    "Tidak dapat membaca {file}: {why}. PerMark memakai aturan terakhir dari file itu yang berfungsi sampai Anda memperbaikinya.",
+  "agentRules.closed":
+    "Tidak dapat membaca {file}: {why}. Agen tidak mendapat apa pun yang dicakupnya sampai Anda memperbaikinya.",
+  "agentRules.why.tooLarge": "file terlalu besar",
+  "agentRules.why.notText": "bukan teks biasa",
+  "agentRules.why.notToml": "bukan TOML yang valid",
+  "agentRules.why.badValue": "salah satu pengaturannya memiliki jenis nilai yang salah",
+  "agentRules.why.badPattern": "salah satu polanya tidak valid",
+  "agentRules.why.notAFile": "bukan file biasa",
+  "agentRules.why.locked": "sedang dipakai program lain",
+  "agentRules.why.denied": "PerMark tidak diizinkan membacanya",
+  "agentRules.why.failed": "gagal dibaca",
+  "agent.outcome.rulesUnreadable": "aturan tak terbaca",
   "agent.open.notice": "Agen ingin menunjukkan {path} kepada Anda.",
   "agent.open.show": "Tampilkan",
   "agent.ask.resolve":
@@ -3178,6 +3192,8 @@ export default {
   "acp.fail.copyFailed": "PerMark tidak dapat menyiapkan salinan folder ini untuk agen.",
   "acp.fail.tooLarge": "Folder ini terlalu besar untuk disalin bagi agen.",
   "acp.fail.projectsNotReady": "PerMark masih membaca folder ini. Coba lagi sebentar lagi.",
+  "acp.fail.rulesUnreadable":
+    "File yang mengatur apa yang boleh dilihat agen tidak dapat dibaca. Agen tidak mendapat apa pun sampai file itu diperbaiki.",
   "acp.fail.startFailed": "Program agen tidak dapat dimulai.",
   "acp.fail.timedOut": "Agen tidak menjawab tepat waktu.",
   "acp.fail.initFailed":

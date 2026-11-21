@@ -1571,6 +1571,20 @@ export default {
   "agent.outcome.off": "disattivato",
   "agent.outcome.notOpen": "non aperto",
   "agent.outcome.error": "non riuscito",
+  "agentRules.lastGood":
+    "Impossibile leggere {file}: {why}. PerMark usa le ultime regole funzionanti di quel file finché non lo correggi.",
+  "agentRules.closed":
+    "Impossibile leggere {file}: {why}. Gli agenti non ricevono nulla di ciò che copre finché non lo correggi.",
+  "agentRules.why.tooLarge": "è troppo grande",
+  "agentRules.why.notText": "non è testo semplice",
+  "agentRules.why.notToml": "non è TOML valido",
+  "agentRules.why.badValue": "una delle sue impostazioni ha un tipo di valore errato",
+  "agentRules.why.badPattern": "uno dei suoi modelli non è valido",
+  "agentRules.why.notAFile": "non è un file normale",
+  "agentRules.why.locked": "un altro programma lo sta usando",
+  "agentRules.why.denied": "PerMark non ha il permesso di leggerlo",
+  "agentRules.why.failed": "non è stato possibile leggerlo",
+  "agent.outcome.rulesUnreadable": "regole illeggibili",
   "agent.open.notice": "Un agente vuole mostrarti {path}.",
   "agent.open.show": "Mostra",
   "agent.ask.resolve":
@@ -3198,6 +3212,8 @@ export default {
   "acp.fail.tooLarge": "Questa cartella è troppo grande per essere copiata per l'agente.",
   "acp.fail.projectsNotReady":
     "PerMark sta ancora leggendo questa cartella. Riprova tra un momento.",
+  "acp.fail.rulesUnreadable":
+    "Impossibile leggere un file che stabilisce cosa possono vedere gli agenti. L'agente non riceve nulla finché non viene corretto.",
   "acp.fail.startFailed": "Impossibile avviare il programma dell'agente.",
   "acp.fail.timedOut": "L'agente non ha risposto in tempo.",
   "acp.fail.initFailed":

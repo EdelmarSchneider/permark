@@ -1531,6 +1531,20 @@ export default {
   "agent.outcome.off": "꺼짐",
   "agent.outcome.notOpen": "열려 있지 않음",
   "agent.outcome.error": "실패",
+  "agentRules.lastGood":
+    "{file}을(를) 읽을 수 없습니다: {why}. 수정할 때까지 PerMark는 이 파일에서 마지막으로 작동한 규칙을 사용합니다.",
+  "agentRules.closed":
+    "{file}을(를) 읽을 수 없습니다: {why}. 수정할 때까지 에이전트는 이 파일이 다루는 내용을 전혀 받지 못합니다.",
+  "agentRules.why.tooLarge": "파일이 너무 큽니다",
+  "agentRules.why.notText": "일반 텍스트가 아닙니다",
+  "agentRules.why.notToml": "올바른 TOML이 아닙니다",
+  "agentRules.why.badValue": "설정 중 하나의 값 형식이 올바르지 않습니다",
+  "agentRules.why.badPattern": "패턴 중 하나가 올바르지 않습니다",
+  "agentRules.why.notAFile": "일반 파일이 아닙니다",
+  "agentRules.why.locked": "다른 프로그램이 사용 중입니다",
+  "agentRules.why.denied": "PerMark에 읽기 권한이 없습니다",
+  "agentRules.why.failed": "읽지 못했습니다",
+  "agent.outcome.rulesUnreadable": "규칙 읽기 불가",
   "agent.open.notice": "에이전트가 보여 주려는 위치: {path}",
   "agent.open.show": "표시",
   "agent.ask.resolve": "에이전트가 댓글을 완료로 표시하려고 합니다. 이 프로젝트에서 허용할까요?",
@@ -3120,6 +3134,8 @@ export default {
   "acp.fail.copyFailed": "PerMark가 에이전트를 위한 이 폴더의 복사본을 준비하지 못했습니다.",
   "acp.fail.tooLarge": "이 폴더는 너무 커서 에이전트를 위해 복사할 수 없습니다.",
   "acp.fail.projectsNotReady": "PerMark가 아직 이 폴더를 읽는 중입니다. 잠시 후 다시 시도하세요.",
+  "acp.fail.rulesUnreadable":
+    "에이전트가 볼 수 있는 범위를 정하는 파일을 읽을 수 없습니다. 수정될 때까지 에이전트는 아무것도 받지 못합니다.",
   "acp.fail.startFailed": "에이전트의 프로그램을 시작할 수 없습니다.",
   "acp.fail.timedOut": "에이전트가 제시간에 응답하지 않았습니다.",
   "acp.fail.initFailed":

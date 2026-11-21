@@ -1635,6 +1635,20 @@ export default {
   "agent.outcome.off": "dezactivat",
   "agent.outcome.notOpen": "nedeschis",
   "agent.outcome.error": "eșuat",
+  "agentRules.lastGood":
+    "{file} nu a putut fi citit: {why}. PerMark folosește ultimele reguli din el care au funcționat până când îl corectezi.",
+  "agentRules.closed":
+    "{file} nu a putut fi citit: {why}. Agenții nu primesc nimic din ce acoperă până când îl corectezi.",
+  "agentRules.why.tooLarge": "este prea mare",
+  "agentRules.why.notText": "nu este text simplu",
+  "agentRules.why.notToml": "nu este TOML valid",
+  "agentRules.why.badValue": "una dintre setările sale are un tip de valoare greșit",
+  "agentRules.why.badPattern": "unul dintre tiparele sale nu este valid",
+  "agentRules.why.notAFile": "nu este un fișier obișnuit",
+  "agentRules.why.locked": "alt program îl folosește",
+  "agentRules.why.denied": "PerMark nu are permisiunea să-l citească",
+  "agentRules.why.failed": "citirea a eșuat",
+  "agent.outcome.rulesUnreadable": "reguli ilizibile",
   "agent.open.notice": "Un agent vrea să-ți arate {path}.",
   "agent.open.show": "Arată",
   "agent.ask.resolve":
@@ -3342,6 +3356,8 @@ export default {
   "acp.fail.tooLarge": "Acest dosar este prea mare pentru a fi copiat pentru agent.",
   "acp.fail.projectsNotReady":
     "PerMark încă citește acest dosar. Încearcă din nou peste câteva momente.",
+  "acp.fail.rulesUnreadable":
+    "Un fișier care stabilește ce pot vedea agenții nu a putut fi citit. Agentul nu primește nimic până când nu este corectat.",
   "acp.fail.startFailed": "Programul agentului nu a putut fi pornit.",
   "acp.fail.timedOut": "Agentul nu a răspuns la timp.",
   "acp.fail.initFailed":
