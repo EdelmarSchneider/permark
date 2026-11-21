@@ -368,6 +368,62 @@ fn snippets_mark_matches_as_parts_cut_at_words_and_fall_back_to_the_heading() {
     assert!(b.snippet.iter().any(|p| p.mark));
 }
 
+/// A section of about `bytes` without headings (one BM25 section), its words counted by hand: building it never
+/// tokenizes the text.
+fn big_section(index: &mut Bm25, path: &str, text: String) {
+    let input = SectionInput {
+        heading_path: Vec::new(),
+        anchor: None,
+        line: 1,
+        text,
+        terms: vec![("harbor".to_owned(), 1), ("tail".to_owned(), 1)],
+        len: 100,
+    };
+    index.add(&Arc::from(path), vec![input]);
+}
+
+#[test]
+fn a_snippet_of_a_large_section_tokenizes_only_around_its_match() {
+    let mut index = Bm25::new();
+    let filler =
+        "the quick brown fox jumps over the lazy dog, Harbinger of nothing. ".repeat(16_000);
+    big_section(
+        &mut index,
+        "big.md",
+        format!("{filler} the tail word ends it"),
+    );
+    let before = super::fold::tokenized_bytes();
+    let hits = index.search("tail", 5, None);
+    let spent = super::fold::tokenized_bytes() - before;
+    assert_eq!(hits.len(), 1);
+    assert!(hits[0].snippet.iter().any(|p| p.mark && p.text == "tail"));
+    assert!(spent <= 4096, "tokenized {spent} bytes of a 1 MB section");
+    // a word sharing the query's start (`harbinger` for `harbor`) is looked at, never the rest of the text
+    let before = super::fold::tokenized_bytes();
+    let hits = index.search("harbor", 5, None);
+    let spent = super::fold::tokenized_bytes() - before;
+    assert_eq!(hits.len(), 1);
+    assert!(
+        spent <= 4096 + 16_000 * "harbinger".len(),
+        "tokenized {spent} bytes"
+    );
+}
+
+#[test]
+fn a_hundred_hits_in_large_sections_answer_quickly() {
+    let mut index = Bm25::new();
+    let text = "harbor lights over the water, ships come and go at night. ".repeat(18_000);
+    for at in 0..100 {
+        big_section(&mut index, &format!("s{at}.md"), text.clone());
+    }
+    let started = Instant::now();
+    let hits = index.search("harbor", 100, None);
+    let took = started.elapsed();
+    assert_eq!(hits.len(), 100);
+    // 10x the release budget for one query (50 ms), in a debug build
+    assert!(took < Duration::from_millis(500), "{took:?}");
+}
+
 #[test]
 fn a_snippet_shows_the_text_as_written() {
     let mut index = Bm25::new();
@@ -870,6 +926,178 @@ fn a_new_or_renamed_folder_and_bulk_batches_reconcile_with_the_disk() {
     f.wait("reconciled", |f| {
         f.found("silentwords") == ["silent.md"] && f.found("first").is_empty()
     });
+}
+
+/// Writes `text` at `rel` keeping the size and modified time the file had (a coarse clock, a tool that restores times).
+fn write_same_stat(base: &Path, rel: &str, text: &str) {
+    let path = base.join(rel);
+    let before = fs::metadata(&path).unwrap();
+    assert_eq!(before.len(), text.len() as u64, "same size");
+    fs::write(&path, text).unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(before.modified().unwrap())
+        .unwrap();
+}
+
+#[test]
+fn a_change_the_watch_saw_is_read_even_with_the_same_size_and_time() {
+    let f = fx(&[("a.md", "# A\n\nalpha1\n")]);
+    write_same_stat(f.dir.path(), "a.md", "# A\n\nomega2\n");
+    f.feed_fenced(
+        vec![change("a.md", ChangeKind::Modified, false)],
+        "fence.md",
+        "fenceword",
+    );
+    assert_eq!(f.found("omega2"), ["a.md"]);
+    assert!(f.found("alpha1").is_empty());
+}
+
+#[test]
+fn an_ignore_file_change_reconciles_the_index() {
+    let f = fx(&[
+        ("a.md", "# A\n\nkeptword\n"),
+        ("drafts/d.md", "# D\n\ndraftword\n"),
+        (".git/HEAD", "ref: refs/heads/main\n"),
+    ]);
+    assert_eq!(f.found("draftword"), ["drafts/d.md"]);
+    let ignorer = Arc::clone(&f.explorer.ignorers()[0].1);
+    // the watch forgets what it read from ignore files before it publishes their change
+    write(f.dir.path(), ".gitignore", "drafts/\n");
+    ignorer.clear();
+    f.feed_fenced(
+        vec![change(".gitignore", ChangeKind::Created, false)],
+        "f1.md",
+        "fenceone",
+    );
+    assert!(f.index.files_under("drafts").is_empty());
+    assert!(f.found("draftword").is_empty());
+    fs::remove_file(f.dir.path().join(".gitignore")).unwrap();
+    ignorer.clear();
+    f.feed_fenced(
+        vec![change(".gitignore", ChangeKind::Removed, false)],
+        "f2.md",
+        "fencetwo",
+    );
+    assert_eq!(f.found("draftword"), ["drafts/d.md"]);
+    // the repository's own exclude file counts the same
+    write(f.dir.path(), ".git/info/exclude", "drafts/\n");
+    ignorer.clear();
+    f.feed_fenced(
+        vec![change(".git/info/exclude", ChangeKind::Created, false)],
+        "f3.md",
+        "fencethree",
+    );
+    assert!(f.index.files_under("drafts").is_empty());
+    assert_eq!(f.found("keptword"), ["a.md"]);
+}
+
+#[test]
+fn a_new_folder_is_walked_on_its_own() {
+    let dir = tempfile::tempdir().unwrap();
+    for at in 0..2000 {
+        write(
+            dir.path(),
+            &format!("area{}/n{at}.md", at / 100),
+            "# N\n\nbody\n",
+        );
+    }
+    let f = start(dir);
+    assert_eq!(f.explorer.index_walks(), 1);
+    let read = f.index.reads();
+    for k in 0..3 {
+        write(
+            f.dir.path(),
+            &format!("x/d{k}.md"),
+            &format!("# D\n\nnewfolderword{k}\n"),
+        );
+    }
+    f.feed(vec![change("x", ChangeKind::Created, true)]);
+    f.wait("the new folder's documents", |f| {
+        (0..3).all(|k| f.found(&format!("newfolderword{k}")) == [format!("x/d{k}.md")])
+    });
+    assert_eq!(f.index.reads() - read, 3, "only the new documents are read");
+    assert_eq!(
+        f.explorer.index_walks(),
+        1,
+        "the project is not walked again"
+    );
+    // a folder moved in: its old place is forgotten, the new one walked
+    fs::rename(f.dir.path().join("x"), f.dir.path().join("y")).unwrap();
+    f.feed(vec![change(
+        "y",
+        ChangeKind::Renamed {
+            from: "x".to_owned(),
+        },
+        true,
+    )]);
+    f.wait("the moved folder", |f| {
+        f.found("newfolderword1") == ["y/d1.md"]
+    });
+    assert!(f.index.files_under("x").is_empty());
+    assert_eq!(f.explorer.index_walks(), 1);
+}
+
+#[test]
+fn the_index_walks_with_the_ignore_rules_the_tree_read() {
+    // ignore files are read once at opening, again only when the watch reports one changed: an edit nobody reported
+    // reaches the index no sooner than the tree
+    let dir = tempfile::tempdir().unwrap();
+    write(dir.path(), ".gitignore", "drafts/\n");
+    write(dir.path(), "a.md", "# A\n\nkeptword\n");
+    write(dir.path(), "drafts/d.md", "# D\n\ndraftword\n");
+    let vault = Vault::new(Root::open(dir.path()).unwrap());
+    let sink = Arc::new(Recorder::default());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        sink.clone(),
+        None,
+    ));
+    assert!(explorer.open_view("w", None).total_files > 0);
+    fs::write(dir.path().join(".gitignore"), "").unwrap();
+    let index = SearchIndex::start(
+        vault,
+        Arc::clone(&explorer),
+        sink.clone(),
+        "root".to_owned(),
+    );
+    assert!(index.wait_ready(Duration::from_secs(60)));
+    let f = Fx {
+        dir,
+        explorer,
+        sink,
+        index,
+    };
+    assert_eq!(f.found("keptword"), ["a.md"]);
+    assert!(f.index.files_under("drafts").is_empty());
+}
+
+#[test]
+fn after_lost_events_each_document_is_compared_by_its_own_size_and_time() {
+    let f = fx(&[("a.md", "# A\n\nalpha\n"), ("b.md", "# B\n\nbeta\n")]);
+    // the first pass takes them from the folder listings
+    let listed = f.index.listed_compares();
+    assert!(listed >= 2, "{listed}");
+    // events were lost: a listing may lag behind a file still being written (Windows updates folder entries lazily)
+    let read = f.index.reads();
+    write(f.dir.path(), "fence.md", "# Fence\n\nfenceword\n");
+    (f.index.feeder())(&FsBatch {
+        rescan: true,
+        changes: vec![change("fence.md", ChangeKind::Created, false)],
+        ..FsBatch::default()
+    });
+    f.wait("the pass after lost events", |f| {
+        f.found("fenceword") == ["fence.md"]
+    });
+    assert_eq!(f.index.listed_compares(), listed, "no listing trusted");
+    assert_eq!(
+        f.index.reads() - read,
+        1,
+        "the unchanged documents are not read"
+    );
 }
 
 #[test]

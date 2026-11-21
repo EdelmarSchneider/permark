@@ -89,6 +89,18 @@ export function blocksUsingReferences(
   return { blocks: found, references: referencesOf(tree) };
 }
 
+/**
+ * Whether `blocksUsingReferences(core, text, starts)` could hold block `block`: a picture by reference starts with
+ * `![`, and a reading gives each one to the block whose start is the last at | before it (the first block: anything
+ * before it too). `false`: that block uses none, whatever the text defines, with no need to read it.
+ */
+export function mayUsePicture(text: string, starts: readonly number[], block: number): boolean {
+  const from = block === 0 ? 0 : (starts[block] ?? text.length);
+  // one char past the next block's start: a `!` just before it with the `[` that starts it
+  const to = (starts[block + 1] ?? text.length) + 1;
+  return text.slice(from, to).includes("![");
+}
+
 /** Why `doc` (read from a tidied text: LF line endings) is kept: an inline piece spans a line break; null: none does. */
 function pieceAcrossLines(doc: PMNode): LockReason | null {
   let found: LockReason | null = null;

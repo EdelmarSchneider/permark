@@ -230,6 +230,12 @@ pub(crate) struct Shared {
     ready: Condvar,
     /// Front matter tags of the Markdown documents, from the same reads (`projects.md` §7.3).
     pub(crate) harvest: Arc<harvest::Harvest>,
+    /// Files the worker read (not found unchanged).
+    #[cfg(test)]
+    pub(crate) reads: std::sync::atomic::AtomicUsize,
+    /// Documents the worker compared by the size and time their folder listing showed (not their own metadata).
+    #[cfg(test)]
+    pub(crate) listed: std::sync::atomic::AtomicUsize,
 }
 
 impl Shared {
@@ -243,6 +249,10 @@ impl Shared {
                 total: 0,
             }),
             ready: Condvar::new(),
+            #[cfg(test)]
+            reads: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            listed: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 
@@ -398,13 +408,14 @@ impl SearchIndex {
     pub fn sections(&self, query: &str, limit: usize, filter: &SearchFilter) -> SectionResults {
         let limit = limit.clamp(1, MAX_LIMIT);
         let allow = |path: &str| filter.allows(path);
-        let hits = self.read().bm25.search(
+        let ranked = self.read().bm25.ranked(
             query,
             limit,
             if filter.is_open() { None } else { Some(&allow) },
         );
+        // snippets are made with the index let go: the worker never waits for a query over large sections
         SectionResults {
-            hits,
+            hits: ranked.hits(),
             partial: self.shared.partial(),
         }
     }
@@ -561,6 +572,24 @@ impl SearchIndex {
     #[must_use]
     pub fn doc_count(&self) -> usize {
         self.read().doc_count()
+    }
+
+    /// Measurement: bytes of section text the index keeps in memory for snippets.
+    #[cfg(test)]
+    pub(crate) fn text_bytes(&self) -> usize {
+        self.read().bm25.text_bytes()
+    }
+
+    /// Test hook: how many files the worker read so far (the ones it found unchanged not counted).
+    #[cfg(test)]
+    pub(crate) fn reads(&self) -> usize {
+        self.shared.reads.load(Ordering::Relaxed)
+    }
+
+    /// Test hook: how many documents the worker compared by their folder listing's size and time so far.
+    #[cfg(test)]
+    pub(crate) fn listed_compares(&self) -> usize {
+        self.shared.listed.load(Ordering::Relaxed)
     }
 }
 

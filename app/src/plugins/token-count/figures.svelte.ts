@@ -43,12 +43,16 @@ export function createFigures(source: AnalysisText): TokenFigures {
   const frontEnd = $derived(markdown ? frontMatterEnd(text) : 0);
   const bodyText = $derived(frontEnd > 0 ? text.slice(lineStart(text, frontEnd + 1)) : "");
   const small = $derived(text.length <= LOCAL_LIMIT);
+  const smallPart = $derived(selection.length <= LOCAL_LIMIT);
   /** Only the primary tokenizer shows in the bar; the others when the popover is open. */
   const wanted = $derived(tokens.popover ? tokens.chosen : tokens.chosen.slice(0, 1));
 
-  // what the backend must count: exact tokenizers with their vocabulary, and every tokenizer for a long text
+  // what the backend must count: exact tokenizers with their vocabulary, and every tokenizer for a long text or a
+  // long selection
   const asked = $derived(
-    wanted.filter((info) => (info.exact || !small) && tokens.ready(info)).map((info) => info.id),
+    wanted
+      .filter((info) => (info.exact || !small || !smallPart) && tokens.ready(info))
+      .map((info) => info.id),
   );
 
   $effect(() => {
@@ -123,6 +127,7 @@ export function createFigures(source: AnalysisText): TokenFigures {
       if (selection === "") return null;
       const exact = exactFor(info.id);
       if (exact?.part != null) return { value: exact.part, approx: !info.exact };
+      if (!smallPart) return null;
       return { value: estimate(info.id, selection), approx: true };
     },
   };

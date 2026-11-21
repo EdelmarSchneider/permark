@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::*;
@@ -2031,4 +2031,316 @@ fn an_undo_never_replaces_a_save_that_slips_in_before_its_write() {
         outcome.skipped
     );
     assert!(exists(&f, "b.md"), "the file still went back");
+}
+
+// ---- a bin that stops part way --------------------------------------------------------------------------------------------
+
+#[test]
+fn a_delete_the_bin_stops_part_way_journals_what_went_so_undo_brings_it_back() {
+    let f = fx(&[("a.md", "A"), ("b.md", "B")]);
+    // the bin takes the first item, then refuses the next (the freedesktop bin stops at its first failure)
+    let partly = |places: &[PathBuf]| -> Result<(), Unrecycled> {
+        let taken = crate::fsx::recycle(&places[..1]).is_ok();
+        Err(Unrecycled {
+            reason: "refused".to_owned(),
+            gone: vec![taken, false],
+        })
+    };
+    let refused = f
+        .ops
+        .delete_with(&["a.md".to_owned(), "b.md".to_owned()], partly);
+    if exists(&f, "a.md") {
+        eprintln!("recycle bin not usable here; skipped");
+        return;
+    }
+    assert_eq!(refused.map(|_| ()).map_err(kind_of), Err(ErrorKind::Trash));
+    assert_eq!(read(&f, "b.md"), "B");
+    let outcome = f.ops.undo().unwrap().expect("what went is journaled");
+    assert_eq!(outcome.kind, UndoKind::Delete);
+    if outcome.restored == 1 {
+        assert_eq!(read(&f, "a.md"), "A");
+        assert!(outcome.skipped.is_empty(), "{:?}", outcome.skipped);
+    } else {
+        // macOS (no restore API) or a bin that cannot be listed: said, not hidden
+        assert_eq!(
+            outcome.skipped,
+            [Skip {
+                path: "a.md".to_owned(),
+                reason: SkipReason::Missing
+            }]
+        );
+    }
+    assert_eq!(read(&f, "b.md"), "B");
+}
+
+/// The Windows bin cannot take a file held open without sharing; it goes on with the others and then fails.
+#[cfg(windows)]
+#[test]
+fn the_items_the_bin_took_before_refusing_a_held_one_come_back_with_undo() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let f = fx(&[("a.md", "A"), ("held.md", "H"), ("c.md", "C")]);
+    let held = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(f.dir.path().join("held.md"))
+        .unwrap();
+    let refused = f
+        .ops
+        .delete(&["a.md".to_owned(), "held.md".to_owned(), "c.md".to_owned()]);
+    drop(held);
+    if refused.is_ok() {
+        eprintln!("the bin took a held file here; skipped");
+        return;
+    }
+    let gone: Vec<(&str, &str)> = [("a.md", "A"), ("c.md", "C")]
+        .into_iter()
+        .filter(|(path, _)| !exists(&f, path))
+        .collect();
+    if gone.is_empty() {
+        eprintln!("the bin took nothing here; skipped");
+        return;
+    }
+    assert_eq!(read(&f, "held.md"), "H");
+    let outcome = f.ops.undo().unwrap().expect("what went is journaled");
+    assert_eq!(
+        usize::try_from(outcome.restored).unwrap(),
+        gone.len(),
+        "{:?}",
+        outcome.skipped
+    );
+    for (path, text) in gone {
+        assert_eq!(read(&f, path), text);
+    }
+}
+
+/// The freedesktop bin cannot take an item out of a read-only folder; it stops there, after the items before it.
+/// (Not on macOS: the Finder may ask for a password there.)
+#[cfg(all(unix, not(target_os = "macos")))]
+#[test]
+fn the_items_the_bin_took_before_an_item_it_cannot_take_come_back_with_undo() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = fx(&[("a.md", "A"), ("locked/b.md", "B")]);
+    let locked = f.dir.path().join("locked");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+    let refused = f.ops.delete(&["a.md".to_owned(), "locked/b.md".to_owned()]);
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    if refused.is_ok() {
+        eprintln!("the bin took an item of a read-only folder here; skipped");
+        return;
+    }
+    if exists(&f, "a.md") {
+        eprintln!("recycle bin not usable here; skipped");
+        return;
+    }
+    assert_eq!(read(&f, "locked/b.md"), "B");
+    let outcome = f.ops.undo().unwrap().expect("what went is journaled");
+    assert_eq!(outcome.restored, 1, "{:?}", outcome.skipped);
+    assert_eq!(read(&f, "a.md"), "A");
+}
+
+#[test]
+fn undo_of_a_delete_brings_back_what_it_can_and_never_replaces_what_took_a_place() {
+    let f = fx(&[("a.md", "A"), ("b.md", "B"), ("c.md", "C")]);
+    if f.ops
+        .delete(&["a.md".to_owned(), "b.md".to_owned(), "c.md".to_owned()])
+        .is_err()
+    {
+        eprintln!("recycle bin not usable here; skipped");
+        return;
+    }
+    fs::write(f.dir.path().join("b.md"), "new B").unwrap();
+    let outcome = f.ops.undo().unwrap().unwrap();
+    assert_eq!(read(&f, "b.md"), "new B");
+    if !cfg!(windows) && outcome.restored == 0 {
+        // macOS (no restore API) or a bin that cannot be listed: said, not hidden
+        assert_eq!(outcome.skipped.len(), 3);
+        return;
+    }
+    assert_eq!(outcome.restored, 2);
+    assert_eq!(
+        outcome.skipped,
+        [Skip {
+            path: "b.md".to_owned(),
+            reason: SkipReason::Occupied
+        }]
+    );
+    assert_eq!(
+        (read(&f, "a.md"), read(&f, "c.md")),
+        ("A".into(), "C".into())
+    );
+}
+
+// ---- many items: the answers of the pairwise checks, in about the time of the count ----------------------------------------
+
+mod many_items {
+    use std::path::PathBuf;
+    use std::time::{Duration, Instant};
+
+    use proptest::prelude::*;
+
+    use super::super::ops::{check_together, outermost, ValidMove};
+    use super::super::plan::Mover;
+    use super::super::FileOpError;
+    use crate::paths::VaultPath;
+    use crate::tree::key_of;
+
+    /// Segments that meet in every way the checks tell apart: case, Unicode normalization, one name inside another.
+    const SEGMENTS: &[&str] = &["a", "A", "b", "ab", "\u{e9}", "e\u{301}", "x y"];
+
+    fn path() -> impl Strategy<Value = String> {
+        proptest::collection::vec(proptest::sample::select(SEGMENTS), 1..4)
+            .prop_map(|parts| parts.join("/"))
+    }
+
+    fn valid(from: &str, to: &str) -> ValidMove {
+        ValidMove {
+            from: VaultPath::parse(from).unwrap(),
+            to: VaultPath::parse(to).unwrap(),
+            abs_from: PathBuf::from(from),
+            abs_to: PathBuf::from(to),
+            is_dir: false,
+            case_only: false,
+        }
+    }
+
+    /// Every pair in order: the reference the keyed check answers like.
+    fn pairwise_check_together(moves: &[ValidMove]) -> Result<(), FileOpError> {
+        for (at, a) in moves.iter().enumerate() {
+            for b in &moves[at + 1..] {
+                if a.from.is_within(&b.from) || b.from.is_within(&a.from) {
+                    return Err(FileOpError::Overlap(a.from.to_string()));
+                }
+                let (ta, tb) = (a.to.key().to_lowercase(), b.to.key().to_lowercase());
+                if ta == tb
+                    || ta.starts_with(&format!("{tb}/"))
+                    || tb.starts_with(&format!("{ta}/"))
+                {
+                    return Err(FileOpError::Overlap(a.to.to_string()));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Every path against every other: the reference of the collapse of nested deletes.
+    fn pairwise_outermost(checked: &[(VaultPath, PathBuf)]) -> Vec<(VaultPath, PathBuf)> {
+        let keys: Vec<String> = checked.iter().map(|(p, _)| p.key()).collect();
+        let mut kept = Vec::new();
+        for (at, (path, abs)) in checked.iter().enumerate() {
+            let covered = keys.iter().enumerate().any(|(other, key)| {
+                other != at
+                    && (path.key().starts_with(&format!("{key}/"))
+                        || (path.key() == *key && other < at))
+            });
+            if !covered {
+                kept.push((path.clone(), abs.clone()));
+            }
+        }
+        kept
+    }
+
+    /// The longest `from` first (the first given among equals), compared segment by segment: the reference mover.
+    fn linear_find(moves: &[(String, String)], path: &str) -> Option<(usize, String)> {
+        let mut entries: Vec<(Vec<String>, &String, usize)> = moves
+            .iter()
+            .enumerate()
+            .map(|(at, (from, to))| (from.split('/').map(key_of).collect(), to, at))
+            .collect();
+        entries.sort_by_key(|(from, _, _)| std::cmp::Reverse(from.len()));
+        let parts: Vec<&str> = path.split('/').collect();
+        entries.into_iter().find_map(|(from, to, at)| {
+            (parts.len() >= from.len() && parts.iter().zip(&from).all(|(p, f)| key_of(p) == *f))
+                .then(|| {
+                    let mut out = to.clone();
+                    for rest in &parts[from.len()..] {
+                        out.push('/');
+                        out.push_str(rest);
+                    }
+                    (at, out)
+                })
+        })
+    }
+
+    fn debug(result: Result<(), FileOpError>) -> Result<(), String> {
+        result.map_err(|e| format!("{e:?}"))
+    }
+
+    proptest! {
+        #[test]
+        fn overlapping_moves_are_refused_naming_the_item_the_pairwise_check_named(
+            pairs in proptest::collection::vec((path(), path()), 0..10),
+        ) {
+            let moves: Vec<ValidMove> = pairs.iter().map(|(from, to)| valid(from, to)).collect();
+            prop_assert_eq!(debug(check_together(&moves)), debug(pairwise_check_together(&moves)));
+        }
+
+        #[test]
+        fn nested_and_repeated_deletes_collapse_into_the_same_paths_in_the_same_order(
+            paths in proptest::collection::vec(path(), 0..12),
+        ) {
+            let checked: Vec<(VaultPath, PathBuf)> = paths
+                .iter()
+                .enumerate()
+                .map(|(at, p)| (VaultPath::parse(p).unwrap(), PathBuf::from(at.to_string())))
+                .collect();
+            prop_assert_eq!(outermost(checked.clone()), pairwise_outermost(&checked));
+        }
+
+        #[test]
+        fn the_mover_takes_every_path_where_the_linear_search_took_it(
+            moves in proptest::collection::vec((path(), path()), 0..8),
+            paths in proptest::collection::vec(path(), 1..8),
+        ) {
+            let mover = Mover::new(&moves);
+            for path in &paths {
+                let expected = linear_find(&moves, path);
+                prop_assert_eq!(mover.move_index_of(path), expected.as_ref().map(|(at, _)| *at));
+                prop_assert_eq!(mover.map(path), expected.map(|(_, to)| to));
+            }
+        }
+    }
+
+    /// Files spread over shared folders, each moved to its own place.
+    fn many(n: usize) -> Vec<(String, String)> {
+        (0..n)
+            .map(|i| {
+                let folder = i % 40;
+                (
+                    format!("src/part{folder}/d{i}.md"),
+                    format!("dst/part{folder}/d{i}.md"),
+                )
+            })
+            .collect()
+    }
+
+    // debug builds: checking every pair took minutes for these
+    const BOUND: Duration = Duration::from_secs(2);
+
+    #[test]
+    fn the_checks_of_thousands_of_moves_and_deletes_grow_with_the_count_not_its_square() {
+        let moves: Vec<ValidMove> = many(5000).iter().map(|(a, b)| valid(a, b)).collect();
+        let started = Instant::now();
+        assert!(check_together(&moves).is_ok());
+        let checked = moves
+            .iter()
+            .map(|m| (m.from.clone(), m.abs_from.clone()))
+            .collect();
+        assert_eq!(outermost(checked).len(), moves.len());
+        let took = started.elapsed();
+        assert!(took < BOUND, "{took:?}");
+    }
+
+    #[test]
+    fn the_mover_of_thousands_of_moves_finds_each_place_without_a_search() {
+        let pairs = many(5000);
+        let mover = Mover::new(&pairs);
+        let started = Instant::now();
+        for (at, (from, to)) in pairs.iter().enumerate() {
+            assert_eq!(mover.move_index_of(from), Some(at));
+            assert_eq!(mover.map(&format!("{from}/x")), Some(format!("{to}/x")));
+            assert_eq!(mover.map(&format!("other/{from}")), None);
+        }
+        let took = started.elapsed();
+        assert!(took < BOUND, "{took:?}");
+    }
 }

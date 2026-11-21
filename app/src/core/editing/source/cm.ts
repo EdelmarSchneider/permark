@@ -46,7 +46,7 @@ import { highlightTag, viewInlineSyntax } from "./inlineSyntax";
 import { completionSources, type CompletionHost } from "./complete";
 import { toggleBold } from "./bold";
 import { editsSpec, scopeIn } from "./edits";
-import { markAt, markLayers, marksEffect } from "./marks";
+import { markAt, markLayers, marksEffect, rangeAt } from "./marks";
 import type { EditScope, TextEdit, TextRange } from "../session.svelte";
 
 export type SourceHost = CompletionHost & {
@@ -229,6 +229,8 @@ export type SourceView = {
   ): void;
   /** Index of the mark of `layer` holding the caret (`ActiveEditor.markAt`). */
   markAt(layer?: string): number | null;
+  /** Index of the first of `ranges` holding the caret (`ActiveEditor.rangeAt`). */
+  rangeAt(ranges: readonly TextRange[]): number | null;
   /** Text is being composed (IME). */
   composing(): boolean;
   /** Opens the find + replace panel (as Ctrl+F in the editor does). */
@@ -449,6 +451,7 @@ export function createSource(options: {
     marks: (ranges, current, pick, layer, options) =>
       view.dispatch({ effects: marksEffect(view.state, ranges, current, pick, layer, options) }),
     markAt: (layer) => markAt(view.state, layer),
+    rangeAt: (ranges) => rangeAt(view.state, ranges),
     composing: () => view.composing,
     search: () => void openSearchPanel(view),
     destroy: () => view.destroy(),

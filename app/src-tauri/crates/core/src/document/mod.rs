@@ -13,7 +13,8 @@ mod scope;
 mod tests;
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
@@ -30,7 +31,7 @@ use crate::error::{ErrorKind, IpcError};
 use crate::events::{CoreEvent, EventSink};
 use crate::format::{Body, Editability, FormatRegistry, Notice, RenderCx};
 use crate::fsx::{self, Encoding, FsxError};
-use crate::watch::{ChangeKind, FsBatch};
+use crate::watch::{stat_sig, ChangeKind, FsBatch};
 
 /// Text larger than this is not rendered (`TooLarge` notice).
 pub const MAX_TEXT_BYTES: u64 = 5 * 1024 * 1024;
@@ -38,6 +39,12 @@ pub const MAX_TEXT_BYTES: u64 = 5 * 1024 * 1024;
 const HEAD_BYTES: usize = 512;
 /// How often a single file's folder is looked at.
 const POLL_EVERY: Duration = Duration::from_secs(1);
+/// Every this many polls a shown file is read even when its size and time stayed (a write that kept both: a coarse
+/// clock, a tool that restores times); between them only its size and time are looked at.
+const FULL_POLL_EVERY: u32 = 10;
+/// A file modified less than this before it was read may change again within the same tick of its clock (coarse on
+/// FAT, HFS+, network shares): its size and time prove nothing until it is read once it is older.
+const RACY_MS: u64 = 2000;
 
 /// What a window shows of one file.
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
@@ -106,6 +113,24 @@ struct Shown {
     mode: Mode,
     /// Last version sent to the window (`None`: the file is gone).
     version: Option<String>,
+    /// Size + modified time when the file was last read (`None`: gone).
+    stat: Option<(u64, u64)>,
+    /// When that was (ms since the epoch).
+    read_ms: u64,
+}
+
+impl Shown {
+    /// Whether a write after the last read may have left size and time as they were (see [`RACY_MS`]).
+    fn racy(&self) -> bool {
+        self.stat
+            .is_some_and(|(_, mtime)| self.read_ms.saturating_sub(mtime) < RACY_MS)
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 struct Inner {
@@ -116,6 +141,8 @@ struct Inner {
     unsaved: Mutex<HashMap<String, String>>,
     /// Folded key of a project path -> the hash of the last version a window saved there.
     saves: Mutex<HashMap<String, String>>,
+    /// Polls so far (single file | Notes).
+    polls: AtomicU32,
 }
 
 /// How many documents the versions of saves are remembered for.
@@ -136,6 +163,14 @@ fn signature(meta: &std::fs::Metadata) -> String {
     format!("{}-{}", meta.len(), mtime_ms(meta))
 }
 
+/// Size + modified time of the file at `abs` now (`None`: gone | not a file).
+fn stat_now(abs: &Path) -> Option<(u64, u64)> {
+    std::fs::metadata(abs)
+        .ok()
+        .filter(std::fs::Metadata::is_file)
+        .map(|m| stat_sig(&m))
+}
+
 /// The version of the file now (`None`: gone | unreadable).
 fn version_of(shown: &Shown) -> Option<String> {
     match shown.mode {
@@ -143,17 +178,33 @@ fn version_of(shown: &Shown) -> Option<String> {
             .ok()
             .filter(std::fs::Metadata::is_file)
             .map(|m| signature(&m)),
-        Mode::Hash => fsx::read_bytes(&shown.abs, MAX_TEXT_BYTES)
-            .ok()
-            .map(|bytes| fsx::hash(&bytes).hex())
-            .or_else(|| {
-                // grew past the limit | locked: still there, so told apart by size and time
-                std::fs::metadata(&shown.abs)
-                    .ok()
-                    .filter(std::fs::Metadata::is_file)
-                    .map(|m| signature(&m))
-            }),
+        Mode::Hash => {
+            #[cfg(test)]
+            READS.with(|n| n.set(n.get() + 1));
+            fsx::read_bytes(&shown.abs, MAX_TEXT_BYTES)
+                .ok()
+                .map(|bytes| fsx::hash(&bytes).hex())
+                .or_else(|| {
+                    // grew past the limit | locked: still there, so told apart by size and time
+                    std::fs::metadata(&shown.abs)
+                        .ok()
+                        .filter(std::fs::Metadata::is_file)
+                        .map(|m| signature(&m))
+                })
+        }
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Shown files this thread read to tell their version.
+    static READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Shown files the calling thread read to tell their version so far.
+#[cfg(test)]
+pub(crate) fn read_count() -> usize {
+    READS.with(std::cell::Cell::get)
 }
 
 impl Inner {
@@ -176,13 +227,19 @@ impl Inner {
                 .collect()
         };
         for (window, doc) in work {
-            // the disk is looked at without holding the lock
+            // the disk is looked at without holding the lock; size and time first, so a write meanwhile shows later
+            let (stat, read_ms) = (stat_now(&doc.abs), now_ms());
             let now = version_of(&doc);
             let mut shown = lock(&self.shown);
             let Some(entry) = shown.get_mut(&window) else {
                 continue;
             };
-            if entry.path != doc.path || entry.version == now {
+            if entry.path != doc.path {
+                continue;
+            }
+            entry.stat = stat;
+            entry.read_ms = read_ms;
+            if entry.version == now {
                 continue;
             }
             entry.version.clone_from(&now);
@@ -209,6 +266,28 @@ impl Inner {
     fn all_windows(&self) -> Vec<String> {
         lock(&self.shown).keys().cloned().collect()
     }
+
+    /// One look at the shown files (single file | Notes: no watch tells): a file is read again when its size or time
+    /// changed (or prove nothing yet: [`Shown::racy`]), and at every [`FULL_POLL_EVERY`]th poll.
+    fn poll(&self) {
+        let full = self
+            .polls
+            .fetch_add(1, Ordering::Relaxed)
+            .wrapping_add(1)
+            .is_multiple_of(FULL_POLL_EVERY);
+        let shown: Vec<(String, Shown)> = lock(&self.shown)
+            .iter()
+            .map(|(window, s)| (window.clone(), s.clone()))
+            .collect();
+        let due: Vec<String> = shown
+            .into_iter()
+            .filter(|(_, s)| full || s.racy() || stat_now(&s.abs) != s.stat)
+            .map(|(window, _)| window)
+            .collect();
+        if !due.is_empty() {
+            self.check(&due, None);
+        }
+    }
 }
 
 /// A thread that looks at the shown files of a single-file workspace; stopped and joined on drop.
@@ -224,12 +303,7 @@ impl Poller {
             .name("permark-doc-poll".to_owned())
             .spawn(move || loop {
                 match wake.recv_timeout(POLL_EVERY) {
-                    Err(RecvTimeoutError::Timeout) => {
-                        let windows = inner.all_windows();
-                        if !windows.is_empty() {
-                            inner.check(&windows, None);
-                        }
-                    }
+                    Err(RecvTimeoutError::Timeout) => inner.poll(),
                     // a message or a dropped sender: stop
                     Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
                 }
@@ -273,6 +347,7 @@ impl Documents {
                 shown: Mutex::new(HashMap::new()),
                 unsaved: Mutex::new(HashMap::new()),
                 saves: Mutex::new(HashMap::new()),
+                polls: AtomicU32::new(0),
             }),
             _poller: None,
         })
@@ -287,6 +362,7 @@ impl Documents {
             shown: Mutex::new(HashMap::new()),
             unsaved: Mutex::new(HashMap::new()),
             saves: Mutex::new(HashMap::new()),
+            polls: AtomicU32::new(0),
         });
         let poller = Poller::start(Arc::clone(&inner));
         Arc::new(Self {
@@ -370,6 +446,8 @@ impl Documents {
                 abs,
                 mode,
                 version,
+                stat: Some(stat_sig(&meta)),
+                read_ms: now_ms(),
             },
         );
         Ok(view)
@@ -483,6 +561,12 @@ impl Documents {
                 }
             }
         }
+    }
+
+    /// Test hook: one poll now, on the calling thread.
+    #[cfg(test)]
+    pub(crate) fn poll_now(&self) {
+        self.inner.poll();
     }
 
     /// Where each `href` of the document `doc` leads.

@@ -194,6 +194,26 @@ describe("document machine", () => {
     expect(transition(conflict, { e: "autosaveDue" }, auto).state).toEqual(conflict);
   });
 
+  it("after a failed save: autosave goes on with the next edit, undoing back to the disk text is clean", () => {
+    const failed: DocState = { s: "saveError", base, error: "io" };
+    const edited = transition(failed, { e: "edited" }, auto);
+    expect(edited.state).toEqual(failed);
+    expect(edited.effects).toEqual([{ type: "scheduleAutosave", delayMs: 800 }]);
+    // explicit saving: the error stays until the person saves | retries
+    expect(transition(failed, { e: "edited" }, explicit)).toEqual({ state: failed, effects: [] });
+    const due = transition(failed, { e: "autosaveDue" }, auto);
+    expect(due.state).toEqual({ s: "saving", base, then: null, editedSince: false });
+    expect(due.effects).toEqual([{ type: "cancelAutosave" }, { type: "save", against: "base" }]);
+    for (const policy of [explicit, auto]) {
+      const reverted = transition(failed, { e: "reverted" }, policy);
+      expect(reverted.state).toEqual({ s: "clean", base });
+      expect(reverted.effects).toEqual([
+        { type: "cancelAutosave" },
+        { type: "setUnsaved", unsaved: false },
+      ]);
+    }
+  });
+
   it("keeps the unsaved flag right through random walks", () => {
     let seed = 42;
     const pick = (n: number) => {

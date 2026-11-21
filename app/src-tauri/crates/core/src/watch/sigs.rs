@@ -7,13 +7,18 @@ use std::fs::{self, Metadata};
 use std::io::Read;
 use std::path::Path;
 use std::sync::{Mutex, PoisonError};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, UNIX_EPOCH};
 
 use crate::fsx::{hash, retry, RETRY_DELAYS};
 use crate::tree::key_of;
 
 /// Files up to this size are hashed (read whole); bigger ones are compared by size + time only.
 pub const HASH_LIMIT: u64 = 8 * 1024 * 1024;
+
+/// A file that appears bigger than this is not read when it appears (pictures, archives copied in: every byte written
+/// would be read again on the watch thread); its content is read once a reason comes ([`super::reconcile`]: a
+/// removal of the same size in its batch, a write the app announced, its next change).
+pub const NEW_HASH_LIMIT: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Sig {
@@ -37,6 +42,12 @@ pub fn stat_sig(meta: &Metadata) -> (u64, u64) {
 /// Signature of the file at `path` (hashing it when small enough). `None`: unreadable now.
 #[must_use]
 pub fn sig_of(path: &Path, meta: &Metadata) -> Option<Sig> {
+    sig_retried(path, meta, &RETRY_DELAYS)
+}
+
+/// [`sig_of`], waiting `delays` between tries while another program holds the file.
+#[must_use]
+pub(crate) fn sig_retried(path: &Path, meta: &Metadata, delays: &[Duration]) -> Option<Sig> {
     let (len, mtime_ms) = stat_sig(meta);
     if len > HASH_LIMIT {
         return Some(Sig {
@@ -45,7 +56,7 @@ pub fn sig_of(path: &Path, meta: &Metadata) -> Option<Sig> {
             hash: 0,
         });
     }
-    let bytes = retry(&RETRY_DELAYS, || {
+    let bytes = retry(delays, || {
         let mut bytes = Vec::with_capacity(usize::try_from(len).unwrap_or(0));
         fs::File::open(path)?
             .take(HASH_LIMIT + 1)
@@ -53,11 +64,25 @@ pub fn sig_of(path: &Path, meta: &Metadata) -> Option<Sig> {
         Ok(bytes)
     })
     .ok()?;
+    #[cfg(test)]
+    HASHED.with(|hashed| hashed.set(hashed.get() + bytes.len() as u64));
     Some(Sig {
         len: bytes.len() as u64,
         mtime_ms,
         hash: hash(&bytes).0,
     })
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Bytes this thread read to hash files.
+    static HASHED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Bytes the calling thread read to hash files so far (the reconcile pass runs on the caller's thread in tests).
+#[cfg(test)]
+pub(crate) fn hashed_bytes() -> u64 {
+    HASHED.with(std::cell::Cell::get)
 }
 
 #[derive(Debug)]

@@ -3,6 +3,9 @@
 
 export type Counts = { words: number; cjk: number; characters: number };
 
+/** Longer texts are counted by the backend (counting here would hold the window). */
+export const LOCAL_LIMIT = 200_000;
+
 const WORDS_PER_MINUTE = 230;
 const CJK_PER_MINUTE = 500;
 

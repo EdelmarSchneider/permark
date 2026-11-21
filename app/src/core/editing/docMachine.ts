@@ -265,9 +265,18 @@ export function transition(state: DocState, event: DocEvent, policy: SavePolicy)
 
     case "saveError":
       switch (event.e) {
+        // autosave goes on (the error stays shown until a save ends well): edits are never left unsaved for good
+        case "edited":
+          return { state, effects: schedule(policy) };
         case "retry":
         case "save":
+        case "autosaveDue":
           return startSave(state.base, null);
+        case "reverted":
+          return {
+            state: { s: "clean", base: state.base },
+            effects: [{ type: "cancelAutosave" }, { type: "setUnsaved", unsaved: false }],
+          };
         case "saveAndLeave":
           return startSave(state.base, event.leave);
         case "diskChanged":

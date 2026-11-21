@@ -124,6 +124,13 @@ function myers(
   return merged;
 }
 
+/** Runs of changed lines between `base` and `next` (the save message): the diff's change runs, so a line put in near
+ *  the top does not count every line after it as changed. 0 when equal. */
+export function changedRuns(base: string, next: string): number {
+  if (base === next) return 0;
+  return diff(splitLines(base), splitLines(next)).filter((op) => op.kind === "change").length;
+}
+
 /** Line edits turning `base` into `next` (both edit texts). Empty when equal. */
 export function lineEdits(base: string, next: string): LineEdit[] {
   if (base === next) return [];

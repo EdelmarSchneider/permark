@@ -3,9 +3,13 @@
 use crate::fsx::is_scratch_name;
 use crate::tree::below_root;
 
-/// `.git` entries the git plugin takes as a signal that the repository moved: HEAD, the index, packed refs, refs.
+/// `.git` entries the git plugin takes as a signal that the repository moved: HEAD, the index, packed refs, refs; and
+/// the repository's ignore file (what the tree and the index list follows it).
 fn git_signal(inside_git: &str) -> bool {
-    matches!(inside_git, "HEAD" | "index" | "packed-refs") || inside_git.starts_with("refs/")
+    matches!(
+        inside_git,
+        "HEAD" | "index" | "packed-refs" | "info/exclude"
+    ) || inside_git.starts_with("refs/")
 }
 
 /// The part of `rel` inside a `.git` folder (any level), if it is inside one.
@@ -86,6 +90,8 @@ mod tests {
             ".git/index",
             ".git/packed-refs",
             ".git/refs/heads/main",
+            ".git/info/exclude",
+            "hubs/a/.git/info/exclude",
         ] {
             assert!(is_news(p), "{p}");
             assert!(is_git_signal(p));
@@ -96,6 +102,7 @@ mod tests {
             ".git/index.lock",
             ".git/config",
             ".git/logs/HEAD",
+            ".git/info/attributes",
         ] {
             assert!(!is_news(p), "{p}");
         }

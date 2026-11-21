@@ -77,6 +77,17 @@ pub fn stem(token: &str) -> String {
     w
 }
 
+/// The start every folded word with stem `term` has: [`stem`] keeps a word's beginning and rewrites at most its last
+/// two letters (`-oes` -> `-ao`, `-ies` -> `-y`, `-m` -> `-n`); a term that is not plain ASCII is the word itself.
+#[must_use]
+pub(super) fn stem_lead(term: &str) -> &str {
+    if term.is_ascii() && term.len() >= 3 {
+        &term[..term.len() - 2]
+    } else {
+        term
+    }
+}
+
 /// What a [`Token`] stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
@@ -173,25 +184,61 @@ fn push_cjk_run(text: &str, start: usize, end: usize, out: &mut Vec<Token>) {
     }
 }
 
+/// Whether `c` belongs to a word of a spaced script (a run [`tokenize`] makes one token of).
+#[must_use]
+pub(super) fn is_word_char(c: char) -> bool {
+    classify(c) == Some(Class::Word)
+}
+
+/// The runs tokens come from, in text order: `(start, end, cjk)` byte ranges of the longest stretches of word
+/// characters | CJK characters. [`tokenize`] of one run gives exactly the tokens the whole text has inside it.
+pub(super) fn runs(text: &str) -> impl Iterator<Item = (usize, usize, bool)> + '_ {
+    let mut chars = text.char_indices().peekable();
+    std::iter::from_fn(move || {
+        let (start, class) = loop {
+            let (at, c) = chars.next()?;
+            if let Some(class) = classify(c) {
+                break (at, class);
+            }
+        };
+        let mut end = text.len();
+        while let Some(&(at, c)) = chars.peek() {
+            if classify(c) != Some(class) {
+                end = at;
+                break;
+            }
+            chars.next();
+        }
+        Some((start, end, class == Class::Cjk))
+    })
+}
+
 /// Splits text into words (runs of alphanumerics; one-letter and very long words skipped). A CJK run yields its
 /// characters and their overlapping pairs; a switch between CJK and other characters ends a word
 /// (`使用Rust编写` holds `Rust` and two runs).
 #[must_use]
 pub fn tokenize(text: &str) -> Vec<Token> {
+    #[cfg(test)]
+    TOKENIZED.with(|n| n.set(n.get() + text.len()));
     let mut out = Vec::new();
-    let mut run: Option<(usize, Class)> = None;
-    let flush = |run: Option<(usize, Class)>, end: usize, out: &mut Vec<Token>| match run {
-        Some((s, Class::Word)) => push_word(text, s, end, out),
-        Some((s, Class::Cjk)) => push_cjk_run(text, s, end, out),
-        None => {}
-    };
-    for (i, c) in text.char_indices() {
-        let class = classify(c);
-        if class != run.map(|(_, k)| k) {
-            flush(run, i, &mut out);
-            run = class.map(|k| (i, k));
+    for (start, end, cjk) in runs(text) {
+        if cjk {
+            push_cjk_run(text, start, end, &mut out);
+        } else {
+            push_word(text, start, end, &mut out);
         }
     }
-    flush(run, text.len(), &mut out);
     out
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Bytes this thread handed to [`tokenize`].
+    static TOKENIZED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Bytes the calling thread tokenized so far (queries run on the caller's thread).
+#[cfg(test)]
+pub(super) fn tokenized_bytes() -> usize {
+    TOKENIZED.with(std::cell::Cell::get)
 }

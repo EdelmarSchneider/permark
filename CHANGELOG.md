@@ -19,6 +19,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Caches in a project's `.permark/cache` folder now sit in a folder for each computer; PerMark rebuilds them once after this update. On Windows, for a folder on a network drive or in a cloud-synced folder such as OneDrive, caches stay on this computer. <!-- f: project-folder -->
 - New `config.toml` and `meta.toml` files in `.permark` now start with "Commit the .permark folder to share these settings with your team." Existing files are left as they are. <!-- f: project-folder -->
 - **Remove data** for a plugin now also removes what the plugin kept for this computer in each open project. <!-- f: plugins -->
+- **Large folders and many files at once are faster.** Opening a folder with tens of thousands of files, git merges and checkouts, copying or deleting many files (also inside ignored folders such as `node_modules`), and moving, deleting or selecting thousands of files in the Explorer now take a fraction of the time. Search answers faster in documents with long sections, and spelling and review marks appear faster in long documents in Edit. <!-- f: explorer, search, file-ops, edit-mode, watch -->
+- Word and token counts of a very long selection now appear after a short pause instead of slowing the window down. <!-- f: word-count, token-count -->
 
 ### Removed
 - **The Windows `.msi` installer.** Version 0.17 was the last one with an `.msi`: use the `-setup.exe` or the Microsoft Store. A copy installed from an `.msi` moves to the `-setup.exe` at its next update in PerMark: Windows asks to remove the old copy and asks for administrator permission (if you say no, it asks again at the next update). Your settings and notes stay. If you connected an AI agent, copy its connection lines again from **Settings → Integration → Agent connection**, because the program now runs from your user folder. <!-- f: windows-installer -->
@@ -61,6 +63,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Initialize PerMark no longer copies the Assistant's work copy and conversation into the project folder. <!-- f: project-folder -->
 - Connected agents now get long answers, such as a list of many comments, cut at a safe size instead of an error, and a request made while PerMark is still reading the folder gets a partial answer instead of a pipe error. <!-- f: agent-connection -->
 - Assistant: stopping it while it was starting could still launch the agent program; it no longer does. A change the agent proposes to its own settings files or outside its copy now always asks you first. <!-- f: assistant -->
+- After a failed save, autosave starts again with your next edit, and undoing back to the saved text clears the unsaved mark. <!-- f: edit-mode, save -->
+- When the recycle bin takes only some of the files you delete, **Undo** (**Ctrl+Z**) now brings back the ones it took. <!-- f: file-ops -->
+- After PerMark moves thousands of files at once, the other panels now see them as moved instead of removed and added. <!-- f: file-ops, watch -->
+- Switching to another long document no longer shows the previous document's word count until the new one is counted. <!-- f: word-count -->
 
 ### Security
 - **A document can no longer freeze PerMark with deeply nested HTML.** PerMark now measures how deep a document's HTML goes with the same parser that cleans it, so every document that is too deep to show safely falls back to plain text at once, with a note. Documents with slightly broken inline SVG or MathML keep showing as before. <!-- f: view-mode -->

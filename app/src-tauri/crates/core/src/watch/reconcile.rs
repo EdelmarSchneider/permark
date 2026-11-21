@@ -5,20 +5,25 @@
 //! a folder that appeared is expanded into its files, a file truncated to nothing gets one more tick to receive its
 //! content.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, Metadata};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::noise::{is_git_signal, is_news};
-use super::sigs::{sig_of, stat_sig, Sig, SigStore};
+use super::sigs::{sig_retried, stat_sig, Sig, SigStore, HASH_LIMIT, NEW_HASH_LIMIT};
 use super::types::{Change, ChangeKind};
+use crate::fsx::RETRY_DELAYS;
 use crate::paths::Vault;
 use crate::tree::{below_root, key_of, Ignorer};
 
 /// A created folder is expanded into its files up to this many.
 const MAX_EXPANDED: usize = 500;
 const MAX_EXPAND_DEPTH: usize = 12;
+
+/// Waits between tries of a file another program holds: one short one, then the hint comes back on the next tick
+/// (each wait holds up the whole batch on the watch thread).
+const LOCKED_RETRY: &[std::time::Duration] = &[RETRY_DELAYS[0]];
 
 /// What the events said about one path.
 #[allow(clippy::struct_excessive_bools)] // independent facts accumulated from several events
@@ -65,6 +70,9 @@ pub(crate) struct Env<'a> {
     /// Whether this project path is an opened ignored directory (`ignored` and `Dir { unlisted: None }`). Not `known`.
     /// A container and a normal folder are known directories and are not this.
     pub opened_ignored: &'a dyn Fn(&str) -> bool,
+    /// Whether the app announced a write of this project path: its content decides whether the change is the app's
+    /// own, so a new file there is read at once.
+    pub wanted: &'a dyn Fn(&str) -> bool,
 }
 
 impl Env<'_> {
@@ -97,6 +105,66 @@ impl Env<'_> {
         // one. The project root is not a node. Children of any other dir stay dropped.
         let parent = path.rsplit_once('/').map_or("", |(parent, _)| parent);
         !(self.opened_ignored)(parent)
+    }
+
+    /// Whether a hint may be dropped as it arrives, before it counts toward the pending limit (a storm in
+    /// `node_modules` would else end in a rescan) and with no look at the disk: its folder is ignored and not opened,
+    /// so the pass would drop it too ([`Env::skip`]), and it cannot change which folders are projects. Kept: anything
+    /// named `.git` or inside one, a rename | a creation right after a removal (a project folder may be moving), the
+    /// removal of a folder that held a project, a creation where a folder moved in may be a repository that shows
+    /// ([`Ignorer::may_lead_to_project`]). `folders`: what was found per folder so far (cleared whenever the rules may
+    /// change).
+    pub(crate) fn ignored_early(
+        &self,
+        hint: &Pending,
+        folders: &mut HashMap<PathBuf, bool>,
+    ) -> bool {
+        if hint.rename_from.is_some() || hint.after_removal.is_some() {
+            return false;
+        }
+        let Some(vp) = self.vault.relativize(&hint.abs) else {
+            return false;
+        };
+        let path = vp.as_str();
+        let rel = below_root(path);
+        if rel.split('/').any(Ignorer::is_git_name) {
+            return false;
+        }
+        let (Some((parent, _)), Some(dir)) = (path.rsplit_once('/'), hint.abs.parent()) else {
+            return false;
+        };
+        if (self.opened_ignored)(parent) {
+            return false;
+        }
+        let Some(ignorer) = self.ignorer_for(&key_of(path)) else {
+            return false;
+        };
+        let mut closed = |folder: &Path| {
+            if let Some(found) = folders.get(folder) {
+                return *found;
+            }
+            let found = ignorer.path_ignored(folder, true);
+            folders.insert(folder.to_path_buf(), found);
+            found
+        };
+        if !closed(dir) {
+            return false;
+        }
+        if hint.removed && ignorer.held_project(&ignorer.abs_of(rel)) {
+            return false;
+        }
+        if !hint.created {
+            return true;
+        }
+        // the folder the rules hide first decides whether a repository moved in below it would show
+        let mut top = dir;
+        while let Some(up) = top.parent() {
+            if !closed(up) {
+                break;
+            }
+            top = up;
+        }
+        !ignorer.may_lead_to_project(top, &hint.abs)
     }
 
     /// Whether this hint may change which folders are nested repositories (own `.git` came or went, a repository
@@ -150,11 +218,21 @@ struct Item {
     meta: Option<Metadata>,
 }
 
+/// A file the pass found created.
+pub(super) struct Created {
+    /// Index in `changes`.
+    pub at: usize,
+    pub sig: Sig,
+    /// Where the event said it came from (a rename), project path.
+    pub from: Option<String>,
+    /// A new big file not read yet ([`NEW_HASH_LIMIT`]): where to read it when its content may pair it.
+    pub unread: Option<PathBuf>,
+}
+
 struct Pass<'a> {
     env: &'a Env<'a>,
     out: Reconciled,
-    /// (index in `changes`, signature, rename hint) of created files.
-    created: Vec<(usize, Sig, Option<String>)>,
+    created: Vec<Created>,
     /// (index in `changes`, signature) of removed files.
     removed: Vec<(usize, Sig)>,
     expanded: usize,
@@ -219,7 +297,18 @@ pub(crate) fn reconcile(env: &Env<'_>, pending: Vec<Pending>) -> Reconciled {
         }
         pass.item(item);
     }
-    pass.pair_renames();
+    let mut read = |abs: &Path, shown: &str| {
+        let meta = fs::symlink_metadata(abs).ok().filter(Metadata::is_file)?;
+        let sig = sig_retried(abs, &meta, LOCKED_RETRY)?;
+        env.sigs.set(key_of(shown), shown, sig);
+        Some(sig)
+    };
+    pair_renames(
+        &mut pass.out.changes,
+        pass.created,
+        &pass.removed,
+        &mut read,
+    );
     pass.out
 }
 
@@ -474,9 +563,17 @@ impl Pass<'_> {
             });
             return;
         }
+        // a new big file is read only once its content matters (see `NEW_HASH_LIMIT`)
+        let unread = (p.created
+            && prev.is_none()
+            && meta.file_type().is_file()
+            && len > NEW_HASH_LIMIT
+            && len <= HASH_LIMIT
+            && !(self.env.wanted)(path))
+        .then(|| p.abs.clone());
         // links and special files are never opened (a named pipe would block the watch)
-        let sig = if meta.file_type().is_file() {
-            sig_of(&p.abs, meta)
+        let sig = if meta.file_type().is_file() && unread.is_none() {
+            sig_retried(&p.abs, meta, LOCKED_RETRY)
         } else {
             Some(Sig {
                 len,
@@ -484,6 +581,14 @@ impl Pass<'_> {
                 hash: 0,
             })
         };
+        if sig.is_none() && !p.deferred {
+            // held by another program (or gone): looked at again on the next tick rather than waited for here
+            self.out.deferred.push(Pending {
+                deferred: true,
+                ..p.clone()
+            });
+            return;
+        }
         let Some(sig) = sig else {
             // locked or vanished: what it holds now is unknown, so the old hash stops counting
             let unknown = Sig {
@@ -515,48 +620,83 @@ impl Pass<'_> {
                 .and_then(|abs| self.env.vault.relativize(abs))
                 .map(|vp| vp.as_str().to_owned());
             let at = self.push(path, ChangeKind::Created, false);
-            self.created.push((at, sig, from));
+            self.created.push(Created {
+                at,
+                sig,
+                from,
+                unread,
+            });
         }
     }
+}
 
-    /// A removal and a creation with the same content in one window is a rename (a move).
-    fn pair_renames(&mut self) {
-        let mut by_sig: HashMap<(u64, u64), usize> = HashMap::new();
-        for (at, sig) in &self.removed {
-            if sig.len > 0 && sig.hash != 0 {
-                by_sig.entry((sig.len, sig.hash)).or_insert(*at);
-            }
+/// A removal and a creation with the same content in one window is a rename (a move); a creation the event says came
+/// from a removed path pairs with it whatever the content. Each removal pairs once, with the first creation that names
+/// it | holds its content. `created` and `removed` (with their signatures) index `changes`. `read(abs, shown)` reads a
+/// created file not read yet and remembers its signature: done when a removal of its size has a known content (it may
+/// pair, or carry its content on after a rename).
+pub(super) fn pair_renames(
+    changes: &mut Vec<Change>,
+    created: Vec<Created>,
+    removed: &[(usize, Sig)],
+    read: &mut dyn FnMut(&Path, &str) -> Option<Sig>,
+) {
+    let known = |sig: &Sig| sig.len > 0 && sig.hash != 0;
+    let mut by_sig: HashMap<(u64, u64), usize> = HashMap::new();
+    let mut by_key: HashMap<String, (usize, Sig)> = HashMap::new();
+    let mut sizes: HashSet<u64> = HashSet::new();
+    for (at, sig) in removed {
+        if known(sig) {
+            by_sig.entry((sig.len, sig.hash)).or_insert(*at);
+            sizes.insert(sig.len);
         }
-        let mut dropped: Vec<usize> = Vec::new();
-        for (created_at, sig, hinted_from) in std::mem::take(&mut self.created) {
-            let direct = hinted_from.and_then(|from| {
-                self.removed
-                    .iter()
-                    .find(|(at, _)| key_of(&self.out.changes[*at].path) == key_of(&from))
-                    .map(|(at, _)| *at)
-            });
-            let partner = direct.or_else(|| {
-                (sig.len > 0 && sig.hash != 0)
-                    .then(|| by_sig.get(&(sig.len, sig.hash)).copied())
-                    .flatten()
-            });
-            let Some(removed_at) = partner else {
-                continue;
+        by_key
+            .entry(key_of(&changes[*at].path))
+            .or_insert((*at, *sig));
+    }
+    let mut dropped: HashSet<usize> = HashSet::new();
+    for Created {
+        at,
+        mut sig,
+        from,
+        unread,
+    } in created
+    {
+        let direct = from.and_then(|from| by_key.get(&key_of(&from)).copied());
+        if let Some(abs) = unread {
+            let wanted = match direct {
+                Some((_, removed)) => known(&removed) && removed.len == sig.len,
+                None => sizes.contains(&sig.len),
             };
-            if dropped.contains(&removed_at) {
-                continue;
+            if let Some(read) = wanted.then(|| read(&abs, &changes[at].path)).flatten() {
+                sig = read;
             }
-            let from = self.out.changes[removed_at].path.clone();
-            if key_of(&from) == key_of(&self.out.changes[created_at].path) {
-                continue;
-            }
-            let change = &mut self.out.changes[created_at];
-            change.kind = ChangeKind::Renamed { from };
-            dropped.push(removed_at);
         }
-        dropped.sort_unstable();
-        for at in dropped.into_iter().rev() {
-            self.out.changes.remove(at);
+        let direct = direct.map(|(removed_at, _)| removed_at);
+        let partner = direct.or_else(|| {
+            (sig.len > 0 && sig.hash != 0)
+                .then(|| by_sig.get(&(sig.len, sig.hash)).copied())
+                .flatten()
+        });
+        let Some(removed_at) = partner else {
+            continue;
+        };
+        if dropped.contains(&removed_at) {
+            continue;
         }
+        let from = changes[removed_at].path.clone();
+        if key_of(&from) == key_of(&changes[at].path) {
+            continue;
+        }
+        changes[at].kind = ChangeKind::Renamed { from };
+        dropped.insert(removed_at);
+    }
+    if !dropped.is_empty() {
+        let mut at = 0;
+        changes.retain(|_| {
+            let paired = dropped.contains(&at);
+            at += 1;
+            !paired
+        });
     }
 }

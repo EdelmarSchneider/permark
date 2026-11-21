@@ -21,6 +21,8 @@ pub mod open;
 pub mod open_dropped;
 pub mod organizing;
 pub mod paths;
+#[cfg(test)]
+mod perf;
 pub mod plugins;
 pub mod process;
 pub mod projects;

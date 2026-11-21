@@ -31,7 +31,6 @@ import {
   applyDelta,
   canDrop,
   depthOf,
-  inNameOrder,
   movesInto,
   nameOf,
   parentOf,
@@ -43,6 +42,7 @@ import {
   topmost,
   type Row,
 } from "./list";
+import { NameOrder } from "./order";
 
 const SESSION_FILTER = "explorer.filter";
 /** An outside drag resting this long on a closed folder opens it. */
@@ -165,8 +165,10 @@ export class ExplorerStore {
   /** Whether a Refresh is under way (its button shows it; asking again meanwhile does nothing). */
   refreshing = $state.raw<Refreshing>({ status: "idle" });
 
-  /** The list in the order of the interface language (sorted again only when the list or the language changes). */
-  #ordered = $derived<readonly TreeNode[]>(inNameOrder(this.nodes, language.locale));
+  /** The list in the order of the interface language: sorted in full for a new list or language, kept through
+   *  deltas (a delta re-places only what it brings or takes). */
+  #names = new NameOrder();
+  #ordered = $derived<readonly TreeNode[]>(this.#names.of(this.nodes, language.locale));
   rows = $derived<Row[]>(rowsOf(this.roots, this.#ordered, this.expanded, this.collapsedRoots));
 
   #seq = 0;
@@ -314,19 +316,27 @@ export class ExplorerStore {
     this.#seq = delta.seq;
     // the project's default moved and this window follows it
     if (delta.filter !== null) this.filter = delta.filter;
-    // state that follows renames moves before the list changes
-    this.expanded = remapSet(this.expanded, delta.renamed);
-    this.selection = remapSet(this.selection, delta.renamed);
-    if (this.focus !== null) {
-      this.focus =
-        remapSet(new Set([this.focus]), delta.renamed)
-          .values()
-          .next().value ?? null;
+    // state that follows renames moves before the list changes (no rename: the same state, the rows stay)
+    if (delta.renamed.length > 0) {
+      this.expanded = remapSet(this.expanded, delta.renamed);
+      this.selection = remapSet(this.selection, delta.renamed);
+      if (this.focus !== null) {
+        this.focus =
+          remapSet(new Set([this.focus]), delta.renamed)
+            .values()
+            .next().value ?? null;
+      }
     }
-    this.nodes = applyDelta(this.nodes, delta);
+    // a delta that brings and takes nothing (the folder read again, unchanged) keeps the list and the rows
+    if (delta.removed.length > 0 || delta.added.length > 0) {
+      const before = this.nodes;
+      const after = applyDelta(before, delta);
+      this.#names.step(before, delta, after, language.locale);
+      this.nodes = after;
+    }
     this.totalFiles = delta.totalFiles;
     this.shownFiles = delta.shownFiles;
-    const alive = new Set(this.nodes.map((n) => n.path));
+    const alive = this.#names.paths(this.nodes, language.locale);
     if (this.selection.size > 0) {
       this.selection = new Set(Array.from(this.selection).filter((p) => alive.has(p)));
     }
@@ -656,8 +666,9 @@ export class ExplorerStore {
   // ---- inline names ----------------------------------------------------------------------------------------------
 
   beginRename(path?: string): void {
-    const target = path ?? this.targets()[0];
-    if (target === undefined || this.targets().length > 1) return;
+    const targets = this.targets();
+    const target = path ?? targets[0];
+    if (target === undefined || targets.length > 1) return;
     this.edit = { mode: "rename", path: target, value: nameOf(target), problem: null };
     this.#reveal(target);
   }

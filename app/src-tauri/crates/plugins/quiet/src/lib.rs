@@ -305,6 +305,15 @@ impl QuietService {
 
     /// Moved files take their marks along.
     fn on_batch(&self, batch: &FsBatch) {
+        // only moves change marks: any other batch leaves at once (subscribers run one after another on the watch
+        // thread, and the gate below may hold up to its full wait)
+        if !batch
+            .changes
+            .iter()
+            .any(|c| matches!(c.kind, ChangeKind::Renamed { .. }))
+        {
+            return;
+        }
         // a move before the owners are known: applied once they are (never into a file about to be read again)
         self.gate.wait();
         let mut changed = false;

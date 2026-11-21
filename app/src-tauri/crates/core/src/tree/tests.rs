@@ -2594,3 +2594,93 @@ fn verify_real_root_cost() {
         walks[2], walks[0], paths.len()
     );
 }
+
+// ---- the difference a window is told -------------------------------------------------------------------------------------
+
+mod list_diff {
+    use std::collections::HashMap;
+
+    use proptest::prelude::*;
+
+    use super::super::explorer::diff;
+    use super::super::{Added, Category, NodeKind, TreeNode};
+
+    /// Both whole lists matched by path: the reference the trimmed difference answers like.
+    fn diff_by_path(old: &[TreeNode], new: &[TreeNode]) -> (Vec<String>, Vec<Added>) {
+        let old_map: HashMap<&str, &TreeNode> = old.iter().map(|n| (n.path.as_str(), n)).collect();
+        let new_map: HashMap<&str, &TreeNode> = new.iter().map(|n| (n.path.as_str(), n)).collect();
+        let removed = old
+            .iter()
+            .filter(|n| new_map.get(n.path.as_str()) != Some(n))
+            .map(|n| n.path.clone())
+            .collect();
+        let added = new
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| old_map.get(n.path.as_str()) != Some(n))
+            .map(|(at, n)| Added {
+                node: n.clone(),
+                after: at.checked_sub(1).map(|before| new[before].path.clone()),
+            })
+            .collect();
+        (removed, added)
+    }
+
+    /// Bits of `look`: a folder, hidden, ignored, forced.
+    fn node(path: String, look: u8) -> TreeNode {
+        TreeNode {
+            name: path.rsplit('/').next().unwrap_or_default().to_owned(),
+            kind: if look & 1 == 0 {
+                NodeKind::File {
+                    category: Category::Markdown,
+                }
+            } else {
+                NodeKind::Dir { unlisted: None }
+            },
+            hidden: look & 2 != 0,
+            ignored: look & 4 != 0,
+            forced: look & 8 != 0,
+            path,
+        }
+    }
+
+    /// One change of a list: drop the node at a place, put a new one there, give the one there another look, or
+    /// move it elsewhere. A path stands once in a list, as in a tree.
+    fn changed(old: &[TreeNode], edits: &[(usize, u8, u8)]) -> Vec<TreeNode> {
+        let mut list = old.to_vec();
+        for (n, &(at, what, look)) in edits.iter().enumerate() {
+            let at = at % (list.len() + 1);
+            match what % 4 {
+                0 if at < list.len() => {
+                    list.remove(at);
+                }
+                1 => list.insert(at, node(format!("new{n}"), look)),
+                2 if at < list.len() => list[at] = node(list[at].path.clone(), look),
+                3 if at < list.len() => {
+                    let moved = list.remove(at);
+                    let to = usize::from(look) % (list.len() + 1);
+                    list.insert(to, moved);
+                }
+                _ => {}
+            }
+        }
+        list
+    }
+
+    proptest! {
+        #[test]
+        fn the_trimmed_difference_is_the_difference_of_the_whole_lists(
+            looks in proptest::collection::vec(0u8..16, 0..40),
+            edits in proptest::collection::vec((0usize..64, any::<u8>(), any::<u8>()), 0..6),
+        ) {
+            let old: Vec<TreeNode> = looks
+                .iter()
+                .enumerate()
+                .map(|(at, look)| node(format!("dir/n{at}"), *look))
+                .collect();
+            let new = changed(&old, &edits);
+            prop_assert_eq!(diff(&old, &new), diff_by_path(&old, &new));
+            prop_assert_eq!(diff(&new, &old), diff_by_path(&new, &old));
+        }
+    }
+}

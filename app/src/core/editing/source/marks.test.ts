@@ -98,6 +98,18 @@ describe("correction marks in Source", () => {
     expect(view.markAt()).toBeNull();
   });
 
+  it("the range under the caret before any is marked: what the mark under it answers once marked", () => {
+    const view = source(TEXT);
+    const ranges = [range("teh"), range("recieve"), { from: 99, to: 120 }];
+    for (let caret = 0; caret <= TEXT.length; caret++) {
+      view.view.dispatch({ selection: EditorSelection.cursor(caret) });
+      view.marks([], null, () => {});
+      const before = view.rangeAt(ranges);
+      view.marks(ranges, null, () => {});
+      expect(before).toBe(view.markAt());
+    }
+  });
+
   it("layers are independent: each keeps its own marks, look and caret answer", () => {
     const view = source(TEXT);
     view.marks([range("teh")], 0, () => {});

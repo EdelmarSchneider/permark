@@ -6,6 +6,7 @@
 //! would follow a link to its target (moving the target instead of the link) and, for a case-only rename on Windows,
 //! hand back the old spelling of the name.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -201,19 +202,67 @@ pub(crate) fn check_moves(
 /// The moves of one operation must not step on each other. Destinations are compared without regard to case on
 /// every system: on a case-insensitive volume `Plan.md` and `plan.md` are one file, and which kind of volume a
 /// folder is on is not known from here.
-fn check_together(moves: &[ValidMove]) -> Result<(), FileOpError> {
-    for (at, a) in moves.iter().enumerate() {
-        for b in &moves[at + 1..] {
-            if a.from.is_within(&b.from) || b.from.is_within(&a.from) {
-                return Err(FileOpError::Overlap(a.from.to_string()));
-            }
-            let (ta, tb) = (a.to.key().to_lowercase(), b.to.key().to_lowercase());
-            if ta == tb || ta.starts_with(&format!("{tb}/")) || tb.starts_with(&format!("{ta}/")) {
-                return Err(FileOpError::Overlap(a.to.to_string()));
-            }
+///
+/// The refusal names what a look at every pair in order would: the first move that clashes with a later one, by its
+/// source when the sources clash, else by its destination. Keys are made once per move and each move looks up only
+/// its own folders, so thousands of items cost about their count, not its square.
+pub(super) fn check_together(moves: &[ValidMove]) -> Result<(), FileOpError> {
+    let froms: Vec<String> = moves.iter().map(|m| m.from.key()).collect();
+    let tos: Vec<String> = moves.iter().map(|m| m.to.key().to_lowercase()).collect();
+    let Some(first) = first_clash(&froms)
+        .into_iter()
+        .chain(first_clash(&tos))
+        .min()
+    else {
+        return Ok(());
+    };
+    let clashes = |keys: &[String], later: usize| same_or_nested(&keys[first], &keys[later]);
+    let later =
+        (first + 1..moves.len()).find(|&later| clashes(&froms, later) || clashes(&tos, later));
+    let m = &moves[first];
+    Err(FileOpError::Overlap(
+        if later.is_some_and(|later| clashes(&froms, later)) {
+            m.from.to_string()
+        } else {
+            m.to.to_string()
+        },
+    ))
+}
+
+/// One path, or one inside the other (whole segments).
+fn same_or_nested(a: &str, b: &str) -> bool {
+    a == b || is_below(a, b) || is_below(b, a)
+}
+
+fn is_below(path: &str, folder: &str) -> bool {
+    path.strip_prefix(folder)
+        .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// The folders a key passes through, nearest first: each part that ends right before a `/`.
+fn folders_of(key: &str) -> impl Iterator<Item = &str> {
+    key.rmatch_indices('/').map(move |(at, _)| &key[..at])
+}
+
+/// The first position whose key is the same as, inside or around the key at a later position.
+fn first_clash(keys: &[String]) -> Option<usize> {
+    // key -> first position holding it; folder key -> first position inside it
+    let mut holding: HashMap<&str, usize> = HashMap::with_capacity(keys.len());
+    let mut inside: HashMap<&str, usize> = HashMap::new();
+    let mut first: Option<usize> = None;
+    for (at, key) in keys.iter().enumerate() {
+        let earlier = std::iter::once(key.as_str())
+            .chain(folders_of(key))
+            .filter_map(|k| holding.get(k).copied())
+            .chain(inside.get(key.as_str()).copied())
+            .min();
+        first = first.into_iter().chain(earlier).min();
+        holding.entry(key.as_str()).or_insert(at);
+        for folder in folders_of(key) {
+            inside.entry(folder).or_insert(at);
         }
     }
-    Ok(())
+    first
 }
 
 /// Refuses `to` when something other than the source may be at `abs_to`. A name that only compares equal (case,
@@ -361,18 +410,27 @@ pub(crate) fn check_deletes(
         }
         checked.push((path.clone(), abs));
     }
-    // a path inside another listed path goes with it; duplicates collapse
+    Ok(outermost(checked))
+}
+
+/// A path inside another listed path goes with it; duplicates collapse into the first. The order stays.
+pub(super) fn outermost(checked: Vec<(VaultPath, PathBuf)>) -> Vec<(VaultPath, PathBuf)> {
     let keys: Vec<String> = checked.iter().map(|(p, _)| p.key()).collect();
-    let mut kept: Vec<(VaultPath, PathBuf)> = Vec::new();
-    for (at, (path, abs)) in checked.iter().enumerate() {
-        let covered = keys.iter().enumerate().any(|(other, key)| {
-            other != at
-                && (path.key().starts_with(&format!("{key}/"))
-                    || (path.key() == *key && other < at))
-        });
-        if !covered {
-            kept.push((path.clone(), abs.clone()));
-        }
+    let mut first: HashMap<&str, usize> = HashMap::with_capacity(keys.len());
+    for (at, key) in keys.iter().enumerate() {
+        first.entry(key.as_str()).or_insert(at);
     }
-    Ok(kept)
+    let kept: Vec<bool> = keys
+        .iter()
+        .enumerate()
+        .map(|(at, key)| {
+            first.get(key.as_str()) == Some(&at)
+                && !folders_of(key).any(|folder| first.contains_key(folder))
+        })
+        .collect();
+    checked
+        .into_iter()
+        .zip(kept)
+        .filter_map(|(item, keep)| keep.then_some(item))
+        .collect()
 }

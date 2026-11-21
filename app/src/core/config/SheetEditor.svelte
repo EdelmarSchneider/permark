@@ -5,6 +5,7 @@
   // (hash check, conflicts, line breaks).
   import { tick } from "svelte";
   import { api, type Body, type ConfigEdit, type NewValue } from "../../api";
+  import { changedRuns } from "../editing/lines";
   import type { Content, EditingSession } from "../editing/session.svelte";
   import { t } from "../i18n";
   import ConfigSheet from "./ConfigSheet.svelte";
@@ -31,20 +32,6 @@
   /** The last edit sent: the next one waits for its answer, so it starts from the text that answer made (two edits
    *  sent at once would both start from the same text, and the later answer would drop the other edit). */
   let queue: Promise<unknown> = Promise.resolve();
-
-  /** Runs of lines that differ from `base` (the save message). */
-  function changedRuns(base: string, next: string): number {
-    const a = base.split("\n");
-    const b = next.split("\n");
-    let runs = 0;
-    let inRun = false;
-    for (let i = 0; i < Math.max(a.length, b.length); i++) {
-      const differs = a[i] !== b[i];
-      if (differs && !inRun) runs += 1;
-      inRun = differs;
-    }
-    return runs;
-  }
 
   // The editor of this content: its text, its first sheet, its place in the session.
   $effect(() => {

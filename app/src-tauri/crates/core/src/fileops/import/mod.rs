@@ -726,14 +726,19 @@ impl FileOps {
         if !bin.is_empty() {
             let shown: Vec<String> = bin.iter().map(|(p, _)| p.clone()).collect();
             self.own.expect_removals(&shown);
-            if trash::delete_all(bin.iter().map(|(_, abs)| abs)).is_ok() {
-                restored += bin.len();
-            } else {
-                self.own.retract_moves(&shown);
-                skipped.extend(bin.iter().map(|(path, _)| Skip {
-                    path: path.clone(),
-                    reason: SkipReason::Trash,
-                }));
+            let places: Vec<PathBuf> = bin.iter().map(|(_, abs)| abs.clone()).collect();
+            match crate::fsx::recycle_each(&places) {
+                Ok(()) => restored += bin.len(),
+                Err(refused) => {
+                    // what the bin took before it refused is taken back; the rest stays and is said
+                    let (gone, left) = refused.split(shown);
+                    restored += gone.len();
+                    self.own.retract_moves(&left);
+                    skipped.extend(left.into_iter().map(|path| Skip {
+                        path,
+                        reason: SkipReason::Trash,
+                    }));
+                }
             }
         }
         self.explorer.sync_paths(&touched, &[]);

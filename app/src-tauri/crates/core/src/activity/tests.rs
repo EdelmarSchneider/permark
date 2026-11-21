@@ -1372,3 +1372,167 @@ fn facts_keep_their_order_and_time_across_a_pause_and_a_resume() {
         ]
     );
 }
+
+#[test]
+fn a_batch_of_many_outside_changes_is_noted_in_one_pass() {
+    // a checkout | an unzip reaches the journal as one batch on the watch thread, under the journal's lock
+    let (_dir, store) = store();
+    let log = ActivityLog::open(&store, Time::new().clock());
+    let changes = (0..50_000)
+        .map(|i| {
+            change(
+                &format!("d{}/f{i}.md", i / 100),
+                ChangeKind::Modified,
+                false,
+            )
+        })
+        .collect();
+    let started = std::time::Instant::now();
+    log.outside(&batch(changes));
+    let took = started.elapsed();
+    assert!(took < std::time::Duration::from_secs(2), "{took:?}");
+    let journal = log.snapshot();
+    assert_eq!(journal.entries.len(), KEEP_ENTRIES);
+    assert_eq!(
+        journal.entries.last().and_then(|e| e.fact.path()),
+        Some("d499/f49999.md")
+    );
+}
+
+impl Journal {
+    /// One change outside merged on its own (a run of one).
+    fn push_outside(&mut self, at: u64, change: OutsideChange, path: &str, from: Option<&str>) {
+        self.outside_run().push(at, change, path, from);
+    }
+
+    /// Reference for the property check: each change searches the tail from its end and the row it replaces leaves at
+    /// once.
+    fn push_outside_one_by_one(
+        &mut self,
+        at: u64,
+        change: OutsideChange,
+        path: &str,
+        from: Option<&str>,
+    ) {
+        let key = if change == OutsideChange::Renamed {
+            from.unwrap_or(path)
+        } else {
+            path
+        };
+        let tail = self
+            .entries
+            .iter()
+            .rposition(|e| e.by != By::Outside)
+            .map_or(0, |i| i + 1);
+        let found = self.entries[tail..]
+            .iter()
+            .rposition(|e| e.fact.path() == Some(key))
+            .map(|i| i + tail);
+        let Some(index) = found else {
+            let fact = Fact::Outside {
+                change,
+                path: path.to_owned(),
+                from: from.map(str::to_owned),
+            };
+            let _ = self.push(at, By::Outside, fact);
+            return;
+        };
+        let Fact::Outside {
+            change: before,
+            from: before_from,
+            ..
+        } = self.entries[index].fact.clone()
+        else {
+            return;
+        };
+        let replaced = match merged_outside((before, before_from), change, key, path, from) {
+            Some((change, path, from)) => self
+                .push(at, By::Outside, Fact::Outside { change, path, from })
+                .is_some(),
+            None => true,
+        };
+        if replaced {
+            self.entries.remove(index);
+        }
+    }
+}
+
+mod outside_runs {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    const PATHS: [&str; 4] = ["a.md", "b.md", "c.md", "d.md"];
+
+    fn kind() -> impl Strategy<Value = OutsideChange> {
+        prop_oneof![
+            Just(OutsideChange::Created),
+            Just(OutsideChange::Modified),
+            Just(OutsideChange::Deleted),
+            Just(OutsideChange::Renamed),
+        ]
+    }
+
+    /// (change, path, from) over a few paths, so that changes meet the rows of earlier ones.
+    fn outside_change() -> impl Strategy<Value = Item> {
+        (kind(), 0..PATHS.len(), proptest::option::of(0..PATHS.len()))
+    }
+
+    /// (change, path index, from index)
+    type Item = (OutsideChange, usize, Option<usize>);
+
+    /// A row already in the journal: the person's (ends the tail), an outside one, or an outside row holding another
+    /// kind of fact (a file from elsewhere: a change meeting it is dropped).
+    fn row() -> impl Strategy<Value = (u8, Item)> {
+        (0..6_u8, outside_change())
+    }
+
+    fn journal_of(next: u64, rows: &[(u8, Item)]) -> Journal {
+        let mut journal = Journal {
+            next,
+            ..Journal::default()
+        };
+        for (what, (change, path, from)) in rows {
+            let path = PATHS[*path];
+            let (by, fact) = match what {
+                0 => (By::Person, save(path, &["A"])),
+                1 => (By::Outside, tag(true, path, "t")),
+                _ => (
+                    By::Outside,
+                    Fact::Outside {
+                        change: *change,
+                        path: path.to_owned(),
+                        from: from.map(|f| PATHS[f].to_owned()),
+                    },
+                ),
+            };
+            let _ = journal.push(T0, by, fact);
+        }
+        journal
+    }
+
+    proptest! {
+        #[test]
+        fn a_run_merges_exactly_as_each_change_on_its_own(
+            rows in proptest::collection::vec(row(), 0..12),
+            changes in proptest::collection::vec(outside_change(), 0..40),
+            near_the_end in proptest::bool::ANY,
+        ) {
+            // near the end: the seqs run out inside the run
+            let next = if near_the_end { MAX_SEQ - 20 } else { 1 };
+            let mut one_by_one = journal_of(next, &rows);
+            let mut runs = one_by_one.clone();
+            for (change, path, from) in &changes {
+                let from = from.map(|f| PATHS[f]);
+                one_by_one.push_outside_one_by_one(T0 + MIN, *change, PATHS[*path], from);
+            }
+            {
+                let mut run = runs.outside_run();
+                for (change, path, from) in &changes {
+                    run.push(T0 + MIN, *change, PATHS[*path], from.map(|f| PATHS[f]));
+                }
+            }
+            prop_assert_eq!(runs, one_by_one);
+        }
+    }
+}
