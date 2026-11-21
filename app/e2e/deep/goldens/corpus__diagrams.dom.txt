@@ -18,11 +18,11 @@ div.reading
           "A Mermaid diagram with a syntax error:"
         div.code-block.diagram
           figure.figure.is-failed
-            pre.source
-              code
-                "flowchart LR A[Open bracket --> B this is not mermaid (("
             figcaption.message
               "Diagram could not be rendered"
+            pre.source role="region" aria-label="Diagram source"
+              code
+                "flowchart LR A[Open bracket --> B this is not mermaid (("
         div.code-block.diagram
           figure.figure
             div.drawing
@@ -41,10 +41,10 @@ div.reading
           "A Graphviz diagram with a syntax error:"
         div.code-block.diagram
           figure.figure.is-failed
-            pre.source
-              code
-                "digraph G { a -> ; }}}"
             figcaption.message
               "Diagram could not be rendered"
               span.problem
                 "syntax error in line 2 near ';'"
+            pre.source role="region" aria-label="Diagram source"
+              code
+                "digraph G { a -> ; }}}"
