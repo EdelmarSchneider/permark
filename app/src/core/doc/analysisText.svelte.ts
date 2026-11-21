@@ -17,10 +17,14 @@ function readOnce(path: string, hash: string | null): Promise<void> {
   const key = `${path}\u0000${hash ?? ""}`;
   const pending = reading.get(key);
   if (pending) return pending;
-  const job = api.documentText(path).then((result) => {
-    if (result.ok) latest = { path, hash, text: result.value };
-    reading.delete(key);
-  });
+  // the pending read is forgotten however it ends: a failed one kept would answer every later ask with nothing
+  const job = api
+    .documentText(path)
+    .then((result) => {
+      if (result.ok) latest = { path, hash, text: result.value };
+    })
+    .catch(() => undefined)
+    .finally(() => reading.delete(key));
   reading.set(key, job);
   return job;
 }

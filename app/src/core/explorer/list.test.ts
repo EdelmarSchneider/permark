@@ -29,6 +29,7 @@ import {
   stemLength,
   topmost,
 } from "./list";
+import { rng } from "../testing/trees";
 
 const file: NodeKind = { type: "file", category: "markdown" };
 const dir: NodeKind = { type: "dir", unlisted: null };
@@ -310,6 +311,32 @@ describe("selection helpers", () => {
     expect(topmost(["a", "a/b.md", "a/c/d.md", "z.md", "a"]).sort()).toEqual(["a", "z.md"]);
     expect(topmost(["ab", "a"]).sort()).toEqual(["a", "ab"]);
     expect(topmost([])).toEqual([]);
+  });
+
+  it("topmost keeps what the pairwise check kept, in the same order, for random nested and worktree paths", () => {
+    // the first version: each path against every other one
+    const pairwise = (list: Iterable<string>): string[] => {
+      const all = Array.from(new Set(list));
+      return all.filter((p) => !all.some((other) => other !== p && p.startsWith(`${other}/`)));
+    };
+    const next = rng(11);
+    const parts = ["a", "b", "ab", "a b", "@wt", "x", "é", ""];
+    const part = (): string => parts[Math.floor(next() * parts.length)] ?? "a";
+    for (let round = 0; round < 500; round++) {
+      const picked = Array.from({ length: 1 + Math.floor(next() * 12) }, () => {
+        const depth = 1 + Math.floor(next() * 4);
+        const path = Array.from({ length: depth }, part).join("/");
+        return next() < 0.3 ? `@wt/${path}` : path;
+      });
+      expect(topmost(picked)).toEqual(pairwise(picked));
+    }
+  });
+
+  it("topmost of 50k selected sibling rows takes well under a second", () => {
+    const rows = Array.from({ length: 50_000 }, (_, n) => `docs/f${n}.md`);
+    const started = performance.now();
+    expect(topmost([...rows, "docs/f7.md/inner"])).toHaveLength(50_000);
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 });
 
