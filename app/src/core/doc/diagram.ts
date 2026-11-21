@@ -3,6 +3,7 @@
 // page.
 
 import { isLocalHref } from "./decorate";
+import { cleanCss, cleanSheet, loadsOutside } from "./drawingCss";
 
 /** A drawing that could not be made, with the words that say why (the engine's, or why it was not tried). */
 export type DrawFailure = { problem: string };
@@ -25,6 +26,8 @@ const PROLOG = /^(?:\s+|<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^[>]*(?:\[[\s\S
 const ROOT_TAG = /^<svg((?:\s+[^\s=/>]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*\/?>/;
 const ATTRIBUTE = /\s+([^\s=/>]+)\s*=\s*(?:"[^"]*"|'[^']*')/g;
 const USES_XLINK = /\sxlink:[^\s=/>]+\s*=/;
+/** Attributes of words, never read as CSS: a label like "Image(s)" is no picture to load. */
+const FREE_TEXT = /^(?:id|class|title|role|lang|aria-.*|data-.*)$/;
 
 /**
  * Elements that run code, load other content, navigate, or change an attribute over time (an animated `href`).
@@ -125,6 +128,27 @@ function pageLink(link: Element, hrefs: readonly string[]): void {
 }
 
 /**
+ * The id the page reads on the drawing's root; null when not exactly one attribute names it (the page's HTML parse
+ * lowercases attribute names: `id` and `ID` would be one id there, the first one written).
+ */
+function rootId(root: Element): string | null {
+  const [id, ...more] = [...root.attributes].filter((attr) => attr.name.toLowerCase() === "id");
+  return id !== undefined && more.length === 0 ? id.value : null;
+}
+
+/**
+ * A style sheet of the drawing with only the rules at its root `root` (the page applies a sheet to the whole window;
+ * Mermaid starts every selector with the root's id), without what would take a part out of the flow (where the
+ * figure no longer clips it, e.g. a theme's `position: fixed` over the window) or load anything; untouched when
+ * nothing goes.
+ */
+function keepCss(style: Element, root: string | null): void {
+  const css = style.textContent ?? "";
+  const kept = cleanSheet(css, root);
+  if (kept !== css) style.textContent = kept;
+}
+
+/**
  * Comments and processing instructions go: the page parses the drawing as HTML, where `<?…` and `<!-->` end at the
  * first `>`, so markup written inside them would come alive.
  */
@@ -154,8 +178,9 @@ function readsAsCleaned(markup: string, elements: number): boolean {
 }
 
 /**
- * The drawing with scripts, foreign content, event handlers and references out of the drawing removed, its links as
- * plain page links; null when it is not SVG or would not stay one drawing on the page.
+ * The drawing with scripts, foreign content, event handlers and references out of the drawing removed (CSS ones too),
+ * its links as plain page links, its CSS unable to reach outside the drawing or take a part out of the figure's flow;
+ * null when it is not SVG or would not stay one drawing on the page.
  */
 export function sanitizeSvg(svg: string): string | null {
   const doc = new DOMParser().parseFromString(declareXlink(uniqueXmlns(svg)), "image/svg+xml");
@@ -164,10 +189,14 @@ export function sanitizeSvg(svg: string): string | null {
   if (root.tagName !== "svg" || root.namespaceURI !== SVG_NS || doc.querySelector("parsererror"))
     return null;
   removeHidden(root);
+  const id = rootId(root);
   for (const el of root.querySelectorAll("*")) {
     const name = nameOf(el);
     const loads = name === "style" && [...el.attributes].some((attr) => nameOf(attr) === "src");
-    if (DROPPED.has(name) || loads) el.remove();
+    // the page reads only a style's own text as CSS: one holding elements would not read as checked here
+    const mixed = name === "style" && el.children.length > 0;
+    if (DROPPED.has(name) || loads || mixed) el.remove();
+    else if (name === "style") keepCss(el, id);
   }
   // the root too: a handler on the svg itself runs like any other
   for (const el of [root, ...root.querySelectorAll("*")]) {
@@ -176,6 +205,8 @@ export function sanitizeSvg(svg: string): string | null {
       const name = nameOf(attr);
       if (name.startsWith("on")) el.removeAttributeNode(attr);
       else if (name === "href") hrefs.push(attr.value);
+      else if (name === "style") attr.value = cleanCss(attr.value);
+      else if (!FREE_TEXT.test(name) && loadsOutside(attr.value)) el.removeAttributeNode(attr);
     }
     if (nameOf(el) === "a") pageLink(el, hrefs);
     // elsewhere a reference loads what it names: only a part of the drawing. A file beside the document never loaded
