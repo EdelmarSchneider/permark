@@ -45,6 +45,7 @@ export default {
   "welcome.noRecents": "Nie ma jeszcze ostatnich folderów.",
   "welcome.notFound": "(nie znaleziono)",
   "welcome.remove": "Usuń",
+  "welcome.recentKeys": "Naciśnij Delete, aby usunąć zaznaczony folder z listy.",
   "welcome.dropHint": "Upuść tutaj foldery lub pliki, aby je otworzyć.",
   "welcome.openFailed": "Nie można otworzyć {path}: {message}",
 
@@ -434,7 +435,7 @@ export default {
   "role.copilot": "Instrukcje dla Copilot",
   "role.model-card": "Karta modelu",
   "role.dataset-card": "Karta zbioru danych",
-  "structured.mode": "Widok",
+  "structured.mode": "Wyświetlanie",
   "structured.tree": "Drzewo",
   "structured.source": "Źródło",
   "structured.invalid": "To nie jest prawidłowe, więc pokazano jako tekst.",
@@ -2290,6 +2291,7 @@ export default {
   "toon.notValid": "Nieprawidłowy TOON 4.4",
   "convert.menu": "Konwertuj…",
   "convert.table": "Konwertuj…",
+  "convert.tableCommand": "Konwertuj tabelę…",
   "convert.title": "Konwertuj {name}",
   "convert.fromPage": "tekst ze strony",
   "convert.close": "Zamknij",
@@ -3347,6 +3349,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "Nie udało się odczytać pliku, który określa, co mogą widzieć agenci. Agent nie dostanie niczego, dopóki plik nie zostanie poprawiony.",
   "acp.fail.startFailed": "Nie udało się uruchomić programu agenta.",
+  "acp.fail.notAllowed": "Nie zezwolono na uruchomienie programu agenta.",
   "acp.fail.timedOut": "Agent nie odpowiedział na czas.",
   "acp.fail.initFailed":
     "Ten program nie odpowiedział jak agent, z którym PerMark może się porozumieć. Sprawdź polecenie i spróbuj ponownie.",
@@ -3359,6 +3362,7 @@ export default {
   "acp.fail.exited": "Program agenta nieoczekiwanie się zamknął.",
   "acp.fail.sendFailed": "Nie udało się przekazać wiadomości agentowi.",
   "acp.error.relativeProgram": "Wpisz pełną ścieżkę programu albo samą jego nazwę.",
+  "acp.error.commandTooLong": "Polecenie jest za długie (najwyżej 1000 znaków).",
   "acp.error.networkProgram":
     "PerMark uruchamia tylko programy z tego komputera, a nie z folderu sieciowego.",
   "acp.error.oneChoice": "Wybierz jednego agenta albo wpisz jedno polecenie.",

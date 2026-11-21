@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseRelease, updaterJson } from "./updater-json.mjs";
+import { parseRelease, publicKeyOf, updaterJson, verifySignature } from "./updater-json.mjs";
 
 // Asset names of the 0.6.1 release (unchanged since 0.6.0; `distribution.md` § Release pipeline), minus the `.msi`
 // (no longer built), and with the macOS updater bundle named as tauri-action 1.x names it: with the version, as in
@@ -33,6 +35,7 @@ function build(
     pubDate: "2026-10-20T19:02:17.540Z",
     assets,
     signature: (name) => `sig of ${name}`,
+    verify: () => {},
     ...overrides,
   });
 }
@@ -166,6 +169,92 @@ describe("updaterJson", () => {
     expect(() => build(ASSETS, { repo: "EdelmarSchneider/permark/../x y" })).toThrow(
       /not owner\/name/,
     );
+  });
+
+  it("checks every installer against its signature, once each", () => {
+    const checked: string[] = [];
+    build(ASSETS, { verify: (bundle, signature) => checked.push(`${bundle} <- ${signature}`) });
+    expect(checked).toEqual([
+      "PerMark_0.6.1_x64-setup.exe <- sig of PerMark_0.6.1_x64-setup.exe.sig",
+      "PerMark_0.6.1_universal.app.tar.gz <- sig of PerMark_0.6.1_universal.app.tar.gz.sig",
+      "PerMark_0.6.1_amd64.AppImage <- sig of PerMark_0.6.1_amd64.AppImage.sig",
+      "PerMark_0.6.1_amd64.deb <- sig of PerMark_0.6.1_amd64.deb.sig",
+      "PerMark-0.6.1-1.x86_64.rpm <- sig of PerMark-0.6.1-1.x86_64.rpm.sig",
+    ]);
+  });
+
+  it("refuses a release with one installer its signature does not match", () => {
+    const verify = (bundle: string) => {
+      if (bundle.endsWith(".rpm")) throw new Error("the signature does not match the file");
+    };
+    expect(() => build(ASSETS, { verify })).toThrow(
+      /Linux rpm: PerMark-0.6.1-1.x86_64.rpm.sig: the signature does not match the file/,
+    );
+  });
+});
+
+// A real updater signature: `tauri signer generate` made a throwaway key pair (its private key was thrown away), then
+// `tauri signer sign` signed FIXTURE_FILE with it. The texts are what the CLI writes (`.sig` file, `.key.pub` file).
+const FIXTURE_FILE = "PerMark updater signature fixture\n";
+const FIXTURE_PUBKEY =
+  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhFMjA3ODNGMzhEMTBCRjkKUldUNUM5RTRQM2dnampPVmMrWGxEZ291b3RRckRJbFBIYUR5UldjUmxuOXA3WFJPUGVNRkg2aDQK";
+const FIXTURE_SIG =
+  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUNUM5RTRQM2dnanUxRldidi9uTXdDa2tNNFhFdElyQzFKdDVBNk1RQ3UxVWd1U1o0RWxzdVJsRjdPdGw5c2hoVXpJaHJEOUtLOEZQVFN1RHpMU0p6N054aTN2c3JCdGdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MjQ2NjY3CWZpbGU6YnVuZGxlLnR4dApraDVEQnk5ODFhVzJQd1dpYkQxR1BQMlN5U0FQNkhNakdpcWdqNk8xUUxMR0tzRHBHeEFJNUhDRHoyb0MvMldBN0VTc0hyYTU2Ym4yTGZXU2hicCtCQT09Cg==";
+
+const APP_PUBKEY: string = JSON.parse(
+  readFileSync(join(import.meta.dirname, "..", "src-tauri", "tauri.conf.json"), "utf8"),
+).plugins.updater.pubkey;
+
+/** The signature text with one line changed, encoded again as the `.sig` file holds it. */
+function editedSig(edit: (text: string) => string): string {
+  return Buffer.from(edit(Buffer.from(FIXTURE_SIG, "base64").toString("utf8"))).toString("base64");
+}
+
+describe("verifySignature", () => {
+  const file = Buffer.from(FIXTURE_FILE);
+
+  it("accepts a file signed by the key, as `tauri signer sign` signs it", () => {
+    expect(() => verifySignature(FIXTURE_SIG, file, FIXTURE_PUBKEY)).not.toThrow();
+    // the `.sig` file text as downloaded, with a line end after it
+    expect(() => verifySignature(`${FIXTURE_SIG}\n`, file, FIXTURE_PUBKEY)).not.toThrow();
+  });
+
+  it("refuses a file with one byte changed", () => {
+    const tampered = Buffer.from(file);
+    tampered[0] = (tampered[0] ?? 0) ^ 1;
+    expect(() => verifySignature(FIXTURE_SIG, tampered, FIXTURE_PUBKEY)).toThrow(
+      /does not match the file/,
+    );
+  });
+
+  it("refuses a signature whose trusted comment was changed", () => {
+    const sig = editedSig((text) => text.replace("timestamp:1795246667", "timestamp:1795246668"));
+    expect(() => verifySignature(sig, file, FIXTURE_PUBKEY)).toThrow(/trusted comment/);
+  });
+
+  it("refuses a signature made by another key than the app trusts", () => {
+    expect(() => verifySignature(FIXTURE_SIG, file, APP_PUBKEY)).toThrow(
+      /key 8E20783F38D10BF9.*trusts key E5B5D80713C61885/,
+    );
+  });
+
+  it("refuses text that is not a signature", () => {
+    expect(() => verifySignature("bm90IGEgc2lnbmF0dXJl", file, FIXTURE_PUBKEY)).toThrow(
+      /not a minisign signature/,
+    );
+    const legacy = editedSig((text) => text.replace("\nRUT5", "\nRWT5"));
+    expect(() => verifySignature(legacy, file, FIXTURE_PUBKEY)).toThrow(/algorithm/);
+  });
+});
+
+describe("publicKeyOf", () => {
+  it("reads the key id of the app's updater key", () => {
+    expect(publicKeyOf(APP_PUBKEY).id).toBe("E5B5D80713C61885");
+    expect(publicKeyOf(FIXTURE_PUBKEY).id).toBe("8E20783F38D10BF9");
+  });
+
+  it("refuses text that is not a public key", () => {
+    expect(() => publicKeyOf("bm90IGEga2V5")).toThrow(/not a minisign public key/);
   });
 });
 

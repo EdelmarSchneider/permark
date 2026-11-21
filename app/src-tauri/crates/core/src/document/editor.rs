@@ -3,13 +3,15 @@
 //! Rules (directives): the program and its arguments come from the template only; a document supplies a path and
 //! numbers. The template is split into arguments (quotes respected) before any placeholder is filled, so the path is
 //! always inside one argument, whatever it contains. No shell. The program is an absolute path or a bare name looked
-//! up on `PATH` (Windows: runnable `PATHEXT` extensions only; elsewhere also the usual editor folders), never in the
-//! working folder or the project. The editor is started in the home folder, detached.
+//! up on `PATH` and the usual tool folders (`process::resolve_program`), never in the working folder, the project or
+//! on a share. It starts only once the person allowed it (`process::ProgramApprovals`: a dialog names its full path),
+//! detached, in the home folder.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use crate::error::{ErrorKind, IpcError};
+use crate::process::{self, ProgramApprovals, ProgramCall};
 
 /// Longest template accepted.
 pub const MAX_TEMPLATE: usize = 400;
@@ -51,6 +53,8 @@ pub enum EditorError {
     Dash,
     #[error("the editor could not be started: {0}")]
     Spawn(String),
+    #[error("the person did not allow {0} to start")]
+    NotAllowed(String),
 }
 
 impl From<EditorError> for IpcError {
@@ -65,6 +69,7 @@ impl From<EditorError> for IpcError {
                 .detail("notFound"),
             EditorError::Dash => IpcError::new(ErrorKind::EditorFailed).detail("dash"),
             EditorError::Spawn(detail) => IpcError::new(ErrorKind::EditorFailed).detail(detail),
+            EditorError::NotAllowed(program) => IpcError::new(ErrorKind::Denied).subject(program),
         }
     }
 }
@@ -120,6 +125,30 @@ impl EditorTemplate {
     #[must_use]
     pub fn program(&self) -> &str {
         &self.program
+    }
+
+    /// `program` (the template's program found) with the template's arguments as written, placeholders unfilled.
+    fn call(&self, program: PathBuf) -> ProgramCall {
+        let args = self
+            .args
+            .iter()
+            .map(|pieces| {
+                pieces
+                    .iter()
+                    .map(|piece| match piece {
+                        Piece::Text(text) => text.as_str(),
+                        Piece::Path => "{path}",
+                        Piece::Line => "{line}",
+                        Piece::Col => "{col}",
+                    })
+                    .collect()
+            })
+            .collect();
+        ProgramCall {
+            program,
+            args,
+            env: Vec::new(),
+        }
     }
 
     /// The arguments with `path` (absolute), `line` and `col` (from 1) filled in.
@@ -227,150 +256,82 @@ fn pieces(arg: &str) -> Result<Vec<Piece>, TemplateProblem> {
     Ok(out)
 }
 
-// ---- finding the program ------------------------------------------------------------------------------------------
+// ---- starting the program -----------------------------------------------------------------------------------------
 
-/// Where programs are looked for.
-#[derive(Debug, Clone, Default)]
-pub struct SearchEnv {
-    /// Absolute folders, in order.
-    pub dirs: Vec<PathBuf>,
-    /// Extensions a bare name may be completed with (`.exe`, ...; empty off Windows).
-    pub extensions: Vec<String>,
-}
-
-const RUNNABLE: [&str; 4] = [".com", ".exe", ".bat", ".cmd"];
-
-impl SearchEnv {
-    /// From the process environment (`PATH`, `PATHEXT`, home).
-    #[must_use]
-    pub fn process() -> Self {
-        let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
-            .map(|path| std::env::split_paths(&path).collect())
-            .unwrap_or_default();
-        dirs.retain(|dir| dir.is_absolute());
-        let mut extensions = Vec::new();
-        if cfg!(windows) {
-            let pathext =
-                std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_owned());
-            extensions = pathext
-                .split(';')
-                .map(str::to_ascii_lowercase)
-                .filter(|e| RUNNABLE.contains(&e.as_str()))
-                .collect();
-        } else {
-            // a program started from the Dock | file manager gets a short PATH without these
-            let home = dirs_home();
-            let mut extra: Vec<PathBuf> = [
-                "/usr/local/bin",
-                "/opt/homebrew/bin",
-                "/snap/bin",
-                "/usr/bin",
-            ]
-            .iter()
-            .map(PathBuf::from)
-            .collect();
-            if let Some(home) = home {
-                extra.push(home.join(".local/bin"));
-                extra.push(home.join("Library/Application Support/JetBrains/Toolbox/scripts"));
-                extra.push(home.join(".local/share/JetBrains/Toolbox/scripts"));
-            }
-            for dir in extra {
-                if !dirs.contains(&dir) {
-                    dirs.push(dir);
-                }
-            }
-        }
-        Self { dirs, extensions }
-    }
-}
-
-fn dirs_home() -> Option<PathBuf> {
-    dirs::home_dir()
-}
-
-fn is_file(path: &Path) -> bool {
-    std::fs::metadata(path).is_ok_and(|m| m.is_file())
-}
-
-/// The file a program name stands for: an absolute path as it is, a bare name in the (absolute) search folders.
-/// A name with a folder in it must be absolute.
+/// The program `template` starts (found as every program the app starts: [`process::resolve_program`]) with the
+/// template's words, placeholders unfilled: what the person allows ([`ProgramApprovals`]). `None`: no editor, an
+/// invalid template, a program not found.
 #[must_use]
-pub fn find_program(program: &str, env: &SearchEnv) -> Option<PathBuf> {
-    let path = Path::new(program);
-    if path.is_absolute() {
-        return is_file(path).then(|| path.to_path_buf());
-    }
-    if program.contains(['/', '\\']) {
-        return None;
-    }
-    for dir in &env.dirs {
-        let plain = dir.join(program);
-        if env.extensions.is_empty() {
-            if is_file(&plain) {
-                return Some(plain);
-            }
-            continue;
-        }
-        // a name that already ends in a runnable extension is tried as written
-        let lower = program.to_ascii_lowercase();
-        if env.extensions.iter().any(|e| lower.ends_with(e.as_str())) && is_file(&plain) {
-            return Some(plain);
-        }
-        for ext in &env.extensions {
-            let candidate = dir.join(format!("{program}{ext}"));
-            if is_file(&candidate) {
-                return Some(candidate);
-            }
-        }
-    }
-    None
+pub fn program_call(template: &str) -> Option<ProgramCall> {
+    let parsed = EditorTemplate::parse(template).ok()??;
+    let program = process::resolve_program(OsStr::new(parsed.program()))?;
+    Some(parsed.call(program))
 }
 
-/// Starts the editor on `path` (absolute, validated by the caller through the vault) at `line` | `col`.
+/// Starts the editor on `path` (absolute, validated by the caller through the vault) at `line` | `col`: only a
+/// program the person allowed (`approvals` asks about a new one: blocks while the dialog is up), detached with a
+/// hidden console (a `.cmd` editor's console children open no window), in a neutral folder.
 ///
 /// # Errors
-/// Not set, invalid template, program not found, start failure.
-pub fn launch(template: &str, path: &Path, line: u32, col: u32) -> Result<(), EditorError> {
+/// Not set, invalid template, program not found (a relative | network path | one inside an open project is never
+/// started), not allowed, start failure.
+pub fn launch(
+    template: &str,
+    path: &Path,
+    line: u32,
+    col: u32,
+    approvals: &ProgramApprovals,
+) -> Result<(), EditorError> {
+    launch_with(template, path, line, col, approvals, |program, args| {
+        process::spawn_detached(
+            program,
+            args,
+            Some(&neutral_dir()),
+            process::Console::Hidden,
+        )
+    })
+}
+
+/// [`launch`] with the start itself given (`spawn`: program, filled arguments).
+fn launch_with(
+    template: &str,
+    path: &Path,
+    line: u32,
+    col: u32,
+    approvals: &ProgramApprovals,
+    spawn: impl FnOnce(&Path, &[&OsStr]) -> std::io::Result<()>,
+) -> Result<(), EditorError> {
     let parsed = EditorTemplate::parse(template)
         .map_err(EditorError::Template)?
         .ok_or(EditorError::NotSet)?;
-    let program = find_program(parsed.program(), &SearchEnv::process())
+    let program = process::resolve_program(OsStr::new(parsed.program()))
+        .filter(|program| !approvals.in_project(program))
         .ok_or_else(|| EditorError::NotFound(parsed.program().to_owned()))?;
     let args = parsed.arguments(path, line.max(1), col.max(1))?;
-    let mut command = std::process::Command::new(program);
-    command
-        .args(args)
-        .current_dir(neutral_dir())
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // no console window; and never look for programs in the working folder
-        command.creation_flags(0x0800_0000);
-        command.env("NoDefaultCurrentDirectoryInExePath", "1");
+    let call = parsed.call(program);
+    if !approvals.allow(&call) {
+        return Err(EditorError::NotAllowed(call.program.display().to_string()));
     }
-    let mut child = command
-        .spawn()
-        .map_err(|e| EditorError::Spawn(e.to_string()))?;
-    // reaped in the background: the editor outlives this call
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
+    let args: Vec<&OsStr> = args.iter().map(OsString::as_os_str).collect();
+    spawn(&call.program, &args).map_err(|e| EditorError::Spawn(e.to_string()))
 }
 
 /// The folder the editor starts in: home, else the temporary folder. Never the project.
 fn neutral_dir() -> PathBuf {
-    dirs_home()
+    dirs::home_dir()
         .filter(|h| h.is_dir())
         .unwrap_or_else(std::env::temp_dir)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
     use super::*;
+    use crate::plugins::ProgramConsent;
+    use crate::state::{AppDirs, StateStore};
 
     fn parse(template: &str) -> EditorTemplate {
         EditorTemplate::parse(template).unwrap().unwrap()
@@ -466,57 +427,204 @@ mod tests {
         assert!(t.arguments(Path::new("-evil"), 1, 1).is_ok());
     }
 
-    #[test]
-    fn program_lookup_uses_absolute_folders_only() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("myedit.cmd"), "x").unwrap();
-        std::fs::write(dir.path().join("plain"), "x").unwrap();
-        let windows = SearchEnv {
-            dirs: vec![dir.path().to_path_buf()],
-            extensions: vec![".exe".to_owned(), ".cmd".to_owned()],
+    /// Answers with `yes`; keeps the programs it was asked about.
+    #[derive(Default)]
+    struct Asked {
+        yes: AtomicBool,
+        asks: Mutex<Vec<PathBuf>>,
+    }
+
+    impl ProgramConsent for Asked {
+        fn allow(&self, call: &ProgramCall) -> bool {
+            self.asks.lock().unwrap().push(call.program.clone());
+            self.yes.load(Ordering::SeqCst)
+        }
+    }
+
+    impl Asked {
+        fn count(&self) -> usize {
+            self.asks.lock().unwrap().len()
+        }
+    }
+
+    fn approvals(profile: &Path, asked: &Arc<Asked>) -> ProgramApprovals {
+        let store = StateStore::app(&AppDirs {
+            profile: profile.to_path_buf(),
+            cache: profile.join("cache"),
+            install: profile.join("install"),
+        });
+        let consent: Arc<dyn ProgramConsent> = Arc::clone(asked) as _;
+        ProgramApprovals::of(&store, Some(consent))
+    }
+
+    /// A script that leaves `started.txt` beside itself when it runs.
+    fn marking_editor(dir: &Path) -> PathBuf {
+        #[cfg(windows)]
+        let script = {
+            let script = dir.join("edit.cmd");
+            std::fs::write(&script, "@echo started> \"%~dp0started.txt\"\r\n").unwrap();
+            script
         };
-        assert_eq!(
-            find_program("myedit", &windows),
-            Some(dir.path().join("myedit.cmd"))
-        );
-        assert_eq!(
-            find_program("myedit.cmd", &windows),
-            Some(dir.path().join("myedit.cmd"))
-        );
-        assert_eq!(find_program("plain", &windows), None);
-        let unix = SearchEnv {
-            dirs: vec![dir.path().to_path_buf()],
-            extensions: Vec::new(),
+        #[cfg(unix)]
+        let script = {
+            use std::os::unix::fs::PermissionsExt;
+            let script = dir.join("edit");
+            std::fs::write(
+                &script,
+                "#!/bin/sh\necho started > \"$(dirname \"$0\")/started.txt\"\n",
+            )
+            .unwrap();
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+            script
         };
-        assert_eq!(find_program("plain", &unix), Some(dir.path().join("plain")));
-        // names with folders must be absolute and exist; relative ones are refused
-        assert_eq!(find_program("./plain", &unix), None);
-        assert_eq!(find_program("sub/plain", &unix), None);
-        assert_eq!(
-            find_program(&dir.path().join("plain").display().to_string(), &unix),
-            Some(dir.path().join("plain"))
-        );
-        assert_eq!(
-            find_program(&dir.path().join("nope").display().to_string(), &unix),
-            None
-        );
-        // the working folder is never searched
-        assert_eq!(find_program("Cargo.toml", &SearchEnv::default()), None);
+        script
+    }
+
+    fn template_of(program: &Path) -> String {
+        format!("\"{}\" --goto {{path}}:{{line}}", program.display())
     }
 
     #[test]
     fn launch_reports_not_set_missing_and_bad_templates() {
+        let profile = tempfile::tempdir().unwrap();
+        let asked = Arc::new(Asked::default());
+        let gate = approvals(profile.path(), &asked);
         let file = Path::new("/p/a.rs");
-        assert!(matches!(launch("", file, 1, 1), Err(EditorError::NotSet)));
         assert!(matches!(
-            launch("definitely-not-a-program-xyz {path}", file, 1, 1),
+            launch("", file, 1, 1, &gate),
+            Err(EditorError::NotSet)
+        ));
+        assert!(matches!(
+            launch("definitely-not-a-program-xyz {path}", file, 1, 1, &gate),
             Err(EditorError::NotFound(_))
         ));
         assert!(matches!(
-            launch("code", file, 1, 1),
+            launch("code", file, 1, 1, &gate),
             Err(EditorError::Template(TemplateProblem::NoPath))
         ));
         let error = IpcError::from(EditorError::NotSet);
         assert_eq!(error.kind, ErrorKind::EditorNotSet);
+        assert_eq!(asked.count(), 0);
+    }
+
+    /// A program on a share | named by a relative path is never looked up, never asked about, never started; also
+    /// when the file is there (relative to the tests' folder: `src/lib.rs`).
+    #[test]
+    fn network_and_relative_programs_are_refused() {
+        let profile = tempfile::tempdir().unwrap();
+        let asked = Arc::new(Asked::default());
+        asked.yes.store(true, Ordering::SeqCst);
+        let gate = approvals(profile.path(), &asked);
+        let file = Path::new("/p/a.rs");
+        assert!(Path::new("src").join("lib.rs").is_file());
+        for template in [
+            r"\\host\share\code.exe {path}",
+            "//host/share/code {path}",
+            r"\\?\UNC\host\share\code.exe {path}",
+            "src/lib.rs {path}",
+            r"src\lib.rs {path}",
+            "./src/lib.rs {path}",
+        ] {
+            assert!(
+                matches!(
+                    launch(template, file, 1, 1, &gate),
+                    Err(EditorError::NotFound(_))
+                ),
+                "{template}"
+            );
+        }
+        assert_eq!(asked.count(), 0);
+    }
+
+    /// Declined: nothing starts, the error names the program; allowed: it starts, and the next time nobody is asked;
+    /// other arguments for the same program: asked again.
+    #[test]
+    fn an_editor_starts_only_once_allowed() {
+        let profile = tempfile::tempdir().unwrap();
+        let bin = tempfile::tempdir().unwrap();
+        let program = marking_editor(bin.path());
+        let template = template_of(&program);
+        let file = bin.path().join("a.md");
+        std::fs::write(&file, "x").unwrap();
+        let marker = bin.path().join("started.txt");
+        let asked = Arc::new(Asked::default());
+        let gate = approvals(profile.path(), &asked);
+        let spawned = AtomicUsize::new(0);
+        let counted = |_: &Path, _: &[&OsStr]| {
+            spawned.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        };
+        let Err(EditorError::NotAllowed(named)) =
+            launch_with(&template, &file, 1, 1, &gate, counted)
+        else {
+            panic!("not refused without a yes");
+        };
+        assert_eq!(named, program.display().to_string());
+        assert_eq!(
+            IpcError::from(EditorError::NotAllowed(named)).kind,
+            ErrorKind::Denied
+        );
+        // the dialog names the full path of what would start
+        assert_eq!(
+            asked.asks.lock().unwrap().as_slice(),
+            std::slice::from_ref(&program)
+        );
+        assert_eq!(spawned.load(Ordering::SeqCst), 0);
+
+        asked.yes.store(true, Ordering::SeqCst);
+        launch(&template, &file, 1, 1, &gate).unwrap();
+        let started = Instant::now();
+        while !marker.exists() {
+            assert!(started.elapsed() < Duration::from_secs(15), "never started");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        launch(&template, &file, 2, 1, &gate).unwrap();
+        assert_eq!(asked.count(), 2);
+        asked.yes.store(false, Ordering::SeqCst);
+        let changed = format!("\"{}\" --evil {{path}}", program.display());
+        assert!(matches!(
+            launch_with(&changed, &file, 1, 1, &gate, counted),
+            Err(EditorError::NotAllowed(_))
+        ));
+        assert_eq!(asked.count(), 3);
+        assert_eq!(spawned.load(Ordering::SeqCst), 0);
+    }
+
+    /// An editor inside an open project is refused like a path never looked up: nobody asked, nothing started.
+    #[test]
+    fn an_editor_inside_an_open_project_is_not_found() {
+        let profile = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let program = marking_editor(project.path());
+        let file = project.path().join("a.md");
+        std::fs::write(&file, "x").unwrap();
+        let asked = Arc::new(Asked::default());
+        asked.yes.store(true, Ordering::SeqCst);
+        let gate = approvals(profile.path(), &asked).outside(vec![project.path().to_path_buf()]);
+        let spawned = AtomicUsize::new(0);
+        let result = launch_with(&template_of(&program), &file, 1, 1, &gate, |_, _| {
+            spawned.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        });
+        assert!(
+            matches!(result, Err(EditorError::NotFound(_))),
+            "{result:?}"
+        );
+        assert_eq!(asked.count(), 0);
+        assert_eq!(spawned.load(Ordering::SeqCst), 0);
+    }
+
+    /// What an approval is keyed by: the program found + the template's words, placeholders unfilled.
+    #[test]
+    fn the_program_call_holds_the_found_program_and_the_template_words() {
+        let bin = tempfile::tempdir().unwrap();
+        let program = marking_editor(bin.path());
+        let call = program_call(&template_of(&program)).unwrap();
+        assert_eq!(call.program, program);
+        assert_eq!(call.args, ["--goto", "{path}:{line}"]);
+        assert_eq!(call.env, []);
+        assert_eq!(program_call(""), None);
+        assert_eq!(program_call("definitely-not-a-program-xyz {path}"), None);
+        assert_eq!(program_call("code"), None);
     }
 }

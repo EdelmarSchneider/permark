@@ -451,5 +451,7 @@ pub fn launch_app(project: &Path) -> io::Result<()> {
     permark_core::process::spawn_detached(
         &program,
         &[std::ffi::OsStr::new("--"), project.as_os_str()],
+        None,
+        permark_core::process::Console::Without,
     )
 }

@@ -133,4 +133,13 @@
   .splitter:focus-visible::after {
     background: var(--accent);
   }
+  /* Windows High Contrast drops fills: the line takes the system's highlight color, kept as set */
+  @media (forced-colors: active) {
+    .splitter:hover::after,
+    .splitter:focus-visible::after,
+    .splitter.is-dragging::after {
+      forced-color-adjust: none;
+      background: Highlight;
+    }
+  }
 </style>

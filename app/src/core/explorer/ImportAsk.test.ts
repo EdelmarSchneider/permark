@@ -76,10 +76,11 @@ describe("the question at the drop point", () => {
     expect(
       document.getElementById(dialog().getAttribute("aria-describedby") ?? "")?.textContent,
     ).toBe("2 files and 1 folder");
+    // the order of every dialog of the app: Cancel first, the main answer last
     expect(buttons().map((b) => b.textContent?.trim())).toEqual([
-      "Copy here",
-      "Move here",
       "Cancel",
+      "Move here",
+      "Copy here",
     ]);
     expect(text()).toContain("Copy keeps the originals where they are.");
     expect(text()).not.toContain("already exist");
@@ -207,11 +208,11 @@ describe("the question at the drop point", () => {
     open(plan());
     await tick();
     flushSync();
-    named("Cancel")?.focus();
+    named("Copy here")?.focus();
     key("Tab");
-    expect(document.activeElement).toBe(named("Copy here"));
-    key("Tab", { shiftKey: true });
     expect(document.activeElement).toBe(named("Cancel"));
+    key("Tab", { shiftKey: true });
+    expect(document.activeElement).toBe(named("Copy here"));
   });
 
   it("gives the keyboard back where it was when it closes", async () => {

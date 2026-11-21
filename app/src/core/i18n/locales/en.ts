@@ -30,6 +30,7 @@ const en = {
   "welcome.noRecents": "No recent folders yet.",
   "welcome.notFound": "(not found)",
   "welcome.remove": "Remove",
+  "welcome.recentKeys": "Press Delete to remove the selected folder from the list.",
   "welcome.dropHint": "Drop folders or files here to open them.",
   "welcome.openFailed": "Can't open {path}: {message}",
 
@@ -404,7 +405,7 @@ const en = {
   "role.copilot": "Copilot instructions",
   "role.model-card": "Model card",
   "role.dataset-card": "Dataset card",
-  "structured.mode": "View",
+  "structured.mode": "Display",
   "structured.tree": "Tree",
   "structured.source": "Source",
   "structured.invalid": "This isn't valid, so it is shown as text.",
@@ -2160,6 +2161,7 @@ const en = {
   "toon.notValid": "Not valid TOON 4.4",
   "convert.menu": "Convert…",
   "convert.table": "Convert…",
+  "convert.tableCommand": "Convert table…",
   "convert.title": "Convert {name}",
   "convert.fromPage": "text from the page",
   "convert.close": "Close",
@@ -3165,6 +3167,7 @@ const en = {
   "acp.fail.rulesUnreadable":
     "A file that sets what agents may see couldn't be read. The agent gets nothing until it's fixed.",
   "acp.fail.startFailed": "The agent's program could not be started.",
+  "acp.fail.notAllowed": "You didn't allow the agent's program to start.",
   "acp.fail.timedOut": "The agent did not answer in time.",
   "acp.fail.initFailed":
     "This program did not answer like an agent PerMark can talk to. Check the command and try again.",
@@ -3178,6 +3181,7 @@ const en = {
   "acp.fail.exited": "The agent's program closed unexpectedly.",
   "acp.fail.sendFailed": "The message could not be handed to the agent.",
   "acp.error.relativeProgram": "Write the program's full path, or only its name.",
+  "acp.error.commandTooLong": "The command is too long (at most 1000 characters).",
   "acp.error.networkProgram":
     "PerMark only starts programs on this computer, not from a network folder.",
   "acp.error.oneChoice": "Choose one agent or type one command.",

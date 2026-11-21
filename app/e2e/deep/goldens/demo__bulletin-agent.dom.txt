@@ -139,6 +139,7 @@ div.reading
                 "Markdown"
               button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
                 icon lucide-copy
+              span.sr-only
         h2 id="example" dir="auto"
           a.anchor href="#example" aria-label="Link to Example"
             "#"
@@ -168,6 +169,7 @@ div.reading
                       icon lucide-arrow-left-right
                     button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
                       icon lucide-copy
+                    span.sr-only
             details.prompt-block data-tag="output" open
               summary
                 "output"

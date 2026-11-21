@@ -6,6 +6,7 @@
   import FileText from "@lucide/svelte/icons/file-text";
   import FolderPlus from "@lucide/svelte/icons/folder-plus";
   import Import from "@lucide/svelte/icons/import";
+  import { tick } from "svelte";
   import type { RecentFolder } from "../../api";
   import { keyHint } from "../commands/hint";
   import { conditions } from "../conditions/context.svelte";
@@ -22,7 +23,10 @@
 
   let active = $state(0);
   let list: HTMLElement | undefined = $state();
+  let openFolderButton: HTMLButtonElement | undefined = $state();
   const now = Date.now();
+  /** Element ids of the list's parts: from the component, never the folder's path. */
+  const uid = $props.id();
 
   const recents = $derived(store.recent);
   /** Blocks plugins add beside the recent folders (the latest notes). */
@@ -39,6 +43,19 @@
       void store.open(recent.path, newWindow ? "newWindow" : undefined);
   }
 
+  /** Removes a recent folder. The removed row's Remove button (or the whole list, with its last entry) leaves the page
+   *  holding the keyboard, which would drop to the body: it goes to the entry now in that place, or to Open folder. */
+  async function remove(index: number): Promise<void> {
+    const recent = recents[index];
+    if (!recent) return;
+    await store.removeRecent(recent.path);
+    active = Math.max(0, Math.min(index, recents.length - 1));
+    await tick();
+    // focus put elsewhere meanwhile (a click, Tab) stays where it is
+    const lost = document.activeElement === null || document.activeElement === document.body;
+    if (lost) (recents.length > 0 ? list : openFolderButton)?.focus({ preventScroll: true });
+  }
+
   function onkeydown(e: KeyboardEvent): void {
     if (e.isComposing || recents.length === 0) return;
     switch (e.key) {
@@ -51,14 +68,11 @@
         e.preventDefault();
         open(recents[active], e.shiftKey);
         return;
-      case "Delete": {
-        const recent = recents[active];
-        if (!recent) return;
+      case "Delete":
+        if (!recents[active]) return;
         e.preventDefault();
-        void store.removeRecent(recent.path);
-        active = Math.max(0, Math.min(active, recents.length - 2));
+        void remove(active);
         return;
-      }
       default:
         return;
     }
@@ -103,6 +117,7 @@
         type="button"
         class="btn btn--primary"
         disabled={opening}
+        bind:this={openFolderButton}
         onclick={() => void store.openFolder()}
       >
         <FolderOpen size={14} aria-hidden="true" />
@@ -132,23 +147,28 @@
     <div class="columns" class:single={sections.length === 0}>
       <section class="column" aria-labelledby="recent-title">
         <h2 id="recent-title" class="menu-label">{t("welcome.recent")}</h2>
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <div
-          class="recents"
-          tabindex="0"
-          role="listbox"
-          aria-label={t("welcome.recent")}
-          aria-activedescendant={recents[active] ? `recent-${active}` : undefined}
-          bind:this={list}
-          {onkeydown}
-        >
-          {#if recents.length === 0}
-            <p class="empty">{t("welcome.noRecents")}</p>
-          {:else}
-            <ul>
+        {#if recents.length === 0}
+          <!-- nothing to choose: plain words, no list to land on -->
+          <p class="empty">{t("welcome.noRecents")}</p>
+        {:else}
+          <!-- a list box holds options only: a missing folder's Remove sits beside its option, drawn on its row -->
+          <div class="recents-box">
+            <ul
+              class="recents"
+              tabindex="0"
+              role="listbox"
+              aria-label={t("welcome.recent")}
+              aria-activedescendant={recents[active] ? `${uid}-recent-${active}` : undefined}
+              aria-keyshortcuts="Delete"
+              aria-describedby="{uid}-recent-keys"
+              bind:this={list}
+              {onkeydown}
+            >
               {#each recents as recent, i (recent.path)}
+                <!-- the keys are the list box's (it keeps the keyboard; this row is named by aria-activedescendant) -->
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <li
-                  id={`recent-${i}`}
+                  id="{uid}-recent-{i}"
                   role="option"
                   aria-selected={i === active}
                   aria-disabled={recent.missing}
@@ -158,34 +178,41 @@
                     active = i;
                     open(recent, e.shiftKey);
                   }}
-                  onkeydown={() => {}}
                 >
                   <FolderOpen size={15} aria-hidden="true" />
                   <span class="text">
-                    <span class="name">{recent.name}</span>
+                    <span class="name" id="{uid}-recent-{i}-name">{recent.name}</span>
                     <span class="path"
                       >{recent.path}{recent.missing ? ` ${t("welcome.notFound")}` : ""}</span
                     >
                   </span>
                   {#if recent.missing}
-                    <button
-                      type="button"
-                      class="btn btn--ghost btn--sm"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        void store.removeRecent(recent.path);
-                      }}
+                    <!-- room on the row for its Remove button (drawn over it, outside the list box) -->
+                    <span class="btn btn--ghost btn--sm room" aria-hidden="true"
+                      >{t("welcome.remove")}</span
                     >
-                      {t("welcome.remove")}
-                    </button>
                   {:else}
                     <span class="age">{relativeTime(recent.openedMs, now, formatLocale())}</span>
                   {/if}
                 </li>
               {/each}
             </ul>
-          {/if}
-        </div>
+            {#each recents as recent, i (recent.path)}
+              {#if recent.missing}
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm remove"
+                  style:--at={i}
+                  aria-describedby="{uid}-recent-{i}-name"
+                  onclick={() => void remove(i)}
+                >
+                  {t("welcome.remove")}
+                </button>
+              {/if}
+            {/each}
+            <span id="{uid}-recent-keys" hidden>{t("welcome.recentKeys")}</span>
+          </div>
+        {/if}
       </section>
       {#if sections.length > 0}
         <div class="column aside">
@@ -280,15 +307,28 @@
     margin: 0;
     padding-left: var(--sp-3);
   }
-  .recents {
+  /* one row's height (its two lines of text and padding): the Remove buttons outside the list are placed by it */
+  .recents-box {
+    --recent-row: max(40px, calc((var(--fs-ui) + var(--fs-ui-xs)) * 1.45 + 8px));
+    position: relative;
     margin-top: 4px;
+  }
+  /* the focus ring is the global one (2 px accent) */
+  .recents {
     border-radius: var(--radius-control);
-    outline: none;
   }
   ul {
     list-style: none;
     margin: 0;
     padding: 0;
+  }
+  .remove {
+    position: absolute;
+    top: calc(var(--at) * var(--recent-row) + (var(--recent-row) - 24px) / 2);
+    right: var(--sp-3);
+  }
+  .room {
+    visibility: hidden;
   }
   .empty {
     margin: 0;
@@ -301,7 +341,7 @@
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--sp-3);
-    min-height: 40px;
+    height: var(--recent-row);
     padding: 4px var(--sp-3);
     border-radius: var(--radius-control);
     color: var(--muted);
@@ -312,6 +352,32 @@
   }
   .row.is-active {
     background: var(--accent-soft);
+  }
+  /* the row the keyboard is on: a 2 px accent ring (3:1 in both themes) while the list has the keyboard */
+  .recents:focus-visible .row.is-active {
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+  /* Windows High Contrast drops fills and shadows: the row takes the system's highlight colors, kept as set */
+  @media (forced-colors: active) {
+    .row.is-active {
+      forced-color-adjust: none;
+      background: Highlight;
+      color: HighlightText;
+    }
+    .row.is-active :global(*) {
+      background: transparent;
+      color: HighlightText;
+    }
+    .recents:focus-visible {
+      outline-color: Highlight;
+    }
+    /* drawn over its row (not inside it): its own button colors, readable on a highlighted row */
+    .remove {
+      forced-color-adjust: none;
+      border-color: ButtonText;
+      background: ButtonFace;
+      color: ButtonText;
+    }
   }
   .row.is-missing {
     cursor: default;

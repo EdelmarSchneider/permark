@@ -117,6 +117,11 @@ pub struct NativeWords {
     #[serde(default)]
     #[ts(optional)]
     pub view_failed_exit: Option<String>,
+    /// The interface language (`de`, `pt-BR`). Only picks one of the backend's own translations for a dialog no page
+    /// may word (the program-start question), when the person's setting is the system's language.
+    #[serde(default)]
+    #[ts(optional)]
+    pub language: Option<String>,
 }
 
 impl Default for NativeWords {
@@ -134,6 +139,7 @@ impl Default for NativeWords {
                 .into(),
             window_failed: None,
             view_failed_exit: None,
+            language: None,
         }
     }
 }
@@ -157,6 +163,7 @@ impl NativeWords {
         .into_iter()
         .chain(self.window_failed.as_ref())
         .chain(self.view_failed_exit.as_ref())
+        .chain(self.language.as_ref())
         .all(fits)
             && self.close_anyway.trim() != self.wait.trim()
     }
@@ -460,7 +467,9 @@ fn create(handle: &AppHandle, window: &str, view: &str) {
         .background_color(page_color(handle, &native))
         // a middle | Shift click on a link, or `window.open`, never opens a web view window the app does not manage:
         // the app follows links itself; refused here, not left to the web view library's default
-        .on_new_window(|_url, _features| NewWindowResponse::Deny);
+        .on_new_window(|_url, _features| NewWindowResponse::Deny)
+        // a page never saves a file by itself (a link with `download`, a script's blob): the app's own Save writes
+        .on_download(|_webview, _event| false);
     #[cfg(not(target_os = "macos"))]
     let builder = match data_directory(&state(handle).env) {
         Some(dir) => builder.data_directory(dir),
@@ -1269,5 +1278,41 @@ mod tests {
             }
         }
         assert!(direct.is_empty(), "direct reparent in {direct:?}");
+    }
+
+    /// A download started by a page (a link with `download`, a script's blob) would write a file of the page's choosing
+    /// into the person's Downloads folder: every web view the app makes refuses it.
+    #[test]
+    fn every_web_view_refuses_downloads() {
+        let mut folders = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src")];
+        let (mut made, mut unguarded) = (0, Vec::new());
+        while let Some(folder) = folders.pop() {
+            for entry in std::fs::read_dir(&folder).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    folders.push(path);
+                    continue;
+                }
+                if path.extension().is_none_or(|e| e != "rs") {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path)
+                    .unwrap()
+                    .replace("\r\n", "\n");
+                let code = text.split("\n#[cfg(test)]\nmod tests").next().unwrap_or("");
+                let builders = code.matches("WebviewBuilder::new(").count()
+                    + code.matches("WebviewWindowBuilder::new(").count();
+                made += builders;
+                if code.matches(".on_download(").count() != builders {
+                    unguarded.push(path.display().to_string());
+                }
+            }
+        }
+        // the tab views and the hidden export page
+        assert!(made >= 2, "no web view builder found");
+        assert!(
+            unguarded.is_empty(),
+            "downloads not refused in {unguarded:?}"
+        );
     }
 }

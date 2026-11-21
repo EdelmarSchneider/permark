@@ -1,6 +1,7 @@
 //! Core <-> plugin boundary (deliberate design, see directives §2 exception): identity, manifest, lifecycle.
 //! Plugins get core services through [`PluginCx`] only; a running plugin = [`Running`] whose `Drop` tears it down.
 
+mod consent;
 mod enable;
 mod facts;
 mod files;
@@ -18,6 +19,7 @@ use std::sync::{Arc, PoisonError, RwLock};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub use consent::{GuardedConsent, ProgramConsent, ProgramConsentApi};
 pub use enable::{on_ids, resolve_enabled, EnableInputs, Enablement, OffReason};
 pub use facts::{
     CommitId, FileVersion, FileVersions, NoBlob, NoTracking, NoVersions, ProjectFacts, RepoHandle,

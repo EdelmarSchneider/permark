@@ -32,7 +32,7 @@
   import { withShow } from "./filter";
   import { WorktreeIcon, iconOf, projectIcon } from "./icons";
   import { EdgeScroll } from "./edgeScroll";
-  import { dropBlock, nameOf, parentOf, rowKey, topmost, type Row } from "./list";
+  import { dropBlock, nameOf, parentOf, rowKey, topmost, treePlaces, type Row } from "./list";
   import type { MenuEntry } from "./menu";
   import MovePlanDialog from "./MovePlanDialog.svelte";
   import NameField from "./NameField.svelte";
@@ -79,6 +79,9 @@
   let stopPress: (() => void) | null = null;
   let suppressClick = false;
   let handledScroll = 0;
+  /** A press inside the tree is under way: the focus it gives the tree names no row (the click chooses one, a click on
+   *  the empty part none; a row named then would be drawn only for the keyboard, and Delete would act on it unseen). */
+  let pressing = false;
 
   /** The keys of Refresh as the keyboard map has them now (`null`: none). */
   const refreshKeys = $derived(keyHint("explorer.refresh"));
@@ -123,7 +126,26 @@
   const last = $derived(
     Math.min(display.length, Math.ceil((scrollTop + viewport) / ROW) + OVERSCAN),
   );
-  const slice = $derived(display.slice(first, last));
+  /** Index (in `display`) of the row the keyboard is on; -1: none. */
+  const focusAt = $derived(
+    store.focus === null
+      ? -1
+      : display.findIndex((r) => r.type === "node" && r.node.path === store.focus),
+  );
+  /** The rows drawn with their index: those in view (and a few beyond), plus the row the keyboard is on wherever it
+   *  is, as `aria-activedescendant` must name an element on the page. In list order (a screen reader reads the DOM). */
+  const slice = $derived.by((): { row: Display; at: number }[] => {
+    const drawn = display.slice(first, last).map((row, n) => ({ row, at: first + n }));
+    const focused = display[focusAt];
+    if (focused === undefined || (focusAt >= first && focusAt < last)) return drawn;
+    const extra = { row: focused, at: focusAt };
+    return focusAt < first ? [extra, ...drawn] : [...drawn, extra];
+  });
+  /** Level and place among its folder's rows of each row, for screen readers. */
+  const places = $derived(treePlaces(store.rows));
+  /** Element ids of rows: from the component and the row's index, never the path (spaces, quotes, any length). */
+  const uid = $props.id();
+  const rowId = (at: number): string => `tree-${uid}-${at}`;
 
   const countText = $derived(
     store.shownFiles === store.totalFiles
@@ -303,7 +325,7 @@
 
   // the project nodes open on screen: plugins fetch their facts for these (git: the changed files inside)
   $effect(() => {
-    const open = slice.flatMap((row) =>
+    const open = slice.flatMap(({ row }) =>
       row.type === "node" && row.expanded && row.node.kind.type === "dir"
         ? (projects.memberAt(row.node.path)?.uid ?? [])
         : [],
@@ -643,6 +665,34 @@
     if (handled) e.preventDefault();
   }
 
+  /** Keys on a worktree header (a button with its own Tab stop: the tree's focus walks file rows only). Enter | Space
+   *  press it; Left | Right close | open it; the keys that walk the rows give the keyboard back to the tree first. */
+  function onheaderkey(e: KeyboardEvent, path: string, expanded: boolean): void {
+    if (e.isComposing) return;
+    switch (e.key) {
+      case "Enter":
+      case " ":
+        // the button's own press, not the tree's Enter (which opens the row the keyboard was on before)
+        e.stopPropagation();
+        break;
+      case "ArrowLeft":
+      case "ArrowRight":
+        e.preventDefault();
+        e.stopPropagation();
+        if (expanded === (e.key === "ArrowLeft")) store.toggleRoot(path);
+        break;
+      case "ArrowDown":
+      case "ArrowUp":
+      case "Home":
+      case "End":
+        // the event goes on to the tree, which moves among the rows
+        list?.focus();
+        break;
+      default:
+        break;
+    }
+  }
+
   /** The Menu key | Shift+F10: the menu of the row the keyboard is on, at that row. */
   function openMenuAtFocus(): void {
     const path = store.focus;
@@ -857,33 +907,52 @@
       role="tree"
       aria-label={t("project.explorer")}
       aria-multiselectable="true"
+      aria-activedescendant={focusAt < 0 ? undefined : rowId(focusAt)}
       tabindex="0"
       onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}
       oncontextmenu={onbackground}
+      onpointerdown={() => (pressing = true)}
+      onpointerup={() => (pressing = false)}
+      onfocus={() => {
+        if (!pressing) store.enter();
+        pressing = false;
+      }}
       {onkeydown}
     >
       {#if display.length === 0}
         <p class="note">{t("explorer.empty")}</p>
       {/if}
       <div class="space" style:height="{display.length * ROW}px">
-        {#each slice as row, at (rowPath(row) + row.type)}
-          {@const top = (first + at) * ROW}
+        {#each slice as { row, at } (rowPath(row) + row.type)}
+          {@const top = at * ROW}
+          {@const place = row.type === "new" ? undefined : places.get(rowKey(row))}
           {#if row.type === "root"}
+            {@const root = row.root}
+            <!-- a worktree header is never selected: no aria-selected (false would read as "not selected", a choice
+                 that does not exist; ARIA 1.2 requires none on a tree item) -->
+            <!-- svelte-ignore a11y_role_has_required_aria_props -->
             <button
               type="button"
               class={[
                 "row root",
-                store.outside === row.root.path && "drop-target",
-                block.has(row.root.path) && "drop-block",
+                store.outside === root.path && "drop-target",
+                block.has(root.path) && "drop-block",
               ]}
               style:top="{top}px"
               style:height="{ROW}px"
+              id={rowId(at)}
+              role="treeitem"
               aria-expanded={row.expanded}
-              onclick={() => store.toggleRoot(row.root.path)}
+              aria-level={place?.level ?? 1}
+              aria-posinset={place?.pos}
+              aria-setsize={place?.size}
+              data-root={root.path}
+              onclick={() => store.toggleRoot(root.path)}
+              onkeydown={(e) => onheaderkey(e, root.path, row.expanded)}
             >
               {#if row.expanded}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
               <WorktreeIcon size={15} />
-              <span class="name">{row.root.name}</span>
+              <span class="name">{root.name}</span>
             </button>
           {:else if row.type === "new"}
             <div
@@ -923,7 +992,9 @@
             {@const selected = store.selection.has(node.path)}
             {@const said = badgesOf(node)}
             {@const fact = member === null ? null : factOf(member)}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- no tabindex: the tree keeps the keyboard and names this row through aria-activedescendant (a press on
+                 a row focuses the tree; the keys are the tree's) -->
+            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
             <div
               class={[
                 "row",
@@ -936,10 +1007,12 @@
                   "drop-target",
                 block.has(node.path) && "drop-block",
               ]}
+              id={rowId(at)}
               role="treeitem"
-              tabindex="-1"
               aria-selected={selected}
-              aria-level={row.depth + 1}
+              aria-level={place?.level ?? row.depth + 1}
+              aria-posinset={place?.pos}
+              aria-setsize={place?.size}
               aria-expanded={isDir ? row.expanded : undefined}
               aria-label={member === null ? undefined : projectName(node, member, fact, said)}
               data-path={node.path}
@@ -1223,9 +1296,10 @@
   .row.is-selected .name {
     font-weight: 560;
   }
-  /* the row the keyboard is on: ringed only while the list has the keyboard's focus (not after a click) */
+  /* the row the keyboard is on: ringed only while the list has the keyboard's focus (not after a click); 2 px of the
+     accent stands out 3:1 from the selection fill and the panel in both themes */
   .list:focus-visible .row.is-focused {
-    box-shadow: inset 0 0 0 1px var(--accent-muted);
+    box-shadow: inset 0 0 0 2px var(--accent);
   }
   .row.is-dim {
     color: var(--faint);
@@ -1241,6 +1315,31 @@
   }
   .row.drop-block {
     background: var(--accent-soft);
+  }
+  /* Windows High Contrast drops fills and shadows: selection takes the system's highlight colors (kept as set, the
+     row's own colors included), rings become outlines */
+  @media (forced-colors: active) {
+    .row.is-selected {
+      forced-color-adjust: none;
+      background: Highlight;
+      color: HighlightText;
+    }
+    .row.is-selected :global(*) {
+      background: transparent;
+      color: HighlightText;
+    }
+    .list:focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+    .list:focus-visible .row.is-focused,
+    .row.drop-target {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+    .list:focus-visible .row.is-focused.is-selected {
+      outline-color: HighlightText;
+    }
   }
   .chev {
     display: grid;

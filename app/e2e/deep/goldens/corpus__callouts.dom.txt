@@ -107,6 +107,7 @@ div.reading
                 "JavaScript"
               button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
                 icon lucide-copy
+              span.sr-only
         details
           summary
             "A plain details block"

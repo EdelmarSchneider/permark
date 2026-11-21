@@ -158,6 +158,9 @@ const NEVER_OPEN: &[&str] = &[
     "svg", "mhtml", "chm", "swf", "svgz",
     // Office files that carry macros (shown as Office, never handed to Office from a click)
     "xlsm", "xltm", "xlam", "docm", "dotm", "pptm", "potm", "ppam", "ppsm", "sldm",
+    // the older binary Office formats: any of them may carry macros (VBA, Excel 4 sheets), the name never tells;
+    // Word opens a `.doc` renamed to `.rtf` as a `.doc`, without a word
+    "doc", "dot", "xls", "xlt", "xla", "ppt", "pot", "pps", "rtf",
 ];
 
 /// Whether the system's default program may be asked to open this file name.

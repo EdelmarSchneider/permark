@@ -61,19 +61,35 @@ parts:
       - curl
       - ca-certificates
       - dpkg
+      - minisign
     stage-packages:
       - libwebkit2gtk-4.1-0
       - libgtk-3-0
+    # The release's .deb, verified with the updater key (tauri.conf.json `plugins.updater.pubkey`) against the .deb.sig
+    # the release job signed: the snap never repacks bytes that release did not sign. The .deb of the version in
+    # app/package.json, or the build fails; the latest release's only when the Snap workflow was asked for it
+    # (snap/local/deb-release).
     override-build: |
       set -eu
       VER=$(grep -oE '"version": *"[^"]+"' "$CRAFT_PART_SRC/app/package.json" | head -n 1 | cut -d'"' -f4)
       DEB_URL="https://github.com/EdelmarSchneider/permark/releases/download/v${VER}/PerMark_${VER}_amd64.deb"
-      if ! curl -fsSLI "$DEB_URL" >/dev/null 2>&1; then
-        DEB_URL=$(curl -fsSL https://api.github.com/repos/EdelmarSchneider/permark/releases/latest | grep -oE 'https://[^"]+_amd64\.deb' | head -n 1)
+      if ! curl -fsSLI --retry 3 "$DEB_URL" >/dev/null 2>&1; then
+        if [ "$(cat "$CRAFT_PART_SRC/snap/local/deb-release" 2>/dev/null || true)" != "latest" ]; then
+          echo "The release v${VER} has no .deb (run the Snap workflow with the latest release's .deb to package that one)."
+          exit 1
+        fi
+        DEB_URL=$(curl -fsSL https://api.github.com/repos/EdelmarSchneider/permark/releases/latest |
+          grep -oE '"browser_download_url": *"https://[^"]+_amd64\.deb"' | head -n 1 | cut -d'"' -f4)
         VER=$(echo "$DEB_URL" | sed -E 's#.*/PerMark_([^_]+)_amd64\.deb#\1#')
       fi
+      case "$VER" in
+        "" | *[!0-9A-Za-z.+-]*) echo "unexpected version: $VER"; exit 1 ;;
+      esac
       craftctl set version="$VER"
-      curl -fsSL "$DEB_URL" -o /tmp/permark.deb
+      curl -fsSL --retry 3 "$DEB_URL" -o /tmp/permark.deb
+      curl -fsSL --retry 3 "$DEB_URL.sig" | base64 -d > /tmp/permark.deb.minisig
+      grep -oE '"pubkey": *"[^"]+"' "$CRAFT_PART_SRC/app/src-tauri/tauri.conf.json" | cut -d'"' -f4 | base64 -d > /tmp/permark.pub
+      minisign -V -q -p /tmp/permark.pub -m /tmp/permark.deb -x /tmp/permark.deb.minisig
       dpkg-deb -x /tmp/permark.deb "$CRAFT_PART_INSTALL"
-      rm -f /tmp/permark.deb
+      rm -f /tmp/permark.deb /tmp/permark.deb.minisig /tmp/permark.pub
       sed -i 's|^Icon=.*|Icon=${SNAP}/meta/gui/icon.png|' "$CRAFT_PART_INSTALL/usr/share/applications/PerMark.desktop"

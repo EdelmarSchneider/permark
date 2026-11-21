@@ -7,6 +7,8 @@ use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use permark_core::events::{CoreEvent, EventSink};
+use permark_core::plugins::ProgramConsent;
+use permark_core::process::ProgramCall;
 use serde_json::{json, Value};
 
 use super::options::{agent_key, Picks, OPTIONS_FILE};
@@ -562,6 +564,22 @@ struct Fx {
     copy: SharedCopy,
     session: Session,
     fake: Fake,
+    /// Answers the question before the person's own command first starts (no, unless a test says yes).
+    consent: Arc<Asked>,
+}
+
+/// Answers with `yes`; counts the questions.
+#[derive(Default)]
+struct Asked {
+    yes: AtomicBool,
+    asks: AtomicUsize,
+}
+
+impl ProgramConsent for Asked {
+    fn allow(&self, _call: &ProgramCall) -> bool {
+        self.asks.fetch_add(1, Ordering::SeqCst);
+        self.yes.load(Ordering::SeqCst)
+    }
 }
 
 const NOTES: &str = "Line one of the notes.\nLine two of the notes.\nLine three of the notes.\n";
@@ -619,9 +637,13 @@ impl Fx {
         let (vault, documents) = testing::open(project.path());
         let events = Arc::new(Events::default());
         let copy: SharedCopy = Arc::new(Mutex::new(None));
+        let consent = Arc::new(Asked::default());
+        let asks: Arc<dyn ProgramConsent> = Arc::clone(&consent) as _;
         let session = Session::new(Host {
             agents,
             launch,
+            approvals: ProgramApprovals::of(&testing::app_store(profile.path()), Some(asks))
+                .outside(vec![project.path().to_path_buf()]),
             project: testing::project(&vault, &documents),
             place: Some(profile.path().join("work")),
             run: Some(profile.path().join("run")),
@@ -638,6 +660,7 @@ impl Fx {
             copy,
             session,
             fake,
+            consent,
         }
     }
 
@@ -1421,8 +1444,12 @@ fn a_new_choice_applies_at_the_next_start() {
     // an own command has no name of the backend's: the window words it
     assert!(status.chosen);
     assert_eq!(status.agent_name, None);
+    // the person allows it at its first start (registry agents were never asked about)
+    assert_eq!(fx.consent.asks.load(Ordering::SeqCst), 0);
+    fx.consent.yes.store(true, Ordering::SeqCst);
     fx.ask("Three.");
     fx.turns_ended(3);
+    assert_eq!(fx.consent.asks.load(Ordering::SeqCst), 1);
     let plan = &fx.fake.plans()[2];
     assert_eq!(plan.program, own);
     assert_eq!(plan.args, ["--acp"]);
@@ -1720,6 +1747,66 @@ fn inside_a_snap_the_status_says_no_agent_can_start() {
     // nothing to start it with: the status's `needs` (snap) says why
     assert_eq!(error["error"], json!({ "code": "notFound" }));
     assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 0);
+}
+
+/// The person's own command starts only once they allowed it: a no starts nothing (no copy either) and says why; a
+/// yes starts it and is kept (no second question). A registry agent is never asked about.
+#[test]
+fn an_own_command_starts_only_once_allowed() {
+    let fx = Fx::choosing(
+        Some(&Choice::Command("my-agent --acp".to_owned())),
+        Arc::new(|_: &mut Peer, _: &Value| Some("end_turn")),
+    );
+    let program = testing::program(fx.bin.path(), "my-agent");
+    fx.ask("Hello.");
+    let list = fx.events.wait_for("error", WAIT, |list| {
+        list.iter().any(|e| e["state"] == "error")
+    });
+    let error = list.iter().find(|e| e["state"] == "error").unwrap();
+    assert_eq!(error["error"], json!({ "code": "notAllowed" }));
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 0);
+    assert_eq!(fx.consent.asks.load(Ordering::SeqCst), 1);
+    assert!(fx.copy.lock().unwrap().is_none());
+
+    fx.consent.yes.store(true, Ordering::SeqCst);
+    fx.ask("Hello again.");
+    fx.turns_ended(1);
+    // Windows adds the `PATHEXT` extension as listed (upper case)
+    let started = fx.fake.plans()[0].program.to_string_lossy().into_owned();
+    assert!(
+        started.eq_ignore_ascii_case(&program.to_string_lossy()),
+        "{started}"
+    );
+    assert_eq!(fx.consent.asks.load(Ordering::SeqCst), 2);
+    let approvals = ProgramApprovals::of(&testing::app_store(fx.profile.path()), None);
+    assert!(approvals.approved(&fx.fake.plans()[0].call()));
+
+    let listed = Fx::new(|_, _| Some("end_turn"));
+    listed.ask("Hello.");
+    listed.turns_ended(1);
+    assert_eq!(listed.consent.asks.load(Ordering::SeqCst), 0);
+}
+
+/// An own command whose program lies inside the project is refused like one never found: nobody asked, no copy,
+/// nothing started.
+#[test]
+fn an_own_command_inside_the_project_is_not_found() {
+    let fx = Fx::choosing(None, Arc::new(|_: &mut Peer, _: &Value| Some("end_turn")));
+    fx.consent.yes.store(true, Ordering::SeqCst);
+    let program = testing::program(fx.project.path(), "my-agent");
+    testing::app_store(fx.profile.path())
+        .app_file(CHOICE_FILE)
+        .save(&Choice::Command(format!("\"{}\" --acp", program.display())))
+        .unwrap();
+    fx.ask("Hello.");
+    let list = fx.events.wait_for("error", WAIT, |list| {
+        list.iter().any(|e| e["state"] == "error")
+    });
+    let error = list.iter().find(|e| e["state"] == "error").unwrap();
+    assert_eq!(error["error"], json!({ "code": "notFound" }));
+    assert_eq!(fx.consent.asks.load(Ordering::SeqCst), 0);
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 0);
+    assert!(fx.copy.lock().unwrap().is_none());
 }
 
 /// Claude's three options, without ids of its own: the request's.

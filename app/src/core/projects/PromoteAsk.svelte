@@ -72,7 +72,15 @@
       {t(kind === "tag" ? "tags.promoteAsk" : "projects.category.promoteAsk", { name, root })}
     </p>
     <p class="where">{t(vocabularyPlace(view))}</p>
+    <!-- the order of every dialog: Cancel first, the main answer last -->
     <div class="buttons">
+      <button
+        type="button"
+        class="btn btn--sm"
+        disabled={busy}
+        {onkeydown}
+        onclick={() => void back()}>{t("common.cancel")}</button
+      >
       <button
         type="button"
         class="btn btn--sm btn--primary"
@@ -80,13 +88,6 @@
         disabled={busy}
         {onkeydown}
         onclick={() => void go()}>{t("tags.promoteConfirm")}</button
-      >
-      <button
-        type="button"
-        class="btn btn--sm"
-        disabled={busy}
-        {onkeydown}
-        onclick={() => void back()}>{t("common.cancel")}</button
       >
     </div>
   </div>

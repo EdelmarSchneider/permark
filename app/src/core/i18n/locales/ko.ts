@@ -31,6 +31,7 @@ export default {
   "welcome.noRecents": "최근 폴더가 아직 없습니다.",
   "welcome.notFound": "(찾을 수 없음)",
   "welcome.remove": "제거",
+  "welcome.recentKeys": "Delete 키를 누르면 선택한 폴더를 목록에서 제거합니다.",
   "welcome.dropHint": "폴더나 파일을 여기에 끌어다 놓으면 열립니다.",
   "welcome.openFailed": "{path}을(를) 열 수 없습니다: {message}",
 
@@ -404,7 +405,7 @@ export default {
   "role.copilot": "Copilot 지침",
   "role.model-card": "모델 카드",
   "role.dataset-card": "데이터 세트 카드",
-  "structured.mode": "보기 방식",
+  "structured.mode": "표시 방식",
   "structured.tree": "트리",
   "structured.source": "소스",
   "structured.invalid": "올바르지 않은 내용이라 텍스트로 표시합니다.",
@@ -2159,6 +2160,7 @@ export default {
   "toon.notValid": "올바른 TOON 4.4가 아님",
   "convert.menu": "변환…",
   "convert.table": "변환…",
+  "convert.tableCommand": "표 변환…",
   "convert.title": "{name} 변환",
   "convert.fromPage": "페이지의 텍스트",
   "convert.close": "닫기",
@@ -3164,6 +3166,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "에이전트가 볼 수 있는 범위를 정하는 파일을 읽을 수 없습니다. 수정될 때까지 에이전트는 아무것도 받지 못합니다.",
   "acp.fail.startFailed": "에이전트의 프로그램을 시작할 수 없습니다.",
+  "acp.fail.notAllowed": "에이전트의 프로그램 실행을 허용하지 않았습니다.",
   "acp.fail.timedOut": "에이전트가 제시간에 응답하지 않았습니다.",
   "acp.fail.initFailed":
     "이 프로그램은 PerMark와 통신할 수 있는 에이전트처럼 응답하지 않았습니다. 명령을 확인하고 다시 시도하세요.",
@@ -3176,6 +3179,7 @@ export default {
   "acp.fail.exited": "에이전트의 프로그램이 예기치 않게 종료되었습니다.",
   "acp.fail.sendFailed": "메시지를 에이전트에 전달할 수 없습니다.",
   "acp.error.relativeProgram": "프로그램의 전체 경로나 이름만 입력하세요.",
+  "acp.error.commandTooLong": "명령이 너무 깁니다(최대 1000자).",
   "acp.error.networkProgram":
     "PerMark는 이 컴퓨터에 있는 프로그램만 실행하며, 네트워크 폴더에서는 실행하지 않습니다.",
   "acp.error.oneChoice": "에이전트 하나를 선택하거나 명령 하나를 입력하세요.",

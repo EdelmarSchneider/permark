@@ -43,6 +43,7 @@ export default {
   "welcome.noRecents": "Chưa có thư mục gần đây.",
   "welcome.notFound": "(không tìm thấy)",
   "welcome.remove": "Gỡ bỏ",
+  "welcome.recentKeys": "Nhấn Delete để gỡ thư mục đã chọn khỏi danh sách.",
   "welcome.dropHint": "Thả thư mục hoặc tệp vào đây để mở.",
   "welcome.openFailed": "Không thể mở {path}: {message}",
 
@@ -417,7 +418,7 @@ export default {
   "role.copilot": "Hướng dẫn cho Copilot",
   "role.model-card": "Thẻ mô hình",
   "role.dataset-card": "Thẻ tập dữ liệu",
-  "structured.mode": "Xem",
+  "structured.mode": "Hiển thị",
   "structured.tree": "Cây",
   "structured.source": "Nguồn",
   "structured.invalid": "Nội dung không hợp lệ nên được hiển thị dạng văn bản.",
@@ -2197,6 +2198,7 @@ export default {
   "toon.notValid": "Không phải TOON 4.4 hợp lệ",
   "convert.menu": "Chuyển đổi…",
   "convert.table": "Chuyển đổi…",
+  "convert.tableCommand": "Chuyển đổi bảng…",
   "convert.title": "Chuyển đổi {name}",
   "convert.fromPage": "văn bản từ trang",
   "convert.close": "Đóng",
@@ -3208,6 +3210,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "Không đọc được một tệp quy định những gì agent được xem. Agent không nhận được gì cho đến khi tệp được sửa.",
   "acp.fail.startFailed": "Không thể khởi động chương trình của agent.",
+  "acp.fail.notAllowed": "Bạn đã không cho phép khởi động chương trình của agent.",
   "acp.fail.timedOut": "Agent không trả lời kịp thời.",
   "acp.fail.initFailed":
     "Chương trình này không trả lời như một agent mà PerMark có thể giao tiếp. Hãy kiểm tra lệnh và thử lại.",
@@ -3220,6 +3223,7 @@ export default {
   "acp.fail.exited": "Chương trình của agent đã đóng bất ngờ.",
   "acp.fail.sendFailed": "Không thể chuyển tin nhắn cho agent.",
   "acp.error.relativeProgram": "Hãy viết đường dẫn đầy đủ của chương trình, hoặc chỉ tên của nó.",
+  "acp.error.commandTooLong": "Lệnh quá dài (tối đa 1000 ký tự).",
   "acp.error.networkProgram":
     "PerMark chỉ chạy các chương trình trên máy tính này, không chạy từ thư mục mạng.",
   "acp.error.oneChoice": "Hãy chọn một agent hoặc nhập một lệnh.",

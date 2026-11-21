@@ -222,6 +222,35 @@ describe("Quick open and Search everywhere", () => {
     expect(ui.finder.status).toBe("closed");
   });
 
+  it("names the row the keyboard is on by an id that is never the path (spaces, quotes)", async () => {
+    await open();
+    ui.openFinder("quick");
+    component = mount(Finder, { target, props: { preset: "quick" } });
+    flushSync();
+    const input = target.querySelector<HTMLInputElement>("input.field");
+    if (!input) throw new Error("no field");
+    type(input, "gui");
+    await until(() => rowTexts().some((t) => t.includes("guide.md")), "the file is listed");
+    const named = (): HTMLElement | null => {
+      const id = input.getAttribute("aria-activedescendant");
+      return id === null ? null : document.getElementById(id);
+    };
+    const first = named();
+    expect(first?.getAttribute("role")).toBe("option");
+    expect(first?.getAttribute("aria-selected")).toBe("true");
+    expect(first?.id).toMatch(/^finder-[\w-]+-\d+$/);
+    press(input, "ArrowDown");
+    flushSync();
+    const options = [...target.querySelectorAll<HTMLElement>("[role=option]")];
+    if (options.length > 1) {
+      expect(named()).toBe(options[1]);
+      expect(named()?.id).toMatch(/^finder-[\w-]+-\d+$/);
+    }
+    // the list the field controls is the one on the page
+    const controls = input.getAttribute("aria-controls") ?? "";
+    expect(document.getElementById(controls)?.getAttribute("role")).toBe("listbox");
+  });
+
   it("draws a hidden file dimmed with its mark, after the files that are not hidden", async () => {
     await open();
     ui.openFinder("quick");

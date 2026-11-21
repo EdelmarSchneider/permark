@@ -32,6 +32,7 @@ export default {
   "welcome.noRecents": "Nenhuma pasta recente ainda.",
   "welcome.notFound": "(não encontrada)",
   "welcome.remove": "Remover",
+  "welcome.recentKeys": "Pressione Delete para remover da lista a pasta selecionada.",
   "welcome.dropHint": "Solte pastas ou arquivos aqui para abri-los.",
   "welcome.openFailed": "Não foi possível abrir {path}: {message}",
 
@@ -2196,6 +2197,7 @@ export default {
   "toon.notValid": "TOON 4.4 inválido",
   "convert.menu": "Converter…",
   "convert.table": "Converter…",
+  "convert.tableCommand": "Converter tabela…",
   "convert.title": "Converter {name}",
   "convert.fromPage": "texto da página",
   "convert.close": "Fechar",
@@ -3214,6 +3216,7 @@ export default {
   "acp.fail.rulesUnreadable":
     "Não foi possível ler um arquivo que define o que os agentes podem ver. O agente não recebe nada até que ele seja corrigido.",
   "acp.fail.startFailed": "Não foi possível iniciar o programa do agente.",
+  "acp.fail.notAllowed": "Você não permitiu que o programa do agente fosse iniciado.",
   "acp.fail.timedOut": "O agente não respondeu a tempo.",
   "acp.fail.initFailed":
     "Este programa não respondeu como um agente com quem o PerMark consegue conversar. Confira o comando e tente de novo.",
@@ -3226,6 +3229,7 @@ export default {
   "acp.fail.exited": "O programa do agente fechou de forma inesperada.",
   "acp.fail.sendFailed": "Não foi possível entregar a mensagem ao agente.",
   "acp.error.relativeProgram": "Escreva o caminho completo do programa, ou só o nome dele.",
+  "acp.error.commandTooLong": "O comando é longo demais (no máximo 1000 caracteres).",
   "acp.error.networkProgram":
     "O PerMark só inicia programas deste computador, não de uma pasta de rede.",
   "acp.error.oneChoice": "Escolha um agente ou digite um comando.",

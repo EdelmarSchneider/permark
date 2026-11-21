@@ -18,6 +18,7 @@ function expected(): Required<NativeWords> {
     engineStopped: t("stuck.engineStopped"),
     windowFailed: t("stuck.windowFailed"),
     viewFailedExit: t("stuck.viewFailedExit"),
+    language: language.locale,
   };
 }
 
@@ -30,6 +31,7 @@ describe("the words of the system dialogs", () => {
     await language.choose("de", []);
     expect(nativeWords()).toEqual(expected());
     expect(nativeWords().closeAnyway).toBe("Trotzdem schließen");
+    expect(nativeWords().language).toBe("de");
   });
 
   it("the not-answering text names a page of the window: Close anyway may drop unsaved changes in the window's tabs", async () => {
