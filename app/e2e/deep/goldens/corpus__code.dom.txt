@@ -18,6 +18,7 @@ div.reading
               "Rust"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         div.code-block
           pre.is-numbered
             code
@@ -28,6 +29,7 @@ div.reading
               "Python"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         div.code-block
           div.code-title
             "A title with <angle> &"
@@ -40,6 +42,7 @@ div.reading
               "TypeScript"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         div.code-block
           pre
             code
@@ -47,6 +50,7 @@ div.reading
           div.corner
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         div.code-block
           pre
             code
@@ -59,6 +63,7 @@ div.reading
               icon lucide-arrow-left-right
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         div.code-block
           pre
             code
@@ -69,6 +74,7 @@ div.reading
               "Markdown"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         div.code-block
           pre
             code
@@ -76,6 +82,7 @@ div.reading
           div.corner
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         div.code-block
           pre
             code
@@ -85,6 +92,7 @@ div.reading
               "unknownlanguage"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         div.code-block
           pre
             code
@@ -95,3 +103,4 @@ div.reading
               "Diff"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
