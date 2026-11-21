@@ -190,6 +190,163 @@ fn the_snapshot_pins_every_package_and_sets_no_loader_variable() {
     }
 }
 
+/// What each agent of the snapshot reads in its working folder as its own settings (permissions, tools, servers,
+/// hooks; subagents | skills | commands | workflows that grant tools or run commands), one sample file per place, as
+/// its public documentation describes it. Empty: it reads none there that is known (settings in the user's profile,
+/// instructions only, which are documents). The copy keeps every listed file out; an agent new in the snapshot fails
+/// the test below until it has a row here.
+const AGENT_SETTINGS_OF: &[(&str, &[&str])] = &[
+    ("amp-acp", &[".amp/settings.json"]),
+    // a workflow step marked `// turbo` runs its command without asking
+    (
+        "antigravity-acp",
+        &[".agent/workflows/deploy.md", ".agent/skills/x/SKILL.md"],
+    ),
+    ("auggie", &[".augment/settings.json"]),
+    (
+        "claude-acp",
+        &[
+            ".claude/settings.json",
+            ".claude/settings.local.json",
+            ".claude/agents/a.md",
+            ".claude/skills/x/SKILL.md",
+            ".claude/commands/c.md",
+            ".claude/hooks/h.sh",
+            ".mcp.json",
+        ],
+    ),
+    (
+        "cline",
+        &[".cline/settings.json", ".clinerules/hooks/pre.sh"],
+    ),
+    (
+        "codebuddy-code",
+        &[
+            ".codebuddy/settings.json",
+            ".codebuddy/settings.local.json",
+            ".codebuddy/agents/a.md",
+            ".codebuddy/skills/x/SKILL.md",
+            ".codebuddy/commands/c.md",
+            ".mcp.json",
+        ],
+    ),
+    ("codex-acp", &[".codex/config.toml"]),
+    ("cursor", &[".cursor/cli.json", ".cursor/mcp.json"]),
+    (
+        "factory-droid",
+        &[
+            ".factory/settings.json",
+            ".factory/mcp.json",
+            ".factory/hooks/h.sh",
+            ".factory/droids/d.md",
+            ".factory/commands/c.md",
+        ],
+    ),
+    // MCP servers (commands it starts) and their keys, read from the working folder
+    (
+        "fast-agent",
+        &["fastagent.config.yaml", "fastagent.secrets.yaml"],
+    ),
+    (
+        "gemini",
+        &[".gemini/settings.json", ".gemini/commands/c.toml"],
+    ),
+    (
+        "github-copilot-cli",
+        &[
+            ".github/agents/a.agent.md",
+            ".github/hooks/h.json",
+            ".github/skills/x/SKILL.md",
+        ],
+    ),
+    ("goose", &[".goose/config.yaml"]),
+    ("junie", &[".junie/mcp/mcp.json"]),
+    ("kilo", &[".kilo/kilo.json", ".kilocode/mcp.json"]),
+    (
+        "kiro",
+        &[
+            ".kiro/settings/mcp.json",
+            ".kiro/hooks/h.kiro.hook",
+            ".kiro/agents/a.json",
+        ],
+    ),
+    ("mistral-vibe", &[".vibe/config.toml"]),
+    (
+        "opencode",
+        &[".opencode/agent/a.md", "opencode.json", "opencode.jsonc"],
+    ),
+    (
+        "opencode-v2",
+        &[".opencode/agent/a.md", "opencode.json", "opencode.jsonc"],
+    ),
+    // extensions are code it loads
+    ("pi-acp", &[".pi/settings.json", ".pi/extensions/e.ts"]),
+    (
+        "qoder",
+        &[
+            ".qoder/settings.json",
+            ".qoder/settings.local.json",
+            ".qoder/agents/a.md",
+            ".qoder/skills/x/SKILL.md",
+            ".qoder/commands/c.md",
+        ],
+    ),
+    ("qwen-code", &[".qwen/settings.json"]),
+    // tool policies and MCP servers
+    ("vtcode", &["vtcode.toml"]),
+    // none known in the working folder from their public documentation when classified: look again when one
+    // documents project settings
+    ("agoragentic-acp", &[]),
+    ("autohand", &[]),
+    ("bob", &[]),
+    ("cortex-code", &[]),
+    ("corust-agent", &[]),
+    ("crow-cli", &[]),
+    ("deepagents", &[]),
+    ("devin", &[]),
+    ("dimcode", &[]),
+    ("dirac", &[]),
+    ("glm-acp-agent", &[]),
+    ("grok-build", &[]),
+    ("harn", &[]),
+    ("kimchi", &[]),
+    ("kimi", &[]),
+    ("kimi-code", &[]),
+    ("minimax-code", &[]),
+    ("minion-code", &[]),
+    ("muse-code", &[]),
+    ("nova", &[]),
+    ("poolside", &[]),
+    ("sigit", &[]),
+    ("stakpak", &[]),
+];
+
+/// Every agent the snapshot offers has its project settings classified, and each one it reads stays out of the copy:
+/// a refreshed snapshot with a new agent fails here until someone looks up what that agent loads from its folder.
+#[test]
+fn every_agent_of_the_snapshot_has_its_project_settings_kept_out() {
+    let classified = |id: &str| AGENT_SETTINGS_OF.iter().filter(|(c, _)| *c == id).count();
+    let unclassified: Vec<&str> = snapshot()
+        .iter()
+        .map(|listed| listed.id.as_str())
+        .filter(|id| classified(id) != 1)
+        .collect();
+    assert!(
+        unclassified.is_empty(),
+        "classify the project settings of {unclassified:?} in AGENT_SETTINGS_OF (one row each) and keep them out of \
+         the copy (work.rs)"
+    );
+    for (id, files) in AGENT_SETTINGS_OF {
+        for file in *files {
+            assert!(crate::work::kept_out(file), "{id}: {file}");
+            assert!(
+                crate::work::kept_out(&format!("sub/{file}")),
+                "{id}: sub/{file}"
+            );
+        }
+    }
+}
+
 #[test]
 fn agents_without_a_way_to_run_here_are_left_out() {
     let ids = |platforms: &[&str]| -> Vec<String> {

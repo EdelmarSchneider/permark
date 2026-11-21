@@ -3,4 +3,4 @@
 /**
  * What went wrong with the agent: a closed set the window words in the person's language.
  */
-export type AcpErrorCode = "noAgent" | "notFound" | "noProfile" | "copyFailed" | "tooLarge" | "projectsNotReady" | "startFailed" | "timedOut" | "initFailed" | "protocolVersion" | "sessionFailed" | "loginFailed" | "stillNeedsLogin" | "refused" | "protocol" | "exited" | "sendFailed" | "sessionGone" | "optionRefused";
+export type AcpErrorCode = "noAgent" | "notFound" | "noProfile" | "copyFailed" | "tooLarge" | "projectsNotReady" | "rulesUnreadable" | "startFailed" | "timedOut" | "initFailed" | "protocolVersion" | "sessionFailed" | "loginFailed" | "stillNeedsLogin" | "refused" | "protocol" | "exited" | "sendFailed" | "sessionGone" | "optionRefused";

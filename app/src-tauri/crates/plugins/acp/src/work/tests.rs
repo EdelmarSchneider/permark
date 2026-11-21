@@ -5,6 +5,7 @@ use permark_core::document::Documents;
 use permark_core::edit::lines;
 use permark_core::fsx::Encoding;
 use permark_core::paths::Vault;
+use permark_core::projects::agent_view::{RulesFallback, RulesProblem, RulesWhy};
 use permark_core::ErrorKind;
 
 use super::*;
@@ -127,6 +128,13 @@ fn agent_settings_and_machinery_are_kept_out() {
         ".factory/droids/reviewer.md",
         ".factory/commands/x.md",
         ".kiro/agents/a.json",
+        ".codebuddy/settings.local.json",
+        ".qoder/agents/a.md",
+        ".agent/workflows/deploy.md",
+        ".github/agents/a.agent.md",
+        "docs/.pi/extensions/e.ts",
+        "fastagent.config.yaml",
+        "vtcode.toml",
     ] {
         assert!(kept_out(path), "{path}");
     }
@@ -146,6 +154,12 @@ fn agent_settings_and_machinery_are_kept_out() {
         "QWEN.md",
         ".goosehints",
         "kiro/settings/x.md",
+        ".agent/rules/style.md",
+        ".qoder/rules/style.md",
+        ".codebuddy/rules/style.md",
+        ".github/copilot-instructions.md",
+        ".github/workflows/ci.yml",
+        "github/agents/a.md",
     ] {
         assert!(!kept_out(path), "{path}");
     }
@@ -229,6 +243,75 @@ impl Fx {
     }
 }
 
+/// A rule file that cannot be read never opens the copy to everything: with no earlier good read of it no copy is
+/// made (the refusal names the file); once read well, its last good rules keep out what they kept out.
+#[test]
+fn an_unreadable_rule_file_refuses_the_copy_until_last_good_rules_stand_in() {
+    let f = fx(&[("a.md", b"a\n"), ("secret/s.md", b"s\n")]);
+    let aiignore = f.project.path().join(".aiignore");
+    std::fs::create_dir(&aiignore).unwrap();
+    let store = permark_core::state::StateStore::for_project(
+        &permark_core::state::AppDirs::under(&f.profile.path().join("state")),
+        f.vault.main(),
+    );
+    let project = f.access().with_store(store);
+    let closed = RulesProblem {
+        file: ".aiignore".to_owned(),
+        why: RulesWhy::NotAFile,
+        fallback: RulesFallback::Closed,
+    };
+    assert_eq!(project.rules_problem(), Some(closed));
+    let error = WorkCopy::build(project.clone(), f.dir()).err().unwrap();
+    assert_eq!(error.kind, ErrorKind::Unavailable);
+    assert_eq!(error.detail.as_deref(), Some("rulesUnreadable"));
+    assert_eq!(error.subject.as_deref(), Some(".aiignore"));
+    assert!(!f.dir().exists());
+
+    std::fs::remove_dir(&aiignore).unwrap();
+    f.put_real(".aiignore", b"secret/\n");
+    let mut work = WorkCopy::build(project.clone(), f.dir()).unwrap();
+    assert_eq!(project.rules_problem(), None);
+    assert!(copied(&work, "secret/s.md").is_none());
+
+    // too large now: the copy is brought up to date under the last good rules
+    let big = format!("secret/\n{}", "#".repeat(1_153_434));
+    f.put_real(".aiignore", big.as_bytes());
+    f.put_real("b.md", b"b\n");
+    work.sync().unwrap();
+    assert_eq!(copied(&work, "b.md").unwrap(), b"b\n");
+    assert!(copied(&work, "secret/s.md").is_none());
+    assert_eq!(
+        project.rules_problem().map(|p| (p.why, p.fallback)),
+        Some((RulesWhy::TooLarge, RulesFallback::LastGood))
+    );
+}
+
+/// With no profile at hand the rules are still read checked: a broken team file keeps the copy from being made,
+/// never read as "no rules".
+#[test]
+fn without_a_profile_a_broken_team_file_refuses_the_copy() {
+    let f = fx(&[
+        ("a.md", b"a\n"),
+        ("secret/s.md", b"s\n"),
+        (
+            ".permark/config.toml",
+            b"[agent]\ndeny_paths = \"secret/\"\n",
+        ),
+    ]);
+    let error = WorkCopy::build(f.access(), f.dir()).err().unwrap();
+    assert_eq!(error.detail.as_deref(), Some("rulesUnreadable"));
+    assert_eq!(error.subject.as_deref(), Some(".permark/config.toml"));
+    assert!(!f.dir().exists());
+    // read well: its rules keep out what they name
+    f.put_real(
+        ".permark/config.toml",
+        b"[agent]\ndeny_paths = [\"secret/\"]\n",
+    );
+    let work = f.build();
+    assert_eq!(copied(&work, "a.md").unwrap(), b"a\n");
+    assert!(copied(&work, "secret/s.md").is_none());
+}
+
 #[test]
 fn a_copy_inside_the_project_is_refused() {
     let f = fx(&[("a.md", b"a\n")]);
@@ -309,6 +392,25 @@ fn each_kind_of_change_is_listed() {
     assert_eq!(changes[3].hunks[0].new_lines[0], "hello");
     assert_eq!(changes[2].hunks[0].old_lines[0], "bye");
     assert!(changes[0].hunks.is_empty() && changes[4].hunks.is_empty());
+}
+
+/// The list reads the copy first: a file the agent left as it was costs no read of the person's file.
+#[test]
+fn an_unchanged_copy_reads_no_real_file() {
+    let f = fx(&[
+        ("a.md", b"one\n"),
+        ("b.md", b"two\n"),
+        ("docs/c.md", b"three\n"),
+    ]);
+    let mut work = f.build();
+    let before = real_reads();
+    assert_none(&work.refresh().unwrap().files);
+    assert_eq!(real_reads() - before, 0);
+    // a changed copy is still compared with the real file
+    edit_copy(&work, "b.md", b"TWO\n");
+    let list = work.refresh().unwrap();
+    assert_eq!(kinds(&list.files), [("b.md", Kind::Modified)]);
+    assert_eq!(real_reads() - before, 1);
 }
 
 /// Each run carries the real file's line above and below it; the empty piece after a final line break is no line.
@@ -551,6 +653,45 @@ fn sync_brings_the_persons_edits_and_keeps_both_changed() {
     assert_eq!(copied(&work, "both.md").unwrap(), b"person\n");
     assert_none(&work.reject("dropped.md", None).unwrap().files);
     assert_eq!(copied(&work, "dropped.md").unwrap(), b"new\n");
+}
+
+/// A file hidden while the agent works: a reject (a hunk, the whole file) never brings its real lines into the copy,
+/// and the next sync takes the copy of every newly hidden file out (changed or not) along with its baseline.
+#[test]
+fn a_file_hidden_mid_session_leaves_the_copy_and_never_gets_real_lines() {
+    let f = fx(&[
+        ("hunk.md", b"1\n2\n3\n"),
+        ("whole.md", b"w\n"),
+        ("gone.md", b"g\n"),
+        ("synced.md", b"s\n"),
+        ("kept.md", b"k\n"),
+    ]);
+    let mut work = f.build();
+    edit_copy(&work, "hunk.md", b"1\nTWO\n3\n");
+    edit_copy(&work, "whole.md", b"agent\n");
+    std::fs::remove_file(work.copy_path("gone.md").unwrap()).unwrap();
+    edit_copy(&work, "synced.md", b"agent\n");
+    let changes = work.refresh().unwrap().files;
+    let hunk = keys(&changes, "hunk.md", &[0]);
+    f.put_real(".aiignore", b"hunk.md\nwhole.md\ngone.md\nsynced.md\n");
+    // what the person writes into a hidden file after hiding it
+    f.put_real("whole.md", b"secret\n");
+
+    work.reject("hunk.md", Some(&hunk)).unwrap();
+    work.reject("whole.md", None).unwrap();
+    work.reject("gone.md", None).unwrap();
+    for path in ["hunk.md", "whole.md", "gone.md"] {
+        assert_eq!(copied(&work, path), None, "{path}");
+    }
+    work.sync().unwrap();
+    for path in ["hunk.md", "whole.md", "gone.md", "synced.md"] {
+        assert_eq!(copied(&work, path), None, "{path}");
+    }
+    assert_eq!(copied(&work, "kept.md").unwrap(), b"k\n");
+    assert_none(&work.refresh().unwrap().files);
+    assert!(work.undo("hunk.md").is_err());
+    assert_eq!(f.real("whole.md"), b"secret\n");
+    assert_eq!(f.real("synced.md"), b"s\n");
 }
 
 #[test]

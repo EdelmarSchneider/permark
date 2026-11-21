@@ -21,9 +21,11 @@ use permark_core::edit::{lines, LineEdit};
 use permark_core::fsx::{self, ContentHash, Decoded, FsxError};
 use permark_core::paths::{self, Root, Vault, VaultPath};
 use permark_core::plugins::ProjectServices;
-use permark_core::projects::agent_view::{Guard, AI_IGNORE, PRIVATE_FOLDERS};
+use permark_core::projects::agent_view::{
+    Guard, RulesProblem, AI_IGNORE, PRIVATE_FILES, PRIVATE_FOLDERS,
+};
 use permark_core::projects::Projects;
-use permark_core::settings::ProjectConfig;
+use permark_core::state::StateStore;
 use permark_core::tree::Explorer;
 use permark_core::watch::OwnWrites;
 use permark_core::{ErrorKind, IpcError};
@@ -51,11 +53,11 @@ pub const MAX_LINE_BYTES: usize = 4 << 10;
 const MAX_UNDO_BYTES: usize = 64 * 1024 * 1024;
 /// Longest wait for the projects inside the folder: their rules hide paths, so no copy is made without them.
 const RULES_WAIT: Duration = Duration::from_secs(5);
+/// Detail of the refusal while a rule file cannot be read and no last good rules of it stand in (subject: the file).
+pub const RULES_UNREADABLE: &str = "rulesUnreadable";
 
-/// Files naming what agents may not see (any depth): their lines would tell the agent the hidden names.
-const PRIVATE_FILES: [&str; 1] = [AI_IGNORE];
-/// Folders agents read as their own settings (permissions, tools, servers, hooks), any depth.
-const AGENT_FOLDERS: [&str; 10] = [
+/// Folders agents read as their own settings (permissions, tools, servers, hooks, extensions), any depth.
+const AGENT_FOLDERS: [&str; 11] = [
     ".codex",
     ".gemini",
     ".cursor",
@@ -66,24 +68,24 @@ const AGENT_FOLDERS: [&str; 10] = [
     ".kilo",
     ".cline",
     ".amp",
+    ".pi",
 ];
 /// Files agents read as their own settings, any depth.
-const AGENT_FILES: [&str; 3] = [".mcp.json", "opencode.json", "opencode.jsonc"];
+const AGENT_FILES: [&str; 6] = [
+    ".mcp.json",
+    "opencode.json",
+    "opencode.jsonc",
+    "fastagent.config.yaml",
+    "fastagent.secrets.yaml",
+    "vtcode.toml",
+];
 /// Agent folders that also hold instructions (documents, kept): the settings | servers | hooks inside them (files or
 /// folders, right under the agent folder) stay out, and so do subagents | skills | commands: their headers grant
 /// tools, a permission mode or servers once loaded.
-const AGENT_SETTINGS: [(&str, &[&str]); 8] = [
-    (
-        ".claude",
-        &[
-            "settings.json",
-            "settings.local.json",
-            "agents",
-            "skills",
-            "commands",
-            "hooks",
-        ],
-    ),
+const AGENT_SETTINGS: [(&str, &[&str]); 12] = [
+    (".claude", &CLAUDE_LIKE),
+    (".codebuddy", &CLAUDE_LIKE),
+    (".qoder", &CLAUDE_LIKE),
     (".kilocode", &["mcp.json"]),
     (".junie", &["mcp"]),
     (".kiro", &["settings", "hooks", "agents"]),
@@ -94,6 +96,19 @@ const AGENT_SETTINGS: [(&str, &[&str]); 8] = [
     ),
     (".augment", &["settings.json"]),
     (".vibe", &["config.toml"]),
+    // a workflow step can be marked to run its command without asking
+    (".agent", &["workflows", "skills"]),
+    // CI workflows and instructions stay: they are documents
+    (".github", &["agents", "hooks", "skills"]),
+];
+/// The settings of Claude's folder layout, which other agents copy under their own folder name.
+const CLAUDE_LIKE: [&str; 6] = [
+    "settings.json",
+    "settings.local.json",
+    "agents",
+    "skills",
+    "commands",
+    "hooks",
 ];
 
 /// `segment` is one of `names` in any case, on every OS: the project | the copy can sit on a volume that ignores case
@@ -263,6 +278,9 @@ pub struct Project {
     own: Arc<OwnWrites>,
     /// Projects inside the folder (their agent rules); `None` in compositions without them.
     projects: Option<Arc<Projects>>,
+    /// The project's state: where the last good rules of a rule file that cannot be read are kept (profile only).
+    /// `None` in compositions without one: such a file then has none to stand on.
+    store: Option<StateStore>,
 }
 
 /// The real files a copy holds: `(project path, absolute path)`.
@@ -288,6 +306,7 @@ impl Project {
             explorer,
             own,
             projects: None,
+            store: None,
         }
     }
 
@@ -305,34 +324,74 @@ impl Project {
         }
     }
 
+    /// With the project's state, whose profile keeps the last good rules of its rule files.
+    #[must_use]
+    pub fn with_store(self, store: StateStore) -> Self {
+        Self {
+            store: Some(store),
+            ..self
+        }
+    }
+
     #[must_use]
     pub fn root(&self) -> &Root {
         self.vault.main()
     }
 
-    /// What agents may not see now: `.aiignore`, `[agent] deny_paths`, the projects inside (read fresh: they can
-    /// change between prompts). Fails closed while the projects inside are not known.
-    fn guard(&self) -> Result<Guard, IpcError> {
+    /// The rules read now: `.aiignore` + `[agent] deny_paths`, each read checked (one that cannot be read stands on
+    /// its last good rules; with no store, none stand in: closed), and the projects inside; `false`: those are not
+    /// known within `wait` (the folder's own rules alone).
+    fn rules(&self, wait: Duration) -> (Guard, bool) {
         let root = self.vault.main();
-        let guard = Guard::new(root, &ProjectConfig::load(root).agent_deny_paths);
+        let guard = match &self.store {
+            Some(store) => Guard::checked(root, store),
+            None => Guard::checked_alone(root),
+        };
         match &self.projects {
-            Some(projects) => {
-                let map = projects.agent_map(RULES_WAIT).ok_or_else(|| {
-                    IpcError::new(ErrorKind::Unavailable).detail("projectsNotReady")
-                })?;
-                Ok(guard.with_projects(map, None))
-            }
-            None => Ok(guard),
+            // closed already: nothing the projects inside add opens it
+            Some(_) if guard.closed() => (guard, true),
+            Some(projects) => match projects.agent_map(wait) {
+                Some(map) => (guard.with_projects(map, None), true),
+                None => (guard, false),
+            },
+            None => (guard, true),
         }
     }
 
+    /// What agents may not see now (read fresh: the rules and the projects inside can change between prompts). Fails
+    /// closed while the projects inside are not known, and while a rule file that cannot be read has no last good
+    /// rules (everything would be hidden: no copy, no passage).
+    ///
+    /// # Errors
+    /// `Unavailable`: `projectsNotReady`; [`RULES_UNREADABLE`] with the rule file as subject.
+    fn guard(&self) -> Result<Guard, IpcError> {
+        let (guard, known) = self.rules(RULES_WAIT);
+        if !known {
+            return Err(IpcError::new(ErrorKind::Unavailable).detail("projectsNotReady"));
+        }
+        if guard.closed() {
+            let file = guard
+                .rules_problem()
+                .map_or(AI_IGNORE, |problem| problem.file.as_str());
+            return Err(refusal(ErrorKind::Unavailable, file, RULES_UNREADABLE));
+        }
+        Ok(guard)
+    }
+
+    /// The rule file that cannot be read now, the one the person is told about first (`None`: every one reads well).
+    /// Never waits for the projects inside: until they are known, only the folder's own files count.
+    #[must_use]
+    pub fn rules_problem(&self) -> Option<RulesProblem> {
+        self.rules(Duration::ZERO).0.rules_problem().cloned()
+    }
+
     /// The real files an agent may see: the tree's walk (its ignore rules), minus hidden paths and agent settings,
-    /// minus files past the size cap.
+    /// minus files past the size cap; with the rules it was made under.
     ///
     /// # Errors
     /// `TooLarge` (`scanCutOff` | `tooManyFiles` | `tooManyBytes`): a partial copy would show the agent a project with
     /// files missing.
-    fn listing(&self) -> Result<Listing, IpcError> {
+    fn listing(&self) -> Result<(Guard, Listing), IpcError> {
         let guard = self.guard()?;
         let cancel = AtomicBool::new(false);
         let scan = self.explorer.scan_folder(
@@ -365,14 +424,14 @@ impl Project {
         if listing.bytes > MAX_TOTAL_BYTES {
             return Err(IpcError::new(ErrorKind::TooLarge).detail("tooManyBytes"));
         }
-        Ok(listing)
+        Ok((guard, listing))
     }
 
     /// Whether agents may not see the project path `path` now (`.aiignore`, `[agent] deny_paths`, private projects
     /// inside, `.git`, `.permark`): the copy leaves it out, and nothing of it may reach an agent another way.
     ///
     /// # Errors
-    /// `InvalidPath`: no project path; `Unavailable` (`projectsNotReady`).
+    /// `InvalidPath`: no project path; `Unavailable` (`projectsNotReady` | [`RULES_UNREADABLE`]).
     pub fn hidden(&self, path: &str) -> Result<bool, IpcError> {
         let path = VaultPath::parse(path)?;
         Ok(self.guard()?.hidden(path.as_str(), false))
@@ -392,7 +451,7 @@ impl Project {
     /// it to (an 8.3 short name such as `GIT~1`, another spelling, a link) may be kept out | hidden.
     ///
     /// # Errors
-    /// `InvalidPath` | `PathEscape`; `Denied` (`denied`); `Unavailable` (`projectsNotReady`).
+    /// `InvalidPath` | `PathEscape`; `Denied` (`denied`); `Unavailable` (`projectsNotReady` | [`RULES_UNREADABLE`]).
     fn destination(&self, path: &str) -> Result<PathBuf, IpcError> {
         let parsed = VaultPath::parse(path)?;
         let abs = self.vault.resolve(&parsed)?;
@@ -436,9 +495,23 @@ enum Side {
     Link,
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Real files this thread read to compare with the copy (tests count them).
+    static REAL_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Real files this thread read to compare with the copy.
+#[cfg(test)]
+fn real_reads() -> u64 {
+    REAL_READS.with(std::cell::Cell::get)
+}
+
 impl Side {
     /// The real file (the project's own links are the person's: the vault resolved them inside the folder).
     fn real(abs: &Path) -> Result<Self, IpcError> {
+        #[cfg(test)]
+        REAL_READS.with(|n| n.set(n.get() + 1));
         if abs.is_dir() {
             return Ok(Self::Missing);
         }
@@ -735,7 +808,7 @@ impl WorkCopy {
                 .subject(dir.display().to_string())
                 .detail("insideProject"));
         }
-        let listing = project.listing()?;
+        let (_, listing) = project.listing()?;
         let mut copy = Self {
             project,
             dir,
@@ -871,13 +944,14 @@ impl WorkCopy {
     }
 
     /// Brings the person's changes into the copy (before each prompt): a real file changed where the copy is
-    /// unchanged replaces the copy; new real files join it; a real file gone (or now hidden) leaves an unchanged copy.
-    /// Where both changed, the agent's version stays (listed as a conflict). Nothing goes behind a link of the copy.
+    /// unchanged replaces the copy; new real files join it; a real file gone leaves an unchanged copy. Where both
+    /// changed, the agent's version stays (listed as a conflict). A file hidden since it was copied leaves the copy,
+    /// changed or not, its real file never read. Nothing goes behind a link of the copy.
     ///
     /// # Errors
     /// The listing's refusals; IO.
     pub fn sync(&mut self) -> Result<(), IpcError> {
-        let listing = self.project.listing()?;
+        let (guard, listing) = self.project.listing()?;
         self.skipped = listing.skipped;
         let mut listed = HashSet::with_capacity(listing.files.len());
         for (path, abs) in listing.files {
@@ -910,6 +984,10 @@ impl WorkCopy {
             .map(|(path, base)| (path.clone(), *base))
             .collect();
         for (path, base) in gone {
+            if guard.hidden(&path, false) {
+                self.forget(&path)?;
+                continue;
+            }
             match self.read_copy(&path)? {
                 Side::Bytes(bytes) if fsx::hash(&bytes) == base => {
                     self.drop_copy(&path)?;
@@ -969,14 +1047,18 @@ impl WorkCopy {
 
     /// The difference of one file now (`None`: no change to offer).
     fn look(&self, path: &str) -> Result<Option<Look>, IpcError> {
-        let real = Side::real(&self.project.resolve(path)?)?;
         let copy = self.read_copy(path)?;
         let baseline = self.files.get(path).copied();
+        // the copy first: a file the agent left as it was (most of them) costs no read of the person's file
+        match (baseline, &copy) {
+            (None, Side::Missing) => return Ok(None),
+            (Some(base), Side::Bytes(bytes)) if fsx::hash(bytes) == base => return Ok(None),
+            _ => {}
+        }
+        let real = Side::real(&self.project.resolve(path)?)?;
         let kind = match (baseline, &copy) {
             (_, Side::Link) => FileChangeKind::Link,
-            (None, Side::Missing) => return Ok(None),
             (None, _) => FileChangeKind::Added,
-            (Some(base), Side::Bytes(bytes)) if fsx::hash(bytes) == base => return Ok(None),
             (Some(base), Side::Missing) => match &real {
                 Side::Missing => return Ok(None),
                 _ if real.hash() == Some(base) => FileChangeKind::Deleted,
@@ -1297,18 +1379,22 @@ impl WorkCopy {
 
     /// Drops the agent's change in the copy: the hunks `keys` name of a modified file get the real lines back; a link
     /// goes (a file the copy had there gets the real one back); anything else (`None`: the whole file) takes the real
-    /// file as it is now. What it replaced is kept for [`Self::undo`] (a link: never put back). Answers the updated
-    /// list.
+    /// file as it is now. A file hidden since it was copied leaves the copy whole instead, its real file never read.
+    /// What it replaced is kept for [`Self::undo`] (a link, a hidden file: never put back). Answers the updated list.
     ///
     /// # Errors
     /// `NotFound` (`noChange`), `Conflict` (`outdated` | `linkInPath`), `InvalidData` (`unknownHunk` |
-    /// `wholeFileOnly`), IO.
+    /// `wholeFileOnly`), `InvalidPath`, `Unavailable` (`projectsNotReady` | [`RULES_UNREADABLE`]), IO.
     pub fn reject(&mut self, path: &str, keys: Option<&[String]>) -> Result<ChangeList, IpcError> {
         let done = self.discard(path, keys);
         self.answer(path, done)
     }
 
     fn discard(&mut self, path: &str, keys: Option<&[String]>) -> Result<(), IpcError> {
+        // the agent may no longer see it: no line of the real file goes into the copy
+        if self.project.hidden(path)? {
+            return self.forget(path);
+        }
         let look = self
             .look(path)?
             .ok_or_else(|| refusal(ErrorKind::NotFound, path, "noChange"))?;
@@ -1363,6 +1449,18 @@ impl WorkCopy {
         Ok(())
     }
 
+    /// Takes a file out of the copy for good, never reading the real one: the copy's file (a link there itself; behind
+    /// a link on the way nothing is the copy's), its baseline, review state and undo.
+    fn forget(&mut self, path: &str) -> Result<(), IpcError> {
+        if self.reach(path)?.1 != Reach::Linked {
+            self.drop_copy(path)?;
+        }
+        self.files.remove(path);
+        self.reviewed.remove(path);
+        self.forget_undo(path);
+        Ok(())
+    }
+
     /// The copy takes the real file as it is now (gone | past the cap: out of the copy, no baseline).
     fn take_real(&mut self, path: &str, real: &Side) -> Result<(), IpcError> {
         match real {
@@ -1383,7 +1481,8 @@ impl WorkCopy {
     /// it still holds what the choice left. Answers the updated list.
     ///
     /// # Errors
-    /// `NotFound` (`noUndo`), `Conflict` (`changed` | `unsaved` | `linkInPath`), `Denied` (`denied`), `Trash`, IO.
+    /// `NotFound` (`noUndo`), `Conflict` (`changed` | `unsaved` | `linkInPath`), `Denied` (`denied`: kept out | hidden),
+    /// `Unavailable` (`projectsNotReady` | [`RULES_UNREADABLE`]), `Trash`, IO.
     pub fn undo(&mut self, path: &str) -> Result<ChangeList, IpcError> {
         let done = self.step_back(path);
         self.answer(path, done)
@@ -1443,6 +1542,10 @@ impl WorkCopy {
 
     fn undo_copy(&self, undo: &Undo) -> Result<(), IpcError> {
         let path = undo.path.as_str();
+        // what the copy held never comes back into a file the agent may no longer see
+        if self.project.hidden(path)? {
+            return Err(refusal(ErrorKind::Denied, path, "denied"));
+        }
         if self.read_copy(path)?.seen() != Some(undo.after) {
             return Err(refusal(ErrorKind::Conflict, path, "changed"));
         }

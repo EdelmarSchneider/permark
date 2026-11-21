@@ -5,6 +5,7 @@ import type { AcpState } from "./AcpState";
 import type { AgentNeed } from "./AgentNeed";
 import type { LastConversation } from "./LastConversation";
 import type { LoginMethod } from "./LoginMethod";
+import type { RulesProblem } from "./RulesProblem";
 
 /**
  * Answer of `acp.status`.
@@ -48,4 +49,9 @@ last: LastConversation | null,
  * The running agent's settings the person may change (`acp.setOption`), as last told (`options` news); empty
  * while no session is open.
  */
-options: Array<AcpConfigOption>, };
+options: Array<AcpConfigOption>, 
+/**
+ * A rule file on what agents may see that cannot be read now (absent: every one reads well): it stands on its
+ * last good rules, or keeps the agent out of what it governs until the person fixes it.
+ */
+rules?: RulesProblem, };
