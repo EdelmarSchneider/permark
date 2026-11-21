@@ -1932,8 +1932,12 @@ fn an_agent_over_the_session_cap_is_told_still_answered_and_pairs_when_a_place_f
     agent.call("map", &Value::Null).unwrap();
     held.pop();
     assert!(wait_for(|| count() < ipc_local::MAX_SESSIONS));
-    agent.ensure_session();
-    assert!(wait_for(|| paired(&fx, &agent)));
+    // the running agent re-pairs on a loop (`keep_paired`): one hello that lands while the freed place is still
+    // being released (a loaded machine) is followed by the next
+    assert!(wait_for(|| {
+        agent.ensure_session();
+        paired(&fx, &agent)
+    }));
 }
 
 #[test]
