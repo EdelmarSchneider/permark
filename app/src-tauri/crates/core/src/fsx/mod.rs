@@ -884,6 +884,15 @@ fn discard(tmp: &Path) {
     }
 }
 
+/// Test helper: a temp folder named by its real path. The system temp path may hold another spelling of the same place
+/// (an 8.3 short name such as `RUNNER~1` on Windows, the `/var` -> `/private/var` link on macOS), while paths the app
+/// derives from an opened folder are real paths; expected paths built from this folder compare equal to them.
+#[cfg(test)]
+pub(crate) fn real_tempdir() -> tempfile::TempDir {
+    let base = dunce::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
+    tempfile::tempdir_in(base).unwrap_or_else(|e| panic!("temp folder: {e}"))
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

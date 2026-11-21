@@ -14,12 +14,12 @@ struct Fx {
 }
 
 fn fx() -> Fx {
-    let base = tempfile::tempdir().unwrap();
+    let base = crate::fsx::real_tempdir();
     let dirs = AppDirs::under(base.path());
     Fx {
         _base: base,
         dirs,
-        project: tempfile::tempdir().unwrap(),
+        project: crate::fsx::real_tempdir(),
     }
 }
 

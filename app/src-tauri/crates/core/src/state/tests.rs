@@ -19,12 +19,12 @@ struct Fx {
 }
 
 fn fx() -> Fx {
-    let base = tempfile::tempdir().unwrap();
+    let base = crate::fsx::real_tempdir();
     let dirs = AppDirs::under(base.path());
     Fx {
         _base: base,
         dirs,
-        project: tempfile::tempdir().unwrap(),
+        project: crate::fsx::real_tempdir(),
     }
 }
 
@@ -131,7 +131,7 @@ fn a_file_named_permark_keeps_state_in_the_profile() {
 #[test]
 fn links_in_permark_are_never_written_through() {
     let f = fx();
-    let elsewhere = tempfile::tempdir().unwrap();
+    let elsewhere = crate::fsx::real_tempdir();
     // .permark itself a link
     std::os::unix::fs::symlink(elsewhere.path(), f.project.path().join(".permark")).unwrap();
     assert_eq!(f.store().location(), StateLocation::Profile);
@@ -219,7 +219,7 @@ fn remove_everywhere_covers_app_known_projects_and_open_roots() {
         .plugin_file::<Sample>(&git, "a.json")
         .save(&sample(1))
         .unwrap();
-    let other = tempfile::tempdir().unwrap();
+    let other = crate::fsx::real_tempdir();
     fs::create_dir(other.path().join(".permark")).unwrap();
     let other_root = Root::open(other.path()).unwrap();
     let other_store = StateStore::for_project(&f.dirs, &other_root);
@@ -337,7 +337,7 @@ fn remove_data_sweeps_this_computers_own_plugin_folders() {
     let git = PluginId::of("git");
     let machine = store.machine().unwrap();
     let iid = machine.iid().to_owned();
-    let closed = tempfile::tempdir().unwrap();
+    let closed = crate::fsx::real_tempdir();
     let closed = StateStore::for_project(&f.dirs, &Root::open(closed.path()).unwrap());
     let gone = [
         machine.dir().join("plugins").join("git").join("a.json"),
@@ -399,7 +399,7 @@ fn sweep_through_link(
         .iter()
         .find(|path| **path == link || path.starts_with(&format!("{link}/")))
         .unwrap();
-    let outside = tempfile::tempdir().unwrap();
+    let outside = crate::fsx::real_tempdir();
     let last = full.len() == link.len();
     let theirs = if last {
         outside.path().join("x")
@@ -742,7 +742,7 @@ fn uninit_project_takes_back_either_sharing_form_and_the_earlier_header() {
     ] {
         let f = fx();
         init_project(&f.dirs, &f.root()).unwrap();
-        let outside = tempfile::tempdir().unwrap();
+        let outside = crate::fsx::real_tempdir();
         let target = outside.path().join(name);
         fs::write(&target, bytes).unwrap();
         fs::remove_file(f.permark().join(name)).unwrap();
@@ -813,7 +813,7 @@ fn sharing_reads_only_the_two_forms_it_writes() {
     assert_eq!(sharing(&f.root()), Sharing::Custom, "a folder");
     let f = fx();
     fs::create_dir(f.permark()).unwrap();
-    let outside = tempfile::tempdir().unwrap();
+    let outside = crate::fsx::real_tempdir();
     fs::write(outside.path().join("ignore"), SHARED_IGNORE).unwrap();
     if file_link(
         &f.permark().join(".gitignore"),
@@ -882,7 +882,7 @@ fn set_sharing_needs_a_real_team_folder_and_file() {
     assert!(set_sharing(&f.root(), Sharing::Private).is_err());
     assert_eq!(fs::read(f.permark()).unwrap(), b"x");
     let f = fx();
-    let outside = tempfile::tempdir().unwrap();
+    let outside = crate::fsx::real_tempdir();
     fs::write(outside.path().join(".gitignore"), SHARED_IGNORE).unwrap();
     if crate::tree::tests::link_out(&f.permark(), outside.path()) {
         assert_eq!(sharing(&f.root()), Sharing::Custom);
@@ -929,7 +929,7 @@ fn set_sharing_refuses_a_dangling_link_in_place_of_the_file() {
     for (name, make) in kinds {
         let f = fx();
         init_project(&f.dirs, &f.root()).unwrap();
-        let outside = tempfile::tempdir().unwrap();
+        let outside = crate::fsx::real_tempdir();
         let target = outside.path().join("gone");
         let ignore = f.permark().join(".gitignore");
         fs::remove_file(&ignore).unwrap();
@@ -962,7 +962,7 @@ fn set_sharing_refuses_a_dangling_link_in_place_of_the_file() {
 fn set_sharing_over_a_hard_link_replaces_the_name_and_leaves_the_other_one() {
     let f = fx();
     init_project(&f.dirs, &f.root()).unwrap();
-    let outside = tempfile::tempdir().unwrap();
+    let outside = crate::fsx::real_tempdir();
     let other = outside.path().join("ignore");
     fs::write(&other, SHARED_IGNORE).unwrap();
     let ignore = f.permark().join(".gitignore");
@@ -1101,7 +1101,7 @@ fn a_link_in_place_of_an_ignore_file_is_replaced_never_followed() {
     let f = fx();
     let local = f.project.path().join(".permark").join("local");
     fs::create_dir_all(&local).unwrap();
-    let outside = tempfile::tempdir().unwrap();
+    let outside = crate::fsx::real_tempdir();
     let target = outside.path().join("ignore");
     fs::write(&target, "!*\n").unwrap();
     std::os::unix::fs::symlink(&target, local.join(".gitignore")).unwrap();
@@ -1189,7 +1189,7 @@ fn a_cache_file_it_cannot_use_is_rebuilt_never_kept() {
         let file = store.cache_file::<Small>("index/c.json");
         let dir = file.path().parent().unwrap().to_path_buf();
         fs::create_dir_all(&dir).unwrap();
-        let outside = tempfile::tempdir().unwrap();
+        let outside = crate::fsx::real_tempdir();
         if !make(file.path(), outside.path()) {
             eprintln!("skipped {name}: cannot be made here");
             continue;
@@ -1223,7 +1223,7 @@ fn init_project_refuses_a_file_in_the_way() {
 
 #[test]
 fn unicode_space_project_paths_work() {
-    let base = tempfile::tempdir().unwrap();
+    let base = crate::fsx::real_tempdir();
     let dirs = AppDirs::under(&base.path().join("perfil ç 档"));
     let project = base.path().join("my 项目 ação");
     fs::create_dir(&project).unwrap();
@@ -1329,7 +1329,7 @@ fn a_shared_file_is_read_only_as_a_plain_file_of_at_most_a_mebibyte() {
     assert!(shared.read().is_err());
     fs::remove_dir(&path).unwrap();
     // a link in its place is never followed: refused, its target untouched
-    let outside = tempfile::tempdir().unwrap();
+    let outside = crate::fsx::real_tempdir();
     let target = outside.path().join("elsewhere.json");
     fs::write(&target, b"{\"x\": 1}").unwrap();
     // Windows makes file links only with the privilege (developer mode): `false` then
@@ -1491,7 +1491,7 @@ fn a_link_inside_the_state_folder_never_leads_a_read_outside() {
     let f = fx();
     fs::create_dir(f.project.path().join(".permark")).unwrap();
     let store = f.store();
-    let outside = tempfile::tempdir().unwrap();
+    let outside = crate::fsx::real_tempdir();
     fs::write(outside.path().join("f.json"), KEPT).unwrap();
     let id = PluginId::of("git");
     let plugins = store.dir().join("plugins");
@@ -1517,7 +1517,7 @@ fn a_folder_link_on_the_way_is_refused_before_anything_below_it_is_looked_up() {
     let id = PluginId::of("git");
     fs::create_dir_all(store.dir()).unwrap();
     let plugins = store.dir().join("plugins");
-    let outside = tempfile::tempdir().unwrap();
+    let outside = crate::fsx::real_tempdir();
     let gone = outside.path().join("gone");
     fs::create_dir(&gone).unwrap();
     if !crate::tree::tests::link_out(&plugins, &gone) {
@@ -1574,7 +1574,7 @@ fn a_fifo_or_a_file_link_in_place_of_a_state_file_is_never_read_through() {
     let f = fx();
     fs::create_dir(f.project.path().join(".permark")).unwrap();
     let store = f.store();
-    let outside = tempfile::tempdir().unwrap();
+    let outside = crate::fsx::real_tempdir();
     let target = outside.path().join("t.json");
     fs::write(&target, KEPT).unwrap();
     let file = store.file::<Sample>("x.json");
@@ -1626,7 +1626,7 @@ fn team_files_are_read_only_as_plain_files_in_permark() {
     let root = f.root();
     let permark = root.path().join(PERMARK_DIR);
     fs::create_dir(&permark).unwrap();
-    let outside = tempfile::tempdir().unwrap();
+    let outside = crate::fsx::real_tempdir();
     let target = outside.path().join("config.toml");
     fs::write(&target, "[agent]\ndeny = [\"notes\"]\n").unwrap();
     std::os::unix::fs::symlink(&target, permark.join("config.toml")).unwrap();
@@ -1829,7 +1829,7 @@ fn a_share_keeps_the_project_id_0_6_gave_it() {
 #[cfg(windows)]
 #[test]
 fn a_real_share_root_keeps_its_0_6_id() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = crate::fsx::real_tempdir();
     let Some(shared) = crate::paths::via_admin_share(dir.path()) else {
         eprintln!("skipped: no loopback admin share here");
         return;
@@ -1847,7 +1847,7 @@ fn a_real_share_root_keeps_its_0_6_id() {
         ProjectId::of(&root).as_str(),
         crate::fsx::hash(then_key.as_bytes()).hex()
     );
-    let base = tempfile::tempdir().unwrap();
+    let base = crate::fsx::real_tempdir();
     let dirs = AppDirs::under(base.path());
     let kept = dirs
         .profile
@@ -2540,7 +2540,7 @@ fn folder_layouts() -> Vec<(&'static str, MakeLayout, Place)> {
 fn every_path_a_store_hands_out_is_pinned_for_each_folder_layout() {
     for (name, make, place) in folder_layouts() {
         let f = fx();
-        let outside = tempfile::tempdir().unwrap();
+        let outside = crate::fsx::real_tempdir();
         if !make(&f, outside.path()) {
             eprintln!("skipped {name}: cannot be made here");
             continue;
@@ -2637,7 +2637,7 @@ fn uninit_project_takes_back_only_state_folders_without_a_link() {
         let f = fx();
         init_project(&f.dirs, &f.root()).unwrap();
         let permark = f.root().path().join(PERMARK_DIR);
-        let outside = tempfile::tempdir().unwrap();
+        let outside = crate::fsx::real_tempdir();
         fs::write(outside.path().join("kept.txt"), b"theirs").unwrap();
         if !make(&permark, outside.path()) {
             eprintln!("skipped {name}: cannot be made here");
@@ -2752,7 +2752,7 @@ fn the_local_folder_is_offered_only_inside_a_real_team_folder() {
     ];
     for (name, make, offered) in layouts {
         let f = fx();
-        let outside = tempfile::tempdir().unwrap();
+        let outside = crate::fsx::real_tempdir();
         if !make(&f, outside.path()) {
             eprintln!("skipped {name}: cannot be made here");
             continue;
@@ -2838,7 +2838,7 @@ fn initialize_carries_this_computers_folder_beside_the_ones_local_holds() {
     let local = f.permark().join("local");
     let other = local.join("machine").join("0123456789abcdef");
     put(&other.join("journal.json"), b"theirs");
-    let outside = tempfile::tempdir().unwrap();
+    let outside = crate::fsx::real_tempdir();
     put(&outside.path().join("x"), b"outside");
     let escape = other.join("escape");
     let linked = crate::tree::tests::link_out(&escape, outside.path());
@@ -3117,7 +3117,7 @@ fn the_folder_id_follows_the_folder_and_the_install_and_is_never_stored() {
     // the same folder opened again: the same id
     assert_eq!(f.store().machine().unwrap().rid(), rid);
     // another folder: another id under the same install id
-    let other = tempfile::tempdir().unwrap();
+    let other = crate::fsx::real_tempdir();
     let o = StateStore::for_project(&f.dirs, &Root::open(other.path()).unwrap());
     assert_ne!(o.machine().unwrap().rid(), rid);
     assert_eq!(o.machine().unwrap().iid(), store.machine().unwrap().iid());
@@ -3138,7 +3138,7 @@ fn the_folder_id_follows_the_folder_and_the_install_and_is_never_stored() {
         assert_ne!(after.machine().unwrap().rid(), before);
     }
     // another install (another key): other ids for the same folder
-    let base = tempfile::tempdir().unwrap();
+    let base = crate::fsx::real_tempdir();
     let elsewhere = StateStore::for_project(&AppDirs::under(base.path()), &f.root());
     let em = elsewhere.machine().unwrap();
     assert_ne!(em.rid(), rid);
@@ -3158,7 +3158,7 @@ fn clones_of_a_store_share_one_machine_and_no_key_means_none() {
     let copy = s.clone();
     assert!(std::ptr::eq(s.machine().unwrap(), copy.machine().unwrap()));
     // an install folder that cannot be made (a file in the way): no key, no machine data, no install files
-    let base = tempfile::tempdir().unwrap();
+    let base = crate::fsx::real_tempdir();
     let mut dirs = AppDirs::under(base.path());
     fs::write(base.path().join("blocked"), "x").unwrap();
     dirs.install = base.path().join("blocked").join("install");

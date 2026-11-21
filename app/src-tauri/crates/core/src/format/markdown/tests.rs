@@ -887,7 +887,8 @@ fn html_the_sanitizer_would_parse_slowly_falls_back_fast() {
         let elapsed = started.elapsed();
         assert_eq!(notes, [DEEP_NESTING_NOTE], "{what}");
         assert_eq!(blocks.len(), 1, "{what}");
-        assert!(elapsed.as_secs() < 2, "{what}: {elapsed:?}");
+        // unguarded, these inputs take minutes; a slow debug runner needs about 3 s for the guarded walk
+        assert!(elapsed.as_secs() < 10, "{what}: {elapsed:?}");
     }
 }
 
