@@ -105,11 +105,15 @@ export class DeepApp {
     await this.drawn();
   }
 
-  /** Waits until every embed started is loaded and drawn and the page is quiet. */
+  /** Waits until every embed started is loaded and drawn, the fonts they use are in, and the page is quiet. */
   async drawn(): Promise<void> {
     await this.page.evaluate(async (url) => {
       const m = (await import(url)) as DocumentsModule;
       await m.documents.decorator.idle();
+      // a layout now starts the loads of the fonts the drawn embeds use (a formula's); table columns are measured
+      // again once they are in
+      document.body.getBoundingClientRect();
+      await document.fonts.ready;
     }, DOCUMENTS_URL);
     await this.page.waitForFunction((busy) => document.querySelector(busy) === null, BUSY);
     await settle(this.page);

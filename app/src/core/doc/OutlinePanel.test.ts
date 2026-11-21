@@ -16,6 +16,7 @@ Object.defineProperty(window, "matchMedia", {
 
 const { NO_REQUIREMENT } = await import("../conditions/available");
 const { contributions } = await import("../plugins/instance.svelte");
+const { documents } = await import("./document.svelte");
 const OutlinePanel = (await import("./OutlinePanel.svelte")).default;
 
 const removals: (() => void)[] = [];
@@ -38,10 +39,10 @@ function marks(owner: string, at: readonly number[], text = "changed"): void {
   );
 }
 
-function show(): HTMLElement {
+function show(shown: readonly OutlineItem[] = items): HTMLElement {
   const target = document.createElement("div");
   document.body.append(target);
-  component = mount(OutlinePanel, { target, props: { items } });
+  component = mount(OutlinePanel, { target, props: { items: shown } });
   flushSync();
   return target;
 }
@@ -49,8 +50,86 @@ function show(): HTMLElement {
 afterEach(() => {
   if (component) void unmount(component);
   component = null;
+  documents.currentHeading = -1;
   document.body.replaceChildren();
   for (const remove of removals.splice(0)) remove();
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+});
+
+describe("the current heading", () => {
+  it("in a long outline: a change marks the new row and unmarks the old one, the other rows never look", () => {
+    const scrolled: Element[] = [];
+    // jsdom draws nothing and has no scrollIntoView
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: function (this: Element) {
+        scrolled.push(this);
+      },
+    });
+    const many: OutlineItem[] = Array.from({ length: 5000 }, (_, i) => ({
+      label: `Section ${i}`,
+      level: 1 + (i % 3),
+      id: `s${i}`,
+      line: 1 + i * 4,
+      block: `b${i}`,
+    }));
+    documents.currentHeading = 10;
+    const root = show(many);
+    const rows = [...root.querySelectorAll<HTMLButtonElement>("button.item")];
+    expect(rows).toHaveLength(5000);
+    expect(rows[10]?.classList.contains("is-current")).toBe(true);
+    expect(rows[10]?.getAttribute("aria-current")).toBe("location");
+    expect(root.querySelectorAll(".is-current, [aria-current]")).toHaveLength(1);
+    expect(scrolled).toEqual([rows[10]]);
+    const reads = vi.spyOn(documents, "currentHeading", "get");
+    const touched = new Set<Node>();
+    const watch = new MutationObserver((records) => {
+      for (const record of records) touched.add(record.target);
+    });
+    watch.observe(root, { attributes: true, childList: true, subtree: true });
+    documents.currentHeading = 4000;
+    flushSync();
+    for (const record of watch.takeRecords()) touched.add(record.target);
+    watch.disconnect();
+    expect([...touched]).toEqual(expect.arrayContaining([rows[10], rows[4000]]));
+    expect(touched.size).toBe(2);
+    expect(rows[4000]?.classList.contains("is-current")).toBe(true);
+    expect(rows[4000]?.getAttribute("aria-current")).toBe("location");
+    expect(rows[10]?.classList.contains("is-current")).toBe(false);
+    expect(rows[10]?.hasAttribute("aria-current")).toBe(false);
+    expect(scrolled).toEqual([rows[10], rows[4000]]);
+    // one reader of the current heading, not one per row
+    expect(reads.mock.calls.length).toBeLessThanOrEqual(2);
+    // before the first heading: no row is current
+    documents.currentHeading = -1;
+    flushSync();
+    expect(root.querySelectorAll(".is-current, [aria-current]")).toHaveLength(0);
+  });
+
+  it("the current mark follows data-at: the row found by place is the heading's", () => {
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value() {} });
+    const ten: OutlineItem[] = Array.from({ length: 10 }, (_, i) => ({
+      label: `Section ${i}`,
+      level: 1 + (i % 2),
+      id: `s${i}`,
+      line: 1 + i * 4,
+      block: `b${i}`,
+    }));
+    // the row's own index, beside each mark
+    const current = (root: HTMLElement): (string | null)[][] =>
+      [...root.querySelectorAll<HTMLElement>(".is-current, [aria-current]")].map((row) => [
+        row.dataset["at"] ?? null,
+        row.getAttribute("aria-current"),
+        row.classList.contains("is-current") ? "is-current" : null,
+      ]);
+    documents.currentHeading = 3;
+    const root = show(ten);
+    expect(current(root)).toEqual([["3", "location", "is-current"]]);
+    documents.currentHeading = 7;
+    flushSync();
+    expect(current(root)).toEqual([["7", "location", "is-current"]]);
+  });
 });
 
 describe("outline marks", () => {

@@ -7,6 +7,7 @@
 // Work that only matters near the screen (links, code references, embeds) runs when a block comes within one viewport.
 
 import type { Block } from "../../api";
+import { currentIndex } from "./outline";
 
 export type BlockHooks = {
   /** Structure added right after a block is created; returns the block's root (it may be a wrapper). */
@@ -296,11 +297,17 @@ export class BlockHost {
     const scroller = this.#scroller;
     if (scroller === null || this.#order.length === 0) return [];
     const top = scroller.getBoundingClientRect().top;
-    let first = this.#order.findIndex((id) => {
-      const el = this.#els.get(id);
-      return el !== undefined && el.getBoundingClientRect().bottom > top + 1;
-    });
-    if (first < 0) first = this.#order.length - 1;
+    // bottoms only grow down the page: the first block whose bottom is below the pane's top, found by a search (a
+    // scan would lay out every block above it); none: the last block
+    const order = this.#order;
+    const bottomAt = (at: number): number => {
+      const id = order[at];
+      return (
+        (id === undefined ? undefined : this.#els.get(id))?.getBoundingClientRect().bottom ??
+        -Infinity
+      );
+    };
+    const first = Math.min(currentIndex(order.length, bottomAt, top + 1) + 1, order.length - 1);
     const marks: Mark[] = [];
     for (let at = first; at >= 0 && marks.length < 12; at--) {
       const id = this.#order[at];

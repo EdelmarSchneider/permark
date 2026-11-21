@@ -116,6 +116,7 @@
       editorSet: () => store.editor.trim() !== "",
       modKey: () => (conditions.current.platform === "mac" ? "Cmd" : "Ctrl"),
       chooseEditor,
+      editorShown: () => editingNow,
       editorHeadings: () => (editingNow ? editing.headingTops() : null),
       showEditorHeading: (index) => {
         if (editingNow) editing.showHeading(index);

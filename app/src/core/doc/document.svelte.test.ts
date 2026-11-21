@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api, ApiError, DocumentChanged, DocumentView, WorkspaceView } from "../../api";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
+import { BlockHost } from "./blocks";
 import { DocumentController } from "./document.svelte";
 import { reading } from "./reading.svelte";
 
@@ -24,17 +25,19 @@ type Fx = {
   editor: { set: boolean };
   /** Lines handed to the editor shown instead of the page (`null`: the page shows). */
   editorLines: number[] | null;
+  /** Tops of the headings of the editor shown instead of the page. */
+  editorTops: number[];
   /** What the window does with `window-changed`: the document follows. */
   follow: () => Promise<void>;
 };
 
-async function setup(path: string = MOCK_FOLDER): Promise<Fx> {
+async function setup(path: string = MOCK_FOLDER, host?: BlockHost): Promise<Fx> {
   const api = createMockApi();
   await api.openPath(path, "thisTab");
   const boot = await api.windowBoot();
   if (!boot.ok || boot.value.view.state !== "showing") throw new Error("no workspace");
   const workspace = boot.value.view.workspace;
-  const doc = new DocumentController(api);
+  const doc = new DocumentController(api, host);
   const fx: Fx = {
     api,
     doc,
@@ -48,6 +51,7 @@ async function setup(path: string = MOCK_FOLDER): Promise<Fx> {
     pageNote: null,
     editor: { set: false },
     editorLines: null,
+    editorTops: [],
     follow: () => tick(),
   };
   doc.bind({
@@ -66,8 +70,9 @@ async function setup(path: string = MOCK_FOLDER): Promise<Fx> {
     editorSet: () => fx.editor.set,
     modKey: () => "Ctrl",
     chooseEditor: () => (fx.chose += 1),
-    editorHeadings: () => null,
-    showEditorHeading: () => false,
+    editorShown: () => fx.editorLines !== null,
+    editorHeadings: () => (fx.editorLines !== null ? fx.editorTops : null),
+    showEditorHeading: () => fx.editorLines !== null,
     showEditorLine: (line) => {
       if (fx.editorLines === null) return false;
       fx.editorLines.push(line);
@@ -906,6 +911,31 @@ describe("a line asked while an editor shows the document instead of the page", 
     }
   });
 
+  it("a heading asked for the next document goes to the editor that opens on it; the pane's scroll stays the editor's", async () => {
+    const fx = await setup();
+    await open(fx, "docs/guide.md");
+    const guide = fx.doc.view;
+    const ids = guide?.body.kind === "markdown" ? guide.body.outline.map((item) => item.id) : [];
+    const target = ids.at(-1) ?? "";
+    expect(ids.length).toBeGreaterThan(0);
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    try {
+      fx.editorLines = [];
+      scroller.scrollTop = 700;
+      const jump = vi.spyOn(fx.doc, "goToHeading");
+      fx.doc.navigate("docs/guide.md", target);
+      await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/guide.md"));
+      fx.doc.paint(() => undefined);
+      await vi.waitFor(() => expect(jump).toHaveBeenCalledWith(ids.length - 1));
+      expect(scroller.scrollTop).toBe(700);
+      expect(fx.doc.currentHeading).toBe(ids.length - 1);
+    } finally {
+      scroller.remove();
+    }
+  });
+
   it("no place asked: none to start at", async () => {
     const fx = await setup();
     await open(fx, "README.md");
@@ -1089,6 +1119,90 @@ describe("where the reader is", () => {
     }
   });
 
+  it("the line at the top of a long page takes a few layout reads, not one per block above it", async () => {
+    const fx = await setup(MOCK_FOLDER, new BlockHost({ first: 20_000, next: 20_000 }));
+    const text = Array.from({ length: 10_000 }, (_, i) => `Paragraph ${i}.`).join("\n\n");
+    fx.api.probe.project.add("long.md", text);
+    await open(fx, "long.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    fx.doc.paint(() => undefined);
+    await tick();
+    const view = fx.doc.view;
+    const blocks = view?.body.kind === "markdown" ? view.body.blocks : [];
+    expect(blocks).toHaveLength(10_000);
+    // every block 100 px high in page order, the pane scrolled to 50 px into block 9000
+    const index = new Map(blocks.map((b, i) => [b.id, i]));
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value: 900_050,
+    });
+    let reads = 0;
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        reads += 1;
+        if (this === scroller) return new DOMRect(0, 0, 600, 500);
+        const at = index.get(this.getAttribute("data-b") ?? "") ?? 0;
+        return new DOMRect(0, at * 100 - 900_050, 600, 100);
+      });
+    try {
+      expect(fx.doc.topLine()).toBe(blocks[9000]?.lineStart);
+      expect(reads).toBeLessThanOrEqual(20);
+    } finally {
+      rect.mockRestore();
+      scroller.remove();
+    }
+  });
+
+  it("an embed drawn inside a table has the table measured again; one outside a table does not", async () => {
+    const fx = await setup();
+    const redrawn = vi.spyOn(fx.doc.tables, "redrawn");
+    const wrap = document.createElement("div");
+    wrap.innerHTML =
+      '<table><tbody><tr><td><code data-math-style="inline">x</code></td></tr></tbody></table><p><code data-math-style="inline">y</code></p>';
+    const [inCell, outside] = wrap.querySelectorAll<HTMLElement>("[data-math-style]");
+    if (!inCell || !outside) throw new Error("no formulas");
+    fx.doc.decorator.mounted(inCell);
+    fx.doc.decorator.mounted(outside);
+    expect(redrawn.mock.calls).toEqual([[wrap.querySelector("table")]]);
+  });
+
+  it("the heading the reader is at takes a few layout reads, not one per heading", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    fx.doc.paint(() => undefined);
+    await tick();
+    const view = fx.doc.view;
+    const ids = view?.body.kind === "markdown" ? view.body.outline.map((item) => item.id) : [];
+    expect(ids).toHaveLength(7);
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value: 420,
+    });
+    let reads = 0;
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const at = ids.indexOf(this.id);
+        if (at < 0) return new DOMRect(0, 0, 0, 0);
+        reads += 1;
+        return new DOMRect(0, 300 + 100 * at - 420, 600, 30);
+      });
+    try {
+      fx.doc.noteScroll();
+      expect(fx.doc.currentHeading).toBe(1);
+      expect(reads).toBeLessThanOrEqual(3);
+    } finally {
+      rect.mockRestore();
+      scroller.remove();
+    }
+  });
+
   it("an outline click keeps its heading current where the end of the page cannot scroll it up; at the bottom the last heading in view is current", async () => {
     const fx = await setup();
     await open(fx, "README.md");
@@ -1130,6 +1244,101 @@ describe("where the reader is", () => {
       expect(fx.doc.currentHeading).toBe(6);
     } finally {
       rect.mockRestore();
+      scroller.remove();
+    }
+  });
+
+  it("a page built in slices: headings built after the reader scrolled become current once they are there", async () => {
+    const fx = await setup(MOCK_FOLDER, new BlockHost({ first: 2, next: 2 }));
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    const view = fx.doc.view;
+    const ids = view?.body.kind === "markdown" ? view.body.outline.map((item) => item.id) : [];
+    expect(ids).toHaveLength(7);
+    // jsdom has no layout: 2000 px of page in a 500 px pane, heading i at 300 + 100 i
+    let top = 0;
+    Object.defineProperty(scroller, "clientHeight", { value: 500, configurable: true });
+    Object.defineProperty(scroller, "scrollHeight", { value: 2000, configurable: true });
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => (top = Math.max(0, Math.min(1500, value))),
+    });
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const at = ids.indexOf(this.id);
+        return at < 0 ? new DOMRect(0, 0, 0, 0) : new DOMRect(0, 300 + 100 * at - top, 600, 30);
+      });
+    try {
+      fx.doc.paint(() => undefined);
+      // the reader scrolls while the rest of the page is still being built
+      expect(fx.doc.host.byAnchor(ids[4] ?? "")).toBeNull();
+      fx.doc.noteScroll();
+      await vi.waitFor(() => expect(fx.doc.host.byAnchor(ids[6] ?? "")).not.toBeNull());
+      await tick();
+      scroller.scrollTop = 680;
+      fx.doc.noteScroll();
+      expect(fx.doc.currentHeading).toBe(4);
+      scroller.scrollTop = 900;
+      fx.doc.noteScroll();
+      expect(fx.doc.currentHeading).toBe(6);
+    } finally {
+      rect.mockRestore();
+      scroller.remove();
+    }
+  });
+
+  it("an editor shown instead of the page: its scroll is never the page's reading place, and the page leaves it alone", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    try {
+      fx.doc.paint(() => undefined);
+      await tick();
+      scroller.scrollTop = 300;
+      fx.doc.noteScroll();
+      expect(reading.scrollOf("README.md")).toBe(300);
+      // the editor shows in the same pane; its heading 1 is at the top
+      fx.editorLines = [];
+      fx.editorTops = [-50, 20, 400];
+      scroller.scrollTop = 1200;
+      fx.doc.noteScroll();
+      expect(reading.scrollOf("README.md")).toBe(300);
+      expect(fx.doc.currentHeading).toBe(1);
+      // the hidden page is drawn anew (the plugins changed): the editor's scroll stays where it is
+      fx.doc.formatsChanged();
+      await tick();
+      fx.doc.paint(() => undefined);
+      await tick();
+      expect(scroller.scrollTop).toBe(1200);
+      expect(reading.scrollOf("README.md")).toBe(300);
+      // renamed while the editor shows: the new name keeps the page's place, not the editor's scroll
+      void fx.doc.followMoved("READ-ME.md");
+      expect(reading.scrollOf("READ-ME.md")).toBe(300);
+    } finally {
+      scroller.remove();
+    }
+  });
+
+  it("an editor shown instead of the page: leaving the document keeps the page's place", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    try {
+      fx.doc.paint(() => undefined);
+      await tick();
+      scroller.scrollTop = 260;
+      fx.doc.noteScroll();
+      fx.editorLines = [];
+      scroller.scrollTop = 1500;
+      await open(fx, "docs/guide.md");
+      expect(fx.doc.path).toBe("docs/guide.md");
+      expect(reading.scrollOf("README.md")).toBe(260);
+    } finally {
       scroller.remove();
     }
   });

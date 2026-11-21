@@ -202,6 +202,19 @@ export class TableFitter {
     this.#armIdle();
   }
 
+  /**
+   * A cell of `table` was drawn anew without an edit (an embed mounted in it: a formula, highlighted code): a table
+   * already measured is measured again with the next pass, its spans having been read from the plain source text
+   * (a formula's TeX is far wider than the formula). No font loads when the embed's fonts are in already, so nothing
+   * else would tell. One not near yet is measured with what it holds when it comes near.
+   */
+  redrawn(table: HTMLTableElement): void {
+    const entry = this.#entries.get(table);
+    if (!entry?.near) return;
+    entry.stale = true;
+    this.#soon();
+  }
+
   /** Forgets every table and stops watching. */
   stop(): void {
     for (const table of [...this.#entries.keys()]) this.#forget(table);

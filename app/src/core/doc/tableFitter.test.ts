@@ -230,6 +230,32 @@ describe("TableFitter", () => {
     }
   });
 
+  it("measures a table again once a cell was drawn anew after it was measured (a formula mounted), not before it is near", () => {
+    const { state, fake } = probe(LONG, 400);
+    const fitter = new TableFitter({ probe: fake });
+    const { table: t } = table();
+    fitter.watch(t);
+    // drawn before the table came near: it is measured with what it holds then
+    fitter.redrawn(t);
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(state.measured).toBe(0);
+    // measured while a cell still held the formula's source text, then the formula was drawn (narrower)
+    views[0]?.fire([t]);
+    expect(state.measured).toBe(1);
+    expect(colWidths(t)).toEqual(["17.5%", "82.5%"]);
+    state.columns = [
+      { min: 20, max: 30 },
+      { min: 90, max: 2000 },
+    ];
+    // a table holds several formulas: one pass for all of them, once they settle
+    for (let cell = 0; cell < 3; cell += 1) fitter.redrawn(t);
+    expect(state.measured).toBe(1);
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(state.measured).toBe(2);
+    expect(colWidths(t)).not.toEqual(["17.5%", "82.5%"]);
+    fitter.stop();
+  });
+
   it("measures a table that came near while hidden once it is shown", () => {
     const { state, fake } = probe(LONG, 0);
     const fitter = new TableFitter({ probe: fake });

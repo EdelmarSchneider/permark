@@ -147,6 +147,9 @@ export class Decorator {
   /** Read when a reference is marked (its tooltip says what a click does). */
   refSetup: RefSetup = () => ({ editorSet: false, mod: "Ctrl" });
 
+  /** Told once an embed mounted in `element` (what it holds changed size: a table around it measures again). */
+  mounted: (element: HTMLElement) => void = () => {};
+
   /**
    * `theme` fixes the theme of every embed (a copy of the page drawn off screen in a look of its own, e.g. light
    * paper); left out, embeds follow the page's theme and tone.
@@ -281,7 +284,16 @@ export class Decorator {
           if (record.cancelled) return;
           // the original content leaves in the same turn the embed arrives: no flash
           element.replaceChildren();
-          record.instance = mount(module.default, { target: element, props });
+          try {
+            record.instance = mount(module.default, { target: element, props });
+          } catch {
+            // an embed that fails while it mounts: the block keeps its plain text and look, as when the library
+            // does not load (what it drew of itself goes)
+            element.replaceChildren(...record.original);
+            element.className = record.className;
+            return;
+          }
+          this.mounted(element);
         },
         () => {
           // the library did not load: the plain text stays
