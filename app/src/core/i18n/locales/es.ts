@@ -1639,6 +1639,8 @@ export default {
   "config.reason.noValue": "Una clave sin valor. Cámbiala en Fuente.",
   "config.reason.empty": "Un elemento vacío. Cámbialo en Fuente.",
   "config.reason.unterminated": "Una comilla que nunca se cierra. Cámbiala en Fuente.",
+  "config.reason.escape":
+    "Un valor con códigos de escape que aquí no se pueden conservar con exactitud. Cámbialo en Fuente.",
   "config.reason.other": "Esto no puede editarse con exactitud aquí. Usa Fuente.",
   "config.refused.newline": "Un valor no puede tener salto de línea aquí.",
   "config.refused.empty": "Escribe algo.",

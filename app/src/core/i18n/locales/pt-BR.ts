@@ -1637,6 +1637,8 @@ export default {
   "config.reason.noValue": "Uma chave sem valor. Mude no Código.",
   "config.reason.empty": "Um item vazio. Mude no Código.",
   "config.reason.unterminated": "Uma aspa que nunca fecha. Mude no Código.",
+  "config.reason.escape":
+    "Um valor com códigos de escape que não podem ser mantidos exatamente aqui. Mude no Código.",
   "config.reason.other": "Isto não pode ser editado com exatidão aqui. Use o Código.",
   "config.refused.newline": "Um valor não pode ter quebra de linha aqui.",
   "config.refused.empty": "Digite algo.",

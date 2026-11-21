@@ -1640,6 +1640,8 @@ export default {
   "config.reason.noValue": "Unha chave sen valor. Cámbiea en Fonte.",
   "config.reason.empty": "Un elemento baleiro. Cámbieo en Fonte.",
   "config.reason.unterminated": "Unhas comiñas que nunca se pechan. Cámbieas en Fonte.",
+  "config.reason.escape":
+    "Un valor con códigos de escape que aquí non se poden conservar exactamente. Cámbieo en Fonte.",
   "config.reason.other": "Isto non se pode editar exactamente aquí. Use Fonte.",
   "config.refused.newline": "Aquí un valor non pode conter un salto de liña.",
   "config.refused.empty": "Escriba algo.",

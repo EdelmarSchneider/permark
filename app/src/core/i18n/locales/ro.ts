@@ -1720,6 +1720,8 @@ export default {
   "config.reason.noValue": "O cheie fără valoare. Se modifică în Sursă.",
   "config.reason.empty": "Un element gol. Se modifică în Sursă.",
   "config.reason.unterminated": "Ghilimele care nu se închid niciodată. Se modifică în Sursă.",
+  "config.reason.escape":
+    "O valoare cu secvențe de escape care nu pot fi păstrate exact aici. Se modifică în Sursă.",
   "config.reason.other": "Acest lucru nu poate fi editat exact aici. Folosește Sursă.",
   "config.refused.newline": "Aici o valoare nu poate conține un rând nou.",
   "config.refused.empty": "Tastează ceva.",

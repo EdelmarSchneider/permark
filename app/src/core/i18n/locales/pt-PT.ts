@@ -1651,6 +1651,8 @@ export default {
   "config.reason.noValue": "Uma chave sem valor. Altere-a no Código-fonte.",
   "config.reason.empty": "Um item vazio. Altere-o no Código-fonte.",
   "config.reason.unterminated": "Uma aspa que nunca fecha. Altere-a no Código-fonte.",
+  "config.reason.escape":
+    "Um valor com códigos de escape que não podem ser mantidos exatamente aqui. Altere-o no Código-fonte.",
   "config.reason.other": "Não é possível editar isto aqui com exatidão. Use o Código-fonte.",
   "config.refused.newline": "Aqui, um valor não pode ter uma quebra de linha.",
   "config.refused.empty": "Escreva algo.",

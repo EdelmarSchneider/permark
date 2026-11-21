@@ -1676,6 +1676,8 @@ export default {
   "config.reason.noValue": "Clé sans valeur. À modifier en mode Source.",
   "config.reason.empty": "Élément vide. À modifier en mode Source.",
   "config.reason.unterminated": "Guillemet jamais refermé. À modifier en mode Source.",
+  "config.reason.escape":
+    "Valeur avec des séquences d'échappement impossibles à conserver exactement ici. À modifier en mode Source.",
   "config.reason.other": "Ceci ne peut pas être modifié exactement ici. Utilisez Source.",
   "config.refused.newline": "Une valeur ne peut pas contenir de saut de ligne ici.",
   "config.refused.empty": "Saisissez une valeur.",

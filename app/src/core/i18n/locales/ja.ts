@@ -1654,6 +1654,8 @@ export default {
   "config.reason.noValue": "値のないキーです。ソースで変更してください。",
   "config.reason.empty": "空の項目です。ソースで変更してください。",
   "config.reason.unterminated": "閉じられていない引用符があります。ソースで変更してください。",
+  "config.reason.escape":
+    "ここでは正確に保持できないエスケープを含む値です。ソースで変更してください。",
   "config.reason.other": "ここでは正確に編集できません。ソースを使用してください。",
   "config.refused.newline": "ここでは、値に改行を含めることはできません。",
   "config.refused.empty": "何か入力してください。",

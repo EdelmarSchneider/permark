@@ -136,6 +136,10 @@
     return items;
   }
 
+  /** A keyboard move waiting for its answer: a held key repeats faster than the table is drawn again, and a move
+   *  named from the rows drawn before the answer would put a row back where it was. */
+  let moving = false;
+
   /** Alt+Up | Alt+Down on a row moves it (the keyboard way of dragging). */
   function onRowKey(event: KeyboardEvent, index: number): void {
     if (!editable || event.isComposing || !event.altKey) return;
@@ -144,7 +148,9 @@
     const to = event.key === "ArrowUp" ? index - 1 : event.key === "ArrowDown" ? index + 1 : null;
     if (to === null || to < 0 || to >= table.rows.length) return;
     event.preventDefault();
-    void run({ op: "moveRow", path: row.path, to });
+    if (moving) return;
+    moving = true;
+    void run({ op: "moveRow", path: row.path, to }).finally(() => (moving = false));
   }
 
   function onDrop(index: number): void {

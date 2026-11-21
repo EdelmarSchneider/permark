@@ -21,6 +21,13 @@ function rowsOf(row: Row): number {
 
 const cardRows = (group: Group): number => group.rows.reduce((sum, row) => sum + rowsOf(row), 0);
 
+/** The card whose lines hold `line` (the last such card: a nested card follows its parent); `null`: none. */
+export function cardAt(sheet: Sheet, line: number): string | null {
+  let found: Group | null = null;
+  for (const group of sheet.groups) if (group.line <= line && line <= group.end) found = group;
+  return found ? cardKey(found) : null;
+}
+
 /** Rows drawn with every card open. */
 export function drawnRows(sheet: Sheet): number {
   return sheet.groups.reduce((sum, group) => sum + 1 + cardRows(group), 0);

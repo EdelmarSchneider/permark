@@ -1646,6 +1646,8 @@ export default {
   "config.reason.noValue": "Kunci tanpa nilai. Ubah di mode Sumber.",
   "config.reason.empty": "Item kosong. Ubah di mode Sumber.",
   "config.reason.unterminated": "Tanda kutip yang tidak pernah ditutup. Ubah di mode Sumber.",
+  "config.reason.escape":
+    "Nilai berisi kode escape yang tidak dapat dipertahankan persis di sini. Ubah di mode Sumber.",
   "config.reason.other": "Ini tidak dapat diedit dengan tepat di sini. Gunakan mode Sumber.",
   "config.refused.newline": "Nilai tidak boleh berisi baris baru di sini.",
   "config.refused.empty": "Ketik sesuatu.",

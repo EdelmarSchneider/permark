@@ -1610,6 +1610,8 @@ export default {
   "config.reason.noValue": "값이 없는 키입니다. 소스에서 변경하세요.",
   "config.reason.empty": "빈 항목입니다. 소스에서 변경하세요.",
   "config.reason.unterminated": "닫히지 않은 따옴표입니다. 소스에서 변경하세요.",
+  "config.reason.escape":
+    "여기에서는 정확히 유지할 수 없는 이스케이프 코드가 포함된 값입니다. 소스에서 변경하세요.",
   "config.reason.other": "여기에서는 정확하게 편집할 수 없습니다. 소스를 사용하세요.",
   "config.refused.newline": "여기에서는 값에 줄 바꿈을 넣을 수 없습니다.",
   "config.refused.empty": "값을 입력하세요.",

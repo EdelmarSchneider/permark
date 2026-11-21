@@ -1639,6 +1639,8 @@ export default {
   "config.reason.empty": "Mục trống. Hãy thay đổi trong chế độ Mã nguồn.",
   "config.reason.unterminated":
     "Dấu ngoặc kép không bao giờ đóng. Hãy thay đổi trong chế độ Mã nguồn.",
+  "config.reason.escape":
+    "Giá trị chứa mã thoát không thể giữ nguyên chính xác ở đây. Hãy thay đổi trong chế độ Mã nguồn.",
   "config.reason.other": "Không thể sửa chính xác mục này ở đây. Hãy dùng chế độ Mã nguồn.",
   "config.refused.newline": "Giá trị ở đây không được chứa ngắt dòng.",
   "config.refused.empty": "Hãy nhập nội dung.",

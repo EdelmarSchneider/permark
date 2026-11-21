@@ -1643,6 +1643,8 @@ export default {
   "config.reason.noValue": "Değeri olmayan bir anahtar. Kaynak modunda değiştirin.",
   "config.reason.empty": "Boş bir öğe. Kaynak modunda değiştirin.",
   "config.reason.unterminated": "Hiç kapanmayan bir tırnak. Kaynak modunda değiştirin.",
+  "config.reason.escape":
+    "Burada tam olarak korunamayan kaçış kodları içeren bir değer. Kaynak modunda değiştirin.",
   "config.reason.other": "Bu, burada tam olarak düzenlenemez. Kaynak modunu kullanın.",
   "config.refused.newline": "Bir değer burada satır sonu içeremez.",
   "config.refused.empty": "Bir şey yazın.",
