@@ -454,3 +454,34 @@ fn off_leaves_nothing_and_the_marks_wait_for_the_next_time() {
     assert_eq!(h.marks().len(), 1);
     drop(core);
 }
+
+#[test]
+fn a_batch_without_moves_never_waits_for_the_owners() {
+    // batches reach the subscribers one after another on the watch thread: a plain save must not wait for owners the
+    // projects worker has not told yet
+    let dir = tempfile::tempdir().unwrap();
+    let file = permark_core::state::StateStore::for_project(
+        &AppDirs::under(dir.path()),
+        &Root::open(dir.path()).unwrap(),
+    )
+    .raw_file(FILE);
+    let service = QuietService::load(file, Arc::new(|_: &QuietMarks| {}));
+    service.start_paused();
+    let batch = FsBatch {
+        changes: vec![permark_core::watch::Change {
+            path: "a.md".to_owned(),
+            kind: ChangeKind::Modified,
+            is_dir: false,
+            own: false,
+        }],
+        ..FsBatch::default()
+    };
+    let started = Instant::now();
+    service.on_batch(&batch);
+    // well before the owners' wait would end (a loaded machine may still take a while)
+    assert!(
+        started.elapsed() < permark_core::projects::OwnersGate::WAIT / 2,
+        "{:?}",
+        started.elapsed()
+    );
+}

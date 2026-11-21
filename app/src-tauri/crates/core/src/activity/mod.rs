@@ -13,7 +13,7 @@ pub mod net;
 #[cfg(test)]
 mod tests;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError, Weak};
 use std::thread::JoinHandle;
@@ -375,79 +375,9 @@ impl Journal {
         }
     }
 
-    /// A change outside merges into the one of the same path since the person's last action: created + deleted ->
-    /// nothing, created + modified -> created, deleted + created -> modified, renames chained.
-    fn push_outside(&mut self, at: u64, change: OutsideChange, path: &str, from: Option<&str>) {
-        let key = if change == OutsideChange::Renamed {
-            from.unwrap_or(path)
-        } else {
-            path
-        };
-        // only the tail of changes outside (since the last action of the person | marker) is merged
-        let tail = self
-            .entries
-            .iter()
-            .rposition(|e| e.by != By::Outside)
-            .map_or(0, |i| i + 1);
-        let found = self.entries[tail..]
-            .iter()
-            .rposition(|e| e.fact.path() == Some(key))
-            .map(|i| i + tail);
-        let Some(index) = found else {
-            let _ = self.push(
-                at,
-                By::Outside,
-                Fact::Outside {
-                    change,
-                    path: path.to_owned(),
-                    from: from.map(str::to_owned),
-                },
-            );
-            return;
-        };
-        let Fact::Outside {
-            change: before,
-            from: before_from,
-            ..
-        } = self.entries[index].fact.clone()
-        else {
-            return;
-        };
-        let merged: Option<(OutsideChange, String, Option<String>)> = match (before, change) {
-            (OutsideChange::Created, OutsideChange::Deleted) => None,
-            (OutsideChange::Created, _) => Some((OutsideChange::Created, path.to_owned(), None)),
-            (OutsideChange::Deleted, OutsideChange::Created | OutsideChange::Modified) => {
-                Some((OutsideChange::Modified, path.to_owned(), None))
-            }
-            (OutsideChange::Renamed, OutsideChange::Renamed) => {
-                let origin = before_from.unwrap_or_else(|| key.to_owned());
-                (origin != path).then(|| (OutsideChange::Renamed, path.to_owned(), Some(origin)))
-            }
-            (OutsideChange::Renamed, OutsideChange::Deleted) => Some((
-                OutsideChange::Deleted,
-                before_from.unwrap_or_else(|| path.to_owned()),
-                None,
-            )),
-            (OutsideChange::Renamed, _) => {
-                Some((OutsideChange::Renamed, path.to_owned(), before_from))
-            }
-            (OutsideChange::Modified, OutsideChange::Renamed) => Some((
-                OutsideChange::Renamed,
-                path.to_owned(),
-                Some(key.to_owned()),
-            )),
-            (_, change) => Some((change, path.to_owned(), from.map(str::to_owned))),
-        };
-        let replaced = match merged {
-            Some((change, path, from)) => self
-                .push(at, By::Outside, Fact::Outside { change, path, from })
-                .is_some(),
-            None => true,
-        };
-        // the merged row is in (or none is needed): the row it replaces goes; out of seqs, the earlier row stays
-        if replaced {
-            self.entries.remove(index);
-        }
+    /// Changes outside about to be merged into the journal one after another: see [`OutsideRun`].
+    fn outside_run(&mut self) -> OutsideRun<'_> {
+        OutsideRun::new(self)
     }
 
     /// Retention: older than [`KEEP_MS`] goes; above [`KEEP_ENTRIES`] the changes outside go first, then the oldest.
@@ -480,6 +410,138 @@ impl Journal {
             }
         }
         self.trimmed_through = self.trimmed_through.max(dropped);
+    }
+}
+
+/// What a change outside makes of the row of the same path it merges into (`before`, `before_from`); `key` is the
+/// path the change is about (a rename's `from`): created + deleted -> nothing, created + modified -> created, deleted +
+/// created -> modified, renames chained.
+fn merged_outside(
+    (before, before_from): (OutsideChange, Option<String>),
+    change: OutsideChange,
+    key: &str,
+    path: &str,
+    from: Option<&str>,
+) -> Option<(OutsideChange, String, Option<String>)> {
+    match (before, change) {
+        (OutsideChange::Created, OutsideChange::Deleted) => None,
+        (OutsideChange::Created, _) => Some((OutsideChange::Created, path.to_owned(), None)),
+        (OutsideChange::Deleted, OutsideChange::Created | OutsideChange::Modified) => {
+            Some((OutsideChange::Modified, path.to_owned(), None))
+        }
+        (OutsideChange::Renamed, OutsideChange::Renamed) => {
+            let origin = before_from.unwrap_or_else(|| key.to_owned());
+            (origin != path).then(|| (OutsideChange::Renamed, path.to_owned(), Some(origin)))
+        }
+        (OutsideChange::Renamed, OutsideChange::Deleted) => Some((
+            OutsideChange::Deleted,
+            before_from.unwrap_or_else(|| path.to_owned()),
+            None,
+        )),
+        (OutsideChange::Renamed, _) => Some((OutsideChange::Renamed, path.to_owned(), before_from)),
+        (OutsideChange::Modified, OutsideChange::Renamed) => Some((
+            OutsideChange::Renamed,
+            path.to_owned(),
+            Some(key.to_owned()),
+        )),
+        (_, change) => Some((change, path.to_owned(), from.map(str::to_owned))),
+    }
+}
+
+/// Changes outside merged into the journal one after another (one watch batch: thousands at a checkout). A change
+/// merges into the row of the same path since the person's last action ([`merged_outside`]): that tail is looked over
+/// once, each path's row is found by its path, and the rows merged away leave together when the run ends (each one
+/// leaving alone would shift the whole tail).
+struct OutsideRun<'a> {
+    journal: &'a mut Journal,
+    /// Path -> the live tail rows about it, oldest first: a change merges into the last one.
+    rows: HashMap<String, Vec<usize>>,
+    /// Rows merged away, removed at the end of the run.
+    gone: Vec<usize>,
+}
+
+impl<'a> OutsideRun<'a> {
+    fn new(journal: &'a mut Journal) -> Self {
+        // only the tail of changes outside (since the last action of the person | marker) is merged
+        let tail = journal
+            .entries
+            .iter()
+            .rposition(|e| e.by != By::Outside)
+            .map_or(0, |i| i + 1);
+        let mut rows: HashMap<String, Vec<usize>> = HashMap::new();
+        for (at, entry) in journal.entries.iter().enumerate().skip(tail) {
+            if let Some(path) = entry.fact.path() {
+                rows.entry(path.to_owned()).or_default().push(at);
+            }
+        }
+        Self {
+            journal,
+            rows,
+            gone: Vec::new(),
+        }
+    }
+
+    /// Adds a row; `false`: out of seqs, nothing added.
+    fn add(&mut self, at: u64, change: OutsideChange, path: String, from: Option<String>) -> bool {
+        let fact = Fact::Outside {
+            change,
+            path: path.clone(),
+            from,
+        };
+        if self.journal.push(at, By::Outside, fact).is_none() {
+            return false;
+        }
+        let row = self.journal.entries.len() - 1;
+        self.rows.entry(path).or_default().push(row);
+        true
+    }
+
+    fn push(&mut self, at: u64, change: OutsideChange, path: &str, from: Option<&str>) {
+        let key = if change == OutsideChange::Renamed {
+            from.unwrap_or(path)
+        } else {
+            path
+        };
+        let Some(&index) = self.rows.get(key).and_then(|rows| rows.last()) else {
+            self.add(at, change, path.to_owned(), from.map(str::to_owned));
+            return;
+        };
+        let Fact::Outside {
+            change: before,
+            from: before_from,
+            ..
+        } = self.journal.entries[index].fact.clone()
+        else {
+            return;
+        };
+        // the merged row goes in first (out of seqs, the earlier row stays), then the row it replaces goes
+        if let Some((change, path, from)) =
+            merged_outside((before, before_from), change, key, path, from)
+        {
+            if !self.add(at, change, path, from) {
+                return;
+            }
+        }
+        if let Some(rows) = self.rows.get_mut(key) {
+            rows.retain(|row| *row != index);
+        }
+        self.gone.push(index);
+    }
+}
+
+impl Drop for OutsideRun<'_> {
+    fn drop(&mut self) {
+        if self.gone.is_empty() {
+            return;
+        }
+        self.gone.sort_unstable();
+        let mut gone = self.gone.iter().peekable();
+        let mut at = 0;
+        self.journal.entries.retain(|_| {
+            let merged_away = gone.next_if_eq(&&at).is_some();
+            at += 1;
+            !merged_away
+        });
     }
 }
 
@@ -807,38 +869,45 @@ impl ActivityLog {
     /// Changes the watch verified: the ones made outside PerMark (not the app's own writes) are noted, files only.
     pub fn outside(&self, batch: &FsBatch) {
         let now = self.now();
-        let mut noted = false;
-        {
+        let noted = {
             let mut state = lock(&self.inner.state);
-            for change in batch.changes.iter().filter(|c| !c.own && !c.is_dir) {
-                if is_private(&change.path) {
-                    continue;
-                }
-                let (kind, from) = match &change.kind {
-                    ChangeKind::Created => (OutsideChange::Created, None),
-                    ChangeKind::Modified => (OutsideChange::Modified, None),
-                    ChangeKind::Removed => (OutsideChange::Deleted, None),
-                    ChangeKind::Renamed { from } => (OutsideChange::Renamed, Some(from.as_str())),
-                };
+            let changes: Vec<(OutsideChange, &str, Option<&str>)> = batch
+                .changes
+                .iter()
+                .filter(|c| !c.own && !c.is_dir && !is_private(&c.path))
+                .map(|c| match &c.kind {
+                    ChangeKind::Created => (OutsideChange::Created, c.path.as_str(), None),
+                    ChangeKind::Modified => (OutsideChange::Modified, c.path.as_str(), None),
+                    ChangeKind::Removed => (OutsideChange::Deleted, c.path.as_str(), None),
+                    ChangeKind::Renamed { from } => {
+                        (OutsideChange::Renamed, c.path.as_str(), Some(from.as_str()))
+                    }
+                })
+                .collect();
+            for &(kind, path, from) in &changes {
                 if state.waiting.is_some() {
                     state.wait(Waiting::Outside {
                         at: now,
                         change: kind,
-                        path: change.path.clone(),
+                        path: path.to_owned(),
                         from: from.map(str::to_owned),
                     });
                 } else {
-                    mirror_outside(&mut state, now, kind, &change.path, from);
+                    mirror_outside(&mut state, now, kind, path, from);
                 }
-                state.journal.push_outside(now, kind, &change.path, from);
-                noted = true;
             }
-            if noted {
+            let mut run = state.journal.outside_run();
+            for &(kind, path, from) in &changes {
+                run.push(now, kind, path, from);
+            }
+            drop(run);
+            if !changes.is_empty() {
                 state.journal.trim(now);
                 state.dirty = true;
                 self.inner.wake.notify_all();
             }
-        }
+            !changes.is_empty()
+        };
         if noted {
             let last = lock(&self.inner.state).journal.entries.last().cloned();
             if let Some(entry) = last.filter(|e| e.by == By::Outside) {
@@ -1004,7 +1073,8 @@ fn flush_mirror(mirror: Vec<(StateFile<Journal>, Mirrored)>) {
     for (file, items) in by_file {
         let mut journal = load(&file);
         let mut last = 0;
-        for item in items {
+        let mut items = items.into_iter().peekable();
+        while let Some(item) = items.next() {
             match item {
                 Mirrored::Fact { at, by, fact } => {
                     let _ = journal.push(at, by, fact);
@@ -1016,8 +1086,20 @@ fn flush_mirror(mirror: Vec<(StateFile<Journal>, Mirrored)>) {
                     path,
                     from,
                 } => {
-                    journal.push_outside(at, change, &path, from.as_deref());
+                    // the changes outside in a row merge as one run (a fact of the person ends it)
+                    let mut run = journal.outside_run();
+                    run.push(at, change, &path, from.as_deref());
                     last = at;
+                    while let Some(Mirrored::Outside {
+                        at,
+                        change,
+                        path,
+                        from,
+                    }) = items.next_if(|item| matches!(item, Mirrored::Outside { .. }))
+                    {
+                        run.push(at, change, &path, from.as_deref());
+                        last = at;
+                    }
                 }
             }
         }

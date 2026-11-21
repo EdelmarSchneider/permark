@@ -5,7 +5,7 @@
 //! announcement up. A different content at the same path (an agent saved right after us) is not recognized, so it
 //! stays news. An announcement is for the next report of that path only.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -22,13 +22,54 @@ pub struct OwnWrites {
     writes: Mutex<HashMap<String, Vec<(u64, Instant)>>>,
     /// Path keys moved from, moved to or deleted by the app.
     moves: Mutex<HashMap<String, Instant>>,
-    /// Moves the app announced: key of the new path -> the old path. Tells one move from a removal and a creation that
-    /// happen to be reported together (the watch has not seen the old file's content, so it cannot pair them itself).
-    pairs: Mutex<HashMap<String, (String, Instant)>>,
+    /// Moves the app announced. Tells one move from a removal and a creation that happen to be reported together (the
+    /// watch has not seen the old file's content, so it cannot pair them itself).
+    pairs: Mutex<Pairs>,
 }
 
 fn fresh(at: Instant, now: Instant) -> bool {
     now.saturating_duration_since(at) < EXPIRES_AFTER
+}
+
+/// Announced moves: key of the new path -> the old path, + what [`OwnWrites::moved_from`] looks up.
+#[derive(Debug, Default)]
+struct Pairs {
+    by_to: HashMap<String, (String, Instant)>,
+    /// Built on the first look after the pairs changed (a batch of thousands of moves asks once per removal).
+    from: Option<FromIndex>,
+}
+
+/// Keys of the announced old paths and of every folder above them, each with its latest announcement.
+#[derive(Debug, Default)]
+struct FromIndex {
+    paths: HashMap<String, Instant>,
+    folders: HashMap<String, Instant>,
+}
+
+impl Pairs {
+    fn changed(&mut self) -> &mut HashMap<String, (String, Instant)> {
+        self.from = None;
+        &mut self.by_to
+    }
+
+    fn index(&mut self) -> &FromIndex {
+        let by_to = &self.by_to;
+        self.from.get_or_insert_with(|| {
+            let mut index = FromIndex::default();
+            let latest = |map: &mut HashMap<String, Instant>, key: &str, at: Instant| {
+                let held = map.entry(key.to_owned()).or_insert(at);
+                *held = (*held).max(at);
+            };
+            for (from, at) in by_to.values() {
+                let key = key_of(from);
+                for (cut, _) in key.match_indices('/') {
+                    latest(&mut index.folders, &key[..cut], *at);
+                }
+                latest(&mut index.paths, &key, *at);
+            }
+            index
+        })
+    }
 }
 
 impl OwnWrites {
@@ -52,6 +93,18 @@ impl OwnWrites {
         map.entry(key_of(path)).or_default().push((hash.0, now));
     }
 
+    /// Whether a write of `path` was announced and not used up: the content of its next report decides whether the
+    /// change is the app's own.
+    #[must_use]
+    pub fn expects_write(&self, path: &str) -> bool {
+        let now = Instant::now();
+        self.writes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&key_of(path))
+            .is_some_and(|list| list.iter().any(|(_, at)| fresh(*at, now)))
+    }
+
     /// Takes back an announcement whose write failed.
     pub fn retract_write(&self, path: &str, hash: ContentHash) {
         let mut map = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
@@ -71,7 +124,8 @@ impl OwnWrites {
         let now = Instant::now();
         let mut map = self.moves.lock().unwrap_or_else(PoisonError::into_inner);
         map.retain(|_, at| fresh(*at, now));
-        let mut known = self.pairs.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut announced = self.pairs.lock().unwrap_or_else(PoisonError::into_inner);
+        let known = announced.changed();
         known.retain(|_, (_, at)| fresh(*at, now));
         for (from, to) in pairs {
             map.insert(key_of(from), now);
@@ -84,12 +138,20 @@ impl OwnWrites {
     /// (files and folders). The announcement stays for [`OwnWrites::mark`], which marks the change as the app's own.
     pub fn pair_moves(&self, changes: &mut Vec<Change>) {
         let now = Instant::now();
-        let mut known = self.pairs.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut announced = self.pairs.lock().unwrap_or_else(PoisonError::into_inner);
+        let known = announced.changed();
         known.retain(|_, (_, at)| fresh(*at, now));
         if known.is_empty() {
             return;
         }
-        let mut dropped: Vec<usize> = Vec::new();
+        // removals by key, in order: each creation looks up its own partner
+        let mut removals: HashMap<String, Vec<usize>> = HashMap::new();
+        for (at, change) in changes.iter().enumerate() {
+            if matches!(change.kind, ChangeKind::Removed) {
+                removals.entry(key_of(&change.path)).or_default().push(at);
+            }
+        }
+        let mut dropped: HashSet<usize> = HashSet::new();
         for at in 0..changes.len() {
             if !matches!(changes[at].kind, ChangeKind::Created) {
                 continue;
@@ -98,25 +160,28 @@ impl OwnWrites {
             let Some((from, _)) = known.get(&key) else {
                 continue;
             };
-            let from_key = key_of(from);
-            let partner = changes.iter().enumerate().find(|(i, c)| {
-                // a removal does not always know it was a folder (never seen): a folder created may pair with it
-                matches!(c.kind, ChangeKind::Removed)
-                    && (c.is_dir == changes[at].is_dir || changes[at].is_dir)
-                    && !dropped.contains(i)
-                    && key_of(&c.path) == from_key
+            let is_dir = changes[at].is_dir;
+            let partner = removals.get(&key_of(from)).and_then(|list| {
+                list.iter().copied().find(|i| {
+                    // a removal does not always know it was a folder (never seen): a folder created may pair with it
+                    (changes[*i].is_dir == is_dir || is_dir) && !dropped.contains(i)
+                })
             });
-            let Some((removed_at, _)) = partner else {
+            let Some(removed_at) = partner else {
                 continue;
             };
             let from = from.clone();
             changes[at].kind = ChangeKind::Renamed { from };
-            dropped.push(removed_at);
+            dropped.insert(removed_at);
             known.remove(&key);
         }
-        dropped.sort_unstable();
-        for at in dropped.into_iter().rev() {
-            changes.remove(at);
+        if !dropped.is_empty() {
+            let mut at = 0;
+            changes.retain(|_| {
+                let paired = dropped.contains(&at);
+                at += 1;
+                !paired
+            });
         }
     }
 
@@ -127,19 +192,17 @@ impl OwnWrites {
     pub fn moved_from(&self, path: &str) -> Option<bool> {
         let now = Instant::now();
         let key = key_of(path);
-        let prefix = format!("{key}/");
-        let pairs = self.pairs.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut found = None;
-        for (from, _) in pairs.values().filter(|(_, at)| fresh(*at, now)) {
-            let from = key_of(from);
-            if from.starts_with(&prefix) {
-                return Some(true);
-            }
-            if from == key {
-                found = Some(false);
-            }
+        let mut pairs = self.pairs.lock().unwrap_or_else(PoisonError::into_inner);
+        let index = pairs.index();
+        let announced =
+            |map: &HashMap<String, Instant>| map.get(&key).is_some_and(|at| fresh(*at, now));
+        if announced(&index.folders) {
+            Some(true)
+        } else if announced(&index.paths) {
+            Some(false)
+        } else {
+            None
         }
-        found
     }
 
     /// The app is about to delete these project paths.
@@ -160,7 +223,8 @@ impl OwnWrites {
     /// Takes back the announcements of moves | deletes that did not happen.
     pub fn retract_moves(&self, paths: &[String]) {
         let mut map = self.moves.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut known = self.pairs.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut announced = self.pairs.lock().unwrap_or_else(PoisonError::into_inner);
+        let known = announced.changed();
         for path in paths {
             let key = key_of(path);
             map.remove(&key);
@@ -451,5 +515,110 @@ mod tests {
             &c.kind,
             ChangeKind::Renamed { from } if (c.path == "b.md" && from == "a.md") || (c.path == "a2.md" && from == "b2.md")
         )));
+    }
+
+    mod indexed {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        const PATHS: [&str; 7] = ["x.md", "X.md", "d/x.md", "D/x.md", "d", "y.md", "d/e/z.md"];
+
+        /// Reference for the property check: each creation scans every change for its partner.
+        fn pair_moves_one_by_one(
+            known: &mut HashMap<String, (String, Instant)>,
+            changes: &mut Vec<Change>,
+        ) {
+            let mut dropped: Vec<usize> = Vec::new();
+            for at in 0..changes.len() {
+                if !matches!(changes[at].kind, ChangeKind::Created) {
+                    continue;
+                }
+                let key = key_of(&changes[at].path);
+                let Some((from, _)) = known.get(&key) else {
+                    continue;
+                };
+                let from_key = key_of(from);
+                let partner = changes.iter().enumerate().find(|(i, c)| {
+                    matches!(c.kind, ChangeKind::Removed)
+                        && (c.is_dir == changes[at].is_dir || changes[at].is_dir)
+                        && !dropped.contains(i)
+                        && key_of(&c.path) == from_key
+                });
+                let Some((removed_at, _)) = partner else {
+                    continue;
+                };
+                let from = from.clone();
+                changes[at].kind = ChangeKind::Renamed { from };
+                dropped.push(removed_at);
+                known.remove(&key);
+            }
+            dropped.sort_unstable();
+            for at in dropped.into_iter().rev() {
+                changes.remove(at);
+            }
+        }
+
+        /// Reference for the property check: every announced old path folded and compared.
+        fn moved_from_one_by_one(froms: &[String], path: &str) -> Option<bool> {
+            let key = key_of(path);
+            let prefix = format!("{key}/");
+            let mut found = None;
+            for from in froms {
+                let from = key_of(from);
+                if from.starts_with(&prefix) {
+                    return Some(true);
+                }
+                if from == key {
+                    found = Some(false);
+                }
+            }
+            found
+        }
+
+        fn change_of((path, created, is_dir): (usize, bool, bool)) -> Change {
+            Change {
+                path: PATHS[path].to_owned(),
+                kind: if created {
+                    ChangeKind::Created
+                } else {
+                    ChangeKind::Removed
+                },
+                is_dir,
+                own: false,
+            }
+        }
+
+        proptest! {
+            #[test]
+            fn announced_moves_pair_and_answer_as_each_one_scanned(
+                pairs in proptest::collection::vec((0..PATHS.len(), 0..PATHS.len()), 0..6),
+                changes in proptest::collection::vec(
+                    (0..PATHS.len(), proptest::bool::ANY, proptest::bool::ANY),
+                    0..10,
+                ),
+            ) {
+                let pairs: Vec<(String, String)> = pairs
+                    .into_iter()
+                    .map(|(from, to)| (PATHS[from].to_owned(), PATHS[to].to_owned()))
+                    .collect();
+                let own = OwnWrites::new();
+                own.expect_moves(&pairs);
+                // a later announcement for the same new path replaces the earlier one
+                let mut kept: HashMap<String, (String, Instant)> = HashMap::new();
+                for (from, to) in &pairs {
+                    kept.insert(key_of(to), (from.clone(), Instant::now()));
+                }
+                let froms: Vec<String> = kept.values().map(|(from, _)| from.clone()).collect();
+                for path in PATHS.iter().chain(["d/e", "e", ""].iter()) {
+                    prop_assert_eq!(own.moved_from(path), moved_from_one_by_one(&froms, path));
+                }
+                let mut indexed: Vec<Change> = changes.iter().copied().map(change_of).collect();
+                let mut scanned = indexed.clone();
+                own.pair_moves(&mut indexed);
+                pair_moves_one_by_one(&mut kept, &mut scanned);
+                prop_assert_eq!(indexed, scanned);
+            }
+        }
     }
 }

@@ -16,8 +16,13 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 pub use noise::{is_git_signal, is_news};
 pub use own::OwnWrites;
 pub use service::{PathHold, PathLookup, Timing, Watcher};
-pub(crate) use sigs::HASH_LIMIT;
+pub(crate) use sigs::{stat_sig, HASH_LIMIT};
 pub use types::{Change, ChangeKind, FsBatch, BULK_CHANGES};
+// the measurements time the reconcile pass alone (no OS events, no debounce)
+#[cfg(test)]
+pub(crate) use reconcile::{reconcile, Env, Pending};
+#[cfg(test)]
+pub(crate) use sigs::{sig_of, SigStore};
 
 /// Whether changes of the project's files reach the app as they happen.
 #[derive(Debug, Clone, PartialEq, Eq)]
