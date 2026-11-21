@@ -26,7 +26,8 @@ fn write(base: &Path, rel: &str) {
 }
 
 fn fixture_with(files: &[&str], config: &ProjectConfig) -> Fixture {
-    let dir = tempfile::tempdir().unwrap();
+    // folders the explorer lists are real paths; the temp root's own spelling may differ (8.3 name, /private/var)
+    let dir = crate::fsx::real_tempdir();
     for file in files {
         write(dir.path(), file);
     }
