@@ -2,10 +2,11 @@
 //! session saver.
 
 use std::collections::{BTreeSet, HashMap};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use permark_core::conditions::Distribution;
+use permark_core::crash::CrashReport;
 use permark_core::events::{CoreEvent, EventSink, OpenFailed, SettingsChanged, StateRecovered};
 use permark_core::ipc_local::{Listening, Server};
 use permark_core::open::{OpenAck, OpenRequest};
@@ -47,6 +48,12 @@ pub struct Shell {
     normal: Mutex<HashMap<String, Geometry>>,
     /// Startup notices, handed to the first window that boots.
     notices: Mutex<Vec<StateRecovered>>,
+    /// The last run's crash report the person has not dismissed yet (read at start).
+    crash: Option<CrashReport>,
+    /// The crash report went to a window already: offered once per start, like the notices.
+    crash_handed: AtomicBool,
+    /// The last session's windows and tabs are all back in the registry (a session saved before would lack some).
+    restored: AtomicBool,
     /// Open failures: emitted to views whose frontend listens, kept for the others until they boot.
     delivery: Mutex<Delivery>,
     server: Mutex<Option<Server>>,
@@ -213,6 +220,8 @@ impl Shell {
         let print = crate::print::provide(&env, &handle);
         env.apply_app_plugins();
         let app_store = StateStore::app(dirs);
+        // also removes all but the newest reports (never done by the panic hook)
+        let crash = permark_core::crash::offer(&app_store);
         Self {
             registry: WorkspaceRegistry::new_shared(&env),
             recent: RecentStore::new(&app_store),
@@ -225,6 +234,9 @@ impl Shell {
             next_window: AtomicU64::new(1),
             normal: Mutex::new(HashMap::new()),
             notices: Mutex::new(unreadable.into_iter().collect()),
+            crash,
+            crash_handed: AtomicBool::new(false),
+            restored: AtomicBool::new(false),
             delivery: Mutex::new(Delivery::default()),
             server: Mutex::new(None),
             _updater: updater,
@@ -268,6 +280,42 @@ impl Shell {
 
     pub fn take_notices(&self) -> Vec<StateRecovered> {
         std::mem::take(&mut *lock(&self.notices))
+    }
+
+    /// The offer of the last run's crash report, for the first window that boots; `None` afterwards.
+    pub fn take_crash(&self) -> Option<crate::crash::CrashOffer> {
+        if self.crash_handed.swap(true, Ordering::Relaxed) {
+            return None;
+        }
+        self.crash.as_ref().map(crate::crash::offer_of)
+    }
+
+    /// The person dismissed the crash report offer: it is not offered again (nor an older one).
+    ///
+    /// # Errors
+    /// The record cannot be written.
+    pub fn dismiss_crash(&self) -> Result<(), IpcError> {
+        match &self.crash {
+            Some(report) => permark_core::crash::dismiss(&self.app_store, report),
+            None => Ok(()),
+        }
+    }
+
+    /// The last session is back in the registry: saving the session now keeps all of it.
+    pub fn restore_done(&self) {
+        self.restored.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether the last session is back in the registry ([`Self::restore_done`]).
+    #[must_use]
+    pub fn restored(&self) -> bool {
+        self.restored.load(Ordering::SeqCst)
+    }
+
+    /// The offered crash report's file.
+    #[must_use]
+    pub fn crash_file(&self) -> Option<&std::path::Path> {
+        self.crash.as_ref().map(|report| report.path.as_path())
     }
 
     /// Open failure for `window`: emitted when its frontend listens, else kept until it boots (first launch races).

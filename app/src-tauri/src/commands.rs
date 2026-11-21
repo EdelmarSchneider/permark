@@ -45,7 +45,7 @@ use ts_rs::TS;
 
 use crate::open::{open_placed, OpenOutcome};
 use crate::shell::{state, Shell};
-use crate::views::{BarTheme, CloseAnswer, ViewRequest};
+use crate::views::{BarTheme, CloseAnswer, NativeWords, Reloaded};
 use permark_core::open::OpenPlacement;
 
 /// What a view (one tab, or a window's Welcome) needs to draw its first frame.
@@ -63,6 +63,10 @@ pub struct BootInfo {
     pub context: Context,
     pub settings: AppSettings,
     pub notices: Vec<StateRecovered>,
+    /// The last run's crash report, offered to the first window that boots (once per start).
+    pub crash: Option<crate::crash::CrashOffer>,
+    /// Its page was loaded again after the page process ended (`None`: a first boot).
+    pub reloaded: Option<Reloaded>,
     /// Opens from outside that failed before this window could listen.
     pub failures: Vec<OpenFailed>,
     pub platform: Platform,
@@ -115,6 +119,8 @@ pub fn window_boot(handle: AppHandle, window: Webview) -> BootInfo {
             .unwrap_or_else(|| Context::welcome(shell.env.distribution)),
         settings: shell.env.settings(),
         notices: shell.take_notices(),
+        crash: shell.take_crash(),
+        reloaded: crate::views::take_reloaded(&handle, &label),
         failures: shell.window_booted(&label),
         platform: Platform::current(),
         region: permark_core::settings::system_region(),
@@ -265,13 +271,7 @@ pub fn tab_close(handle: AppHandle, tab: TabId) {
             return;
         }
         crate::open::run(&handle, outcome);
-        let _ = handle.emit_to(
-            view.as_str(),
-            "tab-close-requested",
-            ViewRequest {
-                window: view.clone(),
-            },
-        );
+        crate::views::ask_tab_close(&handle, &view);
         return;
     }
     crate::open::run(&handle, shell.registry.close_tab(tab));
@@ -1006,7 +1006,7 @@ pub fn open_web(handle: AppHandle, url: String) -> Result<(), IpcError> {
 }
 
 /// Web links the browser may be given: a known scheme, no control characters, a sane length.
-fn web_url_allowed(url: &str) -> bool {
+pub(crate) fn web_url_allowed(url: &str) -> bool {
     let lower = url.trim().to_ascii_lowercase();
     url.len() <= 4096
         && !url.chars().any(char::is_control)
@@ -1387,6 +1387,18 @@ pub fn view_saved(handle: AppHandle, window: Webview, saved: bool) {
     crate::views::view_saved(&handle, window.label(), saved);
 }
 
+/// This view received a close | tab-close ask and its prompt is up: the person's answer is not timed.
+#[tauri::command(async)]
+pub fn view_heard(handle: AppHandle, window: Webview) {
+    crate::views::heard(&handle, window.label());
+}
+
+/// The words of the app's own system dialogs in the person's language (the backend holds no translations).
+#[tauri::command(async)]
+pub fn native_words(handle: AppHandle, words: NativeWords) {
+    crate::views::set_words(&handle, words);
+}
+
 /// The view's page painted (a hidden window shows with it).
 #[tauri::command(async)]
 pub fn view_ready(handle: AppHandle, window: Webview) {
@@ -1524,6 +1536,26 @@ pub fn demo_install(handle: AppHandle) -> Result<String, IpcError> {
 #[tauri::command(async)]
 pub fn demo_dismiss(handle: AppHandle) -> Result<(), IpcError> {
     permark_core::demo::dismiss(&state(&handle).app_store)
+}
+
+/// The person dismissed the last run's crash report offer: not offered again.
+#[tauri::command(async)]
+pub fn crash_dismiss(handle: AppHandle) -> Result<(), IpcError> {
+    state(&handle).dismiss_crash()
+}
+
+/// Shows the offered crash report in the file manager. The path is the one read at start, never one from the window.
+#[tauri::command(async)]
+pub fn crash_reveal(handle: AppHandle) -> Result<(), IpcError> {
+    let shell = state(&handle);
+    let target = shell
+        .crash_file()
+        .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject("crash report"))?;
+    handle.opener().reveal_item_in_dir(target).map_err(|e| {
+        IpcError::new(ErrorKind::Io)
+            .subject(target.display().to_string())
+            .detail(e.to_string())
+    })
 }
 
 /// Lists every command once: Tauri handler + names (contract test).
@@ -1832,6 +1864,8 @@ commands![
     window_close,
     window_close_answer,
     view_saved,
+    view_heard,
+    native_words,
     view_ready,
     view_set_title,
     view_set_theme,
@@ -1844,6 +1878,8 @@ commands![
     demo_offer,
     demo_install,
     demo_dismiss,
+    crash_dismiss,
+    crash_reveal,
 ];
 
 #[cfg(test)]

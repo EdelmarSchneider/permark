@@ -4,6 +4,7 @@
 pub mod agent;
 mod assets;
 mod commands;
+pub mod crash;
 mod default_app;
 mod downloads_http;
 mod files;
@@ -12,6 +13,7 @@ mod nav;
 mod open;
 mod plugins;
 mod print;
+mod renderer;
 mod saver;
 mod shell;
 mod sink;
@@ -30,12 +32,12 @@ use tauri::{Manager, RunEvent, WindowEvent};
 
 pub use shell::Shell;
 
-/// Why the app did not start.
+/// Why the app did not start; each text names the step that failed (shown to the person as is).
 #[derive(Debug, thiserror::Error)]
 pub enum StartError {
-    #[error("no profile folder for PerMark's settings on this system")]
+    #[error("finding the folder for its settings failed: this system names no profile folder")]
     NoProfile,
-    #[error(transparent)]
+    #[error("setting up the app window failed: {0}")]
     Tauri(#[from] tauri::Error),
 }
 

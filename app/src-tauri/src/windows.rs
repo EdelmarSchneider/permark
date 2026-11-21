@@ -174,8 +174,10 @@ pub fn remember_geometry(handle: &AppHandle, label: &str) {
     }
 }
 
-/// Brings a window forward (shown, unminimized, focused) with the view on screen focused.
+/// Brings a window forward (shown, unminimized, focused) with the view on screen focused. A window still hidden shows
+/// now when its view painted already; one still being made shows once its view paints (never an empty frame first).
 pub fn focus(handle: &AppHandle, label: &str) {
+    crate::views::show_painted(handle, label);
     if let Some(window) = handle.get_window(label) {
         let _ = window.unminimize();
         let _ = window.set_focus();
