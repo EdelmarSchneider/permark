@@ -1183,7 +1183,11 @@
   {/await}
 {/if}
 {#if store.dialog.status === "asking"}
-  <MovePlanDialog plan={store.dialog.plan} answer={(choice) => void store.answerDialog(choice)} />
+  <MovePlanDialog
+    plan={store.dialog.plan}
+    answer={(choice) => void store.answerDialog(choice)}
+    returnFocus={() => list ?? null}
+  />
 {/if}
 {#if store.drag.status === "dragging" && store.drag.over !== null}
   <div class="drop-hint" aria-hidden="true">

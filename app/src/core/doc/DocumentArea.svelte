@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  /** Areas alive in the window: a tab switch makes the next one before it takes the last one down. */
+  let alive = 0;
+</script>
+
 <script lang="ts">
   // The document area: header, the page (or the viewer of the file's kind), the notices around it, find in page.
   // Everything about what is shown lives in the document controller; this is the frame and the keys.
@@ -213,10 +218,16 @@
     untrack(() => documents.retitleRefs());
   });
 
-  // the area goes away with the workspace (the window shows the welcome again): the controller lets go of the document
+  // the area goes away with the workspace (the window shows the welcome again): the controller lets go of the document.
+  // Not while the next tab's area is there: the controllers serve it already (it set its workspace and document), and
+  // a release would take its page away under it.
+  alive += 1;
   $effect(() => () => {
-    editing.release();
-    documents.release();
+    alive -= 1;
+    if (alive === 0) {
+      editing.release();
+      documents.release();
+    }
     ui.closeFind();
   });
 

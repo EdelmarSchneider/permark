@@ -69,7 +69,9 @@ function factsOf(id: string, path: string, index: number, detail: boolean): Repo
             subject: `Update the plan of ${path.split("/").pop() ?? path}`,
           }
         : null,
-    error: failed ? { kind: "failed", reason: "detected dubious ownership in repository" } : null,
+    error: failed
+      ? { kind: "failed", code: "failed", reason: "detected dubious ownership in repository" }
+      : null,
     pending: false,
   };
 }

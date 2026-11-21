@@ -3,6 +3,7 @@
 // owner repository of a path. Pure (words through `t`).
 
 import type { RepoSummary } from "../../api";
+import type { GitErrorCode } from "../../api/generated/GitErrorCode";
 import type { RepoState } from "../../api/generated/RepoState";
 import { t, tn, type MessageKey } from "../../core/i18n";
 import { keyOf } from "../../core/projects/model";
@@ -103,7 +104,9 @@ export function rowFact(s: RepoSummary): ProjectFact | null {
   if (gitMissing(s)) return null;
   if (s.error?.kind === "failed") {
     const text = t("projects.card.gitError");
-    return { text, title: `${text} ${reasonText(s.error.reason)}` };
+    const why = gitErrorText(s.error.code, s.error.reason);
+    // the reason on a line of its own, and said too (a tooltip needs a hover)
+    return why === "" ? { text, title: text } : { text, title: `${text}\n${why}`, spoken: why };
   }
   const state = STATE_KEYS[s.state];
   const full = state === null ? headText(s) : t(state);
@@ -155,9 +158,35 @@ export function aheadBehindText(ahead: number, behind: number): string {
   return `${tn("projects.card.toSend", ahead, { n: ahead })}, ${tn("projects.card.toGet", behind, { n: behind })}`;
 }
 
-/** Git's reason in words people know (dubious ownership -> "doesn't trust this folder's owner"). */
-export function reasonText(reason: string): string {
-  return /dubious ownership/i.test(reason) ? t("git.errorOwnership") : reason;
+/** Why git could not answer, in words people know: a failure keeps git's own words (dubious ownership -> "doesn't
+ *  trust this folder's owner"); "" when there are none. */
+export function gitErrorText(code: GitErrorCode, reason: string): string {
+  switch (code) {
+    case "timeout":
+      return t("git.why.timeout");
+    case "tooLarge":
+      return t("git.why.tooLarge");
+    case "spawn":
+      return t("git.why.spawn");
+    case "parse":
+      return t("git.why.parse");
+    case "failed": {
+      if (/dubious ownership/i.test(reason)) return t("git.errorOwnership");
+      const detail = reason.trim();
+      if (detail === "") return "";
+      // git's words often end without a stop: a sentence after them would read as part of them
+      return t("git.why.failed", { detail: /[.!?…。]$/u.test(detail) ? detail : `${detail}.` });
+    }
+    default:
+      return code satisfies never;
+  }
+}
+
+/** The status bar's git problem beyond its line: why, then the way out where another git can help (git failed | could
+ *  not start; a slow, long or odd answer is no matter of which git), one per line. */
+export function gitProblemHint(code: GitErrorCode, reason: string): string {
+  const way = code === "failed" || code === "spawn" ? t("git.errorHint") : "";
+  return [gitErrorText(code, reason), way].filter((line) => line !== "").join("\n");
 }
 
 /** "N changed files" for the card. */

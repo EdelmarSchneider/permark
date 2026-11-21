@@ -90,6 +90,28 @@ describe("editing session", () => {
     expect(saved()).toBe(1);
   });
 
+  it("a failed save keeps the backend's reason for the bar, which alone says it (no notice beside it)", async () => {
+    const { api, session, notes } = setup();
+    const { editor, content } = await open(session);
+    editor.set(content.text + "x");
+    session.changed();
+    await settle();
+    api.probe.edit.failures.push({
+      command: "edit_save",
+      path: "docs/guide.md",
+      kind: "locked",
+      detail: null,
+    });
+    session.save();
+    await settle();
+    expect(session.state).toMatchObject({
+      s: "saveError",
+      error: { kind: "backend", error: { kind: "locked", subject: "docs/guide.md" } },
+    });
+    // the bar is an alert: a notice with the same words would make a screen reader say them twice
+    expect(notes).toEqual([]);
+  });
+
   it("typing and taking it back is no change", async () => {
     const { session } = setup();
     const { editor, content } = await open(session);

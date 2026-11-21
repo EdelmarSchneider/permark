@@ -1,4 +1,4 @@
-// Eval set (spec feature-correction D-8) step 2: report over the outputs of step 1 (Rust
+// Eval set step 2: report over the outputs of step 1 (Rust
 // `crates/plugins/correction/src/tests/eval.rs`). Synthetic report test always runs; the real report runs only when
 // `PERMARK_EVAL_OUT` names an outputs file. Never fails on quality, only on harness errors.
 //

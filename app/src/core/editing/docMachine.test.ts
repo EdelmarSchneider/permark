@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ApiError } from "../../api";
 import {
   isUnsaved,
   transition,
@@ -13,6 +14,11 @@ const base: Base = { hash: "h1", text: "a\n" };
 const next: Base = { hash: "h2", text: "b\n" };
 const explicit: SavePolicy = { kind: "explicit" };
 const auto: SavePolicy = { kind: "auto", delayMs: 800 };
+const failure: ApiError = {
+  kind: "backend",
+  command: "edit_save",
+  error: { kind: "io", subject: "a.md", detail: null },
+};
 
 const STATES: DocState[] = [
   { s: "loading" },
@@ -22,7 +28,7 @@ const STATES: DocState[] = [
   { s: "saving", base, then: { kind: "window" }, editedSince: true },
   { s: "conflict", base, disk: "h9" },
   { s: "conflict", base, disk: null },
-  { s: "saveError", base, error: "io" },
+  { s: "saveError", base, error: failure },
   { s: "unsavedPrompt", back: { s: "dirty", base }, leave: { kind: "workspace" } },
   { s: "unsavedPrompt", back: { s: "conflict", base, disk: null }, leave: { kind: "view" } },
   { s: "closed" },
@@ -39,7 +45,7 @@ const EVENTS: DocEvent[] = [
   { e: "savedAs", path: "a.md", sameFile: true },
   { e: "conflict", disk: "h9" },
   { e: "conflict", disk: null },
-  { e: "saveFailed", error: "io" },
+  { e: "saveFailed", error: failure },
   { e: "retry" },
   { e: "diskChanged", hash: "h1" },
   { e: "diskChanged", hash: "h7" },
@@ -63,7 +69,7 @@ describe("document machine", () => {
       expect(dirty.state).toMatchObject({ s: "saving", then: leave });
       expect(types(dirty.effects)).toContain("save");
       const failed = transition(
-        { s: "saveError", base, error: "io" },
+        { s: "saveError", base, error: failure },
         { e: "saveAndLeave", leave },
         policy,
       );
@@ -195,7 +201,7 @@ describe("document machine", () => {
   });
 
   it("after a failed save: autosave goes on with the next edit, undoing back to the disk text is clean", () => {
-    const failed: DocState = { s: "saveError", base, error: "io" };
+    const failed: DocState = { s: "saveError", base, error: failure };
     const edited = transition(failed, { e: "edited" }, auto);
     expect(edited.state).toEqual(failed);
     expect(edited.effects).toEqual([{ type: "scheduleAutosave", delayMs: 800 }]);

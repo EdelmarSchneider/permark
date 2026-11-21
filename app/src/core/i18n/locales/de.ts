@@ -84,6 +84,10 @@ export default {
   "error.invalidPath": "{subject} ist kein gültiger Pfad.",
   "error.denied": "Keine Berechtigung für {subject}.",
   "error.io": "Zugriff auf {subject} nicht möglich: {detail}",
+  "error.locked":
+    "{subject} ist in einem anderen Programm geöffnet, das Änderungen verhindert. Schließe es dort und versuche es erneut.",
+  "error.diskFull": "Der Datenträger ist voll, daher konnte {subject} nicht geschrieben werden.",
+  "error.readOnly": "{subject} ist schreibgeschützt und kann nicht geändert werden.",
   "error.exists": "{subject} existiert bereits.",
   "error.binary": "{subject} ist eine Binärdatei und kann nicht als Text angezeigt werden.",
   "error.tooLarge": "{subject} ist zu groß.",
@@ -174,6 +178,8 @@ export default {
   "fileOps.summaryMoved": "Verschoben: {what}",
   "fileOps.summaryRenamed": "Umbenannt: {from} in {to}",
   "fileOps.summaryDeleted": "Gelöscht: {what}",
+  "fileOps.partlyDeleted":
+    "Gelöscht: {what}. {refused} konnte nicht in den Papierkorb verschoben werden.",
   "fileOps.dropInto": "Nach {folder} verschieben",
   "fileOps.projectRoot": "den Projektordner",
   "fileOps.dialogLabel": "Links aktualisieren",
@@ -310,6 +316,7 @@ export default {
   "doc.deleted.title": "Diese Datei wurde um {time} gelöscht.",
   "doc.diagramFailed": "Diagramm konnte nicht gezeichnet werden",
   "doc.diagramRendering": "Diagramm wird gezeichnet …",
+  "doc.diagramSource": "Quelltext des Diagramms",
   "doc.error.title": "Diese Datei kann nicht geöffnet werden",
   "doc.footnoteBackref": "Zurück zur Referenz {ref}",
   "doc.frontmatter": "Front Matter",
@@ -1025,6 +1032,11 @@ export default {
   "git.unavailableHint":
     "Das gewählte Git ist nicht verfügbar. Wähle in den Einstellungen ein anderes.",
   "git.errorOwnership": "Git vertraut dem Besitzer dieses Ordners nicht.",
+  "git.why.timeout": "Git hat nicht rechtzeitig geantwortet.",
+  "git.why.tooLarge": "Die Antwort von Git war zu lang zum Lesen.",
+  "git.why.spawn": "Git konnte nicht gestartet werden.",
+  "git.why.parse": "Die Antwort von Git war nicht verständlich.",
+  "git.why.failed": "Details: {detail}",
   "git.errorHint":
     "Öffne die Einstellungen, um ein anderes Git zu wählen (das eingebaute braucht kein Vertrauen).",
   "git.folderChanged.one": "{n} geänderte Datei darin",
@@ -1898,6 +1910,7 @@ export default {
   "plugin.graphviz.name": "Graphviz-Diagramme",
   "plugin.graphviz.about": "Zeichnet Graphviz-Graphen (DOT) aus Codeblöcken.",
   "graphviz.tooLarge": "Dieser Graph ist zu groß, um ihn hier zu zeichnen.",
+  "plantuml.tooLarge": "Dieses Diagramm ist zu groß, um es hier zu zeichnen.",
   "plugin.media.name": "Bilder, Audio und Video",
   "plugin.media.about": "Öffnet Bilder, Ton und Video direkt an Ort und Stelle.",
   "plugin.json-view.name": "JSON",
@@ -1938,6 +1951,8 @@ export default {
     "Diese PerMark-Kopie ist nicht installiert und kann daher nicht Standard-App werden. Wählen Sie die App für diese Dateien in den Systemeinstellungen.",
   "defaultApp.confined": "Wählen Sie die App für diese Dateien in den Systemeinstellungen.",
   "defaultApp.failed": "Die Standard-App konnte nicht geändert werden: {message}",
+  "defaultApp.chooseInFinder":
+    "PerMark bleibt die Standard-App für diese Dateien. Um eine andere App zu verwenden, wähle eine der Dateien im Finder aus, wähle Ablage > Informationen und stelle die App unter „Öffnen mit“ ein.",
   "defaultApp.askTitle": "Diese Dateien mit PerMark öffnen?",
   "defaultApp.askBody":
     "PerMark öffnet die angehakten Dateien, wenn Sie darauf doppelklicken. Sie können das jederzeit in den Einstellungen ändern.",
@@ -1959,6 +1974,8 @@ export default {
   "shell.newFile.row": "„Neue Markdown-Datei“",
   "shell.newFile.hint": "Im Kontextmenü von Ordnern: legt dort eine Datei an und öffnet sie.",
   "shell.failed": "Das Menü konnte nicht geändert werden: {message}",
+  "shell.readFailed": "Die Menüeinträge konnten nicht gelesen werden. {message}",
+  "shell.retry": "Erneut versuchen",
   "updates.section": "Updates",
   "updates.row": "Neue Versionen",
   "updates.notes": "Was ist neu",

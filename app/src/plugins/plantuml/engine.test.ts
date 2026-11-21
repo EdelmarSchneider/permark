@@ -7,12 +7,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /** The picture the engine draws for the next render. */
 let picture = "";
 
+/** Renders the engine ran. */
+let renders = 0;
+
 vi.mock("@plantuml/core", () => ({
-  renderToString: (_lines: string[], ok: (svg: string) => void) => ok(picture),
+  renderToString: (_lines: string[], ok: (svg: string) => void) => {
+    renders += 1;
+    ok(picture);
+  },
 }));
 vi.mock("@plantuml/core/viz-global.js", () => ({ instance: undefined }));
 
-const { drawPlantuml } = await import("./engine");
+const { drawPlantuml, plantumlTooLarge } = await import("./engine");
 const { diagrams } = await import("../../core/doc/diagram");
 
 const ERROR =
@@ -43,5 +49,26 @@ describe("plantuml error picture", () => {
       "dark",
     );
     expect(svg).toContain("PlantUML version 2 shipped");
+  });
+});
+
+describe("plantuml size guard", () => {
+  const diagram = (body: string) => `@startuml\n${body}\n@enduml`;
+
+  it("refuses a source too big to draw on the page's thread without running the engine", async () => {
+    renders = 0;
+    const steps = Array.from({ length: 5000 }, (_, i) => `A${i} -> B${i} : step ${i}`);
+    const huge = diagram(steps.join("\n"));
+    expect(plantumlTooLarge(huge)).toBe(true);
+    expect(plantumlTooLarge(diagram(`note "${"a".repeat(60_000)}"`))).toBe(true);
+    const small = diagram(Array.from({ length: 200 }, (_, i) => `A${i} --> B${i}`).join("\n"));
+    expect(plantumlTooLarge(small)).toBe(false);
+    expect(await drawPlantuml(huge, "light")).toEqual({
+      problem: "This diagram is too large to draw here.",
+    });
+    expect(renders).toBe(0);
+    picture = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><g/></svg>';
+    expect(await drawPlantuml(small, "light")).toContain("<svg");
+    expect(renders).toBe(1);
   });
 });

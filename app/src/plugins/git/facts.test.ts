@@ -9,8 +9,9 @@ import {
   aheadBehindText,
   changedLine,
   infoText,
+  gitErrorText,
+  gitProblemHint,
   nodeFact,
-  reasonText,
   repoOf,
   reposByKey,
   rowFact,
@@ -90,7 +91,12 @@ describe("the node's muted text", () => {
 
   it("a repository git can't read: a warning, said and in the tooltip; the branch it read without git stays", () => {
     expect(
-      nodeFact(repo({ error: { kind: "failed", reason: "dubious ownership" }, changed: null })),
+      nodeFact(
+        repo({
+          error: { kind: "failed", code: "failed", reason: "dubious ownership" },
+          changed: null,
+        }),
+      ),
     ).toEqual({
       text: "develop",
       warn: true,
@@ -100,7 +106,12 @@ describe("the node's muted text", () => {
     // nothing read at all: the mark alone
     expect(
       nodeFact(
-        repo({ error: { kind: "failed", reason: "x" }, branch: null, oid: null, changed: null }),
+        repo({
+          error: { kind: "failed", code: "failed", reason: "x" },
+          branch: null,
+          oid: null,
+          changed: null,
+        }),
       ),
     ).toMatchObject({ text: "", warn: true });
   });
@@ -146,13 +157,23 @@ describe("the Settings row", () => {
       spoken: "A merge was started in git and isn't finished yet.",
     });
     const failed = rowFact(
-      repo({ error: { kind: "failed", reason: "detected dubious ownership" } }),
+      repo({ error: { kind: "failed", code: "failed", reason: "detected dubious ownership" } }),
     );
     expect(failed?.text).toBe("Git can't read this project.");
-    // git's own message in plain words, as on the card
+    // git's own message in plain words, as on the card, on a line of its own; said without a hover
     expect(failed?.title).toBe(
-      "Git can't read this project. Git doesn't trust this folder's owner.",
+      "Git can't read this project.\nGit doesn't trust this folder's owner.",
     );
+    expect(failed?.spoken).toBe("Git doesn't trust this folder's owner.");
+    // the app's own reasons come in words of the window's language, never as English sentences from the backend
+    const slow = rowFact(repo({ error: { kind: "failed", code: "timeout", reason: "" } }));
+    expect(slow?.title).toBe("Git can't read this project.\nGit didn't answer in time.");
+    // no reason: nothing more to say
+    const bare = rowFact(repo({ error: { kind: "failed", code: "failed", reason: "" } }));
+    expect(bare).toEqual({
+      text: "Git can't read this project.",
+      title: "Git can't read this project.",
+    });
     // a detached HEAD is never cut (short and whole)
     expect(rowFact(repo({ branch: null, detached: true, changed: 2 }))?.text).toBe(
       "not on a branch (at a1b2c3d) · 2 changed",
@@ -172,7 +193,7 @@ describe("the expanded row's line", () => {
     expect(infoText(repo({ error: { kind: "unavailable" } }), true)).toBe(
       "Git isn't available, so branch and changes aren't shown.",
     );
-    expect(infoText(repo({ error: { kind: "failed", reason: "x" } }), true)).toBe(
+    expect(infoText(repo({ error: { kind: "failed", code: "failed", reason: "x" } }), true)).toBe(
       "Git can't read this project.",
     );
   });
@@ -182,11 +203,43 @@ describe("the expanded row's line", () => {
     expect(aheadBehindText(3, 2)).toBe("3 changes to send, 2 to get");
   });
 
-  it("git's ownership refusal in plain words", () => {
-    expect(reasonText("fatal: detected dubious ownership in repository at 'x'")).toBe(
+  it("why git could not answer, in words for each kind", () => {
+    expect(gitErrorText("timeout", "")).toBe("Git didn't answer in time.");
+    expect(gitErrorText("tooLarge", "")).toBe("Git's answer was too long to read.");
+    expect(gitErrorText("spawn", "The system cannot find the file specified.")).toBe(
+      "Git couldn't be started.",
+    );
+    expect(gitErrorText("parse", "unreadable answer of git")).toBe(
+      "Git's answer couldn't be understood.",
+    );
+    // a failure: git's own words, its ownership refusal in plain words
+    expect(gitErrorText("failed", "fatal: detected dubious ownership in repository at 'x'")).toBe(
       "Git doesn't trust this folder's owner.",
     );
-    expect(reasonText("bad object")).toBe("bad object");
+    // git's words end with a stop, so a sentence after them never reads as part of them
+    expect(gitErrorText("failed", "fatal: bad object HEAD")).toBe(
+      "Details: fatal: bad object HEAD.",
+    );
+    expect(gitErrorText("failed", "fatal: bad object HEAD.\n")).toBe(
+      "Details: fatal: bad object HEAD.",
+    );
+    expect(gitErrorText("failed", "")).toBe("");
+  });
+
+  it("the status bar's problem: why, then the way out only where another git can help", () => {
+    const choose = "Open the settings to choose another git (the built-in one needs no trust).";
+    expect(gitProblemHint("failed", "fatal: bad object HEAD")).toBe(
+      `Details: fatal: bad object HEAD.\n${choose}`,
+    );
+    expect(gitProblemHint("failed", "detected dubious ownership")).toBe(
+      `Git doesn't trust this folder's owner.\n${choose}`,
+    );
+    expect(gitProblemHint("failed", "")).toBe(choose);
+    expect(gitProblemHint("spawn", "not found")).toBe(`Git couldn't be started.\n${choose}`);
+    // another git would not answer sooner, shorter or clearer
+    expect(gitProblemHint("timeout", "")).toBe("Git didn't answer in time.");
+    expect(gitProblemHint("tooLarge", "")).toBe("Git's answer was too long to read.");
+    expect(gitProblemHint("parse", "x")).toBe("Git's answer couldn't be understood.");
   });
 });
 

@@ -2,6 +2,8 @@
 // Effects are run by the editing session (`session.svelte.ts`); the text itself lives in the editor, the machine
 // holds only the version the edits are based on. A pair not listed keeps the state and does nothing.
 
+import type { ApiError } from "../../api";
+
 /** The disk version the edits are based on: its hash and its edit text. */
 export type Base = { hash: string; text: string };
 
@@ -19,7 +21,8 @@ export type Leave =
 export type Unsaved =
   | { s: "dirty"; base: Base }
   | { s: "conflict"; base: Base; disk: string | null }
-  | { s: "saveError"; base: Base; error: string };
+  /** `error`: why the save failed (the bar words it). */
+  | { s: "saveError"; base: Base; error: ApiError };
 
 export type DocState =
   | { s: "loading" }
@@ -46,7 +49,7 @@ export type DocEvent =
   | { e: "saved"; base: Base }
   | { e: "savedAs"; path: string; sameFile: boolean }
   | { e: "conflict"; disk: string | null }
-  | { e: "saveFailed"; error: string }
+  | { e: "saveFailed"; error: ApiError }
   | { e: "retry" }
   | { e: "diskChanged"; hash: string }
   | { e: "diskDeleted" }

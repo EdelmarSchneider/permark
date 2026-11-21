@@ -847,10 +847,20 @@ export class ExplorerStore {
       this.#host.fail(result.error);
       return;
     }
+    const { deleted, refused } = result.value;
+    const what =
+      deleted.length === 1 && deleted[0] !== undefined
+        ? nameOf(deleted[0])
+        : tn("fileOps.items", deleted.length);
+    // the bin may stop part way: what went is journaled (Undo brings it back), what stayed is named
+    const kept =
+      refused.length === 1 && refused[0] !== undefined
+        ? nameOf(refused[0])
+        : tn("fileOps.items", refused.length);
     this.#host.note(
-      targets.length === 1 && targets[0] !== undefined
-        ? t("fileOps.summaryDeleted", { what: nameOf(targets[0]) })
-        : t("fileOps.summaryDeleted", { what: tn("fileOps.items", targets.length) }),
+      refused.length === 0
+        ? t("fileOps.summaryDeleted", { what })
+        : t("fileOps.partlyDeleted", { what, refused: kept }),
       this.#undoAction(),
     );
   }

@@ -297,6 +297,17 @@ describe("the review store", () => {
     stop();
   });
 
+  it("a failed change says why in the window's words, never the error's raw kind", async () => {
+    const { store, notes, stop } = await setup({
+      failOn: { method: "review.revert", basis: "read" },
+    });
+    await store.begin();
+    await store.revert(0);
+    await settle();
+    expect(notes).toContain("Couldn't review guide.md: This isn't available right now.");
+    stop();
+  });
+
   it("will not review what is not a Markdown document, and says why when asked", async () => {
     const { store, shown, notes, stop } = await setup();
     shown.value = { path: "notes.txt", hash: "aa".repeat(8), kind: null };

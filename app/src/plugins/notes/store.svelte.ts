@@ -341,7 +341,12 @@ export class NotesStore {
     if (this.#leftByACrash(path)) return;
     const kind = view.format === "markdown" ? "markdown" : "text";
     const mode = this.#editing.lastEditOr(this.#window.editMode);
-    await this.#editing.enter(mode, path, kind, this.#documents.savePolicy);
+    // no choice of the person's: the mode the window's other tabs open their documents in stays (a project left in
+    // View shows its page again when the person comes back to it). `enter` records the mode before its first wait.
+    const chosen = this.#editing.chosenMode;
+    const entered = this.#editing.enter(mode, path, kind, this.#documents.savePolicy);
+    this.#editing.chooseNext(chosen);
+    await entered;
   }
 
   /** A new empty note, shown and ready for typing. */

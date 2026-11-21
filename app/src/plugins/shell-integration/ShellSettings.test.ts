@@ -36,6 +36,7 @@ const failure: ApiError = {
 const ok = (value: ShellState) => (): Answer => ({ ok: true, value });
 const failed = (): Answer => ({ ok: false, error: failure });
 const refused = t("shell.failed", { message: t("error.denied", { subject: "registry" }) });
+const unread = t("shell.readFailed", { message: t("error.denied", { subject: "registry" }) });
 
 let component: Record<string, unknown> | null = null;
 let root: HTMLElement;
@@ -94,6 +95,34 @@ describe("the file manager card", () => {
     backend.state.push(failed);
     await open();
     expect(root.querySelector("#set-shell-menu")).toBeNull();
-    expect(root.querySelector('[role="alert"]')?.textContent).toBe(refused);
+    expect(root.querySelector('[role="alert"]')?.textContent).toBe(unread);
+    // two sentences, not two "Couldn't" run together by a colon
+    expect(unread).toBe("Couldn't read the menu entries. No permission to use registry.");
+  });
+
+  it("Try again after a failed first read reads again and shows the switches", async () => {
+    backend.state.push(failed);
+    await open();
+    const again = [...root.querySelectorAll("button")].find((b) => b.textContent === "Try again");
+    if (!again) throw new Error("no Try again");
+    backend.state.push(ok({ menu: false, newFile: true }));
+    again.click();
+    await settle();
+    expect(backend.calls).toEqual(["shell-integration.state", "shell-integration.state"]);
+    expect(menuSwitch().checked).toBe(false);
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    expect([...root.querySelectorAll("button")].some((b) => b.textContent === "Try again")).toBe(
+      false,
+    );
+  });
+
+  it("Try again that fails again keeps saying why", async () => {
+    backend.state.push(failed);
+    await open();
+    backend.state.push(failed);
+    [...root.querySelectorAll("button")].find((b) => b.textContent === "Try again")?.click();
+    await settle();
+    expect(backend.calls).toEqual(["shell-integration.state", "shell-integration.state"]);
+    expect(root.querySelector('[role="alert"]')?.textContent).toBe(unread);
   });
 });

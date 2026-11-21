@@ -109,7 +109,7 @@
   {/if}
   {#if doc.s === "saveError"}
     <div class="error" role="alert">
-      <span>{t("edit.saveError")}</span>
+      <span>{t("edit.saveError")} {apiErrorText(doc.error)}</span>
       <button
         type="button"
         class="btn btn--sm btn--primary"
@@ -204,6 +204,9 @@
   }
   .error span {
     flex: 1 1 240px;
+    /* a long unbroken reason (a path, a system message) wraps inside the bar */
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .loading {
     height: 2px;

@@ -678,7 +678,7 @@ export class EditingSession {
     if (against === "disk") {
       const disk = await this.#api.editSource(path);
       if (!disk.ok) {
-        this.dispatch({ e: "saveFailed", error: disk.error.kind });
+        this.dispatch({ e: "saveFailed", error: disk.error });
         return;
       }
       from = { hash: disk.value.hash, text: disk.value.text };
@@ -687,9 +687,9 @@ export class EditingSession {
     const result = await this.#api.editSave(path, from.hash, lineEdits(from.text, text));
     // the answer belongs to this document even when it was renamed meanwhile (the machine waits for it)
     if (this.#held !== held) return;
+    // the editor's bar says it (an alert): no notice besides, or a screen reader says it twice
     if (!result.ok) {
-      this.#hooks?.fail(result.error);
-      this.dispatch({ e: "saveFailed", error: result.error.kind });
+      this.dispatch({ e: "saveFailed", error: result.error });
       return;
     }
     const outcome = result.value;
@@ -722,9 +722,9 @@ export class EditingSession {
     const lost = this.#editor?.lost?.() ?? false;
     const result = await this.#api.editSaveAs(path, this.#textNow(), exact);
     if (this.#held !== held) return;
+    // the editor's bar says it (an alert): no notice besides, or a screen reader says it twice
     if (!result.ok) {
-      this.#hooks?.fail(result.error);
-      this.dispatch({ e: "saveFailed", error: result.error.kind });
+      this.dispatch({ e: "saveFailed", error: result.error });
       return;
     }
     this.#sayLost(lost);
