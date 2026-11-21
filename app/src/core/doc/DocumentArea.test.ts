@@ -361,6 +361,26 @@ describe("leaving", () => {
     expect(documents.workspaceId).toBeNull();
     expect(documents.currentHeading).toBe(-1);
   });
+
+  it("an area that goes after the next one came (a tab switch) leaves the next one's document alone", async () => {
+    await show("README.md");
+    await until(() => target.querySelectorAll(".md-body > *").length > 5, "blocks");
+    // the next tab's area is made before the one it replaces is taken down
+    const next = document.createElement("div");
+    document.body.append(next);
+    const second = mount(DocumentArea, {
+      target: next,
+      props: { workspace, document: "README.md", store },
+    });
+    flushSync();
+    if (component) await unmount(component);
+    component = second;
+    flushSync();
+    await tick();
+    expect(documents.workspaceId).toBe(workspace.id);
+    expect(documents.view?.path).toBe("README.md");
+    await until(() => next.querySelectorAll(".md-body > *").length > 5, "blocks of the next area");
+  });
 });
 
 describe("reading", () => {

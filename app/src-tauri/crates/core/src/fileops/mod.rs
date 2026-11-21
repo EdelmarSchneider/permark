@@ -49,7 +49,8 @@ use self::undo::{DocUndo, Entry, History, Journal, Op, UndoEdit, JOURNAL_FILE, M
 use crate::error::{ErrorKind, IpcError};
 use crate::format::{FormatRegistry, MarkdownFeatures};
 use crate::fsx::{
-    hash, recycle_each, write_atomic_if_unchanged, ContentHash, Unrecycled, IDENTITY_UNKNOWN,
+    hash, read_regular, recycle_each, write_atomic_if_unchanged, ContentHash, FsxError, Unrecycled,
+    Zone, IDENTITY_UNKNOWN,
 };
 use crate::paths::{Vault, VaultError, VaultPath};
 use crate::state::{AppDirs, StateError};
@@ -230,7 +231,10 @@ pub struct MoveOutcome {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct DeleteOutcome {
+    /// Moved to the recycle bin (Undo brings them back).
     pub deleted: Vec<String>,
+    /// Still in place: the bin stopped before taking them (it may stop part way, e.g. at a file another program holds).
+    pub refused: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -637,9 +641,9 @@ impl FileOps {
             skipped.push(skip(SkipReason::Missing));
             return;
         };
-        let bytes = match fs::read(&abs) {
+        let bytes = match read_regular(&abs, u64::MAX, Zone::Anywhere) {
             Ok(bytes) => bytes,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            Err(FsxError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
                 skipped.push(skip(SkipReason::Missing));
                 return;
             }
@@ -710,11 +714,11 @@ impl FileOps {
 
     // ---- delete ----------------------------------------------------------------------------------------------
 
-    /// Sends files and folders to the recycle bin.
+    /// Sends files and folders to the recycle bin. A bin that stops part way answers what it took (journaled: Undo
+    /// brings it back) and what stayed in place.
     ///
     /// # Errors
-    /// A refusal, or `Trash`: the items the bin took before it refused are journaled (Undo brings them back), the
-    /// rest stays where it is.
+    /// A refusal, or `Trash`: the bin took nothing.
     pub fn delete(&self, paths: &[String]) -> Result<DeleteOutcome, FileOpError> {
         self.delete_with(paths, recycle_each)
     }
@@ -741,15 +745,24 @@ impl FileOps {
             // what the bin took before it refused is journaled, so Undo brings it back
             let (gone, left) = refused.split(announced);
             self.own.retract_moves(&left);
-            if !gone.is_empty() {
-                self.record(Op::Delete { paths: gone });
+            if gone.is_empty() {
+                return Err(FileOpError::Trash(refused.reason));
             }
-            return Err(FileOpError::Trash(refused.reason));
+            self.record(Op::Delete {
+                paths: gone.clone(),
+            });
+            return Ok(DeleteOutcome {
+                deleted: gone,
+                refused: left,
+            });
         }
         self.record(Op::Delete {
             paths: announced.clone(),
         });
-        Ok(DeleteOutcome { deleted: announced })
+        Ok(DeleteOutcome {
+            deleted: announced,
+            refused: Vec::new(),
+        })
     }
 
     // ---- new -------------------------------------------------------------------------------------------------
@@ -964,12 +977,11 @@ impl FileOps {
             .ok()
             .and_then(|path| locate_undoable(&self.vault, &path))
             .ok_or(SkipReason::Missing)?;
-        let bytes = fs::read(&abs).map_err(|e| {
-            if e.kind() == io::ErrorKind::NotFound {
+        let bytes = read_regular(&abs, u64::MAX, Zone::Anywhere).map_err(|e| match e {
+            FsxError::Io { source, .. } if source.kind() == io::ErrorKind::NotFound => {
                 SkipReason::Missing
-            } else {
-                SkipReason::Unreadable
             }
+            _ => SkipReason::Unreadable,
         })?;
         let seen = hash(&bytes);
         if seen.hex() != doc.hash_after {
@@ -1072,12 +1084,15 @@ impl FileOps {
     }
 }
 
-/// The bytes of a file; `None` when it is larger than `limit`.
+/// The bytes of a plain file (a FIFO | device named like a document is never waited on); `None` when it is larger
+/// than `limit`.
 fn read_limited(path: &std::path::Path, limit: u64) -> io::Result<Option<Vec<u8>>> {
-    if fs::metadata(path)?.len() > limit {
-        return Ok(None);
+    match read_regular(path, limit, Zone::Anywhere) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(FsxError::TooLarge { .. }) => Ok(None),
+        Err(FsxError::Io { source, .. }) => Err(source),
+        Err(FsxError::Binary(_)) => Err(io::ErrorKind::InvalidData.into()),
     }
-    fs::read(path).map(Some)
 }
 
 fn parse_moves(moves: &[MoveSpec]) -> Result<Vec<(VaultPath, VaultPath)>, FileOpError> {

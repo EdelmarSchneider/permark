@@ -2,11 +2,11 @@
 //! ([`WorkerFiles::exe`]) started by core [`process::spawn_piped`] (cwd = its unit folder), stderr drained into a
 //! capped log; sessions tracked per model lineage.
 //!
-//! - Dormant (AC-8): building one spawns, threads, creates nothing; first `load` starts a worker (+ its stderr
+//! - Dormant: building one spawns, threads, creates nothing; first `load` starts a worker (+ its stderr
 //!   thread), the log file is written when a worker's stderr ends.
 //! - Loads serialized (one at a time) with the memory guard ([`guard::check`]) on a profile read now, limited to the
 //!   load's device (processor only: graphics memory never counted).
-//! - [`Runtime::release`] (D-11, Windows mmap lock): every session of a lineage unloaded (= its workers exit) before
+//! - [`Runtime::release`] (Windows mmap lock): every session of a lineage unloaded (= its workers exit) before
 //!   its files are removed | moved; a load of it in flight is cancelled (its token) + waited for (no session missed).
 //!   The token a released session was loaded with is cancelled too (its owner's work, e.g. a model test, stops).
 //!   [`Runtime::release_all`] on store change, another device chosen + plugin off.
@@ -224,6 +224,12 @@ impl Runtime {
     pub fn unload(&self, session: SessionId) {
         lock(&self.sessions).remove(&session);
         self.engine.unload(session);
+    }
+
+    /// `session` loaded and not unloaded | released since (state alone: a crashed worker's session still counts).
+    #[must_use]
+    pub fn holds(&self, session: SessionId) -> bool {
+        lock(&self.sessions).contains_key(&session)
     }
 
     /// Unloads every session of `lineage` (its files then free to remove | move).

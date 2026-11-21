@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../../api/mock";
+import { t } from "../i18n";
 import { DefaultAppStore } from "./defaultApp.svelte";
 
 function fresh(): { api: ReturnType<typeof createMockApi>; store: DefaultAppStore } {
@@ -67,6 +68,27 @@ describe("the settings rows", () => {
     api.probe.distribution.setDefaultApp({ mode: "handoff" }, false);
     await store.set("markdown", true);
     expect(store.problem).toMatch(/Couldn't change the default app/);
+  });
+
+  it("a type macOS cannot give back says where to pick another app, and stays PerMark's", async () => {
+    const { api, store } = fresh();
+    api.probe.distribution.setDefaultApp({ mode: "direct" }, false);
+    await store.set("markdown", true);
+    vi.spyOn(api, "defaultAppSet").mockResolvedValueOnce({
+      ok: false,
+      error: {
+        kind: "backend",
+        command: "default_app_set",
+        error: {
+          kind: "unsupported",
+          subject: "net.daringfireball.markdown",
+          detail: "noHandlerToRestore",
+        },
+      },
+    });
+    await store.set("markdown", false);
+    expect(store.problem).toBe(t("defaultApp.chooseInFinder"));
+    expect(store.view?.groups.find((g) => g.group === "markdown")?.ours).toBe(true);
   });
 
   it("toggles in Direct mode are the person's, both ways", async () => {

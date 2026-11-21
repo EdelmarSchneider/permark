@@ -1,4 +1,4 @@
-//! Model service (feature-correction U1) over in-process `serve(FakeEngine)` workers + scripted downloads: open by
+//! Model service over in-process `serve(FakeEngine)` workers + scripted downloads: open by
 //! task -> no model (`noModel`) | engine files missing (fetched with progress, cancel stops it; no pin:
 //! `notAvailable`) | session (context capped, drop unloads);
 //! `is_assigned` from the state alone; service offered while the plugin is on, gone after off.
@@ -65,7 +65,7 @@ fn open_without_an_assigned_model_is_no_model() {
     assert_eq!(bench.workers.launched(), 0);
 }
 
-/// AC-1 dormancy: assignment read from the state alone (no worker, no engine folder).
+/// Dormancy: assignment read from the state alone (no worker, no engine folder).
 #[test]
 fn is_assigned_reads_the_state_alone() {
     let bench = Bench::fake(FakeEngine::new);
@@ -81,7 +81,7 @@ fn is_assigned_reads_the_state_alone() {
     assert!(!engine_dir(&bench).exists());
 }
 
-/// AC-8: engine files missing -> fetched by the open itself (progress: engine bytes, then loading from 0), then the
+/// Engine files missing -> fetched by the open itself (progress: engine bytes, then loading from 0), then the
 /// model loads; a second open fetches nothing.
 #[test]
 fn open_fetches_a_missing_engine_then_loads() {
@@ -142,9 +142,8 @@ fn open_fetches_a_missing_engine_then_loads() {
     bench.unloaded();
 }
 
-/// AC-8: cancel while the engine downloads -> cancelled (engine code `cancelled`), nothing loaded | started.
-#[test]
-fn cancel_during_the_engine_download_cancels_the_open() {
+/// Bench whose engine download holds at its first file until released.
+fn held_engine() -> (Bench, Arc<Held>) {
     let held = Arc::new(Held {
         inner: engine_files(),
         url: url(&pin().files[0]),
@@ -160,18 +159,39 @@ fn cancel_during_the_engine_download_cancels_the_open() {
     );
     bench.install(E2B);
     bench.installs.assign(Task::Correction, Some(E2B)).unwrap();
+    (bench, held)
+}
+
+/// An open of `bench` on its own thread with `cancel`.
+fn opening(bench: &Bench, cancel: &CancelToken) -> std::thread::JoinHandle<Result<(), HostError>> {
+    let (host, cancel) = (Arc::clone(&bench.host), cancel.clone());
+    std::thread::spawn(move || host.open(Task::Correction, 512, &|_| {}, &cancel).map(drop))
+}
+
+/// Waits until `bench` has `count` opens waiting on the engine download.
+fn engine_waiters(bench: &Bench, count: usize) {
+    let start = Instant::now();
+    while bench.host.engine_waiters() != count {
+        assert!(start.elapsed() < Duration::from_secs(10), "{count} waiters");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// Cancel while the engine downloads -> cancelled (engine code `cancelled`), nothing loaded | started; the only
+/// waiter's cancel stops the download (nothing installed once the transport answers).
+#[test]
+fn cancel_during_the_engine_download_cancels_the_open() {
+    let (bench, held) = held_engine();
     let cancel = CancelToken::new();
-    let opening = {
-        let (host, cancel) = (Arc::clone(&bench.host), cancel.clone());
-        std::thread::spawn(move || host.open(Task::Correction, 512, &|_| {}, &cancel).map(drop))
-    };
+    let open = opening(&bench, &cancel);
+    engine_waiters(&bench, 1);
     let start = Instant::now();
     while !held.reached.load(Ordering::SeqCst) {
         assert!(start.elapsed() < Duration::from_secs(10));
         std::thread::sleep(Duration::from_millis(5));
     }
     cancel.cancel();
-    let error = opening.join().unwrap().unwrap_err();
+    let error = open.join().unwrap().unwrap_err();
     held.release();
     assert_eq!(
         ipc(error),
@@ -181,8 +201,32 @@ fn cancel_during_the_engine_download_cancels_the_open() {
             Some("cancelled".into())
         )
     );
+    assert_eq!(bench.host.engine_waiters(), 0);
+    // a download still running would install within milliseconds of the release
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(!bench.host.files.is_installed(), "download stopped");
     assert_eq!(bench.workers.launched(), 0);
     assert_eq!(bench.runtime.loaded(), Vec::<String>::new());
+}
+
+/// Two features wait on one engine download: one cancels -> its open ends cancelled, the download goes on and the
+/// other open loads.
+#[test]
+fn one_waiter_cancelling_leaves_the_engine_download_to_the_other() {
+    let (bench, held) = held_engine();
+    let (mine, theirs) = (CancelToken::new(), CancelToken::new());
+    let kept = opening(&bench, &theirs);
+    engine_waiters(&bench, 1);
+    let cancelled = opening(&bench, &mine);
+    engine_waiters(&bench, 2);
+    mine.cancel();
+    let error = cancelled.join().unwrap().unwrap_err();
+    assert_eq!(ipc(error).2, Some("cancelled".into()));
+    held.release();
+    assert!(kept.join().unwrap().is_ok(), "the other open loads");
+    assert!(bench.host.files.is_installed());
+    assert_eq!(bench.host.engine_waiters(), 0);
+    bench.unloaded();
 }
 
 /// No worker built for this computer: typed `notAvailable`, nothing fetched | started.
@@ -233,7 +277,7 @@ fn open_loads_the_assigned_model_and_drop_unloads() {
     bench.unloaded();
 }
 
-/// AC-1 teardown: `ModelHost` offered as an app service while on; plugin off withdraws it.
+/// Teardown: `ModelHost` offered as an app service while on; plugin off withdraws it.
 #[test]
 fn the_plugin_offers_the_model_host_while_on() {
     let lab = Lab::new();

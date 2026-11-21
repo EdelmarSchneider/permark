@@ -45,11 +45,17 @@ pub enum ErrorKind {
     /// A settings file is there but cannot be read as text, so nothing was changed (`detail`: `notText | tooLarge |
     /// locked`).
     SettingsUnreadable,
+    /// Another program holds the file (Windows sharing | lock violation, or a replace it refused).
+    Locked,
+    /// No free space left on the drive.
+    DiskFull,
+    /// The file is marked read-only, or the drive is (write-protected, mounted read-only).
+    ReadOnly,
 }
 
 impl ErrorKind {
     /// Every kind (i18n parity test: one `error.<kind>` per entry).
-    pub const ALL: [Self; 25] = [
+    pub const ALL: [Self; 28] = [
         Self::NotFound,
         Self::PathEscape,
         Self::InvalidPath,
@@ -75,6 +81,9 @@ impl ErrorKind {
         Self::EditorNotSet,
         Self::EditorFailed,
         Self::SettingsUnreadable,
+        Self::Locked,
+        Self::DiskFull,
+        Self::ReadOnly,
     ];
 }
 
@@ -112,13 +121,20 @@ impl IpcError {
         self
     }
 
-    /// IO failure about `subject`: kind from the OS error (`NotFound`, `Denied`, `Exists`, else `Io`).
+    /// IO failure about `subject`: kind from the OS error (`NotFound`, `Denied`, `Exists`, `Locked`, `DiskFull`,
+    /// `ReadOnly`, else `Io`).
     #[must_use]
     pub fn io(subject: impl Into<String>, source: &std::io::Error) -> Self {
-        let kind = match source.kind() {
-            std::io::ErrorKind::NotFound => ErrorKind::NotFound,
-            std::io::ErrorKind::PermissionDenied => ErrorKind::Denied,
-            std::io::ErrorKind::AlreadyExists => ErrorKind::Exists,
+        use std::io::ErrorKind as Os;
+        // Windows codes std leaves unnamed: sharing | lock violation; disk full; write-protected media
+        let raw = source.raw_os_error().filter(|_| cfg!(windows));
+        let kind = match (source.kind(), raw) {
+            (_, Some(32 | 33)) => ErrorKind::Locked,
+            (Os::StorageFull, _) | (_, Some(39 | 112)) => ErrorKind::DiskFull,
+            (Os::ReadOnlyFilesystem, _) | (_, Some(19)) => ErrorKind::ReadOnly,
+            (Os::NotFound, _) => ErrorKind::NotFound,
+            (Os::PermissionDenied, _) => ErrorKind::Denied,
+            (Os::AlreadyExists, _) => ErrorKind::Exists,
             _ => ErrorKind::Io,
         };
         Self::new(kind).subject(subject).detail(source.to_string())
@@ -148,7 +164,7 @@ mod tests {
     fn kinds_serialize_as_camel_case_i18n_suffixes() {
         let json = serde_json::to_string(&ErrorKind::PathEscape).unwrap();
         assert_eq!(json, "\"pathEscape\"");
-        assert_eq!(ErrorKind::ALL.len(), 25);
+        assert_eq!(ErrorKind::ALL.len(), 28);
         assert_eq!(
             serde_json::to_string(&ErrorKind::EditorNotSet).unwrap(),
             "\"editorNotSet\""
@@ -166,5 +182,53 @@ mod tests {
         assert_eq!(e.kind, ErrorKind::Io);
         assert_eq!(e.subject.as_deref(), Some("a.md"));
         assert_eq!(e.detail.as_deref(), Some("disk on fire"));
+    }
+
+    #[test]
+    fn a_held_file_a_full_disk_and_a_read_only_drive_have_kinds_of_their_own() {
+        let kind = |e: std::io::Error| IpcError::io("a.md", &e).kind;
+        assert_eq!(
+            kind(std::io::ErrorKind::StorageFull.into()),
+            ErrorKind::DiskFull
+        );
+        assert_eq!(
+            kind(std::io::ErrorKind::ReadOnlyFilesystem.into()),
+            ErrorKind::ReadOnly
+        );
+        #[cfg(windows)]
+        {
+            // sharing | lock violation, ERROR_DISK_FULL, ERROR_WRITE_PROTECT
+            assert_eq!(
+                kind(std::io::Error::from_raw_os_error(32)),
+                ErrorKind::Locked
+            );
+            assert_eq!(
+                kind(std::io::Error::from_raw_os_error(33)),
+                ErrorKind::Locked
+            );
+            assert_eq!(
+                kind(std::io::Error::from_raw_os_error(112)),
+                ErrorKind::DiskFull
+            );
+            assert_eq!(
+                kind(std::io::Error::from_raw_os_error(19)),
+                ErrorKind::ReadOnly
+            );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            // ENOSPC, EROFS; EPIPE shares the number of a Windows sharing violation, not its meaning
+            assert_eq!(
+                kind(std::io::Error::from_raw_os_error(28)),
+                ErrorKind::DiskFull
+            );
+            assert_eq!(
+                kind(std::io::Error::from_raw_os_error(30)),
+                ErrorKind::ReadOnly
+            );
+            assert_eq!(kind(std::io::Error::from_raw_os_error(32)), ErrorKind::Io);
+        }
+        let json = serde_json::to_string(&ErrorKind::DiskFull).unwrap();
+        assert_eq!(json, "\"diskFull\"");
     }
 }

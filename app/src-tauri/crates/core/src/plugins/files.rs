@@ -59,6 +59,12 @@ pub trait WindowFiles: Send + Sync {
     /// | the Notes).
     fn note(&self, window: &str, fact: crate::activity::Fact);
 
+    /// The plugin wrote the file `abs` itself, at a place the person chose (an export's Save dialog): inside the
+    /// project of `window`, the tree lists it at once; anywhere else, nothing happens.
+    fn announce_written(&self, window: &str, abs: &Path) {
+        let _ = (window, abs);
+    }
+
     /// Every file below `folder` (a project path; `""` = the project folder) in the project of `window` that the
     /// project's ignore rules leave in, with size and modified time, none of it read. `stop` sees each file and ends
     /// the walk by answering `true`; `cancel` ends it too. The scan is `cut_off` then.

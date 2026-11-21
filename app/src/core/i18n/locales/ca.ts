@@ -84,6 +84,10 @@ export default {
   "error.invalidPath": "{subject} no és un camí vàlid.",
   "error.denied": "No teniu permís per a accedir a {subject}.",
   "error.io": "No s'ha pogut accedir a {subject}: {detail}",
+  "error.locked":
+    "{subject} està obert en un altre programa que no permet canviar-lo. Tanqueu-lo allà i torneu-ho a provar.",
+  "error.diskFull": "El disc és ple i no s'ha pogut escriure {subject}.",
+  "error.readOnly": "{subject} és només de lectura i no es pot canviar.",
   "error.exists": "{subject} ja existeix.",
   "error.binary": "{subject} és un fitxer binari, així que no es pot mostrar com a text.",
   "error.tooLarge": "{subject} és massa gran.",
@@ -172,6 +176,8 @@ export default {
   "fileOps.summaryMoved": "Heu mogut {what}",
   "fileOps.summaryRenamed": "{from} ara es diu {to}",
   "fileOps.summaryDeleted": "Heu suprimit {what}",
+  "fileOps.partlyDeleted":
+    "Heu suprimit {what}. No s'ha pogut moure {refused} a la paperera de reciclatge.",
   "fileOps.dropInto": "Mou a {folder}",
   "fileOps.projectRoot": "la carpeta del projecte",
   "fileOps.dialogLabel": "Actualitza els enllaços",
@@ -308,6 +314,7 @@ export default {
   "doc.deleted.title": "Aquest fitxer s'ha suprimit a les {time}.",
   "doc.diagramFailed": "No s'ha pogut dibuixar el diagrama",
   "doc.diagramRendering": "S'està dibuixant el diagrama…",
+  "doc.diagramSource": "Codi font del diagrama",
   "doc.error.title": "Aquest fitxer no es pot obrir",
   "doc.footnoteBackref": "Torna a la referència {ref}",
   "doc.frontmatter": "Front matter",
@@ -1023,6 +1030,11 @@ export default {
   "git.unavailableHint":
     "El Git que heu triat no està disponible. Trieu-ne un altre a la configuració.",
   "git.errorOwnership": "El Git no confia en el propietari d'aquesta carpeta.",
+  "git.why.timeout": "El Git no ha respost a temps.",
+  "git.why.tooLarge": "La resposta del Git era massa llarga per llegir-la.",
+  "git.why.spawn": "No s'ha pogut iniciar el Git.",
+  "git.why.parse": "No s'ha pogut entendre la resposta del Git.",
+  "git.why.failed": "Detalls: {detail}",
   "git.errorHint":
     "Obriu la configuració per a triar un altre Git (l'integrat no necessita aquesta confiança).",
   "git.folderChanged.one": "{n} fitxer canviat a dins",
@@ -1893,6 +1905,7 @@ export default {
   "plugin.graphviz.name": "Diagrames Graphviz",
   "plugin.graphviz.about": "Dibuixa gràfics Graphviz (DOT) a partir de blocs de codi.",
   "graphviz.tooLarge": "Aquest gràfic és massa gran per a dibuixar-lo aquí.",
+  "plantuml.tooLarge": "Aquest diagrama és massa gran per a dibuixar-lo aquí.",
   "plugin.media.name": "Imatges, àudio i vídeo",
   "plugin.media.about": "Obre imatges, so i vídeo dins de l'aplicació.",
   "plugin.json-view.name": "JSON",
@@ -1931,6 +1944,8 @@ export default {
     "Aquesta còpia del PerMark no està instal·lada, així que no pot ser l'aplicació per defecte. Trieu l'aplicació per a aquests fitxers a la configuració del sistema.",
   "defaultApp.confined": "Trieu l'aplicació per a aquests fitxers a la configuració del sistema.",
   "defaultApp.failed": "No s'ha pogut canviar l'aplicació per defecte: {message}",
+  "defaultApp.chooseInFinder":
+    "El PerMark continua sent l'aplicació per defecte d'aquests fitxers. Per a fer servir una altra aplicació, seleccioneu-ne un al Finder, trieu Fitxer > Obtenir informació i escolliu l'aplicació a «Obre amb».",
   "defaultApp.askTitle": "Voleu obrir aquests fitxers amb el PerMark?",
   "defaultApp.askBody":
     "El PerMark obrirà els fitxers que marqueu quan hi feu doble clic. Podeu canviar-ho quan vulgueu a Configuració.",
@@ -1952,6 +1967,8 @@ export default {
   "shell.newFile.row": "«Fitxer Markdown nou»",
   "shell.newFile.hint": "Al menú contextual de les carpetes: hi crea un fitxer i l'obre.",
   "shell.failed": "No s'ha pogut canviar el menú: {message}",
+  "shell.readFailed": "No s'han pogut llegir les entrades del menú. {message}",
+  "shell.retry": "Torna-ho a provar",
   "updates.section": "Actualitzacions",
   "updates.row": "Versions noves",
   "updates.notes": "Novetats",

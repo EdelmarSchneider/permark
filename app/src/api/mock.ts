@@ -1240,7 +1240,7 @@ export function createMockApi(): Api & {
         const deleted = project.delete(paths);
         refreshTree();
         tellShown();
-        return ok({ deleted });
+        return ok({ deleted, refused: [] });
       } catch (e) {
         return Promise.resolve(fail("fileops_delete", e));
       }

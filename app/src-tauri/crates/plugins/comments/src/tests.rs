@@ -588,6 +588,46 @@ fn done_reopen_reply_and_delete() {
     );
 }
 
+#[test]
+fn a_journal_fact_names_the_stored_place_and_looks_at_no_document() {
+    let mut h = Harness::new();
+    h.write("a.md", DOC);
+    h.open();
+    let id = h.add("a.md", "We ship on Friday", "when?")["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    h.close();
+    // the passage moves under another heading while the project is closed: nothing has looked for it again yet
+    h.write(
+        "a.md",
+        &format!("new top\n\n{}", DOC.replace("## Rollout", "## Launch")),
+    );
+    h.open();
+    h.call("setDone", json!({ "id": id, "done": true }))
+        .unwrap();
+    let facts: Vec<(CommentOp, Option<String>)> = h
+        .core()
+        .activity()
+        .snapshot()
+        .entries
+        .into_iter()
+        .filter_map(|e| match e.fact {
+            Fact::Comment { op, heading, .. } => Some((op, heading)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        facts.last(),
+        Some(&(CommentOp::Done, Some("Plan > Rollout".to_owned())))
+    );
+    // the stored place is as it was written: marking it done wrote down no other place
+    let book: Book = serde_json::from_slice(&std::fs::read(h.file()).unwrap()).unwrap();
+    assert_eq!(book.comments[0].anchor.line, 7);
+    assert_eq!(book.comments[0].anchor.heading_path, ["Plan", "Rollout"]);
+    assert!(book.comments[0].done.is_some());
+}
+
 /// A file in the service's own layout: comment `one` with the person's reply `got it` and an agent's reply, keys of
 /// other versions on the comment and on the reply, and comment `two` beside it. Returns the ids.
 fn edit_fixture(h: &Harness) -> (String, String) {

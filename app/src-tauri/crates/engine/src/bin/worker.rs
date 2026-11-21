@@ -1,12 +1,12 @@
-//! `permark-llm-worker`: PerMark's model engine worker (D-10). Speaks [`permark_engine::wire`] on stdin | stdout for
-//! ONE [`LlamaEngine`] session; started only by the app (pinned + sha-verified files, D-15).
+//! `permark-llm-worker`: PerMark's model engine worker. Speaks [`permark_engine::wire`] on stdin | stdout for
+//! ONE [`LlamaEngine`] session; started only by the app (pinned + sha-verified files).
 //!
 //! - start: protocol moved to a duplicate of stdout; fd | handle 1 -> stderr (C++ | driver prints never reach the
 //!   protocol). Logs = stderr (the host keeps a capped tail).
 //! - end (stdin EOF | `Unload` | host gone): IMMEDIATE hard exit, NEVER `std::process::exit` (runs C++ static
 //!   destructors + DLL detach: GPU drivers may hang there).
 //! - stdin EOF (host gone, even mid-load): the protocol reader thread hard-exits at once.
-//! - no socket, no network, no file besides the model + its own folder (AC-2).
+//! - no socket, no network, no file besides the model + its own folder.
 //! - libraries only from its own folder + the system (see [`harden_loading`]).
 
 use std::fs::File;

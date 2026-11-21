@@ -275,19 +275,76 @@ pub fn check_url(url: &str) -> Result<&str, IpcError> {
     Ok(url)
 }
 
-/// Where a redirect leads, from the address it came from: an absolute `https` address, `//host/...`, or `/path`.
+/// Where a redirect leads: `location` resolved against `from` (a checked `https` address), as browsers resolve it; the
+/// result passes [`check_url`] like any address.
 pub(crate) fn next_url(from: &str, location: &str) -> Result<String, IpcError> {
-    let location = location.trim();
-    let target = if location.starts_with("//") {
-        format!("https:{location}")
-    } else if location.starts_with('/') {
-        let after = &from[8..];
-        let host_end = after.find(['/', '?', '#']).unwrap_or(after.len());
-        format!("{}{}", &from[..8 + host_end], location)
+    check_url(&resolve(from, location.trim())).map(str::to_owned)
+}
+
+/// Reference resolution of RFC 3986 section 5.2.2 against an `https://` address (its fragment dropped).
+fn resolve(base: &str, reference: &str) -> String {
+    if has_scheme(reference) {
+        return reference.to_owned();
+    }
+    if reference.starts_with("//") {
+        return format!("https:{reference}");
+    }
+    let base = base.split('#').next().unwrap_or(base);
+    // `https://` + authority, then path and query
+    let after = base.get(8..).unwrap_or_default();
+    let origin_end = base.len() - after.len() + after.find(['/', '?']).unwrap_or(after.len());
+    let (origin, rest) = base.split_at(origin_end);
+    let (base_path, base_query) = rest.split_at(rest.find('?').unwrap_or(rest.len()));
+    let (path, tail) = reference.split_at(reference.find(['?', '#']).unwrap_or(reference.len()));
+    if path.is_empty() {
+        // `?query` takes the place of the address's own; `#fragment` keeps it
+        let query = if tail.starts_with('?') {
+            ""
+        } else {
+            base_query
+        };
+        return format!("{origin}{base_path}{query}{tail}");
+    }
+    let merged = if path.starts_with('/') {
+        path.to_owned()
     } else {
-        location.to_owned()
+        // beside the last segment of the address's path (no path: the root)
+        let dir = base_path.rfind('/').map_or("/", |at| &base_path[..=at]);
+        format!("{dir}{path}")
     };
-    check_url(&target).map(str::to_owned)
+    format!("{origin}{}{tail}", remove_dot_segments(&merged))
+}
+
+/// Whether a reference starts with a scheme (`ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"`).
+fn has_scheme(reference: &str) -> bool {
+    reference.split_once(':').is_some_and(|(scheme, _)| {
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    })
+}
+
+/// An absolute path without its `.` and `..` segments (RFC 3986 section 5.2.4); `..` never climbs above the root.
+fn remove_dot_segments(path: &str) -> String {
+    let segments: Vec<&str> = path.split('/').skip(1).collect();
+    let last = segments.len().saturating_sub(1);
+    let mut kept: Vec<&str> = Vec::new();
+    for (at, segment) in segments.into_iter().enumerate() {
+        match segment {
+            "." | ".." => {
+                if segment == ".." {
+                    kept.pop();
+                }
+                // a path ending in a dot segment names a folder: it keeps its final `/`
+                if at == last {
+                    kept.push("");
+                }
+            }
+            other => kept.push(other),
+        }
+    }
+    format!("/{}", kept.join("/"))
 }
 
 /// Fetches the picture at `url` under the rules above.

@@ -10,7 +10,7 @@ import { Decorator, type EmbedLookup } from "../../core/doc/decorate";
 import { enhanceBlock, TABLE_WRAP, type EnhanceEnv } from "../../core/doc/enhance";
 import { webPictures } from "../../core/doc/webPictures.svelte";
 import { contributions } from "../../core/plugins/instance.svelte";
-import { fetchDataUri } from "./assets";
+import { fetchDataUri, MEDIA_MAX_BYTES } from "./assets";
 import { exportCss } from "./look";
 import {
   columnWidths,
@@ -61,6 +61,8 @@ export type ExportOptions = {
   settleMs?: number;
   /** How an HTML page's tables are measured; absent: the reading view's own measure (tests give theirs). */
   tableProbe?: TableProbe;
+  /** Most bytes of files the page carries inside itself; absent: `PAGE_MAX_BYTES` (tests give theirs). */
+  maxPageBytes?: number;
 };
 
 export type ExportOutcome =
@@ -78,6 +80,11 @@ const SETTLE_MS = 60_000;
 const QUIET_MS = 150;
 const POLL_MS = 30;
 const DECODE_MS = 10_000;
+/**
+ * Most bytes of data URIs (pictures, sound, video) one page carries: each file has its own limit, but many of them
+ * together would make a page the web view cannot load or print.
+ */
+const PAGE_MAX_BYTES = 150 * 1024 * 1024;
 /** Font of a table wider than the printable width, before its columns are shared out. */
 const WIDE_TABLE_FONT = "0.85em";
 /** Embeds that say they are still drawing: a diagram's figure, a code block waiting for its colors. */
@@ -174,6 +181,28 @@ async function settle(roots: HTMLElement[], until: number, signal?: AbortSignal)
 
 const nameOf = (path: string): string => path.split("/").pop() ?? path;
 
+/** What the page may still carry inside itself, in bytes of data URIs (plain ASCII: one byte per character). */
+class Room {
+  #left: number;
+
+  constructor(bytes: number) {
+    this.#left = bytes;
+  }
+
+  /** Largest file still worth reading: its data URI is longer than the file itself. */
+  get readable(): number {
+    return Math.max(0, Math.min(MEDIA_MAX_BYTES, this.#left));
+  }
+
+  fits(uris: readonly string[]): boolean {
+    return uris.reduce((sum, uri) => sum + uri.length, 0) <= this.#left;
+  }
+
+  take(uris: readonly string[]): void {
+    for (const uri of uris) this.#left -= uri.length;
+  }
+}
+
 /** Builds the export page of the Markdown document at `path` (the saved file, as the reading view reads it). */
 export async function buildExport(
   api: Api,
@@ -264,8 +293,9 @@ export async function buildExport(
     clean(page, words);
 
     const notes: ExportNote[] = [];
-    await inlinePictures(page, files, notes, signal);
-    await inlineMedia(page, files, options.target, words, notes, signal);
+    const room = new Room(options.maxPageBytes ?? PAGE_MAX_BYTES);
+    await inlinePictures(page, files, room, notes, signal);
+    await inlineMedia(page, files, options.target, words, room, notes, signal);
     signal?.throwIfAborted();
 
     const css = await exportCss(page, options);
@@ -383,6 +413,7 @@ async function decodes(img: HTMLImageElement, signal: AbortSignal | undefined): 
 async function inlinePictures(
   page: HTMLElement,
   files: ReadonlyMap<string, string>,
+  room: Room,
   notes: ExportNote[],
   signal: AbortSignal | undefined,
 ): Promise<void> {
@@ -393,15 +424,18 @@ async function inlinePictures(
     // only the window's own project files (and pictures already inside the page) are read
     const got =
       file !== undefined || src.startsWith("data:")
-        ? await fetchDataUri(src, { signal })
+        ? await fetchDataUri(src, { signal, max: room.readable })
         : ({ status: "failed" } as const);
-    if (got.status === "ok") {
+    if (got.status === "ok" && room.fits([got.uri])) {
       // a lazy picture off screen (this copy is never on screen) is never loaded: its decode would never settle
       img.setAttribute("loading", "eager");
       img.setAttribute("src", got.uri);
       const drawn = await decodes(img, signal);
       signal?.throwIfAborted();
-      if (drawn) continue;
+      if (drawn) {
+        room.take([got.uri]);
+        continue;
+      }
     }
     standIn(img, name);
     notes.push({ kind: "picture", name });
@@ -410,8 +444,10 @@ async function inlinePictures(
   for (const chip of page.querySelectorAll(".remote-image")) {
     const url = chip.getAttribute("data-url") ?? "";
     const kept = webPictures.kept(url);
-    const got = kept === undefined ? null : await fetchDataUri(kept, { signal });
-    if (got?.status === "ok") {
+    const got =
+      kept === undefined ? null : await fetchDataUri(kept, { signal, max: room.readable });
+    if (got?.status === "ok" && room.fits([got.uri])) {
+      room.take([got.uri]);
       const img = document.createElement("img");
       img.src = got.uri;
       img.alt = chip.getAttribute("aria-label") ?? "";
@@ -430,6 +466,7 @@ async function inlineMedia(
   files: ReadonlyMap<string, string>,
   target: ExportTarget,
   words: ExportWords,
+  room: Room,
   notes: ExportNote[],
   signal: AbortSignal | undefined,
 ): Promise<void> {
@@ -441,30 +478,39 @@ async function inlineMedia(
     const first = sources[0]?.getAttribute("src") ?? "";
     const name = nameOf(files.get(first) ?? first);
     const poster = media.getAttribute("poster");
-    const still =
+    const fetched =
       kind === "video" && poster !== null && files.has(poster)
-        ? await fetchDataUri(poster, { signal })
+        ? await fetchDataUri(poster, { signal, max: room.readable })
         : null;
+    const still = fetched?.status === "ok" ? fetched.uri : null;
+    /** The still's data URI, taken into the page, when the page has room left for it. */
+    const takeStill = (): string | null => {
+      if (still === null || !room.fits([still])) return null;
+      room.take([still]);
+      return still;
+    };
     if (target === "html" && sources.length > 0) {
-      let inside = true;
+      const inside: [Element, string][] = [];
       for (const source of sources) {
         const src = source.getAttribute("src") ?? "";
-        const got = files.has(src) ? await fetchDataUri(src, { signal }) : null;
-        if (got?.status !== "ok") {
-          inside = false;
-          break;
-        }
-        source.setAttribute("src", got.uri);
+        const got = files.has(src) ? await fetchDataUri(src, { signal, max: room.readable }) : null;
+        if (got?.status !== "ok") break;
+        inside.push([source, got.uri]);
       }
-      if (inside) {
-        if (still?.status === "ok") media.setAttribute("poster", still.uri);
+      const uris = inside.map(([, uri]) => uri);
+      if (inside.length === sources.length && room.fits(uris)) {
+        room.take(uris);
+        for (const [source, uri] of inside) source.setAttribute("src", uri);
+        const kept = takeStill();
+        if (kept !== null) media.setAttribute("poster", kept);
         else media.removeAttribute("poster");
         continue;
       }
     }
     const img = document.createElement("img");
-    if (still?.status === "ok") {
-      img.src = still.uri;
+    const shown = takeStill();
+    if (shown !== null) {
+      img.src = shown;
       img.alt = name;
       // paper shows a video's still on its own; a page that could not carry the video says so beside it
       if (target === "paper") {
@@ -474,7 +520,7 @@ async function inlineMedia(
     }
     const note = document.createElement("span");
     note.className = "pm-left-out";
-    if (still?.status === "ok") note.append(img);
+    if (shown !== null) note.append(img);
     note.append(kind === "video" ? words.videoLeftOut(name) : words.audioLeftOut(name));
     media.replaceWith(note);
     notes.push({ kind, name });

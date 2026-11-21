@@ -19,9 +19,10 @@ impl EventSink for Quiet {
     fn emit(&self, _: CoreEvent) {}
 }
 
-/// A workspace with one document, `docs/a.md`, under `root`.
+/// A workspace with one document, `docs/a.md`, under `root`; records the files announced as written.
 struct Files {
     root: PathBuf,
+    announced: Mutex<Vec<(String, PathBuf)>>,
 }
 
 impl WindowFiles for Files {
@@ -42,6 +43,13 @@ impl WindowFiles for Files {
     }
 
     fn note(&self, _window: &str, _fact: permark_core::activity::Fact) {}
+
+    fn announce_written(&self, window: &str, abs: &std::path::Path) {
+        self.announced
+            .lock()
+            .unwrap()
+            .push((window.to_owned(), abs.to_path_buf()));
+    }
 }
 
 /// What the printer was asked.
@@ -169,6 +177,7 @@ impl Printer {
 struct Harness {
     rpc: Arc<RpcTable>,
     printer: Arc<Printer>,
+    files: Arc<Files>,
     root: tempfile::TempDir,
     running: Option<Box<dyn Running>>,
     _leases: Vec<ServiceLease>,
@@ -185,13 +194,17 @@ impl Harness {
         let rpc = RpcTable::new();
         let services = Services::new();
         let printer = Arc::new(Printer::default());
+        let files = Arc::new(Files {
+            root: root.path().to_path_buf(),
+            announced: Mutex::default(),
+        });
         let leases = vec![
             services.provide(Arc::new(HtmlPrinterApi(
                 Arc::clone(&printer) as Arc<dyn HtmlPrinter>
             ))),
-            services.provide(Arc::new(WindowFilesApi(Arc::new(Files {
-                root: root.path().to_path_buf(),
-            })))),
+            services.provide(Arc::new(WindowFilesApi(
+                Arc::clone(&files) as Arc<dyn WindowFiles>
+            ))),
         ];
         let dirs = AppDirs::under(&root.path().join("profile"));
         let cx = PluginCx::new(
@@ -212,6 +225,7 @@ impl Harness {
         Self {
             rpc,
             printer,
+            files,
             root,
             running: Some(running),
             _leases: leases,
@@ -384,7 +398,11 @@ fn html_print_open_and_reveal_go_to_the_printer_for_the_asking_window() {
 /// A run of window `w-1` (`method` with `args`) in progress while `canceller` asks to cancel: what the call answers
 /// and whether the printer stopped before its output.
 fn cancelled_by(method: &'static str, args: Value, canceller: &str) -> (Value, bool) {
-    let h = Harness::start();
+    cancelled_in(&Harness::start(), method, args, canceller)
+}
+
+/// [`cancelled_by`] on the harness `h`.
+fn cancelled_in(h: &Harness, method: &'static str, args: Value, canceller: &str) -> (Value, bool) {
     let (release_tx, release_rx) = mpsc::channel();
     let (started_tx, started_rx) = mpsc::channel();
     *h.printer.release.lock().unwrap() = Some(release_rx);
@@ -418,6 +436,37 @@ fn cancel_stops_the_run_of_its_own_window_only() {
     }
     assert_eq!(cancelled_by("print", print(), "w-1"), (Value::Null, true));
     assert_eq!(cancelled_by("print", print(), "w-2"), (Value::Null, false));
+}
+
+#[test]
+fn a_saved_file_is_announced_to_the_asking_window_s_workspace_and_a_cancelled_one_is_not() {
+    let h = Harness::start();
+    h.call(
+        "savePdf",
+        json!({ "html": "x", "source": "docs/a.md", "setup": PageSetup::default() }),
+    )
+    .unwrap();
+    h.call("saveHtml", json!({ "html": "x", "source": "docs/a.md" }))
+        .unwrap();
+    assert_eq!(
+        h.files.announced.lock().unwrap().clone(),
+        [
+            ("w-1".to_owned(), h.source().with_extension("pdf")),
+            ("w-1".to_owned(), h.source().with_extension("html")),
+        ]
+    );
+    let cancelled = cancelled_in(
+        &h,
+        "saveHtml",
+        json!({ "html": "x", "source": "docs/a.md" }),
+        "w-1",
+    );
+    assert_eq!(cancelled, (json!({ "outcome": "cancelled" }), true));
+    assert_eq!(
+        h.files.announced.lock().unwrap().len(),
+        2,
+        "nothing written"
+    );
 }
 
 #[test]

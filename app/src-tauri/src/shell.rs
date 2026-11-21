@@ -355,6 +355,8 @@ impl Shell {
         if let Some(printer) = self.env.services().get::<HtmlPrinterApi>() {
             printer.0.forget(view);
         }
+        // what App-scope plugins keep for this view (a converter's job) goes with it
+        self.env.rpc().caller_gone(view);
     }
 
     /// Loads the saved session (corrupt -> notice).

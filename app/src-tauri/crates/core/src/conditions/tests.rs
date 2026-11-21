@@ -54,6 +54,7 @@ fn contexts() -> Vec<Context> {
             state: RepoState::Rebasing,
         },
         GitCondition::Error {
+            code: GitErrorCode::Timeout,
             reason: "x".to_owned(),
         },
     ];

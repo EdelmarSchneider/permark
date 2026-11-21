@@ -5,8 +5,13 @@
   import { t, tn, type MessageKey } from "../i18n";
   import { dialogFocus } from "../shell/dialogFocus";
 
-  type Props = { plan: MovePlan; answer: (choice: "update" | "move" | "cancel") => void };
-  let { plan, answer }: Props = $props();
+  type Props = {
+    plan: MovePlan;
+    answer: (choice: "update" | "move" | "cancel") => void;
+    /** Where the keyboard goes back to when what had it is gone by the close (the name field of a rename). */
+    returnFocus?: () => HTMLElement | null;
+  };
+  let { plan, answer, returnFocus }: Props = $props();
 
   const REASONS: Record<SkipReason, MessageKey> = {
     tooLarge: "fileOps.reason.tooLarge",
@@ -51,7 +56,11 @@
     aria-modal="true"
     aria-labelledby="plan-title"
     tabindex="-1"
-    use:dialogFocus={{ initial: "[data-initial]", onEscape: () => answer("cancel") }}
+    use:dialogFocus={{
+      initial: "[data-initial]",
+      onEscape: () => answer("cancel"),
+      ...(returnFocus ? { fallback: returnFocus } : {}),
+    }}
   >
     <h2 id="plan-title">{title}</h2>
     <section aria-label={t("fileOps.movesLabel")} class="moves">
@@ -64,7 +73,9 @@
     </section>
     {#if hasLinks}
       <p class="intro">{t("fileOps.updateIntro")}</p>
-      <div class="list">
+      <!-- a scroller the keyboard can reach: a long list is read by scrolling it -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div class="list" tabindex="0" role="region" aria-labelledby="plan-title">
         {#each plan.files as file (file.path)}
           <section class="doc">
             <h3>
@@ -89,8 +100,9 @@
       </div>
     {/if}
     {#if plan.skipped.length > 0}
-      <section class="skipped">
-        <h3>{t("fileOps.skippedTitle")}</h3>
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <section class="skipped" tabindex="0" aria-labelledby="plan-skipped">
+        <h3 id="plan-skipped">{t("fileOps.skippedTitle")}</h3>
         <ul>
           {#each plan.skipped as skip (skip.path)}
             <li>{skip.path} <span class="faint">{t(REASONS[skip.reason])}</span></li>
@@ -136,6 +148,8 @@
     inset: 0;
     z-index: 50;
     display: grid;
+    /* one row as tall as the window: an auto row grows to the dialog's content and caps nothing */
+    grid-template-rows: minmax(0, 1fr);
     place-items: center;
     padding: var(--sp-5);
     background: var(--backdrop);
@@ -187,6 +201,16 @@
     border-radius: var(--radius-control);
     background: var(--surface);
   }
+  .skipped {
+    min-height: 0;
+    overflow: auto;
+  }
+  /* both lists shrink by their length: thousands of links would leave the files not updated one row. These keep
+     about six rows (fewer when there are fewer); the links scroll in the rest */
+  .list ~ .skipped {
+    flex-shrink: 0;
+    max-height: 9.5rem;
+  }
   ul {
     margin: 0;
     padding: 0;
@@ -216,6 +240,7 @@
   }
   footer {
     display: flex;
+    flex-shrink: 0;
     justify-content: flex-end;
     gap: var(--sp-2);
   }

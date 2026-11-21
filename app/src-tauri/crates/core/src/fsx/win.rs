@@ -8,6 +8,47 @@ use std::path::{Component, Path, PathBuf, Prefix};
 /// Paths of this many UTF-16 units or more get `\\?\` (Win32 reads at most 259 + NUL without it).
 const SHORT_PATH_UNITS: usize = 240;
 
+/// `FILE_ATTRIBUTE_HIDDEN`.
+pub(super) const HIDDEN: u32 = windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_HIDDEN;
+
+/// Gives `tmp` the hidden flag of `target` (shown when there is none): a write's temp is made hidden, and the file it
+/// becomes shows as the one it replaces.
+pub(super) fn hidden_as(tmp: &Path, target: Option<&std::fs::Metadata>) -> io::Result<()> {
+    use std::os::windows::fs::MetadataExt;
+    set_hidden(
+        tmp,
+        target.is_some_and(|meta| meta.file_attributes() & HIDDEN != 0),
+    )
+}
+
+/// Sets | clears the hidden flag of `path`, its other attributes kept.
+// Documented FFI: std sets attributes only through `set_permissions`, which cannot clear the hidden flag. The argument
+// is a NUL-terminated wide string owned by this function and alive for the whole call.
+#[allow(unsafe_code)]
+pub(super) fn set_hidden(path: &Path, hidden: bool) -> io::Result<()> {
+    use std::os::windows::fs::MetadataExt;
+    use windows_sys::Win32::Storage::FileSystem::{SetFileAttributesW, FILE_ATTRIBUTE_NORMAL};
+    let attrs = std::fs::metadata(path)?.file_attributes();
+    if (attrs & HIDDEN != 0) == hidden {
+        return Ok(());
+    }
+    // NORMAL is valid only alone
+    let rest = attrs & !HIDDEN & !FILE_ATTRIBUTE_NORMAL;
+    let wanted = match (hidden, rest) {
+        (true, rest) => rest | HIDDEN,
+        (false, 0) => FILE_ATTRIBUTE_NORMAL,
+        (false, rest) => rest,
+    };
+    let path = wide(&extended(path))?;
+    // SAFETY: the pointer comes from a live NUL-terminated buffer that outlives the call.
+    let set = unsafe { SetFileAttributesW(path.as_ptr(), wanted) };
+    if set == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
 /// `MoveFileExW(from, to, REPLACE_EXISTING | WRITE_THROUGH)`.
 // Documented FFI: MoveFileExW has no safe std wrapper with WRITE_THROUGH. Both arguments are NUL-terminated wide
 // strings owned by this function and alive for the whole call.
@@ -56,22 +97,36 @@ pub(super) fn free_space(folder: &Path) -> io::Result<u64> {
     }
 }
 
-/// Whether the drive `letter` is a disk of this computer: `GetDriveTypeW` of its root answers fixed | removable | RAM
-/// disk. A network drive (a mapped `Z:`, a `subst` of a share) connects to a server on any lookup; a CD drive may wait
-/// for media; an unknown drive | one without a root folder tells nothing.
+// drive types of `GetDriveTypeW` (WinBase.h)
+const DRIVE_REMOVABLE: u32 = 2;
+const DRIVE_FIXED: u32 = 3;
+const DRIVE_RAMDISK: u32 = 6;
+
+/// `GetDriveTypeW` of the root of drive `letter`.
 // Documented FFI: no std wrapper tells the drive type. The argument is a NUL-terminated wide string owned by this
 // function and alive for the whole call.
 #[allow(unsafe_code)]
-pub(super) fn local_drive(letter: u8) -> bool {
+fn drive_type(letter: u8) -> u32 {
     use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
-    // drive types of `GetDriveTypeW` (WinBase.h)
-    const DRIVE_REMOVABLE: u32 = 2;
-    const DRIVE_FIXED: u32 = 3;
-    const DRIVE_RAMDISK: u32 = 6;
     let root = [u16::from(letter), u16::from(b':'), u16::from(b'\\'), 0];
     // SAFETY: `root` is a live NUL-terminated buffer that outlives the call.
-    let kind = unsafe { GetDriveTypeW(root.as_ptr()) };
-    matches!(kind, DRIVE_REMOVABLE | DRIVE_FIXED | DRIVE_RAMDISK)
+    unsafe { GetDriveTypeW(root.as_ptr()) }
+}
+
+/// Whether the drive `letter` is a disk of this computer: `GetDriveTypeW` of its root answers fixed | removable | RAM
+/// disk. A network drive (a mapped `Z:`, a `subst` of a share) connects to a server on any lookup; a CD drive may wait
+/// for media; an unknown drive | one without a root folder tells nothing.
+pub(super) fn local_drive(letter: u8) -> bool {
+    matches!(
+        drive_type(letter),
+        DRIVE_REMOVABLE | DRIVE_FIXED | DRIVE_RAMDISK
+    )
+}
+
+/// Whether the drive `letter` is a fixed disk: the only kind the recycle bin serves. On a removable | RAM disk the
+/// shell's silent delete removes for good.
+pub(super) fn fixed_drive(letter: u8) -> bool {
+    drive_type(letter) == DRIVE_FIXED
 }
 
 /// `CfGetSyncRootInfoByPath` (cldapi.dll), looked up at the first call.

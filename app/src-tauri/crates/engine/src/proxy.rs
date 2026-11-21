@@ -6,7 +6,9 @@
 //!   never does): past it the worker is killed under the call (no exit message, stdin still open), the call ends
 //!   `EngineCrashed`.
 //! - per worker: reader thread pushes stdout lines into a bounded channel ([`LINES_QUEUE`]); calls poll it ([`POLL`])
-//!   + check the cancel token -> `Cancel` sent once (load: kill instead -> `Cancelled`).
+//!   and check the cancel token -> `Cancel` sent once (load: kill instead -> `Cancelled`); no answer [`CANCEL_WAIT`]
+//!   after it (a wedged worker | one checking its token too seldom) -> killed, the call ends cancelled (`generate`:
+//!   `Done` + `Cancelled`), session forgotten. Reader thread cannot start -> `Io`, worker killed.
 //! - worker line > [`LINE_CAP`] | not UTF-8 | without its newline -> reader stops = worker gone (host memory bounded:
 //!   one line + queue).
 //! - token cancelled before a call -> answered host-side (`Cancelled`; `generate`: `Done` + `Cancelled`), worker
@@ -41,6 +43,8 @@ pub(crate) const LINE_CAP: u64 = 16 << 20;
 const LINES_QUEUE: usize = 8;
 /// Longest `unload` wait for a call in flight on that worker.
 const UNLOAD_WAIT: Duration = Duration::from_secs(2);
+/// Longest wait for a worker's answer to a forwarded `Cancel` (it checks its token per batch, far below).
+const CANCEL_WAIT: Duration = Duration::from_secs(3);
 
 /// A started worker's stdio + how to stop it.
 pub struct WorkerPipes {
@@ -84,6 +88,11 @@ impl Stop {
         if let Some(mut run) = kill.take() {
             run();
         }
+    }
+
+    /// The kill ran (worker gone).
+    fn ran(&self) -> bool {
+        lock(&self.0).is_none()
     }
 }
 
@@ -129,39 +138,51 @@ fn lock_within<T>(m: &Mutex<T>, wait: Duration) -> Option<MutexGuard<'_, T>> {
 }
 
 impl Worker {
-    fn start(pipes: WorkerPipes) -> Self {
+    /// Worker over `pipes` + its reader thread.
+    ///
+    /// # Errors
+    /// [`EngineError::Io`]: the reader thread cannot start (worker killed).
+    fn start(pipes: WorkerPipes) -> Result<Self, EngineError> {
         let WorkerPipes {
             to_worker,
-            from_worker,
+            mut from_worker,
             kill,
         } = pipes;
+        let stop = Arc::new(Stop(Mutex::new(Some(kill))));
         let (tx, lines) = mpsc::sync_channel(LINES_QUEUE);
-        let mut from_worker = from_worker;
-        thread::spawn(move || loop {
-            let mut line = Vec::new();
-            match from_worker
-                .by_ref()
-                .take(LINE_CAP)
-                .read_until(b'\n', &mut line)
-            {
-                Ok(0) | Err(_) => return,
-                // over the cap | cut off: worker broken
-                Ok(_) if line.pop() != Some(b'\n') => return,
-                Ok(_) => {}
-            }
-            let Ok(line) = String::from_utf8(line) else {
-                return;
-            };
-            if tx.send(line).is_err() {
-                return;
-            }
-        });
-        Self {
+        let reader = thread::Builder::new()
+            .name("engine-reader".into())
+            .spawn(move || loop {
+                let mut line = Vec::new();
+                match from_worker
+                    .by_ref()
+                    .take(LINE_CAP)
+                    .read_until(b'\n', &mut line)
+                {
+                    Ok(0) | Err(_) => return,
+                    // over the cap | cut off: worker broken
+                    Ok(_) if line.pop() != Some(b'\n') => return,
+                    Ok(_) => {}
+                }
+                let Ok(line) = String::from_utf8(line) else {
+                    return;
+                };
+                if tx.send(line).is_err() {
+                    return;
+                }
+            });
+        if let Err(error) = reader {
+            // stdin EOF first: the worker exits by itself
+            drop(to_worker);
+            stop.now();
+            return Err(EngineError::Io(error.to_string()));
+        }
+        Ok(Self {
             to: to_worker,
             lines,
-            stop: Arc::new(Stop(Mutex::new(Some(kill)))),
+            stop,
             session: SessionId(0),
-        }
+        })
     }
 
     /// Reads [`Hello`]; wrong protocol -> `EngineTooOld`.
@@ -204,16 +225,21 @@ impl Worker {
         mut step: impl FnMut(Response) -> Result<Step<T>, EngineError>,
     ) -> Result<T, EngineError> {
         self.send(request)?;
-        let mut cancel_sent = false;
+        let mut cancel_sent: Option<Instant> = None;
         loop {
             if cancel.is_cancelled() {
-                match on_cancel {
-                    OnCancel::Abort => return Err(EngineError::Cancelled),
-                    OnCancel::Forward if !cancel_sent => {
-                        cancel_sent = true;
+                match (on_cancel, cancel_sent) {
+                    (OnCancel::Abort, _) => return Err(EngineError::Cancelled),
+                    (OnCancel::Forward, None) => {
+                        cancel_sent = Some(Instant::now());
                         self.send(&Request::Cancel)?;
                     }
-                    OnCancel::Forward => {}
+                    // never answered: killed, so nothing waits on it (plugin off | app exit included)
+                    (OnCancel::Forward, Some(sent)) if sent.elapsed() >= CANCEL_WAIT => {
+                        self.stop.now();
+                        return Err(EngineError::Cancelled);
+                    }
+                    (OnCancel::Forward, Some(_)) => {}
                 }
             }
             let line = match self.lines.recv_timeout(POLL) {
@@ -266,13 +292,14 @@ impl WorkerEngine {
             io::ErrorKind::PermissionDenied => EngineError::Blocked,
             _ => EngineError::Io(e.to_string()),
         })?;
-        let mut worker = Worker::start(pipes);
+        let mut worker = Worker::start(pipes)?;
         let hello = worker.hello(cancel)?;
         *lock(&self.caps) = Some(hello.caps);
         Ok(worker)
     }
 
-    /// Runs a call on `session`'s worker; worker gone -> forgotten + killed.
+    /// Runs a call on `session`'s worker; worker gone (crashed | killed by a cancel it never answered) -> forgotten +
+    /// killed.
     fn on<T>(
         &self,
         session: SessionId,
@@ -291,7 +318,7 @@ impl WorkerEngine {
             let request = request(guard.session);
             guard.call(&request, cancel, OnCancel::Forward, step)
         };
-        if matches!(result, Err(EngineError::EngineCrashed)) {
+        if matches!(result, Err(EngineError::EngineCrashed)) || worker.stop.ran() {
             let mut workers = lock(&self.workers);
             if workers
                 .get(&session)
@@ -476,7 +503,7 @@ impl Engine for WorkerEngine {
             return Ok(());
         }
         let request = request.clone();
-        self.on(
+        let result = self.on(
             session,
             |session| Request::Generate { session, request },
             cancel,
@@ -488,7 +515,18 @@ impl Engine for WorkerEngine {
                 Response::Done => Ok(Step::Done(())),
                 _ => unexpected(),
             },
-        )
+        );
+        match result {
+            // ended host-side (a cancel the worker never answered): as the trait's cancelled generate
+            Err(EngineError::Cancelled) => {
+                sink(GenEvent::Done {
+                    usage: Usage::default(),
+                    finish: Finish::Cancelled,
+                });
+                Ok(())
+            }
+            other => other,
+        }
     }
 
     fn transcribe(

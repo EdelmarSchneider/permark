@@ -1,4 +1,4 @@
-//! Worker files over scripted downloads (AC-6): pinned unit fetched + verified, hash mismatch refused, no pin ->
+//! Worker files over scripted downloads: pinned unit fetched + verified, hash mismatch refused, no pin ->
 //! typed "not available yet".
 
 use std::sync::mpsc::{self, Receiver};
@@ -100,7 +100,7 @@ fn every_pin_names_the_engine_build_it_ships() {
     }
 }
 
-/// AC-2: runs = same family + build at least the documented one (undocumented: runs); no pin: nothing runs.
+/// Runs = same family + build at least the documented one (undocumented: runs); no pin: nothing runs.
 #[test]
 fn a_pin_runs_its_family_up_to_its_build() {
     let min = |engine, version: Option<&str>| MinEngine {
@@ -200,6 +200,72 @@ fn a_file_of_another_hash_is_refused() {
     ));
     assert!(!files.is_installed());
     assert_eq!(files.exe().unwrap_err().kind(), io::ErrorKind::NotFound);
+}
+
+/// Folder `dir` holding `names` (each a small file).
+fn folder(dir: &Path, names: &[&str]) {
+    std::fs::create_dir_all(dir).unwrap();
+    for name in names {
+        std::fs::write(dir.join(name), b"x").unwrap();
+    }
+}
+
+/// A new pin = a new unit folder: once the current unit is installed, the folders earlier pins of this platform left
+/// are removed; a folder holding a download part, another platform's, a folder of the person's and a link (never
+/// followed) stay.
+#[test]
+fn the_installed_unit_sweeps_the_folders_of_earlier_pins() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = tmp.path().join(DIR);
+    let pin = pin();
+    let transport = ScriptedTransport::new()
+        .answer(&url(&pin.files[0]), Scripted::ok(EXE))
+        .answer(&url(&pin.files[1]), Scripted::ok(LIB));
+    let (files, rx) = files_with(Some(pin), transport, store.clone());
+    let earlier = store.join("worker-v0.0.0-test-x86_64-vulkan");
+    folder(
+        &earlier,
+        &[
+            "worker.exe",
+            "worker-v0.0.0-test-x86_64-vulkan.installed.json",
+        ],
+    );
+    let other_variant = store.join("worker-v0.0.0-test-x86_64-cpu");
+    folder(&other_variant, &["worker.exe"]);
+    let partial = store.join("worker-v0.0.0-test-x86_64-cuda");
+    folder(&partial, &["ggml.dll.part", "ggml.dll.part.meta"]);
+    let foreign = store.join("worker-v0.0.0-other-x86_64-vulkan");
+    folder(&foreign, &["worker.exe"]);
+    let theirs = store.join("notes");
+    folder(&theirs, &["a.txt"]);
+    let outside = tmp.path().join("outside");
+    folder(&outside, &["worker.exe"]);
+    let linked = store.join("worker-v0.0.0-test-x86_64-metal");
+    let has_link = crate::tests::store::link_dir(&outside, &linked);
+
+    files.sweep_earlier();
+    assert!(
+        earlier.exists(),
+        "nothing swept before the current unit is installed"
+    );
+
+    files.enqueue().unwrap();
+    assert!(matches!(outcome(&rx), Update::Done));
+    files.sweep_earlier();
+    assert!(!earlier.exists(), "earlier pin swept");
+    assert!(
+        !other_variant.exists(),
+        "earlier pin of another variant swept"
+    );
+    for kept in [&partial, &foreign, &theirs] {
+        assert!(kept.exists(), "{kept:?}");
+    }
+    if has_link {
+        assert!(std::fs::symlink_metadata(&linked).is_ok(), "link stays");
+    }
+    assert!(outside.join("worker.exe").exists(), "never followed");
+    assert!(files.is_installed());
+    files.shutdown();
 }
 
 #[test]

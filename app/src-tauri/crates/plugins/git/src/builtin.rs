@@ -395,7 +395,7 @@ impl GitOps for BuiltinGit {
         let repo = match Repository::discover(root) {
             Ok(repo) => repo,
             Err(e) if e.code() == ErrorCode::NotFound => return Discovery::NoRepo,
-            Err(e) => return Discovery::Error(e.message().to_owned()),
+            Err(e) => return Discovery::Error(e.into()),
         };
         // a bare repository has no working tree
         let Some(workdir) = repo

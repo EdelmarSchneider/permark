@@ -1,5 +1,5 @@
-//! Worker binary (feature `llama`, Unix): loads its llama/ggml shared libs from its own folder (flat worker unit,
-//! D-6). Linux: `DT_RPATH` (not `RUNPATH`) so the libs' own dependencies resolve there too. Windows: DLLs next to the
+//! Worker binary (feature `llama`, Unix): loads its llama/ggml shared libs from its own folder (flat worker unit).
+//! Linux: `DT_RPATH` (not `RUNPATH`) so the libs' own dependencies resolve there too. Windows: DLLs next to the
 //! exe load first anyway. Nothing for the default build.
 
 fn main() {

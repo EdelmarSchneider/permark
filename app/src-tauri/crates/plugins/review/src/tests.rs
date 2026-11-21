@@ -428,6 +428,71 @@ fn a_deleted_document_comes_back_as_it_was_last_read() {
     );
 }
 
+fn copies_of(h: &Harness) -> CopyStore {
+    CopyStore::new(h.core.as_ref().unwrap().store(), ID)
+}
+
+#[test]
+fn the_persons_own_saves_leave_one_copy_and_a_version_another_document_read_stays() {
+    let mut h = Harness::new(false);
+    h.write("own.md", BASE_DOC);
+    // another document holds the same text: its read version shares the copy
+    h.write("twin.md", BASE_DOC);
+    h.open();
+    h.ready("own.md");
+    h.ready("twin.md");
+    let core = h.core.clone().unwrap();
+    let copies = copies_of(&h);
+    let base = fsx::hash(BASE_DOC.as_bytes()).0;
+    for n in 0..50 {
+        let saved = format!("{BASE_DOC}\nSave {n}.\n");
+        let hash = fsx::hash(saved.as_bytes());
+        core.watcher().own().expect_write("own.md", hash);
+        h.write("own.md", &saved);
+        core.documents().saved("w", "own.md", &hash.hex());
+        wait_until("the copy of the save", || copies.has(hash.0));
+    }
+    // the copier drops the version before a moment after the new one is kept
+    wait_until("the copies of earlier saves gone", || copies.count() <= 2);
+    assert!(copies.has(base), "the twin's read version stays");
+    assert_eq!(h.state("own.md")["state"], "same");
+    assert_eq!(h.state("twin.md")["state"], "same");
+}
+
+#[test]
+fn copies_nothing_needs_make_room_when_the_cap_is_reached() {
+    let mut h = Harness::new(false);
+    h.write("a.md", BASE_DOC);
+    // the cap filled by copies of versions nobody needs any more (left from earlier visits)
+    let store =
+        permark_core::state::StateStore::for_project(&h.env.dirs, &Root::open(&h.root()).unwrap());
+    let folder = store.plugin_dir(&ID).join("copies");
+    let stale = CopyStore::new(store, ID);
+    std::fs::create_dir_all(&folder).unwrap();
+    for n in 0..5000_u64 {
+        std::fs::write(
+            folder.join(format!("{:016x}.json", (1_u64 << 60) + n)),
+            "{}",
+        )
+        .unwrap();
+    }
+    assert_eq!(stale.count(), 5000);
+    h.open();
+    // the version read is copied all the same
+    h.ready("a.md");
+    let copies = copies_of(&h);
+    assert!(copies.count() < 100, "{}", copies.count());
+    // and so is a changed version the person reads
+    agent_writes(&h, "a.md", &BASE_DOC.replace("Second", "2nd"));
+    wait_until("the change", || h.state("a.md")["state"] == "changes");
+    let hash = h.hash("a.md");
+    h.call("unread", "markRead", json!({"path": "a.md", "hash": hash}))
+        .unwrap();
+    wait_until("the copy of the version read", || {
+        copies.has(permark_plugin_unread::hash_from_hex(&hash).unwrap())
+    });
+}
+
 #[test]
 fn hostile_calls_are_refused() {
     let mut h = Harness::new(false);

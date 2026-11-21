@@ -67,7 +67,13 @@ pub struct Timings {
     pub max_wait: Duration,
     /// A pending refresh waits this long for `index.lock` to go.
     pub lock_wait: Duration,
+    /// After a status that did not answer in time, file changes wait this long before git is asked again; each
+    /// timeout in a row doubles it, up to [`MAX_BACKOFF`].
+    pub backoff: Duration,
 }
+
+/// The longest file changes wait for git after timeouts in a row.
+pub const MAX_BACKOFF: Duration = Duration::from_secs(60);
 
 impl Default for Timings {
     fn default() -> Self {
@@ -75,6 +81,8 @@ impl Default for Timings {
             quiet: Duration::from_millis(300),
             max_wait: Duration::from_secs(2),
             lock_wait: Duration::from_millis(1500),
+            // as long as git was given to answer
+            backoff: crate::system::TIMEOUT,
         }
     }
 }
@@ -530,6 +538,8 @@ impl GitService {
             backend: None,
             main: None,
             worktree_locations: Vec::new(),
+            timeouts: 0,
+            backoff_until: None,
         };
         let thread = thread::Builder::new()
             .name("permark-git".to_owned())
@@ -809,6 +819,14 @@ impl RepoReader for Reader {
     }
 }
 
+/// What the windows are told when git could not answer.
+pub(crate) fn condition_of(error: &GitError) -> GitCondition {
+    GitCondition::Error {
+        code: error.code(),
+        reason: error.reason(),
+    }
+}
+
 /// The number of the last snapshot announced by any service of the process. One counter for all, so a service that
 /// starts again (the backend setting changed) never announces a number below what the window already has.
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -825,6 +843,10 @@ struct Worker {
     backend: Option<Arc<dyn GitOps>>,
     main: Option<RepoLocation>,
     worktree_locations: Vec<(String, RepoLocation)>,
+    /// Status calls in a row that did not answer in time.
+    timeouts: u32,
+    /// File changes wait until then before git is asked again (after a timeout).
+    backoff_until: Option<Instant>,
 }
 
 impl Worker {
@@ -863,12 +885,50 @@ impl Worker {
                     Err(RecvTimeoutError::Timeout) => break,
                 }
             }
-            if self.stop.load(Ordering::SeqCst) || !self.wait_out_lock(rx) {
+            if self.stop.load(Ordering::SeqCst)
+                || !self.wait_out_backoff(rx, &mut pending)
+                || !self.wait_out_lock(rx)
+            {
                 break;
             }
             self.refresh(pending.why());
         }
         self.finish();
+    }
+
+    /// Git did not answer in time lately: file changes wait out the backoff (a signal, focus or a new baseline asks at
+    /// once). `false`: asked to stop.
+    fn wait_out_backoff(&mut self, rx: &Receiver<Msg>, pending: &mut Pending) -> bool {
+        while let Some(until) = self.backoff_until {
+            if pending.forced || pending.why() != Why::Files {
+                return true;
+            }
+            let left = until.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return true;
+            }
+            match rx.recv_timeout(left) {
+                Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => return false,
+                Ok(Msg::Baseline(kind)) => {
+                    self.set_baseline(kind);
+                    pending.forced = true;
+                }
+                Ok(Msg::Refresh(why)) => pending.merge(why),
+                Err(RecvTimeoutError::Timeout) => return true,
+            }
+        }
+        true
+    }
+
+    /// What a status that did not answer in time leaves: the next file changes wait longer.
+    fn timed_out(&mut self) {
+        self.timeouts = self.timeouts.saturating_add(1);
+        let doubled = self
+            .args
+            .timings
+            .backoff
+            .saturating_mul(1_u32 << self.timeouts.saturating_sub(1).min(16));
+        self.backoff_until = Some(Instant::now() + doubled.min(MAX_BACKOFF));
     }
 
     /// Git is writing the index: its answer would race the write. Waits a little; `false`: asked to stop.
@@ -975,8 +1035,8 @@ impl Worker {
                     self.publish(None);
                     return;
                 }
-                Discovery::Error(reason) => {
-                    self.tell(GitCondition::Error { reason }, false);
+                Discovery::Error(error) => {
+                    self.tell(condition_of(&error), false);
                     self.publish(None);
                     return;
                 }
@@ -987,6 +1047,8 @@ impl Worker {
         };
         match self.snapshot_of(&backend, &main) {
             Ok(snapshot) => {
+                self.timeouts = 0;
+                self.backoff_until = None;
                 *self
                     .shared
                     .repo
@@ -1004,16 +1066,33 @@ impl Worker {
                 );
                 self.publish(Some(snapshot));
             }
+            // a status too slow for once (a huge working tree, a busy disk): the last picture and the repository stay
+            // (what was committed can still be read), the windows are told it may be old
+            Err(GitError::Timeout) if self.holds(&main) => {
+                self.timed_out();
+                self.tell(condition_of(&GitError::Timeout), false);
+            }
             Err(error) => {
-                self.tell(
-                    GitCondition::Error {
-                        reason: error.to_string(),
-                    },
-                    false,
-                );
+                if error == GitError::Timeout {
+                    self.timed_out();
+                } else {
+                    self.timeouts = 0;
+                    self.backoff_until = None;
+                }
+                self.tell(condition_of(&error), false);
                 self.publish(None);
             }
         }
+    }
+
+    /// The repository at `main` is held from an earlier look.
+    fn holds(&self, main: &RepoLocation) -> bool {
+        self.shared
+            .repo
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .is_some_and(|repo| repo.main == *main)
     }
 
     fn snapshot_of(

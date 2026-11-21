@@ -1,4 +1,4 @@
-//! Concurrent record edits (verifier round 2, adopted as spec tests, `projects.md` §13).
+//! Concurrent record edits (`projects.md` §13).
 
 use std::cell::Cell;
 

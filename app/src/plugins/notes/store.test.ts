@@ -190,6 +190,17 @@ describe("the note shown", () => {
     expect(opened.ok).toBe(true);
   });
 
+  it("opens its editor by itself without making that the mode the window's other tabs open in", async () => {
+    const { store, editing } = await setup();
+    // the project tab was left in View: coming back to it must show its page again, not an editor
+    editing.chooseNext("view");
+    await store.select(FIRST);
+    await settle();
+    expect(editing.path).toBe(FIRST);
+    expect(editing.mode).not.toBe("view");
+    expect(editing.chosenMode).toBe("view");
+  });
+
   it("opens the note the welcome screen asked for, or a new one", async () => {
     const asked = await setup({ kind: "open", path: FIRST });
     expect(asked.store.current).toBe(FIRST);
@@ -703,7 +714,7 @@ describe("wishes from other views (the Notes tab open elsewhere)", () => {
   });
 });
 
-describe("adversarial: intents (verifier)", () => {
+describe("adversarial: intents", () => {
   it("an intent for a note that is gone: list only (notes.md Intents), nothing recorded as open", async () => {
     const { api, store } = await setup({ kind: "open", path: "gone 1999.md" });
     expect(store.list.status).toBe("ready");

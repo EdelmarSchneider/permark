@@ -84,12 +84,17 @@
       {@html drawn.svg}
     </div>
   {:else if drawn.status === "failed"}
-    <pre class="source"><code>{source}</code></pre>
-    <!-- the engine's words go inside the note: an export keeps the note and drops the source -->
+    <!-- the engine's words go inside the note: an export keeps the note and drops the source. The note comes first:
+         a source refused for its size would push it thousands of lines down -->
     <figcaption class="message">
       {t("doc.diagramFailed")}
       {#if drawn.problem}<span class="problem">{drawn.problem}</span>{/if}
     </figcaption>
+    <!-- a scroller of its own, so the keyboard can read a long source -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <pre class="source" tabindex="0" role="region" aria-label={t("doc.diagramSource")}><code
+        >{source}</code
+      ></pre>
   {:else}
     <span class="pending">{t("doc.diagramRendering")}</span>
   {/if}
@@ -127,9 +132,11 @@
   }
   .source {
     white-space: pre;
+    max-height: 24em;
+    overflow: auto;
   }
   .message {
-    margin: 6px 0 0;
+    margin: 0 0 6px;
     font-size: 12px;
     color: var(--muted);
   }

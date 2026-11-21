@@ -131,9 +131,10 @@ impl Handlers for LaunchServices {
     }
 
     fn set(&self, key: &str, handler: Option<&str>) -> Result<(), IpcError> {
-        // `LaunchServices` has no "no choice": giving back "none" leaves the type to the system's own pick next time.
+        // `LaunchServices` records no "no choice": the type would stay PerMark's, so the person is told where to pick
+        // another app
         let Some(handler) = handler else {
-            return Ok(());
+            return Err(super::no_handler_to_restore(key));
         };
         let refused = || IpcError::new(ErrorKind::Denied).subject(key.to_owned());
         let content_type = CfString::new(key).ok_or_else(refused)?;

@@ -1,4 +1,4 @@
-//! Fit hint + memory budget (AC-9, D-3 heuristic v1 on catalog `needs`; refined in C4 by engine `estimate_memory`).
+//! Fit hint + memory budget (heuristic v1 on catalog `needs`; engine `estimate_memory` may refine it).
 //! Advice only: nothing here blocks a Get | an assignment.
 //!
 //! Fit of one model, first rule that holds:

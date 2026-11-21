@@ -72,7 +72,7 @@ impl Resolver for PublicOnly {
 pub(crate) enum Patience {
     /// Whole request, connect to last body byte (small answers: web pictures).
     Total(Duration),
-    /// No total (large files, D-11): every wait for bytes in | out ends after `idle` without progress.
+    /// No total (large files): every wait for bytes in | out ends after `idle` without progress.
     Idle(Duration),
 }
 

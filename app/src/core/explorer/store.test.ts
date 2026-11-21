@@ -17,7 +17,7 @@ import type {
 import { ImportFlow } from "./importFlow.svelte";
 import { ancestorsOf, applyDelta } from "./list";
 import { setLeaveGuard } from "../editing/guard";
-import { language } from "../i18n";
+import { language, t, tn } from "../i18n";
 import { editing } from "../editing/session.svelte";
 import { problemText } from "./names";
 import { ExplorerStore, REFRESH_WAIT_MS, type ExplorerHost } from "./store.svelte";
@@ -1143,6 +1143,22 @@ describe("delete and undo", () => {
     const spy = vi.spyOn(f.api, "deleteFiles");
     await f.store.remove();
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("a bin that stopped part way says what went and what stayed, with Undo", async () => {
+    const f = await setup();
+    vi.spyOn(f.api, "deleteFiles").mockResolvedValueOnce({
+      ok: true,
+      value: { deleted: ["a.md", "b.md", "c.md", "d.md"], refused: ["notes/held.md"] },
+    });
+    await f.store.remove(["a.md", "b.md", "c.md", "d.md", "notes/held.md"]);
+    const note = f.acted.at(-1);
+    expect(note?.text).toBe(
+      t("fileOps.partlyDeleted", { what: tn("fileOps.items", 4), refused: "held.md" }),
+    );
+    expect(note?.text).toBe("Deleted 4 items. Couldn't move held.md to the recycle bin.");
+    expect(note?.actions[0]?.label).toBe(t("fileOps.undo"));
+    expect(f.failures).toHaveLength(0);
   });
 
   it("a refusal is told to the window", async () => {

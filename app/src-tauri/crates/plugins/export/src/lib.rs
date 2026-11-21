@@ -172,8 +172,8 @@ impl Shared {
         let origin = self.origin(window, &args.source)?;
         let saved = self.cancellable(window, |cancel| {
             printer.0.save_pdf(args.html, &args.setup, &origin, cancel)
-        });
-        Ok(saved?)
+        })?;
+        Ok(self.announced(window, saved))
     }
 
     fn save_html(&self, args: &HtmlArgs, window: &str) -> Result<Saved, IpcError> {
@@ -181,8 +181,18 @@ impl Shared {
         let origin = self.origin(window, &args.source)?;
         let saved = self.cancellable(window, |cancel| {
             printer.0.save_html(&args.html, &origin, cancel)
-        });
-        Ok(saved?)
+        })?;
+        Ok(self.announced(window, saved))
+    }
+
+    /// A file saved inside the window's project is listed in its tree at once (the Save dialog may pick any folder).
+    fn announced(&self, window: &str, saved: Saved) -> Saved {
+        if let (Saved::Saved { path }, Some(files)) =
+            (&saved, self.app.services.get::<WindowFilesApi>())
+        {
+            files.0.announce_written(window, path);
+        }
+        saved
     }
 
     fn print(&self, args: PrintArgs, window: &str) -> Result<(), IpcError> {

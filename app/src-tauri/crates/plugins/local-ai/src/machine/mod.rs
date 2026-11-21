@@ -1,4 +1,4 @@
-//! Machine profile (AC-9): memory, processor threads, graphics adapters of this computer, read from OS APIs (D-7).
+//! Machine profile: memory, processor threads, graphics adapters of this computer, read from OS APIs.
 //!
 //! Best effort: every value may be unknown (`None`); reading never panics, never spawns a program (no `nvidia-smi`),
 //! never writes. Per OS:
@@ -8,7 +8,7 @@
 //! - Linux: `/proc/meminfo` (`MemTotal`, `MemAvailable`) + `/sys/class/drm/card<N>/device` (vendor; VRAM only where
 //!   the driver tells it: AMD `mem_info_vram_total`). NVIDIA VRAM unknown.
 //!
-//! Read lazily on the first `local-ai.machine` call (never at plugin start, AC-1), then kept [`FRESH`] (free memory
+//! Read lazily on the first `local-ai.machine` call (never at plugin start), then kept [`FRESH`] (free memory
 //! changes). Plugin-private: promote to core when a second consumer appears.
 
 #[cfg(any(target_os = "linux", test))]
@@ -47,7 +47,7 @@ pub struct Gpu {
     pub software: bool,
 }
 
-/// What this computer offers (AC-9); unknown values `None`.
+/// What this computer offers; unknown values `None`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename = "MachineProfile")]

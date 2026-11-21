@@ -5,15 +5,15 @@
 import ArrowLeftRight from "@lucide/svelte/icons/arrow-left-right";
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { documents } from "../../core/doc/document.svelte";
+import { pageSelection } from "../../core/doc/selection";
 import { definePlugin } from "../../core/plugins/registry.svelte";
 import { convertible, sourceOf } from "./model";
 import { converter } from "./store.svelte";
 import { convertTable, decorateTables, heldTable } from "./tables";
 
-/** The text selected in the page, if any. */
-function pageSelection(): string {
-  const selection = window.getSelection();
-  return selection && !selection.isCollapsed ? selection.toString() : "";
+/** The text selected in the page, if any (a selection in a panel or a field is not the page's). */
+function selectedText(): string {
+  return pageSelection()?.text ?? "";
 }
 
 /** A table of the page into the converter, read as CSV. */
@@ -50,9 +50,9 @@ export default definePlugin({
         label: "convert.menu",
         requires: NO_REQUIREMENT,
         when: () =>
-          pageSelection() !== "" || (documents.path !== null && convertible(documents.path)),
+          selectedText() !== "" || (documents.path !== null && convertible(documents.path)),
         run: () => {
-          const text = pageSelection();
+          const text = selectedText();
           if (text !== "") {
             converter.open({ kind: "text", text, language: null, beside: documents.path });
           } else if (documents.path !== null) {

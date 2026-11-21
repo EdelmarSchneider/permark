@@ -112,6 +112,8 @@ export class FeedStore {
   readonly #front = new InFront();
   #timer: ReturnType<typeof setTimeout> | null = null;
   #held = false;
+  /** The documents the toast counts: the backend sends a coalesced entry again each time its file changes. */
+  readonly #toastPaths = new Set<string>();
   /** The project the feed follows now. */
   #project: string | null = null;
   readonly #glowTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -276,12 +278,8 @@ export class FeedStore {
     );
     const latest = news[0];
     if (!latest) return;
-    const kind = latest.kind;
-    this.toast = {
-      count: (this.toast?.count ?? 0) + news.length,
-      path: latest.path,
-      kind,
-    };
+    for (const item of news) this.#toastPaths.add(item.path);
+    this.toast = { count: this.#toastPaths.size, path: latest.path, kind: latest.kind };
     this.#arm();
   }
 
@@ -316,6 +314,7 @@ export class FeedStore {
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = null;
     this.#held = false;
+    this.#toastPaths.clear();
     this.toast = null;
   }
 

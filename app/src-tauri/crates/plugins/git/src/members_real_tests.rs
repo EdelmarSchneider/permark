@@ -265,6 +265,7 @@ fn the_root_status_leaves_out_included_projects_with_their_own_repository() {
                 quiet: Duration::from_millis(20),
                 max_wait: Duration::from_millis(100),
                 lock_wait: Duration::from_millis(100),
+                ..Timings::default()
             },
             facts: ProjectFacts::new(None),
             announce: Arc::new(move |s| lock_vec(&heard).push(s.cloned())),
@@ -338,6 +339,7 @@ fn members_known_at_start_never_show_in_the_root_status() {
                 quiet: Duration::from_millis(20),
                 max_wait: Duration::from_millis(100),
                 lock_wait: Duration::from_millis(100),
+                ..Timings::default()
             },
             facts: ProjectFacts::new(None),
             announce: Arc::new(move |s| lock_vec(&heard).push(s.cloned())),
@@ -384,6 +386,7 @@ fn real_env(ops: Arc<dyn GitOps>) -> Env {
             quiet: Duration::from_millis(20),
             max_wait: Duration::from_millis(100),
             lock_wait: Duration::from_millis(100),
+            ..Timings::default()
         },
         on_repos: Arc::new(|_| {}),
         on_snapshot: Arc::new(|_| {}),
@@ -1038,6 +1041,7 @@ fn a_list_set_before_the_first_look_beats_the_one_asked_at_start() {
             quiet: Duration::from_millis(20),
             max_wait: Duration::from_millis(100),
             lock_wait: Duration::from_millis(100),
+            ..Timings::default()
         },
         facts: ProjectFacts::new(None),
         announce: Arc::new(|_| {}),

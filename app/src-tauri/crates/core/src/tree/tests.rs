@@ -245,6 +245,37 @@ fn git_folder_and_permark_private_folders_are_never_listed() {
     }
 }
 
+#[test]
+fn listed_folders_are_the_walked_ones_not_the_ignored_or_private() {
+    let f = fixture_with(
+        &[
+            "a.md",
+            "docs/b.md",
+            "docs/deep/c.md",
+            "empty/",
+            "build/out.md",
+            ".permark/config.toml",
+            ".permark/local/x",
+            ".git/HEAD",
+        ],
+        &ProjectConfig::default(),
+    );
+    fs::write(f.dir.path().join(".gitignore"), "build/\n").unwrap();
+    let mut folders: Vec<String> = f
+        .explorer
+        .listed_folders()
+        .iter()
+        .map(|abs| {
+            abs.strip_prefix(f.dir.path())
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect();
+    folders.sort();
+    assert_eq!(folders, ["", ".permark", "docs", "docs/deep", "empty"]);
+}
+
 // ---- filter ---------------------------------------------------------------------------------------------------------
 
 #[test]

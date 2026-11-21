@@ -3,8 +3,9 @@
 //!
 //! - [`ModelHost::open`]: model assigned to a [`Task`] ([`Installs::model_for`]) + runs on the pinned worker (else
 //!   `engineTooOld` | `unsupported`, nothing started) -> engine files of the current pin installed, else fetched
-//!   first through [`WorkerFiles`] ([`HostProgress::Engine`]; cancel stops the download, part kept; no pin ->
-//!   `notAvailable`) -> [`HostProgress::Loading`] from 0 -> load through [`Runtime::load`] (memory guard inside;
+//!   first through [`WorkerFiles`] ([`HostProgress::Engine`]; one download for every open waiting on it, a cancel
+//!   stops it only when no other open waits, part kept; no pin -> `notAvailable`; installed -> folders of earlier
+//!   pins swept) -> [`HostProgress::Loading`] from 0 -> load through [`Runtime::load`] (memory guard inside;
 //!   device = the person's choice, [`Installs::device`]: graphics card when there is one | processor only, read once
 //!   the runtime knows the load -> a choice changed meanwhile cancels the load | is the one read; context capped at
 //!   the model's maximum). Tester ("Test model") takes the same path (`ModelHost::open_model`): ONE engine fetch.
@@ -187,6 +188,45 @@ pub struct ModelHost {
     pub(crate) files: Arc<WorkerFiles>,
     /// Same as the one given to `files` ([`EngineNews::listener`]).
     news: Arc<EngineNews>,
+    /// Opens waiting on the engine download now ([`EngineWait`]).
+    engine_waiters: Mutex<usize>,
+}
+
+/// One open waiting on the engine download (counted in [`ModelHost::engine_waiters`]); dropped = gone without
+/// stopping it, [`EngineWait::cancel`] = gone, the download stopped when no other open waits.
+struct EngineWait<'a> {
+    host: &'a ModelHost,
+    cancelled: bool,
+}
+
+impl<'a> EngineWait<'a> {
+    /// Counts one more waiter, then queues the worker unit (both under the count lock: a last waiter's cancel and a
+    /// new waiter's enqueue never interleave).
+    fn join(host: &'a ModelHost) -> Result<Self, FilesError> {
+        let mut waiters = host.waiters();
+        host.files.enqueue()?;
+        *waiters += 1;
+        Ok(Self {
+            host,
+            cancelled: false,
+        })
+    }
+
+    /// Leaves cancelled; the last waiter out stops the download (part kept for resume).
+    fn cancel(mut self) {
+        self.cancelled = true;
+    }
+}
+
+impl Drop for EngineWait<'_> {
+    fn drop(&mut self) {
+        let mut waiters = self.host.waiters();
+        *waiters = waiters.saturating_sub(1);
+        // another feature's open still waits: the download goes on for it
+        if self.cancelled && *waiters == 0 {
+            self.host.files.cancel();
+        }
+    }
 }
 
 impl ModelHost {
@@ -205,16 +245,31 @@ impl ModelHost {
             runtime,
             files,
             news,
+            engine_waiters: Mutex::new(0),
         }
     }
 
-    /// `session` still carries the model assigned to `task` (lineage), loaded for the device the person chooses now
-    /// (state alone): a feature keeping a session warm drops it when the person assigns another model | lets models
-    /// run elsewhere (a version update | removal | device change unloads it too).
+    fn waiters(&self) -> MutexGuard<'_, usize> {
+        self.engine_waiters
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Opens waiting on the engine download now.
+    #[cfg(test)]
+    pub(crate) fn engine_waiters(&self) -> usize {
+        *self.waiters()
+    }
+
+    /// `session` still carries the model assigned to `task` (lineage), loaded for the device the person chooses now,
+    /// and the service has not unloaded it (state alone): a feature keeping a session warm drops it when the person
+    /// assigns another model | lets models run elsewhere (a version update | removal | device change unloads it
+    /// too, before the state that follows it changes).
     #[must_use]
     pub fn serves(&self, session: &ModelSession, task: Task) -> bool {
         self.installs.assigned_lineage(task).as_deref() == Some(session.lineage.as_str())
             && self.installs.device() == session.device
+            && session.runtime.holds(session.id)
     }
 
     /// A model is assigned to `task` (state alone: no engine started, no disk read; the model may since be gone ->
@@ -287,14 +342,15 @@ impl ModelHost {
         cancel: &CancelToken,
     ) -> Result<(), HostError> {
         if self.files.is_installed() {
+            self.files.sweep_earlier();
             return Ok(());
         }
         // listening before the enqueue: an install finished meanwhile still answers `Done`
         let updates = self.news.open();
-        self.files.enqueue()?;
+        let waiting = EngineWait::join(self)?;
         loop {
             if cancel.is_cancelled() {
-                self.files.cancel();
+                waiting.cancel();
                 return Err(DownloadError::Cancelled.into());
             }
             match updates.recv_timeout(POLL) {
@@ -304,7 +360,10 @@ impl ModelHost {
                         total,
                     });
                 }
-                Ok(Update::Done) => return Ok(()),
+                Ok(Update::Done) => {
+                    self.files.sweep_earlier();
+                    return Ok(());
+                }
                 Ok(Update::Failed(error)) => return Err(error.into()),
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return Err(DownloadError::Cancelled.into()),
@@ -342,7 +401,7 @@ impl ModelHost {
                 cancel,
             )
             .map_err(|e| match e {
-                // verified files gone at spawn time = taken by security software (D-14)
+                // verified files gone at spawn time = taken by security software
                 EngineError::Io(_) if !self.files.is_installed() => EngineError::Blocked,
                 e => e,
             })?;

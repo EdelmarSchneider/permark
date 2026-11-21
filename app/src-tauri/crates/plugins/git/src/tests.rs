@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use git2::{IndexAddOption, Repository, Signature};
-use permark_core::conditions::{Distribution, GitCondition, RepoState};
+use permark_core::conditions::{Distribution, GitCondition, GitErrorCode, RepoState};
 use permark_core::events::NoEvents;
 use permark_core::fsx::{same_file, SameFile};
 use permark_core::paths::Root;
@@ -3300,7 +3300,7 @@ fn a_cancelled_git_leaves_nothing_running_in_the_folder() {
         GitError::Failed("stopped".to_owned())
     );
     // at once: no grandchild (shell, sleep) holds the folder as its working directory. The system may need a few ms
-    // after the job is empty to let go of a working directory (verifier: 1 in 1200 at once, fine after 10 ms): a short
+    // after the job is empty to let go of a working directory (seen: 1 in 1200 at once, fine after 10 ms): a short
     // retry, never more than 200 ms (an orphan that keeps running holds it for 30 s)
     let target = dir.path().join("renamed ü");
     let started = Instant::now();
@@ -3655,6 +3655,7 @@ fn timings() -> Timings {
         quiet: Duration::from_millis(20),
         max_wait: Duration::from_millis(120),
         lock_wait: Duration::from_millis(300),
+        ..Timings::default()
     }
 }
 
@@ -3781,6 +3782,125 @@ fn a_burst_of_triggers_is_one_refresh() {
     std::thread::sleep(Duration::from_millis(300));
     // the first snapshot and one for the burst (a straggler is allowed, thirty are not)
     assert!(running.announced.lock().unwrap().len() <= 3);
+}
+
+/// The built-in backend whose status answers once, then never in time (a huge working tree).
+struct SlowStatus {
+    inner: BuiltinGit,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl SlowStatus {
+    fn calls(&self) -> usize {
+        self.calls.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl GitOps for SlowStatus {
+    fn kind(&self) -> BackendKind {
+        self.inner.kind()
+    }
+
+    fn discover(&self, root: &Path, home: Option<&Path>) -> Discovery {
+        self.inner.discover(root, home)
+    }
+
+    fn status(&self, location: &RepoLocation, baseline: &Baseline) -> Result<RawStatus, GitError> {
+        let n = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if n == 0 {
+            self.inner.status(location, baseline)
+        } else {
+            Err(GitError::Timeout)
+        }
+    }
+
+    fn blob_at_head(
+        &self,
+        location: &RepoLocation,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        self.inner.blob_at_head(location, path)
+    }
+
+    fn blob_at(
+        &self,
+        location: &RepoLocation,
+        commit: CommitId,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        self.inner.blob_at(location, commit, path)
+    }
+
+    fn file_versions(
+        &self,
+        location: &RepoLocation,
+        path: &str,
+        after: usize,
+        limit: usize,
+    ) -> Result<FileVersions, GitError> {
+        self.inner.file_versions(location, path, after, limit)
+    }
+
+    fn commit_exists(&self, location: &RepoLocation, oid: &str) -> bool {
+        self.inner.commit_exists(location, oid)
+    }
+
+    fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32> {
+        self.inner.commit_count(location, old, new)
+    }
+
+    fn ahead_behind(&self, location: &RepoLocation) -> Result<Option<(u32, u32)>, GitError> {
+        self.inner.ahead_behind(location)
+    }
+
+    fn last_commit(&self, location: &RepoLocation) -> Result<Option<(i64, String)>, GitError> {
+        self.inner.last_commit(location)
+    }
+
+    fn root_commit(&self, location: &RepoLocation) -> Result<Option<String>, GitError> {
+        self.inner.root_commit(location)
+    }
+}
+
+#[test]
+fn a_status_that_times_out_keeps_the_last_picture_and_file_changes_back_off() {
+    let slow = Arc::new(SlowStatus {
+        inner: BuiltinGit,
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    });
+    let ops: Arc<dyn GitOps> = Arc::clone(&slow) as Arc<dyn GitOps>;
+    let fx = Fixture::new();
+    fx.write("a.md", "committed\n");
+    fx.commit("first");
+    let running = start(&fx.root, &ops, Vec::new());
+    wait_until("the first snapshot", || {
+        running.service.snapshot().is_some()
+    });
+    let first = running.service.snapshot().unwrap();
+    // file changes keep coming while git cannot answer in time
+    for _ in 0..10 {
+        running.service.trigger(Why::Files);
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    wait_until("the timeout told", || {
+        running.facts.git()
+            == GitCondition::Error {
+                code: GitErrorCode::Timeout,
+                reason: String::new(),
+            }
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(slow.calls() <= 2, "{} status calls", slow.calls());
+    // the last picture and the repository stay: the last commit can still be read
+    assert_eq!(running.service.snapshot().unwrap().seq, first.seq);
+    assert_eq!(
+        running.service.reader().blob_at_head("a.md").as_deref(),
+        Some(&b"committed\n"[..])
+    );
+    // a git signal asks at once all the same
+    let before = slow.calls();
+    running.service.trigger(Why::Signal);
+    wait_until("the signal's status call", || slow.calls() > before);
 }
 
 #[test]

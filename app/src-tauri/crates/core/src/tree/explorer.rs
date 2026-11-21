@@ -645,6 +645,38 @@ impl Explorer {
         found
     }
 
+    /// The folders of every root the walk listed (the roots too, not ignored ones, not unlisted ones), absolute.
+    #[must_use]
+    pub fn listed_folders(&self) -> Vec<std::path::PathBuf> {
+        let guard = self.model();
+        let Some(model) = guard.as_ref() else {
+            return Vec::new();
+        };
+        let mut found = Vec::new();
+        let mut stack: Vec<String> = self.roots.iter().map(|r| key_of(&r.prefix)).collect();
+        while let Some(folder) = stack.pop() {
+            let path = model.node(&folder).map_or_else(
+                || {
+                    self.roots
+                        .iter()
+                        .find(|r| key_of(&r.prefix) == folder)
+                        .map(|r| r.prefix.clone())
+                        .unwrap_or_default()
+                },
+                |node| node.path.clone(),
+            );
+            found.extend(model.abs_of(&path));
+            for child in model.children_of(&folder) {
+                if model.node(child).is_some_and(|node| {
+                    !node.ignored && matches!(node.kind, NodeKind::Dir { unlisted: None })
+                }) {
+                    stack.push(child.clone());
+                }
+            }
+        }
+        found
+    }
+
     /// Listed files (not ignored) by exact name: name -> project paths (code references).
     #[must_use]
     pub fn files_named(&self, names: &HashSet<String>) -> HashMap<String, Vec<String>> {

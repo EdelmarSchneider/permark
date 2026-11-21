@@ -59,7 +59,7 @@
     {
       "name": "git repo unmet on git error",
       "requirement": { "needs": [{ "need": "gitRepo" }], "prefers": [] },
-      "context": { "git": { "status": "error", "reason": "bad index" } },
+      "context": { "git": { "status": "error", "code": "failed", "reason": "bad index" } },
       "expected": { "status": "unavailable", "reason": { "need": "gitRepo", "remedy": null } }
     },
     {

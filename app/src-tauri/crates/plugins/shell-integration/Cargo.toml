@@ -12,16 +12,12 @@ publish = false
 [dependencies]
 permark-core.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 ts-rs.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winreg.workspace = true
 dunce.workspace = true
 windows-sys = { workspace = true, features = ["Win32_UI_Shell", "Win32_Globalization"] }
-
-[dev-dependencies]
-tempfile.workspace = true
 
 [lints]
 workspace = true

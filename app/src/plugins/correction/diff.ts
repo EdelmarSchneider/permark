@@ -1,5 +1,5 @@
-// Word-level suggestions between a piece's original text and the model's corrected text (spec feature-correction
-// D-6). Tokens = `Intl.Segmenter` word segments (never split a grapheme), whitespace runs merged; compared NFC, every
+// Word-level suggestions between a piece's original text and the model's corrected text.
+// Tokens = `Intl.Segmenter` word segments (never split a grapheme), whitespace runs merged; compared NFC, every
 // whitespace run equal to any other (model reflow invisible, original spaces + EOL kept), so a space added | dropped
 // inside a line stays an edit. Myers = `core/editing/lines.ts diff` over the token keys. Changes one whitespace token
 // or one short token apart -> one suggestion. Tokens equal under NFC keep the original bytes.

@@ -76,7 +76,7 @@ fn load(runtime: &Runtime, lineage: &str) -> Result<SessionId, EngineError> {
         .map(|(session, _)| session)
 }
 
-/// AC-8: a runtime (pinned worker files included) creates, spawns, starts nothing until a load.
+/// A runtime (pinned worker files included) creates, spawns, starts nothing until a load.
 #[test]
 fn a_new_runtime_is_dormant() {
     let tmp = tempfile::tempdir().unwrap();
@@ -109,7 +109,7 @@ fn a_missing_worker_fails_the_load() {
     assert_eq!(entries(tmp.path()), Vec::<String>::new());
 }
 
-/// AC-5: too little memory -> refused before any worker starts.
+/// Too little memory -> refused before any worker starts.
 #[test]
 fn the_guard_refuses_before_a_worker_starts() {
     let (runtime, workers) = rig(scarce);
@@ -155,7 +155,7 @@ fn the_guard_counts_no_graphics_memory_for_a_processor_load() {
     assert_eq!(workers.launched(), 1);
 }
 
-/// D-11: release(lineage) unloads that lineage's sessions only (their workers end); others keep working.
+/// Release(lineage) unloads that lineage's sessions only (their workers end); others keep working.
 #[test]
 fn release_unloads_every_session_of_a_lineage() {
     let (runtime, workers) = rig(plenty);
@@ -180,7 +180,7 @@ fn release_unloads_every_session_of_a_lineage() {
     assert_eq!(workers.kills(), 3);
 }
 
-/// D-11: a release while a load of that lineage runs cancels it (token) and waits for its end: no worker | session
+/// A release while a load of that lineage runs cancels it (token) and waits for its end: no worker | session
 /// left behind (Windows: files still mapped). A released session's token is cancelled too (its owner stops).
 #[test]
 fn release_cancels_and_waits_for_a_load_in_flight() {
@@ -277,7 +277,7 @@ fn the_log_keeps_capped_lines_and_saves_them_when_a_worker_ends() {
     }
 }
 
-/// U5 smoke, run by hand on CPU only: the REAL worker (`PERMARK_WORKER` = release `permark-llm-worker`, debug
+/// Smoke test, run by hand on CPU only: the REAL worker (`PERMARK_WORKER` = release `permark-llm-worker`, debug
 /// override) started by `spawn_piped`, over local GGUF files (read only): `PERMARK_SMOKE_GGUF` = embedding model;
 /// optional `PERMARK_SMOKE_CHAT_GGUF` = chat model rendered with catalog profile `PERMARK_SMOKE_PROFILE` (default
 /// `gemma-4`). `cargo test -p permark-plugin-local-ai smoke -- --ignored --nocapture`

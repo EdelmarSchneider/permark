@@ -803,7 +803,7 @@ fn the_journal_of_a_project_gets_the_facts_about_its_files() {
         .any(|e| e.fact.path() == Some("docs/a.md")));
 }
 
-/// V7 (verifier, local only): the copy on REAL 0.6.x bytes (the director's `F:/PerMarkRoot/.permark`, copied to a temp
+/// Local only: the copy on REAL 0.6.x bytes (the director's `F:/PerMarkRoot/.permark`, copied to a temp
 /// folder; never touched in place). Every member with entries: copy OK, root bytes identical, entry counts == source
 /// entries under the member, second run writes nothing.
 #[test]

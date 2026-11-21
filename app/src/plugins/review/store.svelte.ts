@@ -23,6 +23,7 @@ import { READ_MS, personScrolls } from "../../core/readRule";
 import { conditions } from "../../core/conditions/context.svelte";
 import { reasonKey } from "../../core/conditions/guidance";
 import { documents } from "../../core/doc/document.svelte";
+import { apiErrorText } from "../../core/errors";
 import { editing } from "../../core/editing/session.svelte";
 import { formatLocale, t, tn, type MessageKey } from "../../core/i18n";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
@@ -795,7 +796,7 @@ export class ReviewStore {
         this.#say(
           t("review.failed", {
             name,
-            message: error.kind === "backend" ? error.error.kind : error.message,
+            message: apiErrorText(error),
           }),
         );
       }

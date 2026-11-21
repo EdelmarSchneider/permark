@@ -497,7 +497,7 @@ mod verify_tests {
         assert!(start.elapsed() < Duration::from_secs(1));
     }
 
-    /// S1 (verifier 2026-10-25): a wait past what the clock can count (`Duration::MAX`) has no deadline: no overflow
+    /// A wait past what the clock can count (`Duration::MAX`) has no deadline: no overflow
     /// panic, the lock is taken at once when free and as soon as it is freed when held.
     #[test]
     fn a_huge_wait_never_overflows_and_takes_the_lock_once_free() {
@@ -515,7 +515,7 @@ mod verify_tests {
         assert!(waiter.join().unwrap().unwrap());
     }
 
-    /// S2 (verifier 2026-10-25): a writer of another process (the lock file held through its own handle, outside this
+    /// A writer of another process (the lock file held through its own handle, outside this
     /// process's turns) makes a writer give up after its wait and never blocks the turns after it; once freed, a writer
     /// that waited goes on, and the next one takes the lock at once.
     #[test]
@@ -557,7 +557,7 @@ mod verify_tests {
         );
     }
 
-    /// N10 (verifier round 4): a writer holding a plugin's lock gives up after the brief wait, not the long one.
+    /// A writer holding a plugin's lock gives up after the brief wait, not the long one.
     #[test]
     fn a_brief_wait_writer_gives_up_long_before_the_others() {
         let dir = tempfile::tempdir().unwrap();

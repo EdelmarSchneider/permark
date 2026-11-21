@@ -5,7 +5,7 @@
 //! - returns on stdin EOF | [`Request::Unload`] (Ok) | write failure (Err). Reader thread may outlive the call: the
 //!   worker binary hard-exits right after.
 //! - stdin EOF | read error (host gone): the reader thread calls `on_host_gone` AT ONCE, even while a call runs
-//!   (worker: hard exit, D-10 -> cancel during load | plugin off never waits for llama.cpp).
+//!   (worker: hard exit -> cancel during load | plugin off never waits for llama.cpp).
 
 use std::cell::RefCell;
 use std::io::{self, BufRead, Write};

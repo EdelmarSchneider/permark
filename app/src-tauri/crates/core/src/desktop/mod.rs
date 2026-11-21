@@ -16,7 +16,9 @@ pub mod windows;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub use choice::{choose, is_ours, DefaultAppState, Handlers};
+pub use choice::{
+    choose, is_ours, no_handler_to_restore, DefaultAppState, Handlers, NO_HANDLER_TO_RESTORE,
+};
 pub use mimeapps::{default_of, with_default};
 
 /// A family of file types offered together ("Open these files with PerMark").

@@ -830,7 +830,7 @@ fn a_plain_folder_costs_no_disk_touch_after_open() {
     assert!(map.ready && map.is_plain());
 }
 
-/// Concept §2b + spec §5.2 (S1): opened alone, every chain level's rules apply and a change of any of them (record,
+/// Opened alone, every chain level's rules apply and a change of any of them (record,
 /// `.aiignore`, config) shows at the next read once the 5 s cache is old.
 #[test]
 fn opened_alone_rules_follow_every_chain_level() {

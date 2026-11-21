@@ -2,8 +2,8 @@
 //! binary (one loaded model per process).
 //!
 //! - text only: Chat + Embed (tokenize | count | context length on any model); transcribe | synthesize | tool calls
-//!   -> `Unsupported` (D-1, D-9).
-//! - devices (D-7): `Cpu` = no GPU device, 0 layers, no op offload; `Auto` = the GPU with most memory (none -> CPU),
+//!   -> `Unsupported`.
+//! - devices: `Cpu` = no GPU device, 0 layers, no op offload; `Auto` = the GPU with most memory (none -> CPU),
 //!   split none, `fit_params` picks layers -> no fit = `OutOfMemory`; [`Engine::on_gpu`] = layers placed on the GPU.
 //! - load errors: not a GGUF file (magic) -> `Corrupt`; any other llama.cpp failure (cause not told: unknown
 //!   architecture, read error, allocation) -> `Io` with a FIXED code (no path, no llama text; reason in the worker
@@ -12,7 +12,7 @@
 //! - load on a scoped thread (llama progress callback must be `'static`): progress polled + forwarded here; cancel
 //!   aborts the load (callback answers `false`).
 //! - model leaked for the worker's life (contexts borrow it): unload = worker exit (crate rule) frees everything.
-//! - one context per session, kind follows the call: embed (`n_batch` = `n_ubatch` = `n_ctx`, pooling from GGUF, D-12) |
+//! - one context per session, kind follows the call: embed (`n_batch` = `n_ubatch` = `n_ctx`, pooling from GGUF) |
 //!   generate (prompt decoded in `n_batch` chunks, cancel between chunks + per token); switching kind rebuilds it.
 //! - prompts: catalog [`crate::PromptProfile`] | [`crate::Prefixes`] (crate rule); markup tokenized with special
 //!   tokens, message text without.
@@ -116,7 +116,7 @@ impl LlamaEngine {
         })
     }
 
-    /// The GPU to run on (D-7: one device, no adapter picker): see [`gpu_rank`].
+    /// The GPU to run on (one device, no adapter picker): see [`gpu_rank`].
     fn gpu(&self) -> Option<&LlamaBackendDevice> {
         self.devices
             .iter()

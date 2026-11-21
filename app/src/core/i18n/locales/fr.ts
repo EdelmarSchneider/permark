@@ -85,6 +85,10 @@ export default {
   "error.invalidPath": "{subject} n'est pas un chemin valide.",
   "error.denied": "Autorisation refusée pour {subject}.",
   "error.io": "Impossible d'accéder à {subject} : {detail}",
+  "error.locked":
+    "{subject} est ouvert dans un autre programme qui empêche de le modifier. Fermez-le dans ce programme, puis réessayez.",
+  "error.diskFull": "Le disque est plein : impossible d'écrire {subject}.",
+  "error.readOnly": "{subject} est en lecture seule et ne peut pas être modifié.",
   "error.exists": "{subject} existe déjà.",
   "error.binary":
     "{subject} est un fichier binaire, il ne peut donc pas être affiché comme du texte.",
@@ -177,6 +181,8 @@ export default {
   "fileOps.summaryMoved": "Déplacement effectué : {what}",
   "fileOps.summaryRenamed": "{from} renommé en {to}",
   "fileOps.summaryDeleted": "Suppression effectuée : {what}",
+  "fileOps.partlyDeleted":
+    "Suppression effectuée : {what}. Impossible de déplacer {refused} vers la Corbeille.",
   "fileOps.dropInto": "Déplacer dans {folder}",
   "fileOps.projectRoot": "le dossier du projet",
   "fileOps.dialogLabel": "Mettre à jour les liens",
@@ -315,6 +321,7 @@ export default {
   "doc.deleted.title": "Ce fichier a été supprimé à {time}.",
   "doc.diagramFailed": "Impossible d'afficher le diagramme",
   "doc.diagramRendering": "Rendu du diagramme…",
+  "doc.diagramSource": "Source du diagramme",
   "doc.error.title": "Impossible d'ouvrir ce fichier",
   "doc.footnoteBackref": "Retour à la référence {ref}",
   "doc.frontmatter": "Front matter",
@@ -1038,6 +1045,11 @@ export default {
   "git.unavailableHint":
     "Le Git choisi n'est pas disponible. Choisissez-en un autre dans les paramètres.",
   "git.errorOwnership": "Git ne fait pas confiance au propriétaire de ce dossier.",
+  "git.why.timeout": "Git n'a pas répondu à temps.",
+  "git.why.tooLarge": "La réponse de Git était trop longue pour être lue.",
+  "git.why.spawn": "Impossible de démarrer Git.",
+  "git.why.parse": "La réponse de Git est incompréhensible.",
+  "git.why.failed": "Détails : {detail}",
   "git.errorHint":
     "Ouvrez les paramètres pour choisir un autre Git (le Git intégré n'exige pas cette confiance).",
   "git.folderChanged.one": "{n} fichier modifié à l'intérieur",
@@ -1919,6 +1931,7 @@ export default {
   "plugin.graphviz.name": "Diagrammes Graphviz",
   "plugin.graphviz.about": "Dessine des graphes Graphviz (DOT) à partir de blocs de code.",
   "graphviz.tooLarge": "Ce graphe est trop grand pour être dessiné ici.",
+  "plantuml.tooLarge": "Ce diagramme est trop grand pour être dessiné ici.",
   "plugin.media.name": "Images, audio et vidéo",
   "plugin.media.about": "Ouvre les images, le son et la vidéo sur place.",
   "plugin.json-view.name": "JSON",
@@ -1960,6 +1973,8 @@ export default {
   "defaultApp.confined":
     "Choisissez l'application pour ces fichiers dans les paramètres de votre système.",
   "defaultApp.failed": "Impossible de modifier l'application par défaut : {message}",
+  "defaultApp.chooseInFinder":
+    "PerMark reste l'application par défaut pour ces fichiers. Pour utiliser une autre application, sélectionnez l'un d'eux dans le Finder, choisissez Fichier > Lire les informations, puis choisissez l'application sous « Ouvrir avec ».",
   "defaultApp.askTitle": "Ouvrir ces fichiers avec PerMark ?",
   "defaultApp.askBody":
     "PerMark ouvre les fichiers que vous cochez lorsque vous double-cliquez dessus. Vous pouvez modifier ce choix à tout moment dans les Paramètres.",
@@ -1982,6 +1997,8 @@ export default {
   "shell.newFile.hint":
     "Dans le menu contextuel des dossiers : crée un fichier à cet endroit et l'ouvre.",
   "shell.failed": "Impossible de modifier le menu : {message}",
+  "shell.readFailed": "Impossible de lire les entrées du menu. {message}",
+  "shell.retry": "Réessayer",
   "updates.section": "Mises à jour",
   "updates.row": "Nouvelles versions",
   "updates.notes": "Nouveautés",

@@ -2,7 +2,7 @@
 import type { GpuAdapter } from "./GpuAdapter";
 
 /**
- * What this computer offers (AC-9); unknown values `None`.
+ * What this computer offers; unknown values `None`.
  */
 export type MachineProfile = { 
 /**

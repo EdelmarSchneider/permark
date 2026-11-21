@@ -223,7 +223,9 @@ describe("mock editor failures on request", () => {
     ["edit_source", "encoding", null],
     ["edit_source", "tooLarge", null],
     ["edit_source", "unsupported", null],
-    ["edit_save", "denied", "readOnly"],
+    ["edit_save", "readOnly", null],
+    ["edit_save", "locked", null],
+    ["edit_save", "diskFull", null],
     ["edit_save", "tooLarge", null],
   ] as const)("%s fails with %s", async (command, kind, detail) => {
     const api = createMockApi();

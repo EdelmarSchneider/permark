@@ -42,9 +42,28 @@ pub enum GitCondition {
     Repo {
         state: RepoState,
     },
+    /// Git could not answer: `code` says why in words the windows translate; `reason` = git's own words, if any.
     Error {
+        code: GitErrorCode,
         reason: String,
     },
+}
+
+/// Why git could not answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum GitErrorCode {
+    /// No answer within the time allowed.
+    Timeout,
+    /// The answer was longer than what is read.
+    TooLarge,
+    /// The program could not be started.
+    Spawn,
+    /// Git refused | failed (its own words in `reason`).
+    Failed,
+    /// The answer could not be read.
+    Parse,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

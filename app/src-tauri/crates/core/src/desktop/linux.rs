@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{default_of, with_default, FileGroup, Handlers};
-use crate::{fsx, IpcError};
+use crate::{fsx, ErrorKind, IpcError};
 
 /// The desktop entry the Linux packages install (`<productName>.desktop`).
 pub const DESKTOP_ID: &str = "PerMark.desktop";
@@ -81,10 +81,20 @@ impl MimeApps {
         }
     }
 
+    /// The file a write changes: what a linked `mimeapps.list` names. Dotfile managers (stow, chezmoi, home-manager)
+    /// link it into their own folder; a write in the link's place would put a plain file there and cut it loose.
+    fn target(&self) -> Result<PathBuf, IpcError> {
+        match std::fs::symlink_metadata(&self.path) {
+            Ok(meta) if meta.file_type().is_symlink() => crate::paths::canonicalize(&self.path)
+                .map_err(|e| IpcError::io(self.path.display().to_string(), &e)),
+            _ => Ok(self.path.clone()),
+        }
+    }
+
     fn text(&self) -> Result<String, IpcError> {
         match std::fs::read(&self.path) {
             Ok(bytes) => String::from_utf8(bytes).map_err(|_| {
-                IpcError::new(crate::ErrorKind::Encoding).subject(self.path.display().to_string())
+                IpcError::new(ErrorKind::Encoding).subject(self.path.display().to_string())
             }),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
             Err(e) => Err(IpcError::io(self.path.display().to_string(), &e)),
@@ -121,12 +131,17 @@ impl Handlers for MimeApps {
         if changed == text {
             return Ok(());
         }
-        if let Some(dir) = self.path.parent() {
+        let target = self.target()?;
+        let shown = || target.display().to_string();
+        // a file the person (or a read-only store it links into) keeps unchanged is not replaced
+        if std::fs::metadata(&target).is_ok_and(|meta| meta.permissions().readonly()) {
+            return Err(IpcError::new(ErrorKind::ReadOnly).subject(shown()));
+        }
+        if let Some(dir) = target.parent() {
             std::fs::create_dir_all(dir)
                 .map_err(|e| IpcError::io(dir.display().to_string(), &e))?;
         }
-        fsx::write_atomic(&self.path, changed.as_bytes())
-            .map_err(|e| IpcError::io(self.path.display().to_string(), &e))
+        fsx::write_atomic(&target, changed.as_bytes()).map_err(|e| IpcError::io(shown(), &e))
     }
 
     fn me(&self) -> &str {

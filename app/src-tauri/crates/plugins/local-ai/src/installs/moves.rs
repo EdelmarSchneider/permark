@@ -1,4 +1,4 @@
-//! Store change (AC-7): choice checks, `keep` | `move` orchestration over [`Installs`]; the copy itself is
+//! Store change: choice checks, `keep` | `move` orchestration over [`Installs`]; the copy itself is
 //! [`crate::relocate`].
 //!
 //! Choice: absolute; never inside | holding an open | recent project, the current | default store, the app's profile
@@ -37,7 +37,7 @@ impl Drop for Changing<'_> {
 
 impl Installs {
     /// Marks a store change under the lock Get decides under: refused while moving | another change | a download is
-    /// queued | running. Marked -> every engine session unloaded (D-11).
+    /// queued | running. Marked -> every engine session unloaded (Windows mmap lock).
     fn begin_change(&self) -> Result<Changing<'_>, InstallError> {
         let mut inner = self.inner();
         if inner.moving.is_some() || inner.changing {
@@ -108,7 +108,7 @@ impl Installs {
         Ok(())
     }
 
-    /// Store choice (AC-7): `path` = a folder the person picked (`None` | the default folder: the default). Same
+    /// Store choice: `path` = a folder the person picked (`None` | the default folder: the default). Same
     /// folder: nothing. Installed models need `mode` ([`StoreMode::Move`]: background copy, [`crate::relocate`]).
     ///
     /// # Errors

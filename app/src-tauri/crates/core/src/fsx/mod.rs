@@ -9,7 +9,7 @@ mod win;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
@@ -276,10 +276,10 @@ impl From<FsxError> for IpcError {
     }
 }
 
-/// Reads a file of at most `limit` bytes.
+/// Reads a plain file of at most `limit` bytes.
 ///
 /// # Errors
-/// `TooLarge` (checked before reading), `Io`.
+/// `TooLarge` (checked before reading), `Io` (`InvalidData`: a folder, FIFO or device, never opened | waited on).
 pub fn read_bytes(path: &Path, limit: u64) -> Result<Vec<u8>, FsxError> {
     read_limited(path, limit, false).map(|(bytes, _)| bytes)
 }
@@ -291,9 +291,18 @@ fn read_limited(
     locate: bool,
 ) -> Result<(Vec<u8>, Option<PathBuf>), FsxError> {
     let read = retry(&RETRY_DELAYS, || {
-        let file = std::fs::File::open(path)?;
+        // only a plain file is opened: a FIFO | device read can wait forever, a folder's open is answered with access
+        // denied on Windows (retried); the open itself never waits for a FIFO's writer either
+        if !std::fs::metadata(path)?.is_file() {
+            return Err(regular::refused("not a plain file"));
+        }
+        let file = regular::open(path, Zone::Anywhere)?;
         let opened = if locate { opened_path(&file) } else { None };
-        let len = file.metadata()?.len();
+        let meta = file.metadata()?;
+        if !meta.is_file() {
+            return Err(regular::refused("not a plain file"));
+        }
+        let len = meta.len();
         if len > limit {
             return Ok(None);
         }
@@ -415,6 +424,115 @@ pub(crate) fn scratch_in(dir: &Path) -> PathBuf {
     dir.join(format!(".import.{}.{n}.part", std::process::id()))
 }
 
+/// The process that made a temp of [`temp_path`] | [`scratch_in`] (`.<name>.<pid>.<n>.part`); `None`: another name.
+fn temp_pid(name: &str) -> Option<u32> {
+    let inner = name.strip_prefix('.')?.strip_suffix(".part")?;
+    let (rest, n) = inner.rsplit_once('.')?;
+    let (stem, pid) = rest.rsplit_once('.')?;
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    if stem.is_empty() || !digits(n) || !digits(pid) {
+        return None;
+    }
+    pid.parse().ok()
+}
+
+/// Age past which a temp of another process was left by a crash: a temp lives for one write.
+pub const STALE_TEMP_AGE: Duration = Duration::from_hours(1);
+
+/// Temps of [`write_atomic`] in `dir` that a crash left behind: a plain file with the exact temp name, made by another
+/// process, unchanged for longer than `older_than`. Never a folder ([`scratch_in`] builds | sets aside whole folders
+/// under that name, a crash may leave one as the only copy of the person's data; a repository may track one), a link
+/// or a device, and nothing directly in a `.permark` folder (its scratch names hold the person's data while it moves).
+#[must_use]
+pub fn stale_temps(dir: &Path, older_than: Duration) -> Vec<PathBuf> {
+    if dir
+        .file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case(crate::state::PERMARK_DIR))
+    {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let own = std::process::id();
+    let now = SystemTime::now();
+    entries
+        .flatten()
+        .filter(|entry| {
+            let foreign = entry
+                .file_name()
+                .to_str()
+                .and_then(temp_pid)
+                .is_some_and(|pid| pid != own);
+            // the entry's own metadata: a link is not followed, and is no plain file
+            foreign
+                && entry.metadata().is_ok_and(|meta| {
+                    meta.file_type().is_file()
+                        && meta
+                            .modified()
+                            .ok()
+                            .and_then(|at| now.duration_since(at).ok())
+                            .is_some_and(|age| age > older_than)
+                })
+        })
+        .map(|entry| entry.path())
+        .collect()
+}
+
+/// Sends the [`stale_temps`] (older than [`STALE_TEMP_AGE`]) of each folder to the recycle bin: they hold the bytes of
+/// a write a crash cut short, so they stay recoverable there. Only folders whose bin keeps them ([`bin_keeps`]).
+/// Best effort; answers how many went.
+#[must_use]
+pub fn sweep_stale_temps(dirs: &[PathBuf]) -> usize {
+    let found: Vec<PathBuf> = dirs
+        .iter()
+        .filter(|dir| bin_keeps(dir))
+        .flat_map(|dir| stale_temps(dir, STALE_TEMP_AGE))
+        .collect();
+    if found.is_empty() {
+        return 0;
+    }
+    match recycle_each(&found) {
+        Ok(()) => found.len(),
+        Err(refused) => refused.gone.iter().filter(|gone| **gone).count(),
+    }
+}
+
+/// Whether the recycle bin keeps what is sent to it from `dir`. Windows: a folder on a fixed disk only (a share, a
+/// removable | RAM disk has no bin, and the silent shell delete removes for good there). Other systems: a local path
+/// ([`is_local_path`]); their bins refuse what they cannot keep.
+fn bin_keeps(dir: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        dir.is_absolute()
+            && match dir.components().next() {
+                Some(Component::Prefix(prefix)) => match prefix.kind() {
+                    Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => win::fixed_drive(letter),
+                    _ => false,
+                },
+                _ => false,
+            }
+    }
+    #[cfg(not(windows))]
+    {
+        is_local_path(dir)
+    }
+}
+
+/// Creates the temp of a write: hidden on Windows (best effort), so one a crash leaves stays out of the file manager's
+/// sight, as its leading dot does on unix.
+fn new_temp(tmp: &Path) -> io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.attributes(win::HIDDEN);
+    }
+    options.open(tmp)
+}
+
 /// Writes `bytes` atomically + durably: temp in the same folder -> fsync -> rename over target (Windows:
 /// `MoveFileExW` replace + write-through; Unix: folder fsync). Power loss leaves old or new file, never empty.
 /// Target permissions carried over (Unix mode bits | Windows read-only). Parent folders created.
@@ -434,30 +552,44 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 pub fn write_atomic_checked(
     path: &Path,
     bytes: &[u8],
+    check: impl FnMut() -> io::Result<bool>,
+) -> io::Result<bool> {
+    write_atomic_checked_retrying(path, bytes, &RETRY_DELAYS, check)
+}
+
+/// [`write_atomic_checked`] with the waits of a locked target given (a write the person waits on may wait longer for a
+/// program that holds the file).
+///
+/// # Errors
+/// See [`write_atomic_checked`].
+pub fn write_atomic_checked_retrying(
+    path: &Path,
+    bytes: &[u8],
+    delays: &[Duration],
     mut check: impl FnMut() -> io::Result<bool>,
 ) -> io::Result<bool> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(dir)?;
     let tmp = temp_path(path);
-    let result = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&tmp)
+    let result = new_temp(&tmp)
         .and_then(|mut file| {
             file.write_all(bytes)?;
             file.sync_all()
         })
         .and_then(|()| {
-            if let Some(meta) = std::fs::metadata(path)
+            #[cfg(test)]
+            slip::fire(path);
+            let target = std::fs::metadata(path)
                 .ok()
-                .filter(std::fs::Metadata::is_file)
-            {
+                .filter(std::fs::Metadata::is_file);
+            if let Some(meta) = &target {
                 // best effort: a file system without permissions still gets the bytes
                 let _ = std::fs::set_permissions(&tmp, meta.permissions());
             }
-            #[cfg(test)]
-            slip::fire(path);
-            retry(&RETRY_DELAYS, || {
+            // a rename keeps the temp's hidden flag: never left on the person's file
+            #[cfg(windows)]
+            win::hidden_as(&tmp, target.as_ref())?;
+            retry(delays, || {
                 if !check()? {
                     return Ok(false);
                 }
@@ -938,6 +1070,163 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn temps_a_crash_left_go_to_the_bin_fresh_ones_own_ones_and_other_names_stay() {
+        let dir = tempfile::tempdir().unwrap();
+        let own = std::process::id();
+        assert_ne!(own, 999_999);
+        let hours_ago = std::time::SystemTime::now() - Duration::from_hours(2);
+        let make = |name: &str, old: bool| {
+            let file = std::fs::File::create(dir.path().join(name)).unwrap();
+            if old {
+                file.set_modified(hours_ago).unwrap();
+            }
+        };
+        make(".a.md.999999.0.part", true);
+        make(".import.999998.3.part", true);
+        make(".b.md.999999.1.part", false);
+        make(&format!(".c.md.{own}.0.part"), true);
+        make(".notes.part", true);
+        make(".a.md.x9.0.part", true);
+        make("a.md", true);
+        let mut stale: Vec<String> = stale_temps(dir.path(), STALE_TEMP_AGE)
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        stale.sort();
+        assert_eq!(stale, [".a.md.999999.0.part", ".import.999998.3.part"]);
+        let swept = sweep_stale_temps(&[dir.path().to_path_buf()]);
+        // the bin of a fixed disk takes them; a unix test machine may have no usable bin for the temp folder
+        #[cfg(windows)]
+        assert_eq!(swept, 2);
+        let mut kept = vec![
+            ".a.md.x9.0.part".to_owned(),
+            ".b.md.999999.1.part".to_owned(),
+            format!(".c.md.{own}.0.part"),
+            ".notes.part".to_owned(),
+            "a.md".to_owned(),
+        ];
+        if swept == 0 {
+            kept.extend([
+                ".a.md.999999.0.part".to_owned(),
+                ".import.999998.3.part".to_owned(),
+            ]);
+        }
+        kept.sort();
+        assert_eq!(names_in(dir.path()), kept);
+    }
+
+    /// Sets the modification time of the folder `dir` itself to `at`.
+    fn age_folder(dir: &Path, at: SystemTime) {
+        #[cfg(windows)]
+        let folder = {
+            use std::os::windows::fs::OpenOptionsExt;
+            use windows_sys::Win32::Storage::FileSystem::{
+                FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+            };
+            // a folder opens only with backup semantics; a time is set with the right to write attributes
+            std::fs::OpenOptions::new()
+                .access_mode(FILE_WRITE_ATTRIBUTES)
+                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+                .open(dir)
+                .unwrap()
+        };
+        #[cfg(not(windows))]
+        let folder = std::fs::File::open(dir).unwrap();
+        folder.set_modified(at).unwrap();
+    }
+
+    /// A crash may leave a folder under a temp name as the only copy of the person's data, a repository may track one,
+    /// and a link leads to files of their own: only plain temp files go, and nothing directly in `.permark`.
+    #[test]
+    fn a_folder_a_link_or_anything_in_permark_with_a_temp_name_is_never_swept() {
+        let dir = tempfile::tempdir().unwrap();
+        let hours_ago = SystemTime::now() - Duration::from_hours(2);
+        let docs = dir.path().join("docs");
+        let folder = docs.join(".a.md.999999.0.part");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("kept.md"), b"x").unwrap();
+        age_folder(&folder, hours_ago);
+        let permark = dir.path().join(".permark");
+        let aside = permark.join(".import.999998.0.part");
+        std::fs::create_dir_all(&aside).unwrap();
+        std::fs::write(aside.join("state.json"), b"{}").unwrap();
+        age_folder(&aside, hours_ago);
+        let beside = permark.join(".config.toml.999998.1.part");
+        let file = std::fs::File::create(&beside).unwrap();
+        file.set_modified(hours_ago).unwrap();
+        drop(file);
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("target.md"), b"t").unwrap();
+        let link = docs.join(".l.md.999999.2.part");
+        let linked = crate::tree::tests::link_out(&link, outside.path());
+        let temp = docs.join(".b.md.999999.3.part");
+        let file = std::fs::File::create(&temp).unwrap();
+        file.set_modified(hours_ago).unwrap();
+        drop(file);
+        let dirs = [docs, permark];
+        let stale: Vec<PathBuf> = dirs
+            .iter()
+            .flat_map(|dir| stale_temps(dir, STALE_TEMP_AGE))
+            .collect();
+        assert_eq!(stale, std::slice::from_ref(&temp));
+        let swept = sweep_stale_temps(&dirs);
+        #[cfg(windows)]
+        assert_eq!(swept, 1);
+        assert_eq!(temp.exists(), swept == 0);
+        assert_eq!(std::fs::read(folder.join("kept.md")).unwrap(), b"x");
+        assert_eq!(std::fs::read(aside.join("state.json")).unwrap(), b"{}");
+        assert!(beside.exists());
+        if linked {
+            assert!(std::fs::symlink_metadata(&link).is_ok());
+            assert_eq!(
+                std::fs::read(outside.path().join("target.md")).unwrap(),
+                b"t"
+            );
+        }
+    }
+
+    /// A temp a crash leaves stays out of the file manager's sight; the file it becomes shows as the one it replaced.
+    #[cfg(windows)]
+    #[test]
+    fn a_temp_is_hidden_while_written_and_the_file_it_becomes_is_not() {
+        use std::os::windows::fs::MetadataExt;
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+        const HIDDEN: u32 = 0x2;
+        let hidden = |path: &Path| std::fs::metadata(path).unwrap().file_attributes() & HIDDEN != 0;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.md");
+        std::fs::write(&path, b"one").unwrap();
+        let saw = Arc::new(AtomicBool::new(false));
+        slip::before_check(&path, {
+            let saw = Arc::clone(&saw);
+            let dir = dir.path().to_path_buf();
+            move || {
+                for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                    if entry.file_name().to_string_lossy().ends_with(".part") {
+                        let attrs = entry.metadata().unwrap().file_attributes();
+                        saw.store(attrs & HIDDEN != 0, Ordering::SeqCst);
+                    }
+                }
+            }
+        });
+        write_atomic(&path, b"two").unwrap();
+        assert!(saw.load(Ordering::SeqCst), "the temp was hidden");
+        assert!(!hidden(&path));
+        assert_eq!(std::fs::read(&path).unwrap(), b"two");
+        // a new file, and a file the person hid, keep how they show
+        let new = dir.path().join("b.md");
+        write_atomic(&new, b"x").unwrap();
+        assert!(!hidden(&new));
+        let secret = dir.path().join("c.md");
+        std::fs::write(&secret, b"x").unwrap();
+        win::set_hidden(&secret, true).unwrap();
+        write_atomic(&secret, b"y").unwrap();
+        assert!(hidden(&secret));
+        assert_eq!(std::fs::read(&secret).unwrap(), b"y");
+    }
+
+    #[test]
     fn a_name_at_the_length_limit_gets_a_short_temp_that_is_still_scratch() {
         let dir = tempfile::tempdir().unwrap();
         let name = format!("{}.md", "n".repeat(247));
@@ -1030,6 +1319,37 @@ pub(crate) mod tests {
         let mut names = names_in(dir.path());
         names.retain(|name| name != "fifo.md");
         assert_eq!(names, ["folder.md", "link.md", "target.md"]);
+    }
+
+    /// A reader opens only a plain file: a folder is refused at once (Windows answers its open with access denied,
+    /// which is retried), a FIFO never makes it wait for a writer.
+    #[test]
+    fn a_read_of_what_is_not_a_plain_file_is_refused_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("folder.md");
+        std::fs::create_dir(&folder).unwrap();
+        let refusal = |result: Result<Vec<u8>, FsxError>| match result {
+            Err(FsxError::Io { source, .. }) => Some(source.kind()),
+            _ => None,
+        };
+        assert_eq!(
+            refusal(read_bytes(&folder, 1024)),
+            Some(io::ErrorKind::InvalidData)
+        );
+        #[cfg(unix)]
+        {
+            let fifo = dir.path().join("fifo.md");
+            let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+            assert!(made.is_ok_and(|s| s.success()));
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(refusal(read_bytes(&fifo, 1024)));
+            });
+            let answer = rx
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the read waited on a FIFO");
+            assert_eq!(answer, Some(io::ErrorKind::InvalidData));
+        }
     }
 
     #[test]

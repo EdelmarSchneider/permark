@@ -2033,6 +2033,28 @@ fn an_undo_never_replaces_a_save_that_slips_in_before_its_write() {
     assert!(exists(&f, "b.md"), "the file still went back");
 }
 
+/// A FIFO named like a document is not a document: listing and the link scan of a move never wait on it.
+#[cfg(unix)]
+#[test]
+fn a_fifo_named_like_a_document_never_holds_up_a_move_preview() {
+    let f = fx(&[("a.md", "A"), ("notes.md", "[a](a.md)\n")]);
+    let fifo = f.dir.path().join("pipe.md");
+    let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+    assert!(made.is_ok_and(|s| s.success()));
+    let (tx, rx) = std::sync::mpsc::channel();
+    let ops = std::sync::Arc::new(f);
+    let worker = std::sync::Arc::clone(&ops);
+    std::thread::spawn(move || {
+        let plan = worker.ops.plan_move(&[spec("a.md", "b.md")], true);
+        let _ = tx.send(plan.map(|p| p.files.len()).ok());
+    });
+    let changes = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the move preview waited on a FIFO");
+    assert_eq!(changes, Some(1));
+    assert_eq!(read(&ops, "notes.md"), "[a](a.md)\n");
+}
+
 // ---- a bin that stops part way --------------------------------------------------------------------------------------------
 
 #[test]
@@ -2046,14 +2068,21 @@ fn a_delete_the_bin_stops_part_way_journals_what_went_so_undo_brings_it_back() {
             gone: vec![taken, false],
         })
     };
-    let refused = f
+    let outcome = f
         .ops
         .delete_with(&["a.md".to_owned(), "b.md".to_owned()], partly);
     if exists(&f, "a.md") {
         eprintln!("recycle bin not usable here; skipped");
         return;
     }
-    assert_eq!(refused.map(|_| ()).map_err(kind_of), Err(ErrorKind::Trash));
+    // what went and what stayed, not the bin's own words
+    assert_eq!(
+        outcome.unwrap(),
+        DeleteOutcome {
+            deleted: vec!["a.md".to_owned()],
+            refused: vec!["b.md".to_owned()],
+        }
+    );
     assert_eq!(read(&f, "b.md"), "B");
     let outcome = f.ops.undo().unwrap().expect("what went is journaled");
     assert_eq!(outcome.kind, UndoKind::Delete);
@@ -2073,26 +2102,28 @@ fn a_delete_the_bin_stops_part_way_journals_what_went_so_undo_brings_it_back() {
     assert_eq!(read(&f, "b.md"), "B");
 }
 
-/// The Windows bin cannot take a file held open without sharing; it goes on with the others and then fails.
+/// The Windows bin cannot take a file held open without sharing; it goes on with the others and then fails. The
+/// outcome counts what went and names what stayed.
 #[cfg(windows)]
 #[test]
 fn the_items_the_bin_took_before_refusing_a_held_one_come_back_with_undo() {
     use std::os::windows::fs::OpenOptionsExt;
-    let f = fx(&[("a.md", "A"), ("held.md", "H"), ("c.md", "C")]);
+    let f = fx(&[
+        ("a.md", "A"),
+        ("b.md", "B"),
+        ("held.md", "H"),
+        ("d.md", "D"),
+        ("e.md", "E"),
+    ]);
     let held = fs::OpenOptions::new()
         .read(true)
         .share_mode(0)
         .open(f.dir.path().join("held.md"))
         .unwrap();
-    let refused = f
-        .ops
-        .delete(&["a.md".to_owned(), "held.md".to_owned(), "c.md".to_owned()]);
+    let names = ["a.md", "b.md", "held.md", "d.md", "e.md"].map(str::to_owned);
+    let outcome = f.ops.delete(&names);
     drop(held);
-    if refused.is_ok() {
-        eprintln!("the bin took a held file here; skipped");
-        return;
-    }
-    let gone: Vec<(&str, &str)> = [("a.md", "A"), ("c.md", "C")]
+    let gone: Vec<(&str, &str)> = [("a.md", "A"), ("b.md", "B"), ("d.md", "D"), ("e.md", "E")]
         .into_iter()
         .filter(|(path, _)| !exists(&f, path))
         .collect();
@@ -2100,6 +2131,13 @@ fn the_items_the_bin_took_before_refusing_a_held_one_come_back_with_undo() {
         eprintln!("the bin took nothing here; skipped");
         return;
     }
+    let outcome = outcome.expect("some went: an outcome, not an error");
+    if outcome.refused.is_empty() {
+        eprintln!("the bin took a held file here; skipped");
+        return;
+    }
+    assert_eq!(outcome.deleted.len(), 4, "{outcome:?}");
+    assert_eq!(outcome.refused, ["held.md"]);
     assert_eq!(read(&f, "held.md"), "H");
     let outcome = f.ops.undo().unwrap().expect("what went is journaled");
     assert_eq!(
@@ -2122,16 +2160,18 @@ fn the_items_the_bin_took_before_an_item_it_cannot_take_come_back_with_undo() {
     let f = fx(&[("a.md", "A"), ("locked/b.md", "B")]);
     let locked = f.dir.path().join("locked");
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
-    let refused = f.ops.delete(&["a.md".to_owned(), "locked/b.md".to_owned()]);
+    let outcome = f.ops.delete(&["a.md".to_owned(), "locked/b.md".to_owned()]);
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
-    if refused.is_ok() {
-        eprintln!("the bin took an item of a read-only folder here; skipped");
-        return;
-    }
     if exists(&f, "a.md") {
         eprintln!("recycle bin not usable here; skipped");
         return;
     }
+    let outcome = outcome.expect("some went: an outcome, not an error");
+    if outcome.refused.is_empty() {
+        eprintln!("the bin took an item of a read-only folder here; skipped");
+        return;
+    }
+    assert_eq!(outcome.refused, ["locked/b.md"]);
     assert_eq!(read(&f, "locked/b.md"), "B");
     let outcome = f.ops.undo().unwrap().expect("what went is journaled");
     assert_eq!(outcome.restored, 1, "{:?}", outcome.skipped);

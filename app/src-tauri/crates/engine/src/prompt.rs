@@ -1,4 +1,4 @@
-//! Prompt formats = catalog DATA (D-9; crate rule "NEVER hardcoded per model"): chat markup ([`PromptProfile`],
+//! Prompt formats = catalog DATA (crate rule "NEVER hardcoded per model"): chat markup ([`PromptProfile`],
 //! catalog `promptProfiles`) + embedding task prefixes ([`Prefixes`], catalog `prefixProfiles`). Engines render them.
 //!
 //! - [`PromptProfile::render`] -> [`Piece`]s: markup (special tokens parsed) | content (person's text: special

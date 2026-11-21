@@ -195,7 +195,8 @@ impl Plugin for CommentsPlugin {
         registrations.extend(cx.rpc(
             "setDone",
             typed(move |args: DoneArgs, _| {
-                let about = about(&s, &args.id);
+                // read before the operation changes it
+                let about = s.about(&args.id);
                 s.set_done(&args.id, args.done)?;
                 if let Some((path, heading)) = about {
                     let op = if args.done {
@@ -212,7 +213,7 @@ impl Plugin for CommentsPlugin {
         registrations.extend(cx.rpc(
             "remove",
             typed(move |args: IdArgs, _| {
-                let about = about(&s, &args.id);
+                let about = s.about(&args.id);
                 s.remove(&args.id)?;
                 if let Some((path, heading)) = about {
                     note(&j, CommentOp::Remove, &args.id, &path, &heading);
@@ -224,7 +225,7 @@ impl Plugin for CommentsPlugin {
         registrations.extend(cx.rpc(
             "reply",
             typed(move |args: ReplyArgs, _| {
-                let about = about(&s, &args.id);
+                let about = s.about(&args.id);
                 s.reply(&args.id, &args.text)?;
                 if let Some((path, heading)) = about {
                     note(&j, CommentOp::Reply, &args.id, &path, &heading);
@@ -348,16 +349,6 @@ impl CommentBook for Book {
     fn resolve(&self, id: &str, reply: Option<&str>) -> Result<(), IpcError> {
         self.service.resolve_by_agent(id, reply, &self.withheld())
     }
-}
-
-/// The document and heading of a comment (before an operation changes it).
-fn about(service: &CommentsService, id: &str) -> Option<(String, Vec<String>)> {
-    service
-        .list(None, CommentScope::All)
-        .ok()?
-        .into_iter()
-        .find(|c| c.id == id)
-        .map(|c| (c.path, c.heading_path))
 }
 
 /// The person's comment action, in the project's activity journal.

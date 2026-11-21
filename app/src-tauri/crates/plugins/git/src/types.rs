@@ -1,6 +1,6 @@
 //! What the git plugin tells the UI (ts-rs exported): the snapshot of a project's repository.
 
-use permark_core::conditions::RepoState;
+use permark_core::conditions::{GitErrorCode, RepoState};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -145,8 +145,9 @@ pub struct CommitLine {
 pub enum RepoError {
     /// No git to ask (installed git chosen and missing): no branch text anywhere.
     Unavailable,
-    /// Git could not read this repository (`reason`: git's first line, e.g. "dubious ownership").
-    Failed { reason: String },
+    /// Git could not read this repository: `code` says why, `reason` = the words that came with it (git's first line,
+    /// e.g. "dubious ownership").
+    Failed { code: GitErrorCode, reason: String },
 }
 
 /// One included project's repository as nodes, the detail card, Settings and the status item show it.

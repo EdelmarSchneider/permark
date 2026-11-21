@@ -9,7 +9,7 @@ fn counted() -> MachineProfile {
     MachineProfile::unknown()
 }
 
-/// AC-1 dormant: nothing read until asked; then kept for [`FRESH`], read anew after.
+/// Dormant: nothing read until asked; then kept for [`FRESH`], read anew after.
 #[test]
 fn the_profile_is_read_on_first_ask_and_kept_while_fresh() {
     let machine = Machine::new(counted);

@@ -185,7 +185,7 @@ fn run(engine: &dyn Engine, session: SessionId, request: &ChatRequest) -> Vec<Ge
     events
 }
 
-/// AC-10: features hold the engine as a trait object, shared across threads.
+/// Features hold the engine as a trait object, shared across threads.
 #[test]
 fn the_engine_is_object_safe_and_shareable() {
     for engine in both(FakeEngine::new) {
@@ -256,7 +256,7 @@ fn tokens_count_words_in_the_fake() {
     }
 }
 
-/// AC-10: deterministic vectors, dims honored, normalized on request; role changes the vector.
+/// Deterministic vectors, dims honored, normalized on request; role changes the vector.
 #[test]
 fn embeddings_are_deterministic_and_honor_dims_and_role() {
     for engine in both(FakeEngine::new) {
@@ -297,7 +297,7 @@ fn embeddings_are_deterministic_and_honor_dims_and_role() {
     }
 }
 
-/// AC-10: vectors carry what made them (model, version, dims, prefix set).
+/// Vectors carry what made them (model, version, dims, prefix set).
 #[test]
 fn the_fingerprint_carries_model_and_dims() {
     for engine in both(FakeEngine::new) {
@@ -416,7 +416,7 @@ fn generate_calls_an_offered_tool_when_asked() {
     }
 }
 
-/// AC-10 + AC-3: cancel honored mid-stream (generate ends Done/Cancelled; others answer Cancelled).
+/// Cancel honored mid-stream (generate ends Done/Cancelled; others answer Cancelled).
 #[test]
 fn cancel_stops_every_call() {
     for engine in both(paced) {
@@ -481,7 +481,7 @@ fn cancel_stops_every_call() {
     }
 }
 
-/// AC-3: cancel during load = worker killed, nothing loaded.
+/// Cancel during load = worker killed, nothing loaded.
 #[test]
 fn cancel_during_load_kills_the_worker() {
     let rig = Rig::new(FakeEngine::new);
@@ -503,7 +503,7 @@ fn cancel_during_load_kills_the_worker() {
     assert_eq!((rig.launched(), rig.kills()), (1, 1));
 }
 
-/// D-10: stdin EOF (host gone) reaches `on_host_gone` at once, while a call still runs (worker: hard exit).
+/// Stdin EOF (host gone) reaches `on_host_gone` at once, while a call still runs (worker: hard exit).
 #[test]
 fn the_worker_loop_reports_the_host_gone_mid_call() {
     let (worker_in, mut to_worker) = io::pipe().unwrap();
@@ -546,7 +546,7 @@ fn the_worker_loop_reports_the_host_gone_mid_call() {
     assert!(!serving.is_finished(), "the call itself still runs");
 }
 
-/// D-7: the session tells whether it runs on a GPU (Auto + GPU in caps), also across the worker pipe.
+/// The session tells whether it runs on a GPU (Auto + GPU in caps), also across the worker pipe.
 #[test]
 fn a_session_tells_whether_it_runs_on_the_gpu() {
     for engine in both(FakeEngine::new) {
@@ -569,7 +569,7 @@ fn a_session_tells_whether_it_runs_on_the_gpu() {
     }
 }
 
-/// AC-10: a capability the engine lacks -> Unsupported, never a fallback.
+/// A capability the engine lacks -> Unsupported, never a fallback.
 #[test]
 fn missing_capabilities_are_unsupported() {
     for engine in both(|| FakeEngine::with_caps(vec![Capability::Chat], true)) {
@@ -681,7 +681,7 @@ fn a_crash_loses_sessions_until_the_next_load() {
     );
 }
 
-/// AC-3: worker dies mid-call -> `EngineCrashed`, session forgotten, next load = fresh worker; others unharmed.
+/// Worker dies mid-call -> `EngineCrashed`, session forgotten, next load = fresh worker; others unharmed.
 #[test]
 fn a_dead_worker_is_a_crash_and_the_next_load_starts_fresh() {
     let rig = Rig::new(FakeEngine::new);

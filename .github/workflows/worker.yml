@@ -249,7 +249,7 @@ jobs:
           ls -la "$dest"
 
       # The worker starts, finds its libraries and says hello on its protocol line (stdin closed: it exits).
-      # No network libraries in what we ship (worker has no network: D-5).
+      # No network libraries in what we ship (worker has no network).
       - name: Check no network libraries
         if: env.RUN_THIS == 'true'
         shell: bash

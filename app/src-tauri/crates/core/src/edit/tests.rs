@@ -269,6 +269,40 @@ fn a_file_that_vanishes_is_a_conflict_without_a_hash_and_is_not_recreated() {
     assert!(!path.exists());
 }
 
+/// A FIFO put in the document's place right before the last check never holds the save up (a read of it waits for a
+/// writer): it is no version the editor read, so the save is a conflict and the FIFO stays.
+#[cfg(unix)]
+#[test]
+fn a_fifo_swapped_in_before_the_last_check_is_a_conflict_at_once() {
+    use std::os::unix::fs::FileTypeExt;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let fx = Fx::new();
+        fx.write("pipe.md", b"v1\n");
+        let path = fx.dir.path().join("pipe.md");
+        crate::fsx::slip::before_check(&path, {
+            let path = path.clone();
+            move || {
+                std::fs::remove_file(&path).unwrap();
+                let made = std::process::Command::new("mkfifo").arg(&path).status();
+                assert!(made.is_ok_and(|s| s.success()), "mkfifo");
+            }
+        });
+        let out = fx.editor().save(
+            "pipe.md",
+            &fsx::hash(b"v1\n").hex(),
+            &[edit(0, 1, &["mine"])],
+        );
+        let fifo = std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_fifo());
+        let _ = tx.send((out, fifo));
+    });
+    let (out, fifo) = rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the save came back");
+    assert_eq!(out.unwrap(), SaveOutcome::Conflict { disk_hash: None });
+    assert!(fifo, "nothing replaced the FIFO");
+}
+
 #[test]
 fn a_read_only_file_is_refused() {
     let fx = Fx::new();
@@ -281,11 +315,131 @@ fn a_read_only_file_is_refused() {
         .editor()
         .save("ro.md", &fsx::hash(b"x\n").hex(), &[edit(0, 1, &["y"])])
         .unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Denied);
+    assert_eq!(err.kind, ErrorKind::ReadOnly);
     #[allow(clippy::permissions_set_readonly_false)]
     perms.set_readonly(false);
     std::fs::set_permissions(&path, perms).unwrap();
     assert_eq!(fx.read("ro.md"), b"x\n");
+}
+
+/// Another program holding the file: a save waits a while for it, then says the file is in use (not "no permission").
+#[cfg(windows)]
+mod held {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::time::{Duration, Instant};
+
+    use super::*;
+
+    const SHARE_READ_WRITE: u32 = 0x1 | 0x2;
+
+    fn hold(fx: &Fx, rel: &str, share: u32) -> std::fs::File {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(share)
+            .open(fx.dir.path().join(rel))
+            .unwrap()
+    }
+
+    #[test]
+    fn a_file_held_without_any_sharing_is_locked_and_untouched() {
+        let fx = Fx::new();
+        fx.write(
+            "a.md", b"x
+",
+        );
+        let held = hold(&fx, "a.md", 0);
+        let err = fx
+            .editor()
+            .save(
+                "a.md",
+                &fsx::hash(
+                    b"x
+",
+                )
+                .hex(),
+                &[edit(0, 1, &["y"])],
+            )
+            .unwrap_err();
+        drop(held);
+        assert_eq!(err.kind, ErrorKind::Locked);
+        assert_eq!(err.subject.as_deref(), Some("a.md"));
+        assert_eq!(
+            fx.read("a.md"),
+            b"x
+"
+        );
+    }
+
+    #[test]
+    fn a_replace_refused_by_a_reader_holding_the_file_is_locked_not_denied() {
+        let fx = Fx::new();
+        fx.write(
+            "a.md", b"x
+",
+        );
+        // a sync client | scanner reading it: the save reads it, the replace is refused
+        let held = hold(&fx, "a.md", SHARE_READ_WRITE);
+        let err = fx
+            .editor()
+            .save(
+                "a.md",
+                &fsx::hash(
+                    b"x
+",
+                )
+                .hex(),
+                &[edit(0, 1, &["y"])],
+            )
+            .unwrap_err();
+        drop(held);
+        assert_eq!(err.kind, ErrorKind::Locked);
+        assert_eq!(
+            fx.read("a.md"),
+            b"x
+"
+        );
+        let leftovers: Vec<_> = std::fs::read_dir(fx.dir.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".part"))
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    #[test]
+    fn a_save_waits_for_a_hold_that_ends_within_a_second() {
+        let fx = Fx::new();
+        fx.write(
+            "a.md", b"x
+",
+        );
+        let held = hold(&fx, "a.md", SHARE_READ_WRITE);
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(600));
+            drop(held);
+        });
+        let started = Instant::now();
+        let out = fx
+            .editor()
+            .save(
+                "a.md",
+                &fsx::hash(
+                    b"x
+",
+                )
+                .hex(),
+                &[edit(0, 1, &["y"])],
+            )
+            .unwrap();
+        release.join().unwrap();
+        assert!(matches!(out, SaveOutcome::Saved { .. }), "{out:?}");
+        assert!(started.elapsed() >= Duration::from_millis(500));
+        assert_eq!(
+            fx.read("a.md"),
+            b"y
+"
+        );
+    }
 }
 
 #[test]
