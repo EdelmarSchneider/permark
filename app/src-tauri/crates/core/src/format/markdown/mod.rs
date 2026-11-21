@@ -409,40 +409,40 @@ fn headings_of<'a>(root: &'a AstNode<'a>) -> Vec<Heading> {
         .collect()
 }
 
-/// Each heading with the id of the first block holding its line. Headings come in line order: one sweep over the blocks
-/// by first line, the blocks whose lines may hold the heading in a heap by place (a block ended before a heading ends
-/// before every later one). A heading out of order is searched for from the start.
+/// Each heading with the id of the first block holding its line: one sweep over the headings by line and the blocks by
+/// first line, the blocks whose lines may hold the heading in a heap by place (a block ended before a heading ends
+/// before every later one). Headings are not always in line order (comrak moves footnote definitions, headings and all,
+/// after the rest of the document), so the sweep takes them sorted and the answers go back in document order.
 fn outline_of(
     headings: &[Heading],
     parts: &[blocks::RawBlock],
     ids: &[String],
 ) -> Vec<OutlineItem> {
-    let holds = |p: &blocks::RawBlock, line: u32| p.line_start <= line && line <= p.line_end;
     let mut by_start: Vec<usize> = (0..parts.len()).collect();
     by_start.sort_by_key(|&at| parts[at].line_start);
+    let mut by_line: Vec<usize> = (0..headings.len()).collect();
+    by_line.sort_by_key(|&at| headings[at].line);
     let mut started = by_start.iter().peekable();
     let mut open: BinaryHeap<Reverse<usize>> = BinaryHeap::new();
-    let mut last_line = 0;
+    let mut found = vec![None; headings.len()];
+    for &heading in &by_line {
+        let line = headings[heading].line;
+        while let Some(&&at) = started.peek().filter(|&&&at| parts[at].line_start <= line) {
+            open.push(Reverse(at));
+            started.next();
+        }
+        while open
+            .peek()
+            .is_some_and(|&Reverse(at)| parts[at].line_end < line)
+        {
+            open.pop();
+        }
+        found[heading] = open.peek().map(|&Reverse(at)| at);
+    }
     headings
         .iter()
-        .map(|heading| {
-            let line = heading.line;
-            let found = if line < last_line {
-                parts.iter().position(|p| holds(p, line))
-            } else {
-                last_line = line;
-                while let Some(&&at) = started.peek().filter(|&&&at| parts[at].line_start <= line) {
-                    open.push(Reverse(at));
-                    started.next();
-                }
-                while open
-                    .peek()
-                    .is_some_and(|&Reverse(at)| parts[at].line_end < line)
-                {
-                    open.pop();
-                }
-                open.peek().map(|&Reverse(at)| at)
-            };
+        .zip(found)
+        .map(|(heading, found)| {
             let block = found
                 .and_then(|at| ids.get(at))
                 .cloned()

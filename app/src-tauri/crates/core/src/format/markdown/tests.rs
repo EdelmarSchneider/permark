@@ -848,6 +848,69 @@ fn formatting_elements_cloned_by_the_parser_fall_back_fast() {
     assert!(started.elapsed().as_secs() < 2, "{:?}", started.elapsed());
 }
 
+/// `count` pieces of `each(i)`, one after the other.
+fn run(count: usize, each: impl Fn(usize) -> String) -> String {
+    (0..count).map(each).collect()
+}
+
+#[test]
+fn html_the_sanitizer_would_parse_slowly_falls_back_fast() {
+    let mega = 1_000_000;
+    let attrs = run(200, |i| format!(" a{i}"));
+    for (what, md) in [
+        // nodes put before a table one by one: each passes every sibling put there before it
+        ("foster", format!("<table>{}", "<br>".repeat(mega / 4))),
+        // stray `<html>` tags: each looks at every attribute the root already holds
+        ("stray html", run(mega / 13, |i| format!("<html a{i}>"))),
+        // one tag with a huge number of attributes: each name is checked against every earlier one
+        (
+            "attributes",
+            format!("<div{}>x</div>", run(mega / 7, |i| format!(" a{i}"))),
+        ),
+        // a formatting element with many attributes copied into each later paragraph
+        (
+            "rebuilt",
+            format!("<p><b{attrs}></p>{}", "<p>x</p>".repeat(mega / 8)),
+        ),
+        // each new `<b>` compared with 250 open ones
+        (
+            "compared",
+            format!(
+                "{}{}",
+                run(250, |i| format!("<b x={i}>")),
+                "<b></b>".repeat(mega / 7)
+            ),
+        ),
+    ] {
+        let started = std::time::Instant::now();
+        let (blocks, _, _, notes) = parts(&md, &all_features());
+        let elapsed = started.elapsed();
+        assert_eq!(notes, [DEEP_NESTING_NOTE], "{what}");
+        assert_eq!(blocks.len(), 1, "{what}");
+        assert!(elapsed.as_secs() < 2, "{what}: {elapsed:?}");
+    }
+}
+
+#[test]
+fn the_guard_depth_holds_where_the_input_is_cut_into_chunks() {
+    // the guard hands the parser its input a chunk at a time: a tag, a character reference and a line end cut in two
+    // there are read as the sanitizer reads them whole
+    for (head, tail) in [
+        ("<di", "v class=a><div><p>x</p></div></div>"),
+        ("<div title=\"a&no", "tin;b\"><div><b>y</b></div></div>"),
+        ("<div>&no", "tin;<ul><li>z</ul></div>"),
+        ("<div>\r", "\n<div><p>w\r\n</div></div>"),
+    ] {
+        let pad = "a".repeat(nesting::CHUNK - head.len());
+        let html = format!("{pad}{head}{tail}");
+        assert_eq!(&html[nesting::CHUNK - head.len()..nesting::CHUNK], head);
+        let found = nesting::deepest(&html, usize::MAX - 1);
+        let made = sanitized_depth(&sanitize::sanitize(&html, "docs/a.md"));
+        assert_eq!(found, made, "{head}|{tail}");
+        assert!(found >= 2, "{head}|{tail}");
+    }
+}
+
 #[test]
 fn a_piece_cut_inside_raw_text_is_measured_as_the_sanitizer_reads_it() {
     // the cuts between pieces come from a plain tag scan, which sees no raw text: the cut after `</p>` falls inside the
@@ -1052,6 +1115,12 @@ fn outline_links_each_heading_to_the_first_block_holding_its_line() {
         if next(4) == 0 && lines.len() > 2 {
             lines.swap(0, 2);
         }
+        // footnote headings: moved to the end of the document, they keep their (earlier) lines
+        if next(3) == 0 {
+            let mut notes: Vec<u32> = (0..next(8)).map(|_| next(66) + 1).collect();
+            notes.sort_unstable();
+            lines.extend(notes);
+        }
         let headings: Vec<Heading> = lines.into_iter().map(heading_at).collect();
         let fast: Vec<String> = outline_of(&headings, &parts, &ids)
             .into_iter()
@@ -1075,6 +1144,36 @@ fn outline_of_many_headings_stays_linear() {
     assert_eq!(outline.len(), 50_000);
     assert_eq!(outline[49_999].block, "b49999");
     // a loose bound for debug builds: the search from the start took seconds here
+    assert!(elapsed.as_millis() < 1000, "{elapsed:?}");
+}
+
+#[test]
+fn headings_in_footnotes_come_last_and_still_find_their_blocks() {
+    let md = "x[^1] y[^2]\n\n# Top\n\n[^1]: # One\n\n[^2]: ## Two\n\n# End\n";
+    let (blocks, outline, _, _) = parts(md, &all_features());
+    // comrak moves the footnote definitions, headings and all, after the rest of the document
+    let lines: Vec<u32> = outline.iter().map(|item| item.line).collect();
+    assert_eq!(lines, [3, 9, 5, 7]);
+    let footnotes = blocks.iter().find(|b| b.kind == "section").map(|b| &b.id);
+    assert_eq!(
+        outline[2].block.as_str(),
+        footnotes.map_or("", |id| id.as_str())
+    );
+    // 200 000 of them: each found without a search over every block
+    let count = 200_000_u32;
+    let parts: Vec<_> = (0..count)
+        .map(|i| block_over(2 * i + 1, 2 * i + 1))
+        .collect();
+    let ids: Vec<String> = (0..parts.len()).map(|i| format!("b{i}")).collect();
+    let in_text = (0..count).map(|i| heading_at(2 * i + 1));
+    let in_notes = (0..count).map(|i| heading_at(2 * i + 2));
+    let headings: Vec<Heading> = in_text.chain(in_notes).collect();
+    let started = std::time::Instant::now();
+    let outline = outline_of(&headings, &parts, &ids);
+    let elapsed = started.elapsed();
+    assert_eq!(outline.len(), 400_000);
+    assert_eq!(outline[199_999].block, "b199999");
+    assert_eq!(outline[399_999].block, "");
     assert!(elapsed.as_millis() < 1000, "{elapsed:?}");
 }
 
