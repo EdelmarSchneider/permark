@@ -56,6 +56,11 @@ export default {
     "Algunes dades desades del PerMark no s'han pogut llegir i s'han apartat: {file}. Trobareu la còpia antiga aquí: {backup}",
   "notice.stateUnreadable":
     "Algunes dades desades del PerMark no s'han pogut llegir. S'han deixat intactes, i el PerMark no les canviarà fins que les pugui tornar a llegir, normalment després de reiniciar-lo: {file}",
+  "crash.notice":
+    "El PerMark es va tancar inesperadament l'última vegada. S'ha desat un informe en aquest ordinador i no s'ha enviat res. Si el compartiu, reviseu-lo abans: pot incloure noms de fitxers o fragments del vostre text. «Informa a GitHub» també copia l'informe perquè el pugueu enganxar allà.",
+  "crash.copy": "Copia l'informe",
+  "crash.report": "Informa a GitHub",
+  "crash.openFolder": "Obre la carpeta",
 
   // ---- settings
   "settings.title": "Configuració",
@@ -2340,6 +2345,21 @@ export default {
   "closeWindow.body.other": "Aquestes pestanyes tenen canvis sense desar:",
   "closeWindow.saveAll": "Desa-ho tot",
   "closeWindow.discard": "Descarta",
+  "stuck.title": "El PerMark no respon",
+  "stuck.detail":
+    "Una pàgina d'aquesta finestra no respon. Si tanqueu igualment, es poden perdre els canvis sense desar de les pestanyes d'aquesta finestra.",
+  "stuck.closeAnyway": "Tanca igualment",
+  "stuck.wait": "Espera",
+  "stuck.engineStopped":
+    "La part del PerMark que mostra les finestres ha deixat de funcionar i el PerMark s'ha de tancar. Es perdran els canvis sense desar; les pestanyes obertes tornaran la pròxima vegada que inicieu el PerMark.",
+  "stuck.reloaded": "Aquesta pestanya ha deixat de funcionar i s'ha tornat a carregar.",
+  "stuck.reloadedLost":
+    "Aquesta pestanya ha deixat de funcionar i s'ha tornat a carregar. S'han perdut els canvis sense desar de {file}.",
+  "stuck.reloadedPage": "Aquesta pàgina ha deixat de funcionar i s'ha tornat a carregar.",
+  "stuck.windowFailed":
+    "Una finestra del PerMark no ha pogut obrir la seva pàgina i s'ha tancat. Les altres finestres continuen funcionant.",
+  "stuck.viewFailedExit":
+    "El PerMark no ha pogut obrir la seva finestra i s'ha de tancar. Les pestanyes obertes tornaran la pròxima vegada que inicieu el PerMark.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Projectes interns",

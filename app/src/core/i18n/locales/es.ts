@@ -55,6 +55,11 @@ export default {
     "Algunos datos guardados de PerMark no se pudieron leer y se apartaron: {file}. La copia anterior está aquí: {backup}",
   "notice.stateUnreadable":
     "Algunos datos guardados de PerMark no se pudieron leer. Se dejaron intactos, y PerMark no los cambiará hasta que pueda volver a leerlos, normalmente tras reiniciarlo: {file}",
+  "crash.notice":
+    "PerMark se cerró inesperadamente la última vez. Se guardó un informe en este equipo y no se envió nada. Si lo compartes, revísalo antes: puede incluir nombres de archivos o fragmentos de tu texto. «Informar en GitHub» también copia el informe para que puedas pegarlo allí.",
+  "crash.copy": "Copiar informe",
+  "crash.report": "Informar en GitHub",
+  "crash.openFolder": "Abrir carpeta",
 
   // ---- settings
   "settings.title": "Configuración",
@@ -2316,6 +2321,21 @@ export default {
   "closeWindow.body.other": "Estas pestañas tienen cambios sin guardar:",
   "closeWindow.saveAll": "Guardar todo",
   "closeWindow.discard": "Descartar",
+  "stuck.title": "PerMark no responde",
+  "stuck.detail":
+    "Una página de esta ventana no responde. Si cierras de todos modos, se pueden perder los cambios sin guardar de las pestañas de esta ventana.",
+  "stuck.closeAnyway": "Cerrar de todos modos",
+  "stuck.wait": "Esperar",
+  "stuck.engineStopped":
+    "La parte de PerMark que muestra sus ventanas dejó de funcionar, así que PerMark tiene que cerrarse. Se perderán los cambios sin guardar; tus pestañas abiertas volverán la próxima vez que inicies PerMark.",
+  "stuck.reloaded": "Esta pestaña dejó de funcionar y se volvió a cargar.",
+  "stuck.reloadedLost":
+    "Esta pestaña dejó de funcionar y se volvió a cargar. Se perdieron los cambios sin guardar de {file}.",
+  "stuck.reloadedPage": "Esta página dejó de funcionar y se volvió a cargar.",
+  "stuck.windowFailed":
+    "Una ventana de PerMark no pudo abrir su página y se cerró. Tus otras ventanas siguen funcionando.",
+  "stuck.viewFailedExit":
+    "PerMark no pudo abrir su ventana, así que tiene que cerrarse. Tus pestañas abiertas volverán la próxima vez que inicies PerMark.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Proyectos dentro",

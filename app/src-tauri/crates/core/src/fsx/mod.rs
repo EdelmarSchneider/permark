@@ -645,6 +645,21 @@ pub fn in_cloud_folder(path: &Path) -> bool {
     }
 }
 
+/// The 8.3 short spelling of the existing `path` (Windows: `C:\Users\ANNLON~1` for `C:\Users\Ann Longname`), which some
+/// tools print instead of the long one. `None`: not Windows, no such path, or no short name (the volume keeps none).
+#[must_use]
+pub fn short_name(path: &Path) -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        win::short_path(path).ok().filter(|short| short != path)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        None
+    }
+}
+
 fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {

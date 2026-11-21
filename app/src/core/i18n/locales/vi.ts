@@ -66,6 +66,11 @@ export default {
     "Không đọc được một số dữ liệu đã lưu của PerMark nên đã chuyển chúng sang chỗ khác: {file}. Bản sao cũ nằm ở đây: {backup}",
   "notice.stateUnreadable":
     "Không đọc được một số dữ liệu đã lưu của PerMark. Dữ liệu được giữ nguyên và PerMark sẽ không thay đổi cho đến khi đọc lại được, thường là sau khi khởi động lại: {file}",
+  "crash.notice":
+    "Lần trước PerMark đã đóng đột ngột. Một báo cáo đã được lưu trên máy tính này và không có gì được gửi đi. Nếu chia sẻ, hãy xem lại trước: báo cáo có thể chứa tên tệp hoặc một phần văn bản của bạn. “Báo cáo trên GitHub” cũng sao chép báo cáo để bạn có thể dán vào đó.",
+  "crash.copy": "Sao chép báo cáo",
+  "crash.report": "Báo cáo trên GitHub",
+  "crash.openFolder": "Mở thư mục",
 
   // ---- settings
   "settings.title": "Cài đặt",
@@ -2311,6 +2316,21 @@ export default {
   "closeWindow.body.other": "Các thẻ này có thay đổi chưa lưu:",
   "closeWindow.saveAll": "Lưu tất cả",
   "closeWindow.discard": "Bỏ thay đổi",
+  "stuck.title": "PerMark không phản hồi",
+  "stuck.detail":
+    "Một trang trong cửa sổ này không phản hồi. Nếu vẫn đóng, các thay đổi chưa lưu trong các thẻ của cửa sổ này có thể bị mất.",
+  "stuck.closeAnyway": "Vẫn đóng",
+  "stuck.wait": "Chờ",
+  "stuck.engineStopped":
+    "Phần hiển thị cửa sổ của PerMark đã ngừng hoạt động nên PerMark phải đóng. Các thay đổi chưa lưu sẽ bị mất; các thẻ đang mở sẽ trở lại vào lần tới PerMark khởi động.",
+  "stuck.reloaded": "Thẻ này đã ngừng hoạt động và đã được tải lại.",
+  "stuck.reloadedLost":
+    "Thẻ này đã ngừng hoạt động và đã được tải lại. Các thay đổi chưa lưu trong {file} đã bị mất.",
+  "stuck.reloadedPage": "Trang này đã ngừng hoạt động và đã được tải lại.",
+  "stuck.windowFailed":
+    "Một cửa sổ PerMark không mở được trang của nó và đã bị đóng. Các cửa sổ khác vẫn hoạt động bình thường.",
+  "stuck.viewFailedExit":
+    "PerMark không mở được cửa sổ nên phải đóng. Các thẻ đang mở sẽ trở lại vào lần tới PerMark khởi động.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Dự án bên trong",

@@ -63,6 +63,11 @@ export default {
     "Sebagian data PerMark yang tersimpan tidak dapat dibaca dan telah disisihkan: {file}. Salinan lamanya ada di sini: {backup}",
   "notice.stateUnreadable":
     "Sebagian data PerMark yang tersimpan tidak dapat dibaca. Data itu dibiarkan apa adanya, dan PerMark tidak akan mengubahnya sampai dapat membacanya lagi, biasanya setelah dimulai ulang: {file}",
+  "crash.notice":
+    "PerMark tertutup secara tak terduga terakhir kali. Sebuah laporan disimpan di komputer ini dan tidak ada yang dikirim. Jika Anda membagikannya, periksa dulu: laporan itu bisa memuat nama file atau potongan teks Anda. “Laporkan di GitHub” juga menyalin laporan agar Anda dapat menempelkannya di sana.",
+  "crash.copy": "Salin laporan",
+  "crash.report": "Laporkan di GitHub",
+  "crash.openFolder": "Buka folder",
 
   // ---- settings
   "settings.title": "Pengaturan",
@@ -2324,6 +2329,21 @@ export default {
   "closeWindow.body.other": "Tab berikut memiliki perubahan yang belum disimpan:",
   "closeWindow.saveAll": "Simpan semua",
   "closeWindow.discard": "Buang",
+  "stuck.title": "PerMark tidak merespons",
+  "stuck.detail":
+    "Sebuah halaman di jendela ini tidak merespons. Jika Anda tetap menutup, perubahan yang belum disimpan di tab jendela ini bisa hilang.",
+  "stuck.closeAnyway": "Tetap tutup",
+  "stuck.wait": "Tunggu",
+  "stuck.engineStopped":
+    "Bagian PerMark yang menampilkan jendelanya berhenti bekerja, jadi PerMark harus ditutup. Perubahan yang belum disimpan hilang; tab yang terbuka akan kembali saat PerMark dijalankan lagi.",
+  "stuck.reloaded": "Tab ini berhenti bekerja dan dimuat ulang.",
+  "stuck.reloadedLost":
+    "Tab ini berhenti bekerja dan dimuat ulang. Perubahan yang belum disimpan pada {file} hilang.",
+  "stuck.reloadedPage": "Halaman ini berhenti bekerja dan dimuat ulang.",
+  "stuck.windowFailed":
+    "Sebuah jendela PerMark tidak dapat membuka halamannya dan telah ditutup. Jendela Anda yang lain tetap berfungsi.",
+  "stuck.viewFailedExit":
+    "PerMark tidak dapat membuka jendelanya, jadi PerMark harus ditutup. Tab yang terbuka akan kembali saat PerMark dijalankan lagi.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Proyek di dalamnya",

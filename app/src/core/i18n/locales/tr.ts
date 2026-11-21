@@ -64,6 +64,11 @@ export default {
     "Kaydedilmiş bazı PerMark verileri okunamadı ve bir kenara ayrıldı: {file}. Eski kopyayı burada bulabilirsiniz: {backup}",
   "notice.stateUnreadable":
     "Kaydedilmiş bazı PerMark verileri okunamadı. Veriler olduğu gibi bırakıldı; PerMark onları yeniden okuyabilene kadar, genellikle yeniden başlatmadan sonraya kadar, değiştirmeyecek: {file}",
+  "crash.notice":
+    "PerMark geçen sefer beklenmedik şekilde kapandı. Bu bilgisayara bir rapor kaydedildi ve hiçbir şey gönderilmedi. Paylaşmadan önce gözden geçirin: dosya adları veya metninizden parçalar içerebilir. “GitHub'da bildir” raporu da kopyalar; böylece raporu oraya yapıştırabilirsiniz.",
+  "crash.copy": "Raporu kopyala",
+  "crash.report": "GitHub'da bildir",
+  "crash.openFolder": "Klasörü aç",
 
   // ---- settings
   "settings.title": "Ayarlar",
@@ -2322,6 +2327,21 @@ export default {
   "closeWindow.body.other": "Bu sekmelerde kaydedilmemiş değişiklikler var:",
   "closeWindow.saveAll": "Tümünü kaydet",
   "closeWindow.discard": "Değişiklikleri at",
+  "stuck.title": "PerMark yanıt vermiyor",
+  "stuck.detail":
+    "Bu penceredeki bir sayfa yanıt vermiyor. Yine de kapatılırsa bu penceredeki sekmelerde kaydedilmemiş değişiklikler kaybolabilir.",
+  "stuck.closeAnyway": "Yine de kapat",
+  "stuck.wait": "Bekle",
+  "stuck.engineStopped":
+    "PerMark'ın pencerelerini gösteren bölümü çalışmayı durdurdu, bu yüzden PerMark'ın kapanması gerekiyor. Kaydedilmemiş değişiklikler kaybolur; açık sekmeler PerMark bir sonraki başlatıldığında geri gelir.",
+  "stuck.reloaded": "Bu sekme çalışmayı durdurdu ve yeniden yüklendi.",
+  "stuck.reloadedLost":
+    "Bu sekme çalışmayı durdurdu ve yeniden yüklendi. {file} dosyasındaki kaydedilmemiş değişiklikler kayboldu.",
+  "stuck.reloadedPage": "Bu sayfa çalışmayı durdurdu ve yeniden yüklendi.",
+  "stuck.windowFailed":
+    "Bir PerMark penceresi sayfasını açamadığı için kapatıldı. Diğer pencereleriniz çalışmaya devam ediyor.",
+  "stuck.viewFailedExit":
+    "PerMark penceresini açamadı, bu yüzden kapanması gerekiyor. Açık sekmeler PerMark bir sonraki başlatıldığında geri gelir.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "İçerideki projeler",

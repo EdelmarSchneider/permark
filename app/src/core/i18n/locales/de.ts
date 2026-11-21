@@ -55,6 +55,11 @@ export default {
     "Einige gespeicherte PerMark-Daten konnten nicht gelesen werden und wurden beiseitegelegt: {file}. Die alte Kopie finden Sie hier: {backup}",
   "notice.stateUnreadable":
     "Einige gespeicherte PerMark-Daten konnten nicht gelesen werden. Sie bleiben unverändert, und PerMark ändert sie nicht, solange es sie nicht wieder lesen kann, meist bis zu einem Neustart: {file}",
+  "crash.notice":
+    "PerMark wurde beim letzten Mal unerwartet beendet. Ein Bericht wurde auf diesem Computer gespeichert, gesendet wurde nichts. Vor dem Teilen bitte prüfen: Er kann Dateinamen oder Teile des Textes enthalten. „Auf GitHub melden“ kopiert den Bericht auch, damit er dort eingefügt werden kann.",
+  "crash.copy": "Bericht kopieren",
+  "crash.report": "Auf GitHub melden",
+  "crash.openFolder": "Ordner öffnen",
 
   // ---- settings
   "settings.title": "Einstellungen",
@@ -2353,6 +2358,21 @@ export default {
   "closeWindow.body.other": "Diese Tabs haben ungespeicherte Änderungen:",
   "closeWindow.saveAll": "Alle speichern",
   "closeWindow.discard": "Verwerfen",
+  "stuck.title": "PerMark reagiert nicht",
+  "stuck.detail":
+    "Eine Seite in diesem Fenster antwortet nicht. Wird trotzdem geschlossen, können ungespeicherte Änderungen in den Tabs dieses Fensters verloren gehen.",
+  "stuck.closeAnyway": "Trotzdem schließen",
+  "stuck.wait": "Warten",
+  "stuck.engineStopped":
+    "Der Teil von PerMark, der die Fenster anzeigt, funktioniert nicht mehr, daher muss PerMark beendet werden. Ungespeicherte Änderungen gehen verloren; die geöffneten Tabs sind beim nächsten Start von PerMark wieder da.",
+  "stuck.reloaded": "Dieser Tab funktionierte nicht mehr und wurde neu geladen.",
+  "stuck.reloadedLost":
+    "Dieser Tab funktionierte nicht mehr und wurde neu geladen. Ungespeicherte Änderungen an {file} sind verloren.",
+  "stuck.reloadedPage": "Diese Seite funktionierte nicht mehr und wurde neu geladen.",
+  "stuck.windowFailed":
+    "Ein PerMark-Fenster konnte seine Seite nicht öffnen und wurde geschlossen. Die anderen Fenster funktionieren weiter.",
+  "stuck.viewFailedExit":
+    "PerMark konnte sein Fenster nicht öffnen und muss daher beendet werden. Die geöffneten Tabs sind beim nächsten Start von PerMark wieder da.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Projekte darin",

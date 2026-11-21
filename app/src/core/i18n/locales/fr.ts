@@ -57,6 +57,11 @@ export default {
     "Des données enregistrées de PerMark n'ont pas pu être lues et ont été mises de côté : {file}. L'ancienne copie se trouve ici : {backup}",
   "notice.stateUnreadable":
     "Des données enregistrées de PerMark n'ont pas pu être lues. Elles ont été laissées intactes, et PerMark ne les modifiera pas tant qu'il ne pourra pas les relire, en général après un redémarrage : {file}",
+  "crash.notice":
+    "PerMark s'est fermé de façon inattendue la dernière fois. Un rapport a été enregistré sur cet ordinateur et rien n'a été envoyé. Si vous le partagez, relisez-le d'abord : il peut contenir des noms de fichiers ou des extraits de votre texte. « Signaler sur GitHub » copie aussi le rapport pour que vous puissiez le coller sur la page.",
+  "crash.copy": "Copier le rapport",
+  "crash.report": "Signaler sur GitHub",
+  "crash.openFolder": "Ouvrir le dossier",
 
   // ---- settings
   "settings.title": "Paramètres",
@@ -2377,6 +2382,21 @@ export default {
   "closeWindow.body.other": "Ces onglets contiennent des modifications non enregistrées :",
   "closeWindow.saveAll": "Tout enregistrer",
   "closeWindow.discard": "Abandonner",
+  "stuck.title": "PerMark ne répond pas",
+  "stuck.detail":
+    "Une page de cette fenêtre ne répond pas. Si vous fermez quand même, les modifications non enregistrées des onglets de cette fenêtre risquent d'être perdues.",
+  "stuck.closeAnyway": "Fermer quand même",
+  "stuck.wait": "Attendre",
+  "stuck.engineStopped":
+    "La partie de PerMark qui affiche ses fenêtres a cessé de fonctionner : PerMark doit se fermer. Les modifications non enregistrées sont perdues ; vos onglets ouverts reviendront au prochain démarrage de PerMark.",
+  "stuck.reloaded": "Cet onglet a cessé de fonctionner et a été rechargé.",
+  "stuck.reloadedLost":
+    "Cet onglet a cessé de fonctionner et a été rechargé. Les modifications non enregistrées de {file} ont été perdues.",
+  "stuck.reloadedPage": "Cette page a cessé de fonctionner et a été rechargée.",
+  "stuck.windowFailed":
+    "Une fenêtre de PerMark n'a pas pu ouvrir sa page et a été fermée. Vos autres fenêtres continuent de fonctionner.",
+  "stuck.viewFailedExit":
+    "PerMark n'a pas pu ouvrir sa fenêtre et doit donc se fermer. Vos onglets ouverts reviendront au prochain démarrage de PerMark.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Projets internes",

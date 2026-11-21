@@ -56,6 +56,11 @@ export default {
     "Não foi possível ler alguns dados guardados do PerMark, que foram postos de parte: {file}. A cópia antiga está aqui: {backup}",
   "notice.stateUnreadable":
     "Não foi possível ler alguns dados guardados do PerMark. Foram deixados intactos, e o PerMark não os vai alterar enquanto não os conseguir ler de novo, normalmente depois de reiniciar: {file}",
+  "crash.notice":
+    "O PerMark fechou inesperadamente da última vez. Foi guardado um relatório neste computador e nada foi enviado. Antes de o partilhar, reveja-o: pode conter nomes de ficheiros ou excertos do texto. “Comunicar no GitHub” também copia o relatório, para o poder colar lá.",
+  "crash.copy": "Copiar relatório",
+  "crash.report": "Comunicar no GitHub",
+  "crash.openFolder": "Abrir pasta",
 
   // ---- settings
   "settings.title": "Definições",
@@ -2334,6 +2339,21 @@ export default {
   "closeWindow.body.other": "Estes separadores têm alterações não guardadas:",
   "closeWindow.saveAll": "Guardar tudo",
   "closeWindow.discard": "Descartar",
+  "stuck.title": "O PerMark não está a responder",
+  "stuck.detail":
+    "Uma página desta janela não está a responder. Se fechar mesmo assim, as alterações não guardadas nos separadores desta janela podem perder-se.",
+  "stuck.closeAnyway": "Fechar mesmo assim",
+  "stuck.wait": "Aguardar",
+  "stuck.engineStopped":
+    "A parte do PerMark que mostra as janelas deixou de funcionar, por isso o PerMark tem de fechar. As alterações não guardadas serão perdidas; os separadores abertos voltam da próxima vez que o PerMark for iniciado.",
+  "stuck.reloaded": "Este separador deixou de funcionar e foi recarregado.",
+  "stuck.reloadedLost":
+    "Este separador deixou de funcionar e foi recarregado. Perderam-se as alterações não guardadas em {file}.",
+  "stuck.reloadedPage": "Esta página deixou de funcionar e foi recarregada.",
+  "stuck.windowFailed":
+    "Uma janela do PerMark não conseguiu abrir a página e foi fechada. As outras janelas continuam a funcionar.",
+  "stuck.viewFailedExit":
+    "O PerMark não conseguiu abrir a janela, por isso tem de fechar. Os separadores abertos voltam da próxima vez que o PerMark for iniciado.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Projetos na pasta",
