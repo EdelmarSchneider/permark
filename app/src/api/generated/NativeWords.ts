@@ -34,4 +34,9 @@ windowFailed?: string,
  * Text of the error before the app closes because its window could not get its page and no other window works
  * (no edits are lost). English until the frontend sends it.
  */
-viewFailedExit?: string, };
+viewFailedExit?: string, 
+/**
+ * The interface language (`de`, `pt-BR`). Only picks one of the backend's own translations for a dialog no page
+ * may word (the program-start question), when the person's setting is the system's language.
+ */
+language?: string, };

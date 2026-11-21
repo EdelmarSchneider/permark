@@ -156,6 +156,8 @@ pub enum AcpErrorCode {
     RulesUnreadable,
     /// The agent's program could not be started.
     StartFailed,
+    /// The person did not allow the program of their own command to start (asked before its first start).
+    NotAllowed,
     /// The agent did not answer a step of its start | sign-in in time.
     TimedOut,
     /// The agent refused | garbled `initialize`.

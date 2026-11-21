@@ -65,6 +65,7 @@ use agent_client_protocol_schema::MaybeUndefined;
 use agent_client_protocol_schema::ProtocolVersion;
 use permark_core::paths::{self, Root, Vault, VaultPath};
 use permark_core::plugins::PluginEvents;
+use permark_core::process::ProgramApprovals;
 use permark_core::state::StateFile;
 use permark_core::{ErrorKind, IpcError};
 use serde_json::Value;
@@ -103,6 +104,8 @@ pub struct Host {
     /// The catalog + the person's choice (read at every start).
     pub agents: Agents,
     pub launch: crate::agents::Launch,
+    /// What the person allowed to start: their own command waits for their yes (asked once per program + words).
+    pub approvals: ProgramApprovals,
     pub project: Project,
     /// Folder the copy is made in (`None`: no profile, no copy can be made).
     pub place: Option<PathBuf>,
@@ -1363,6 +1366,16 @@ impl Core {
             .plan
             .clone()
             .ok_or_else(|| AcpError::new(AcpErrorCode::NotFound))?;
+        // before any copy is made: a no leaves nothing behind
+        if matches!(chosen.choice, Choice::Command(_)) {
+            // a program inside the project: refused like one never found, nobody asked
+            if self.host.approvals.in_project(&plan.program) {
+                return Err(AcpError::new(AcpErrorCode::NotFound));
+            }
+            if !self.host.approvals.allow(&plan.call()) {
+                return Err(AcpError::new(AcpErrorCode::NotAllowed));
+            }
+        }
         let Some((held, dir, fresh)) = self.ensure_copy(generation)? else {
             return Ok(None);
         };

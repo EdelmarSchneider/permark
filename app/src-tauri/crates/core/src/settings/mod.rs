@@ -17,7 +17,8 @@ use toml_edit::{DocumentMut, InlineTable, Item, RawString, Table, TableLike, Val
 use ts_rs::TS;
 
 pub use characters::{
-    is_unsafe_char, CharacterEntry, CharacterGroup, CharactersError, CharactersStatus,
+    is_format_char, is_unsafe_char, CharacterEntry, CharacterGroup, CharactersError,
+    CharactersStatus,
 };
 pub use installer::installer_language;
 pub use project::{
