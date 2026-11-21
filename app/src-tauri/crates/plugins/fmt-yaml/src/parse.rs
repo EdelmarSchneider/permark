@@ -4,7 +4,7 @@
 
 use std::ops::Range;
 
-use permark_core::format::config::util::{unescape_double, Lines};
+use permark_core::format::config::util::{foreign_escape, unescape_double, Lines};
 use permark_core::format::config::{Quote, ScalarKind};
 
 /// Nesting followed before the rest of a block is shown as it is written.
@@ -274,17 +274,18 @@ fn flow_item(inner: &str, range: Range<usize>, base: usize, line: usize) -> Opti
                 return None;
             }
             let body = &item[1..item.len() - 1];
-            let (text, quote) = if item.starts_with('"') {
-                (unescape_double(body), Quote::Double)
+            let (text, quote, read_only) = if item.starts_with('"') {
+                let escape = foreign_escape(body).then_some("escape");
+                (unescape_double(body), Quote::Double, escape)
             } else {
-                (body.replace("''", "'"), Quote::Single)
+                (body.replace("''", "'"), Quote::Single, None)
             };
             Proto {
                 kind: ScalarKind::String,
                 text,
                 span,
                 quote,
-                read_only: None,
+                read_only,
             }
         }
         first => {
@@ -396,28 +397,28 @@ impl<'a> Parser<'a> {
 
     /// A block (mapping or sequence) whose lines start at `from` with `indent`. Returns it and the next line.
     fn block(&mut self, from: usize, indent: usize, depth: usize) -> (Val, usize) {
-        if depth > MAX_DEPTH {
-            let last = self.skip_deeper(from, indent.saturating_sub(1));
-            return (
-                self.region(from, last.saturating_sub(1).max(from), "nested"),
-                last,
-            );
-        }
         if is_seq_start(self.content(from)) {
-            let (items, next) = self.seq(from, indent, depth);
-            let last = next.saturating_sub(1).max(from);
-            (
-                Val::Seq {
-                    items,
-                    first: from,
-                    last,
-                },
-                next,
-            )
+            self.seq(from, indent, depth)
         } else {
-            let (items, next) = self.map(from, indent, depth);
-            (Val::Map(items), next)
+            self.map(from, indent, depth)
         }
+    }
+
+    /// A mapping | sequence (`seq`) at `from` nested deeper than [`MAX_DEPTH`], shown as written: it covers the lines
+    /// until one less indented, or (a sequence) one at its indent that is no item. Every nesting route (a list under
+    /// its key at the same indent, a mapping after a dash) passes here, so the reader's recursion stays bounded.
+    fn too_deep(&self, from: usize, indent: usize, seq: bool) -> (Val, usize) {
+        let mut next = from + 1;
+        while next < self.limit {
+            let info = self.infos[next];
+            let ends = info.indent < indent
+                || (seq && info.indent == indent && !is_seq_start(self.content(next)));
+            if !info.blank && ends {
+                break;
+            }
+            next += 1;
+        }
+        (self.region(from, next - 1, "nested"), next)
     }
 
     /// First line after `from` whose indent is `<= indent` (blank lines go along).
@@ -443,7 +444,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn map(&mut self, from: usize, indent: usize, depth: usize) -> (Vec<Item>, usize) {
+    fn map(&mut self, from: usize, indent: usize, depth: usize) -> (Val, usize) {
+        if depth > MAX_DEPTH {
+            return self.too_deep(from, indent, false);
+        }
         let mut items = Vec::new();
         let mut i = from;
         loop {
@@ -475,7 +479,7 @@ impl<'a> Parser<'a> {
             items.push(item);
             i = next;
         }
-        (items, i)
+        (Val::Map(items), i)
     }
 
     /// Reads `anchor` | `tag` prefixes from the start of a value; returns the rest and which prefix was there.
@@ -518,17 +522,8 @@ impl<'a> Parser<'a> {
                     (val, next.saturating_sub(1).max(j), comment)
                 }
                 Some(n) if self.infos[n].indent == indent && is_seq_start(self.content(n)) => {
-                    let (items, next) = self.seq(n, indent, depth + 1);
-                    let last = next.saturating_sub(1).max(j);
-                    (
-                        Val::Seq {
-                            items,
-                            first: n,
-                            last,
-                        },
-                        last,
-                        comment,
-                    )
+                    let (val, next) = self.seq(n, indent, depth + 1);
+                    (val, next.saturating_sub(1).max(j), comment)
                 }
                 Some(n) if self.infos[n].indent > indent => {
                     // a scalar written on the lines below its key
@@ -678,13 +673,15 @@ impl<'a> Parser<'a> {
         };
         if let Some(close) = quoted_end(rest, 0) {
             let comment = trailing(&rest[close..]);
+            let inner = &rest[1..close - 1];
+            let escape = (quote == Quote::Double && foreign_escape(inner)).then_some("escape");
             return (
                 Val::Scalar(Proto {
                     kind: ScalarKind::String,
-                    text: unquote(&rest[1..close - 1]),
+                    text: unquote(inner),
                     span: at..at + close,
                     quote,
-                    read_only: prop,
+                    read_only: prop.or(escape),
                 }),
                 j,
                 comment,
@@ -845,7 +842,10 @@ impl<'a> Parser<'a> {
         )
     }
 
-    fn seq(&mut self, from: usize, indent: usize, depth: usize) -> (Vec<SeqItem>, usize) {
+    fn seq(&mut self, from: usize, indent: usize, depth: usize) -> (Val, usize) {
+        if depth > MAX_DEPTH {
+            return self.too_deep(from, indent, true);
+        }
         let mut items = Vec::new();
         let mut i = from;
         loop {
@@ -876,7 +876,15 @@ impl<'a> Parser<'a> {
             items.push(item);
             i = next;
         }
-        (items, i)
+        let last = i.saturating_sub(1).max(from);
+        (
+            Val::Seq {
+                items,
+                first: from,
+                last,
+            },
+            i,
+        )
     }
 
     fn seq_item(
@@ -919,15 +927,9 @@ impl<'a> Parser<'a> {
         if prop.is_none() && split_key(rest_after).is_some() {
             // `- key: value`: a mapping whose first line sits after the dash
             self.infos[j].indent = col;
-            let (items, next) = self.map(j, col, depth + 1);
+            let (val, next) = self.map(j, col, depth + 1);
             let last = next.saturating_sub(1).max(j);
-            return (
-                SeqItem {
-                    line: j,
-                    val: Val::Map(items),
-                },
-                last + 1,
-            );
+            return (SeqItem { line: j, val }, last + 1);
         }
         let (val, last, _) = self.value(j, indent, offset, rest_after, prop);
         (SeqItem { line: j, val }, last + 1)

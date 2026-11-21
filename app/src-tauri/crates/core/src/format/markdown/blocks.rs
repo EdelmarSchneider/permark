@@ -190,8 +190,6 @@ pub(super) fn mark(html: &str, id: &str) -> String {
 /// What one pass over rendered (not yet sanitized) HTML says about it.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct Scan {
-    /// The deepest element nesting; void elements and comments do not count.
-    pub deepest: usize,
     /// The HTML without the `data-sourcepos` of nested elements: the position of a top-level element covers its
     /// whole extent, which is all the block lines need. A top-level element without one keeps its nested ones.
     pub html: String,
@@ -207,14 +205,21 @@ fn sourcepos_range(tag: &str) -> Option<std::ops::Range<usize>> {
     Some(start..end)
 }
 
-/// One pass over `html`, which may be unbalanced and need not be sanitized.
+/// One pass over `html`, which may be unbalanced and need not be sanitized. An end tag closes the nearest open element
+/// of its name and what was left open inside it (an inline element left open in a paragraph ends with the paragraph),
+/// and closes nothing when none is open. The cuts follow these tags, not the HTML parser: a piece may begin inside an
+/// element the parser would still hold open, and the sanitizer then parses it on its own (the depth guard measures each
+/// piece as the sanitizer reads it).
 pub(super) fn scan(html: &str) -> Scan {
     let bytes = html.as_bytes();
     let mut out = Scan {
         html: String::with_capacity(html.len()),
         ..Scan::default()
     };
-    let (mut depth, mut at, mut copied) = (0_usize, 0_usize, 0_usize);
+    let (mut at, mut copied) = (0_usize, 0_usize);
+    // the open elements, and how many of each name: an end tag finds its element without a walk down the stack
+    let mut open: Vec<String> = Vec::new();
+    let mut open_of: HashMap<String, usize> = HashMap::new();
     let mut keep_nested = true;
     while let Some(lt) = html[at..].find('<').map(|i| at + i) {
         if html[lt..].starts_with("<!--") {
@@ -228,22 +233,31 @@ pub(super) fn scan(html: &str) -> Scan {
         let name = tag_name(tag).to_ascii_lowercase();
         let named = name.starts_with(|c: char| c.is_ascii_alphabetic());
         let closing = tag.starts_with("</");
-        if depth == 0 && named {
+        if open.is_empty() && named {
             keep_nested = sourcepos_range(tag).is_none();
-        } else if depth > 0 && !keep_nested {
+        } else if !open.is_empty() && !keep_nested {
             if let Some(range) = sourcepos_range(tag) {
                 out.html.push_str(&html[copied..lt + range.start]);
                 copied = lt + range.end;
             }
         }
         if closing {
-            depth = depth.saturating_sub(1);
+            if open_of.get(&name).is_some_and(|&count| count > 0) {
+                while let Some(top) = open.pop() {
+                    if let Some(count) = open_of.get_mut(&top) {
+                        *count = count.saturating_sub(1);
+                    }
+                    if top == name {
+                        break;
+                    }
+                }
+            }
         } else if named && !(VOID.contains(&name.as_str()) || tag.ends_with("/>")) {
-            depth += 1;
-            out.deepest = out.deepest.max(depth);
+            *open_of.entry(name.clone()).or_default() += 1;
+            open.push(name);
         }
         at = gt + 1;
-        if depth == 0 && (named || closing) {
+        if open.is_empty() && (named || closing) {
             out.html.push_str(&html[copied..at]);
             copied = at;
             out.cuts.push(out.html.len());
@@ -251,12 +265,6 @@ pub(super) fn scan(html: &str) -> Scan {
     }
     out.html.push_str(&html[copied..]);
     out
-}
-
-/// The deepest element nesting of `html`.
-#[cfg(test)]
-pub(super) fn max_depth(html: &str) -> usize {
-    scan(html).deepest
 }
 
 /// `html` cut at the given offsets into pieces of at least `target` bytes (the last piece may be shorter).
@@ -384,9 +392,11 @@ mod tests {
         assert_eq!(pieces[0].trim(), "<p>x <b>y</b></p>");
         assert_eq!(pieces[1].trim(), "<hr>");
         assert_eq!(pieces[2].trim(), "<ul><li>a</li></ul>");
-        assert_eq!(found.deepest, 2);
         // an unclosed element never returns to the top: one piece to the end
         assert!(scan("<div><p>x</p>").cuts.is_empty());
+        // an inline element left open ends with its paragraph; an end tag with nothing to close closes nothing
+        assert_eq!(scan("<p>a <a href=\"#x\">b</p><p>c</p>").cuts, [23, 31]);
+        assert!(scan("<div></span>").cuts.is_empty());
         // pieces of at least the target size, nothing lost
         let all = super::pieces(html, &found.cuts, 12);
         assert_eq!(all.concat(), html);
@@ -418,15 +428,5 @@ mod tests {
                 .collect::<Vec<_>>(),
             [(1, 3), (5, 5)]
         );
-    }
-
-    #[test]
-    fn depth_counts_open_elements() {
-        assert_eq!(max_depth("<p>x</p>"), 1);
-        assert_eq!(max_depth("<div><div><p>x</p></div></div>"), 3);
-        assert_eq!(max_depth("<br><img src=x><hr/>"), 0);
-        assert_eq!(max_depth("<!-- <div><div> --><p>x"), 1);
-        assert_eq!(max_depth(&"<div>".repeat(1000)), 1000);
-        assert_eq!(max_depth("a < b and <3"), 0);
     }
 }

@@ -1703,6 +1703,8 @@ export default {
   "config.reason.noValue": "Klucz bez wartości. Zmień to w trybie Źródło.",
   "config.reason.empty": "Pusty element. Zmień to w trybie Źródło.",
   "config.reason.unterminated": "Niezamknięty cudzysłów. Zmień to w trybie Źródło.",
+  "config.reason.escape":
+    "Wartość z sekwencjami ucieczki, których nie da się tu dokładnie zachować. Zmień ją w trybie Źródło.",
   "config.reason.other": "Tego nie można tu dokładnie edytować. Użyj trybu Źródło.",
   "config.refused.newline": "Wartość nie może tu zawierać podziału wiersza.",
   "config.refused.empty": "Wpisz coś.",

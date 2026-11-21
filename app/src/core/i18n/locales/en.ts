@@ -1611,6 +1611,8 @@ const en = {
   "config.reason.noValue": "A key with no value. Change it in Source.",
   "config.reason.empty": "An empty item. Change it in Source.",
   "config.reason.unterminated": "A quote that never closes. Change it in Source.",
+  "config.reason.escape":
+    "A value with escape codes that can't be kept exactly here. Change it in Source.",
   "config.reason.other": "This can't be edited exactly here. Use Source.",
   "config.refused.newline": "A value can't hold a line break here.",
   "config.refused.empty": "Type something.",

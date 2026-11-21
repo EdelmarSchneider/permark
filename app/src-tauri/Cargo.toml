@@ -92,6 +92,8 @@ notify = "8.2.0"
 trash = "5.2.9"
 comrak = { version = "0.56", default-features = false, features = ["shortcodes"] }
 ammonia = "4.2"
+# the parser ammonia uses (same version: one copy in the build), for the depth guard before sanitizing
+html5ever = "0.40"
 git2 = { version = "0.21.0", default-features = false }
 rmcp = { version = "3.5.0", default-features = false, features = ["server", "transport-io"] }
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "time", "io-util"] }
@@ -108,6 +110,15 @@ expect_used = "deny"
 # and faster links. PerMark's own crates keep full debug info.
 [profile.dev.package."*"]
 debug = false
+
+# The HTML parser runs twice on every rendered Markdown document (depth guard, then sanitizer); unoptimized it is several
+# times slower than the rest of the pipeline in dev and test builds.
+[profile.dev.package.html5ever]
+opt-level = 2
+[profile.dev.package.markup5ever]
+opt-level = 2
+[profile.dev.package.tendril]
+opt-level = 2
 
 [profile.release]
 codegen-units = 1

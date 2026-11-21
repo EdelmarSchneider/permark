@@ -27,6 +27,7 @@ notify.workspace = true
 trash.workspace = true
 comrak.workspace = true
 ammonia.workspace = true
+html5ever.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [

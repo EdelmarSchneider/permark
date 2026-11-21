@@ -103,6 +103,8 @@
     border-radius: var(--radius-card);
     background: var(--bg);
     text-align: center;
+    /* also the drawing's box: its cleaned CSS keeps every part in the flow, and in-flow overflow (transforms,
+       margins, shadows) is clipped here */
     overflow-x: auto;
   }
   .figure.is-pending {

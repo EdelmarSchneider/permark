@@ -149,3 +149,19 @@ fn keys_with_escapes_and_repeats() {
     assert_eq!(sheet.scalar("k[1]").map(|s| s.text.as_str()), Some("2"));
     assert_eq!(sheet.row_count(), 4);
 }
+
+#[test]
+fn many_groups_parse_in_time_and_keep_their_order() {
+    use std::fmt::Write as _;
+    let mut text = String::new();
+    for n in 0..50_000 {
+        let _ = writeln!(text, "g{n}.key=v{n}\ng{n}.other=w");
+    }
+    let start = std::time::Instant::now();
+    let sheet = format().sheet(&text).expect("parses");
+    let took = start.elapsed();
+    assert_eq!(sheet.groups.len(), 50_000);
+    assert_eq!(sheet.groups[49_999].title, "g49999");
+    assert_eq!(sheet.groups[7].rows.len(), 2);
+    assert!(took < std::time::Duration::from_secs(3), "{took:?}");
+}

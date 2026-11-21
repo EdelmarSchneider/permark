@@ -168,6 +168,46 @@ describe("web pictures", () => {
     expect(webPictures.always).toBe(false);
   });
 
+  it("blocks added to the page are swept alone, never the whole page", async () => {
+    const f = fake();
+    await webPictures.load(f.api, true);
+    const root = page(["https://e.example/a.png", "https://e.example/b.png"]);
+    const chip = root.querySelector(".remote-image");
+    if (!chip) throw new Error("no chip");
+    await webPictures.show(f.api, chip, () => {});
+    // a block without chips appears; then one holding a chip of the kept picture, and that chip alone
+    const plain = document.createElement("p");
+    plain.textContent = "text";
+    const holder = document.createElement("p");
+    holder.innerHTML = '<span class="remote-image" data-url="https://e.example/a.png"></span>';
+    const alone = document.createElement("span");
+    alone.className = "remote-image";
+    alone.setAttribute("data-url", "https://e.example/a.png");
+    root.append(plain, holder, alone);
+    const wide = vi.spyOn(root, "querySelectorAll");
+    const everywhere = vi.spyOn(document, "querySelectorAll");
+    webPictures.sweepAdded(f.api, [plain, holder, alone], () => {});
+    expect(wide).not.toHaveBeenCalled();
+    expect(everywhere).not.toHaveBeenCalled();
+    expect(holder.querySelector("img.remote-loaded")?.getAttribute("src")).toBe("blob:test/1");
+    expect(alone.isConnected).toBe(false);
+    expect(root.querySelectorAll("img.remote-loaded")).toHaveLength(3);
+    expect(f.asked).toHaveLength(1);
+  });
+
+  it("nothing kept and the project's choice off: added blocks are not even looked into", async () => {
+    const f = fake();
+    await webPictures.load(f.api, true);
+    const root = page([]);
+    const block = document.createElement("p");
+    block.innerHTML = '<span class="remote-image" data-url="https://e.example/a.png"></span>';
+    root.append(block);
+    const look = vi.spyOn(block, "querySelectorAll");
+    webPictures.sweepAdded(f.api, [block], () => {});
+    expect(look).not.toHaveBeenCalled();
+    expect(f.asked).toEqual([]);
+  });
+
   it("knows an https address", () => {
     expect(isHttps("https://e.example/a.png")).toBe(true);
     expect(isHttps("HTTPS://e.example/a.png")).toBe(true);

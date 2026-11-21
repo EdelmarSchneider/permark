@@ -9,8 +9,11 @@ vi.mock("../../api", async () => {
 });
 
 const { api } = await import("../../api");
+const { mockHash } = await import("../../api/mockEdit");
 const { default: SheetEditor } = await import("./SheetEditor.svelte");
 const { EditingSession } = await import("../editing/session.svelte");
+const { scalarRow } = await import("../testing/sheets");
+type Body = import("../../api").Body;
 
 // `api` is the mock created by the factory above
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
@@ -38,10 +41,11 @@ afterEach(() => {
   if (component) void unmount(component);
   component = null;
   document.body.replaceChildren();
+  vi.restoreAllMocks();
 });
 
-async function open(path: string): Promise<HTMLElement> {
-  await session.enter("edit", path, "sheet", { kind: "explicit" });
+async function open(path: string, at?: number): Promise<HTMLElement> {
+  await session.enter("edit", path, "sheet", { kind: "explicit" }, at);
   const content = session.content;
   if (!content) throw new Error("no content");
   component = mount(SheetEditor, { target, props: { session, content } });
@@ -126,5 +130,164 @@ describe("Edit mode of a config file", () => {
     await vi.waitFor(() => expect(session.state.s).toBe("dirty"));
     expect(session.text).toBe(base.replace("node_modules/\n", ""));
     await vi.waitFor(() => expect(target.textContent).not.toContain("node_modules/"));
+  });
+
+  it("a change made before the answer to the previous one lands on top of it, in order", async () => {
+    await open(".env.example");
+    const base = session.base?.text ?? "";
+    const real = mock.configEdit;
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const sent: string[] = [];
+    vi.spyOn(mock, "configEdit").mockImplementation(async (path, text, edit) => {
+      sent.push(text);
+      // the first answer comes late: the second change is made meanwhile
+      if (sent.length === 1) await gate;
+      return real(path, text, edit);
+    });
+    const port = /PORT=(\d+)/.exec(base)?.[0] ?? "";
+    await type("PORT", "5001");
+    await type("NODE_ENV", "production");
+    release();
+    await vi.waitFor(() =>
+      expect(session.text).toBe(
+        base.replace(port, "PORT=5001").replace("NODE_ENV=development", "NODE_ENV=production"),
+      ),
+    );
+    expect(sent).toHaveLength(2);
+    // the second change starts from the text the first one made
+    expect(sent[1]).toContain("PORT=5001");
+  });
+
+  it("changes waiting when the file reloads finish on the text they were made for, never on the reloaded one", async () => {
+    await open(".env.example");
+    const base = session.base?.text ?? "";
+    const real = mock.configEdit;
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const sent: string[] = [];
+    let answered = 0;
+    vi.spyOn(mock, "configEdit").mockImplementation(async (path, text, edit) => {
+      sent.push(text);
+      if (sent.length === 1) await gate;
+      const result = await real(path, text, edit);
+      answered += 1;
+      return result;
+    });
+    await type("PORT", "5001");
+    await type("NODE_ENV", "production");
+    // another program writes the file while the first answer is on its way: the clean editor reloads
+    const theirs = base.replace("DEBUG=false", "DEBUG=true");
+    expect(theirs).not.toBe(base);
+    mock.probe.edit.files.set(".env.example", theirs);
+    const before = session.content?.seq;
+    session.onDocumentChanged({
+      window: "main",
+      path: ".env.example",
+      change: "changed",
+      version: mockHash(theirs),
+    });
+    await vi.waitFor(() => expect(session.content?.seq).not.toBe(before));
+    // the window makes a new editor for the new content (`{#key content.seq}`)
+    if (component) void unmount(component);
+    target.replaceChildren();
+    const reloaded = session.content;
+    if (!reloaded) throw new Error("no content");
+    expect(reloaded.text).toBe(theirs);
+    component = mount(SheetEditor, { target, props: { session, content: reloaded } });
+    await vi.waitFor(() => expect(target.querySelector(".sheet")).not.toBeNull());
+    release();
+    await vi.waitFor(() => expect(answered).toBe(2));
+    // the second change still went out, on top of the first, from the text both were made for
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toContain("PORT=5001");
+    expect(sent[1]).not.toContain("DEBUG=true");
+    // neither answer reaches the reloaded editor: it keeps the file as it is now, nothing unsaved
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(session.text).toBe(theirs);
+    expect(session.current()).toBe(theirs);
+    expect(session.state.s).toBe("clean");
+    // the next change starts from the reloaded text
+    await type("PORT", "6001");
+    await vi.waitFor(() => expect(session.state.s).toBe("dirty"));
+    expect(sent[2]).toBe(theirs);
+    expect(session.text).toContain("DEBUG=true");
+    expect(session.text).not.toContain("NODE_ENV=production");
+  });
+});
+
+describe("the line of a sheet in Edit mode", () => {
+  const ROW = 30;
+
+  /** One card of 60 keys, a key per line. */
+  function longSheet(): Body {
+    const rows = Array.from({ length: 60 }, (_, i) => ({
+      ...scalarRow(`K${i + 1}`),
+      line: i + 1,
+      end: i + 1,
+    }));
+    const group = { path: "", title: "", line: 1, end: 60, comment: null, rows };
+    return { kind: "sheet", sheet: { kind: "config", groups: [group] } };
+  }
+
+  /** The editor's pane: 300 px tall, rows 30 px each, laid out from its top. */
+  function pane(): void {
+    target.setAttribute("data-scroller", "");
+    Object.defineProperty(target, "clientHeight", { configurable: true, value: 300 });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this === target) return new DOMRect(0, 0, 600, 300);
+      const line = Number(this.dataset["line"]);
+      return Number.isFinite(line) && this.dataset["line"] !== undefined
+        ? new DOMRect(0, ROW * (line - 1) - target.scrollTop, 600, ROW)
+        : new DOMRect(0, 0, 0, 0);
+    });
+    vi.spyOn(mock, "configSheet").mockResolvedValue({ ok: true, value: longSheet() });
+  }
+
+  const rowAt = (line: number): HTMLElement | null =>
+    target.querySelector<HTMLElement>(`[data-line="${line}"]`);
+
+  it("a line asked for (a search hit) brings its row into view, tinted", async () => {
+    pane();
+    await open(".env.example");
+    session.showLine(40);
+    await vi.waitFor(() => expect(rowAt(40)?.classList.contains("pm-located")).toBe(true));
+    // the top third of the pane, as the reading view's sheet shows it
+    expect(target.scrollTop).toBe(ROW * 39 - 100);
+  });
+
+  it("a line asked before the sheet is drawn is shown once it is", async () => {
+    pane();
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const sheet = longSheet();
+    vi.spyOn(mock, "configSheet").mockImplementation(async () => {
+      await gate;
+      return { ok: true, value: sheet };
+    });
+    await session.enter("edit", ".env.example", "sheet", { kind: "explicit" });
+    const content = session.content;
+    if (!content) throw new Error("no content");
+    component = mount(SheetEditor, { target, props: { session, content } });
+    // the editor is attached; its sheet has not come yet
+    flushSync();
+    session.showLine(40);
+    release();
+    await vi.waitFor(() => expect(rowAt(40)?.classList.contains("pm-located")).toBe(true));
+    expect(target.scrollTop).toBe(ROW * 39 - 100);
+  });
+
+  it("opens at the line it starts at, and tells the line at the top of the pane", async () => {
+    pane();
+    await open(".env.example", 40);
+    // a place kept (a mode switch): the row at the top, not tinted
+    await vi.waitFor(() => expect(target.scrollTop).toBe(ROW * 39));
+    expect(rowAt(40)?.classList.contains("pm-located")).toBe(false);
+    // the person scrolls; Source opens where the sheet is
+    target.scrollTop = ROW * 20;
+    await session.switchTo("source");
+    expect(session.content?.line).toBe(21);
   });
 });

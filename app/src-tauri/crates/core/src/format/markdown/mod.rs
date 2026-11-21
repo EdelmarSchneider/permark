@@ -10,6 +10,7 @@ mod fences;
 mod frontmatter;
 mod inline;
 mod latex;
+mod nesting;
 mod prompt;
 mod refs;
 mod sanitize;
@@ -19,7 +20,8 @@ mod segments;
 mod tests;
 
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashSet};
 
 use std::fmt::Write as _;
 
@@ -142,10 +144,9 @@ fn render(text: &str, cx: &RenderCx<'_>) -> Rendered {
     };
     // 6. sanitize + blocks (raw HTML in the document can nest without limit even when the Markdown tree is shallow)
     let scan = blocks::scan(&raw);
-    if scan.deepest > MAX_TREE_DEPTH {
+    let Some(parts) = clean_parts(&scan.html, &scan.cuts, cx.path) else {
         return plain(text);
-    }
-    let parts = clean_parts(&scan.html, &scan.cuts, cx.path);
+    };
     let ids = blocks::ids(&parts);
     let outline = outline_of(&headings, &parts, &ids);
     let blocks = assemble(parts, ids, cx.known);
@@ -215,11 +216,16 @@ const PIECE: usize = 32 * 1024;
 const MAX_THREADS: usize = 8;
 
 /// Sanitizes the top-level pieces of `raw` (each on its own, so a block never depends on its neighbours) and cuts
-/// them into blocks. Big documents use several threads; the result is the same in the same order.
-fn clean_parts(raw: &str, cuts: &[usize], doc: &str) -> Vec<blocks::RawBlock> {
+/// them into blocks. Big documents use several threads; the result is the same in the same order. `None` when a piece
+/// parses into a tree deeper than [`MAX_TREE_DEPTH`]: the depth is measured on each piece as the sanitizer will parse
+/// it, before the sanitizer sees it.
+fn clean_parts(raw: &str, cuts: &[usize], doc: &str) -> Option<Vec<blocks::RawBlock>> {
     let pieces = blocks::pieces(raw, cuts, PIECE);
     let cleaner = sanitize::Cleaner::new(doc);
-    let work = |piece: &&str| blocks::split(&cleaner.clean(piece));
+    let work = |piece: &&str| {
+        (nesting::deepest(piece, MAX_TREE_DEPTH) <= MAX_TREE_DEPTH)
+            .then(|| blocks::split(&cleaner.clean(piece)))
+    };
     let threads = if raw.len() < PARALLEL_FROM {
         1
     } else {
@@ -228,7 +234,8 @@ fn clean_parts(raw: &str, cuts: &[usize], doc: &str) -> Vec<blocks::RawBlock> {
             .min(MAX_THREADS)
     };
     if threads < 2 || pieces.len() < 2 {
-        return pieces.iter().flat_map(work).collect();
+        let parts = pieces.iter().map(work).collect::<Option<Vec<_>>>()?;
+        return Some(parts.into_iter().flatten().collect());
     }
     // contiguous groups of about equal size
     let per_group = raw.len() / threads + 1;
@@ -248,12 +255,18 @@ fn clean_parts(raw: &str, cuts: &[usize], doc: &str) -> Vec<blocks::RawBlock> {
     std::thread::scope(|scope| {
         let handles: Vec<_> = groups
             .iter()
-            .map(|group| scope.spawn(|| group.iter().flat_map(work).collect::<Vec<_>>()))
+            .map(|group| scope.spawn(|| group.iter().map(work).collect::<Option<Vec<_>>>()))
             .collect();
-        handles
-            .into_iter()
-            .flat_map(|handle| handle.join().unwrap_or_default())
-            .collect()
+        let mut parts = Vec::new();
+        for handle in handles {
+            match handle.join() {
+                Ok(Some(group)) => parts.extend(group.into_iter().flatten()),
+                Ok(None) => return None,
+                // a thread that panicked leaves its pieces out
+                Err(_) => {}
+            }
+        }
+        Some(parts)
     })
 }
 
@@ -396,17 +409,41 @@ fn headings_of<'a>(root: &'a AstNode<'a>) -> Vec<Heading> {
         .collect()
 }
 
+/// Each heading with the id of the first block holding its line: one sweep over the headings by line and the blocks by
+/// first line, the blocks whose lines may hold the heading in a heap by place (a block ended before a heading ends
+/// before every later one). Headings are not always in line order (comrak moves footnote definitions, headings and all,
+/// after the rest of the document), so the sweep takes them sorted and the answers go back in document order.
 fn outline_of(
     headings: &[Heading],
     parts: &[blocks::RawBlock],
     ids: &[String],
 ) -> Vec<OutlineItem> {
+    let mut by_start: Vec<usize> = (0..parts.len()).collect();
+    by_start.sort_by_key(|&at| parts[at].line_start);
+    let mut by_line: Vec<usize> = (0..headings.len()).collect();
+    by_line.sort_by_key(|&at| headings[at].line);
+    let mut started = by_start.iter().peekable();
+    let mut open: BinaryHeap<Reverse<usize>> = BinaryHeap::new();
+    let mut found = vec![None; headings.len()];
+    for &heading in &by_line {
+        let line = headings[heading].line;
+        while let Some(&&at) = started.peek().filter(|&&&at| parts[at].line_start <= line) {
+            open.push(Reverse(at));
+            started.next();
+        }
+        while open
+            .peek()
+            .is_some_and(|&Reverse(at)| parts[at].line_end < line)
+        {
+            open.pop();
+        }
+        found[heading] = open.peek().map(|&Reverse(at)| at);
+    }
     headings
         .iter()
-        .map(|heading| {
-            let block = parts
-                .iter()
-                .position(|p| p.line_start <= heading.line && heading.line <= p.line_end)
+        .zip(found)
+        .map(|(heading, found)| {
+            let block = found
                 .and_then(|at| ids.get(at))
                 .cloned()
                 .unwrap_or_default();
@@ -422,7 +459,8 @@ fn outline_of(
 }
 
 /// comrak ends every heading with an empty `<a class="anchor">` link (and repeats the heading text in it); the heading
-/// already has its `id` and the UI adds its own anchor, so the extra link is dropped.
+/// already has its `id` and the UI adds its own anchor, so the extra link is dropped. Only a lone empty link is one:
+/// a raw `<a href="#...">` left open in the document runs to some later anchor's `</a>`, and the text between stays.
 fn strip_heading_anchors(html: &str) -> String {
     const OPEN: &str = "<a href=\"#";
     const CLOSE: &str = "</a>";
@@ -430,13 +468,20 @@ fn strip_heading_anchors(html: &str) -> String {
     let mut rest = html;
     while let Some(at) = rest.find(OPEN) {
         let after = &rest[at..];
-        let Some(end) = after.find(CLOSE) else { break };
-        let candidate = &after[..end + CLOSE.len()];
         out.push_str(&rest[..at]);
-        if !candidate.ends_with("class=\"anchor\"></a>") {
-            out.push_str(candidate);
+        // its open tag ends at the first `>` (before any `<`: the search stays short), and `</a>` follows at once
+        let anchor = after[1..].find(['<', '>']).map(|i| i + 1).filter(|&gt| {
+            after[gt..].starts_with('>')
+                && after[..gt].ends_with("class=\"anchor\"")
+                && after[gt + 1..].starts_with(CLOSE)
+        });
+        if let Some(gt) = anchor {
+            rest = &after[gt + 1 + CLOSE.len()..];
+        } else {
+            // not an anchor: keep its start and look on after it (a heading anchor may follow inside it)
+            out.push_str(OPEN);
+            rest = &after[OPEN.len()..];
         }
-        rest = &after[candidate.len()..];
     }
     out.push_str(rest);
     out

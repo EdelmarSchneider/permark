@@ -201,6 +201,12 @@ describe("the page", () => {
       await until(() => target.querySelector("img.remote-loaded") !== null, "picture shown");
       expect(mock.probe.remote.asked).toEqual([url]);
       expect(target.querySelector("img.remote-loaded")?.getAttribute("src")).toBe("blob:test/1");
+      // a block drawn later with a chip of that address takes the kept picture, without a new request
+      const later = document.createElement("p");
+      later.innerHTML = `<span class="remote-image" data-url="${url}" aria-label="logo"></span>`;
+      target.querySelector(".md-body")?.append(later);
+      await until(() => later.querySelector("img.remote-loaded") !== null, "kept picture shown");
+      expect(mock.probe.remote.asked).toEqual([url]);
     } finally {
       URL.createObjectURL = make;
     }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Sheet } from "../../api";
 import { EXPAND_BUDGET, OPEN_BUDGET } from "../doc/tree";
 import { bigSheet, scalar, scalarRow } from "../testing/sheets";
-import { drawnRows, foldsOf } from "./folds";
+import { cardAt, drawnRows, foldsOf } from "./folds";
 
 const keyOf = (sheet: Sheet, index: number): string => {
   const group = sheet.groups[index];
@@ -45,5 +45,24 @@ describe("folds of a sheet", () => {
     const sheet: Sheet = { kind: "config", groups: [{ ...group, path: "", title: "" }] };
     expect(foldsOf(sheet, null).size).toBe(0);
     expect(foldsOf(sheet, false).size).toBe(0);
+  });
+});
+
+describe("the card of a line", () => {
+  it("is the card whose lines hold it, the innermost one when cards nest", () => {
+    const sheet = bigSheet(3, 4);
+    // cards: lines 1-5, 6-10, 11-15
+    expect(cardAt(sheet, 7)).toBe(keyOf(sheet, 1));
+    expect(cardAt(sheet, 11)).toBe(keyOf(sheet, 2));
+    const [outer] = sheet.groups;
+    if (!outer) throw new Error("no card");
+    // a nested card after its parent, inside the parent's lines
+    sheet.groups.splice(1, 0, { ...outer, path: "t0.inner", title: "t0.inner", line: 3, end: 4 });
+    expect(cardAt(sheet, 3)).toBe("t0.inner@3");
+    expect(cardAt(sheet, 5)).toBe(keyOf(sheet, 0));
+  });
+
+  it("is none past the last card", () => {
+    expect(cardAt(bigSheet(2, 2), 99)).toBeNull();
   });
 });

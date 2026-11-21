@@ -184,6 +184,46 @@ fn continuations_and_valueless_keys_are_read_only() {
 }
 
 #[test]
+fn a_quoted_value_with_an_escape_the_sheet_cannot_keep_is_read_only() {
+    let text = "[s]\nansi = \"\\e[1m\"\nhex = \"\\x41\"\nok = \"a\\tb \\\"q\\\"\" ; kept\n";
+    let sheet = format().sheet(text).expect("parses");
+    for path in ["s.ansi", "s.hex"] {
+        assert_eq!(
+            sheet.scalar(path).map(|s| s.edit.clone()),
+            Some(Editability::ReadOnly {
+                reason: "escape".to_owned()
+            }),
+            "{path}"
+        );
+    }
+    assert_eq!(
+        sheet.scalar("s.ok").map(|s| (s.text.as_str(), &s.edit)),
+        Some(("a\tb \"q\"", &Editability::Surgical))
+    );
+    let set = |path: &str, to: &str| {
+        format()
+            .edit(
+                text,
+                &ConfigEdit::Set {
+                    path: path.to_owned(),
+                    value: NewValue::Text {
+                        text: to.to_owned(),
+                    },
+                },
+            )
+            .map(|splice| splice.apply(text))
+    };
+    assert_eq!(
+        set("s.hex", "A"),
+        Err(EditRefusal::ReadOnly("escape".to_owned()))
+    );
+    assert_eq!(
+        set("s.ok", "c\td").as_deref(),
+        Ok(text.replace("\"a\\tb \\\"q\\\"\"", "\"c\\td\"").as_str())
+    );
+}
+
+#[test]
 fn values_that_cannot_be_written_are_declined() {
     let set = |text: &str| {
         format().edit(

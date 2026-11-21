@@ -1654,6 +1654,8 @@ export default {
   "config.reason.noValue": "Una chiave senza valore. Cambiala nel Sorgente.",
   "config.reason.empty": "Un elemento vuoto. Cambialo nel Sorgente.",
   "config.reason.unterminated": "Un apice che non si chiude mai. Cambialo nel Sorgente.",
+  "config.reason.escape":
+    "Un valore con sequenze di escape che qui non si possono conservare esattamente. Cambialo nel Sorgente.",
   "config.reason.other": "Qui non si può modificare con esattezza. Usa il Sorgente.",
   "config.refused.newline": "Un valore non può contenere un a capo qui.",
   "config.refused.empty": "Scrivi qualcosa.",

@@ -1663,6 +1663,8 @@ export default {
   "config.reason.noValue": "Ein Schlüssel ohne Wert. Ändere ihn im Quelltext.",
   "config.reason.empty": "Ein leerer Eintrag. Ändere ihn im Quelltext.",
   "config.reason.unterminated": "Ein Anführungszeichen, das nie schließt. Ändere es im Quelltext.",
+  "config.reason.escape":
+    "Ein Wert mit Escape-Sequenzen, die hier nicht genau erhalten bleiben. Ändere ihn im Quelltext.",
   "config.reason.other": "Das lässt sich hier nicht genau bearbeiten. Nutze den Quelltext.",
   "config.refused.newline": "Ein Wert kann hier keinen Zeilenumbruch enthalten.",
   "config.refused.empty": "Gib etwas ein.",

@@ -3460,6 +3460,7 @@ dependencies = [
  "comrak",
  "dirs",
  "dunce",
+ "html5ever 0.40.1",
  "ignore",
  "interprocess",
  "notify",

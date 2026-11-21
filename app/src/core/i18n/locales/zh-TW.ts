@@ -1582,6 +1582,7 @@ export default {
   "config.reason.noValue": "沒有值的鍵。請在原始碼模式中變更。",
   "config.reason.empty": "空白項目。請在原始碼模式中變更。",
   "config.reason.unterminated": "未結束的引號。請在原始碼模式中變更。",
+  "config.reason.escape": "包含此處無法精確保留之跳脫序列的值。請在原始碼模式中變更。",
   "config.reason.other": "無法在此精確編輯。請使用原始碼模式。",
   "config.refused.newline": "此處的值不能包含換行。",
   "config.refused.empty": "請輸入內容。",

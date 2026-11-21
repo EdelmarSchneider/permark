@@ -179,6 +179,31 @@ describe("editing a TOON sheet", () => {
     expect(root.querySelector(".sheet-table .refusal")?.textContent).toMatch(/already used/);
   });
 
+  it("a held Alt+arrow moves the row once per answer, never from the rows drawn before it", async () => {
+    let release = (): void => {};
+    const edit = vi.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          release = () => resolve(null);
+        }),
+    );
+    const root = await show(team(), { editable: true, edit });
+    const row = root.querySelectorAll("table tbody tr")[2];
+    const press = (): void => {
+      row?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowUp", altKey: true, repeat: true, bubbles: true }),
+      );
+    };
+    press();
+    press();
+    expect(edit).toHaveBeenCalledTimes(1);
+    release();
+    await tick();
+    await tick();
+    press();
+    expect(edit).toHaveBeenCalledTimes(2);
+  });
+
   it("a cell edit goes through the value commit", async () => {
     const commit = vi.fn(() => Promise.resolve(null));
     const root = await show(team(), { editable: true, commit });

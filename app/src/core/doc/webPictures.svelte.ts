@@ -57,13 +57,28 @@ class WebPictures {
 
   /** The chips of `root`: a kept picture shows at once; with the project's choice on, the others are fetched. */
   sweep(api: Api, root: Element, note: (text: string) => void): void {
-    for (const chip of Array.from(root.querySelectorAll(CHIP))) {
-      const url = chip.getAttribute("data-url") ?? "";
-      const kept = this.#kept.get(url);
-      if (kept !== undefined) swap(chip, kept, url);
-      else if (this.always && isHttps(url) && !this.#asking.has(url)) this.#queue.push(chip);
+    this.sweepAdded(api, [root], note);
+  }
+
+  /**
+   * The chips among `nodes` just added to the page (each node and what it holds), as `sweep` does: a block drawn
+   * looks at itself, not at the whole page. Nothing kept and the choice off: nothing to look for.
+   */
+  sweepAdded(api: Api, nodes: Iterable<Node>, note: (text: string) => void): void {
+    if (this.#kept.size === 0 && !this.always) return;
+    for (const node of nodes) {
+      if (!(node instanceof Element) || !node.isConnected) continue;
+      if (node.matches(CHIP)) this.#take(node);
+      for (const chip of Array.from(node.querySelectorAll(CHIP))) this.#take(chip);
     }
     this.#pump(api, note);
+  }
+
+  #take(chip: Element): void {
+    const url = chip.getAttribute("data-url") ?? "";
+    const kept = this.#kept.get(url);
+    if (kept !== undefined) swap(chip, kept, url);
+    else if (this.always && isHttps(url) && !this.#asking.has(url)) this.#queue.push(chip);
   }
 
   /** The person clicked a chip: that one picture is fetched (an address that is not `https` is only told). */

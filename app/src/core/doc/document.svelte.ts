@@ -97,6 +97,8 @@ export type Hooks = {
   modKey(): string;
   /** Settings at the editor choice. */
   chooseEditor(): void;
+  /** An editor shows the text instead of the page, in the same pane: the pane's scroll is the editor's. */
+  editorShown(): boolean;
   /** Tops of the headings of the editor shown instead of the page (`headingTops` of the editor); `null`: the page
    *  shows. */
   editorHeadings(): number[] | null;
@@ -117,6 +119,7 @@ const NO_HOOKS: Hooks = {
   editorSet: () => false,
   modKey: () => "Ctrl",
   chooseEditor: () => {},
+  editorShown: () => false,
   editorHeadings: () => null,
   showEditorHeading: () => false,
   showEditorLine: () => false,
@@ -129,7 +132,7 @@ export class DocumentController {
   currentHeading = $state(-1);
   /** A picture shown large. */
   zoomed = $state.raw<{ src: string; alt: string } | null>(null);
-  readonly host = new BlockHost();
+  readonly host: BlockHost;
   readonly trail = new Trail();
   readonly decorator: Decorator;
   /** Column widths of the page's tables, from their content. */
@@ -182,13 +185,20 @@ export class DocumentController {
   /** The document the page's note is about (it goes when another one shows). */
   #notePage: string | null = null;
 
-  constructor(api: Api = defaultApi) {
+  /** `host`: tests pass one that builds in small slices. */
+  constructor(api: Api = defaultApi, host: BlockHost = new BlockHost()) {
     this.#api = api;
+    this.host = host;
     this.decorator = new Decorator(api);
     this.decorator.refSetup = () => ({
       editorSet: this.#hooks.editorSet(),
       mod: this.#hooks.modKey(),
     });
+    // a formula | highlighted code drawn in a table cell after the table was measured: its columns are measured again
+    this.decorator.mounted = (element) => {
+      const table = element.closest("table");
+      if (table) this.tables.redrawn(table);
+    };
   }
 
   bind(hooks: Hooks): void {
@@ -242,9 +252,10 @@ export class DocumentController {
     void webPictures.show(this.#api, chip, (text) => this.#hooks.note(text));
   }
 
-  /** Kept web pictures take their chips' places; with the project's choice on, the others load. */
-  sweepWebPictures(root: Element): void {
-    webPictures.sweep(this.#api, root, (text) => this.#hooks.note(text));
+  /** Kept web pictures take the places of the chips in `nodes` (added to the page: each node and what it holds); with
+   *  the project's choice on, the others load. */
+  sweepWebPictures(nodes: Iterable<Node>): void {
+    webPictures.sweepAdded(this.#api, nodes, (text) => this.#hooks.note(text));
   }
 
   /** The project's choice: web pictures load by themselves (profile only). */
@@ -502,6 +513,8 @@ export class DocumentController {
     const seq = this.#seq;
     void applied.settled.then(() => {
       if (seq !== this.#seq) return;
+      // headings looked up while the page was still being built were missing then: look them up again
+      this.#headings = [];
       this.#settled(view, s.fresh && !again);
       for (const painted of this.#painters) painted();
     });
@@ -546,28 +559,50 @@ export class DocumentController {
     const line = this.#line;
     this.#anchor = null;
     this.#line = null;
-    if (anchor !== null && this.scrollToAnchor(anchor)) return;
+    // an editor opened on the document before the page was drawn takes the place asked for; the pane's scroll is the
+    // editor's then (the hidden page has no place)
+    const editor = this.#hooks.editorShown();
+    if (
+      anchor !== null &&
+      (editor ? this.#editorAnchor(view, anchor) : this.scrollToAnchor(anchor))
+    )
+      return;
     if (line !== null) {
-      // an editor opened on the document before the page was drawn: the line is its (the hidden page has no place)
       if (!this.#hooks.showEditorLine(line)) this.scrollToLine(line, true);
       return;
     }
     const scroller = this.host.scroller;
-    if (scroller) scroller.scrollTop = reading.scrollOf(view.path) ?? 0;
+    if (scroller && !editor) scroller.scrollTop = reading.scrollOf(view.path) ?? 0;
+  }
+
+  /** The editor shown instead of the page goes to the heading `anchor` names; `false`: no heading of that id. */
+  #editorAnchor(view: DocumentView, anchor: string): boolean {
+    const index =
+      view.body.kind === "markdown" ? view.body.outline.findIndex((h) => h.id === anchor) : -1;
+    if (index < 0) return false;
+    this.goToHeading(index);
+    return true;
+  }
+
+  /** The pane's scroll as the page's reading place; `null`: no page, or an editor scrolls the pane instead. */
+  #pageScroll(): number | null {
+    const scroller = this.host.scroller;
+    return scroller && !this.#hooks.editorShown() ? scroller.scrollTop : null;
   }
 
   /** Remembers where the page of blocks is left. Only while it shows the document named: another viewer keeps its
    *  own place (a text view: a line), which the pane's scroll would overwrite. */
   #leave(): void {
-    const scroller = this.host.scroller;
-    if (this.#shown !== null && scroller && this.current?.body.kind === "markdown")
-      reading.remember(this.#shown, scroller.scrollTop);
+    const place = this.#pageScroll();
+    if (this.#shown !== null && place !== null && this.current?.body.kind === "markdown")
+      reading.remember(this.#shown, place);
   }
 
   /** The reader scrolled: remember the place, find the heading. */
   noteScroll(): void {
     const scroller = this.host.scroller;
-    if (this.#shown !== null && scroller) reading.remember(this.#shown, scroller.scrollTop);
+    const place = this.#pageScroll();
+    if (this.#shown !== null && place !== null) reading.remember(this.#shown, place);
     // the scroll of the jump itself leaves the jumped-to heading current
     const pinned = this.#pinnedAt;
     if (pinned !== null && scroller && Math.abs(scroller.scrollTop - pinned) < 1) return;
@@ -589,23 +624,31 @@ export class DocumentController {
     if (!scroller || view?.body.kind !== "markdown") return -1;
     const outline = view.body.outline;
     // an editor shows the text instead of the page: its headings count (the hidden page has no places)
-    let tops = this.#hooks.editorHeadings();
-    if (tops === null) {
+    const editorTops = this.#hooks.editorHeadings();
+    let count: number;
+    let topAt: (at: number) => number;
+    if (editorTops !== null) {
+      count = editorTops.length;
+      topAt = (at) => editorTops[at] ?? Infinity;
+    } else {
       if (this.#headings.length !== outline.length) {
         this.#headings = outline.map((item) => this.host.byAnchor(item.id));
       }
+      const headings = this.#headings;
       const top = scroller.getBoundingClientRect().top;
+      count = headings.length;
       // not yet built (a document still arriving in slices) counts as far below
-      tops = this.#headings.map((el) =>
-        el?.isConnected ? el.getBoundingClientRect().top - top : Infinity,
-      );
+      topAt = (at) => {
+        const el = headings[at];
+        return el?.isConnected ? el.getBoundingClientRect().top - top : Infinity;
+      };
     }
     // a heading within the first bit of the pane counts as reached (a jump leaves it a little below the edge); at the
     // bottom of a page that scrolled, the headings below can never reach the top: the last one in view counts
     const { scrollTop, clientHeight, scrollHeight } = scroller;
     const bottom =
       scrollTop > 0 && scrollHeight > clientHeight && scrollTop + clientHeight >= scrollHeight - 1;
-    const reached = currentIndex(tops, bottom ? clientHeight - 40 : 40);
+    const reached = currentIndex(count, topAt, bottom ? clientHeight - 40 : 40);
     return Math.min(reached, outline.length - 1);
   }
 
@@ -639,12 +682,20 @@ export class DocumentController {
     if (view?.body.kind !== "markdown" || !scroller) return 1;
     // at the top, what stands above the first block (the front matter's properties) is in view too
     if (scroller.scrollTop <= 0) return 1;
+    const blocks = view.body.blocks;
     const top = scroller.getBoundingClientRect().top;
-    for (const block of view.body.blocks) {
-      const element = this.host.element(block.id);
-      if (element && element.getBoundingClientRect().bottom > top + 1) return block.lineStart;
-    }
-    return 1;
+    // the first block from `at` on that is on the page (one still being built, or that a plugin draws another way,
+    // is not); blocks.length: none
+    const onPage = (at: number): number => {
+      let next = at;
+      while (next < blocks.length && !this.host.element(blocks[next]?.id ?? "")) next += 1;
+      return next;
+    };
+    // bottoms only grow down the page: the first block whose bottom is below the pane's top, found by a search
+    const bottomAt = (at: number): number =>
+      this.host.element(blocks[onPage(at)]?.id ?? "")?.getBoundingClientRect().bottom ?? Infinity;
+    const first = onPage(currentIndex(blocks.length, bottomAt, top + 1) + 1);
+    return blocks[first]?.lineStart ?? 1;
   }
 
   /** Scrolls the block holding `line` to the top of the pane; `locate`: it is tinted a moment (a place was asked). */
@@ -932,9 +983,9 @@ export class DocumentController {
     const from = ahead?.path ?? shown;
     if (path === from) return;
     this.trail.rename(from, path);
-    // the place is read when the moved document is painted
-    const scroller = this.host.scroller;
-    if (scroller) reading.remember(path, scroller.scrollTop);
+    // the place is read when the moved document is painted (an editor on screen: the page's place from before)
+    const place = this.#pageScroll() ?? reading.scrollOf(from);
+    if (place !== null) reading.remember(path, place);
     // moved back before the window was told to go: it is where it should be
     if (path === shown && ahead?.placed !== true) {
       this.#following = null;

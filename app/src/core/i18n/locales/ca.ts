@@ -1655,6 +1655,8 @@ export default {
   "config.reason.noValue": "Una clau sense valor. Canvieu-la al codi font.",
   "config.reason.empty": "Un element buit. Canvieu-lo al codi font.",
   "config.reason.unterminated": "Unes cometes que no es tanquen mai. Canvieu-ho al codi font.",
+  "config.reason.escape":
+    "Un valor amb codis d'escapada que aquí no es poden conservar exactament. Canvieu-ho al codi font.",
   "config.reason.other": "Això no es pot editar exactament aquí. Feu servir el codi font.",
   "config.refused.newline": "Aquí un valor no pot contenir un salt de línia.",
   "config.refused.empty": "Escriviu alguna cosa.",

@@ -263,9 +263,7 @@ describe("sanitizeSvg", () => {
 
   it("a style whose CDATA holds a closing tag stays text on the page", () => {
     const page = onPage(
-      svg(
-        '<style><![CDATA[</style><img src=x onerror=alert(1)>]]></style><rect width="1" height="1"/>',
-      ),
+      `<svg id="d" xmlns="${SVG_NS}"><style><![CDATA[#d .a{content:"</style><img src=x onerror=alert(1)>"}]]></style><rect width="1" height="1"/></svg>`,
     );
     expect(tags(page)).toEqual(["style", "rect"]);
     expect(page.querySelector("style")?.textContent).toContain("<img");
@@ -305,6 +303,197 @@ describe("sanitizeSvg", () => {
     const doubled =
       '<svg xmlns="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg"><g/></svg>';
     expect(sanitizeSvg(doubled)).not.toBeNull();
+  });
+});
+
+describe("sanitizeSvg CSS", () => {
+  const ID = "pm-mermaid-1-abcd1234";
+  /** The drawing's root in a selector: Mermaid starts every selector of its CSS with it. */
+  const R = `#${ID}`;
+  /** A drawing the way Mermaid writes one: its id on the root, its CSS in one `<style>` scoped to that id. */
+  const drawing = (inner: string, rootStyle = "max-width: 80px;"): string =>
+    `<svg id="${ID}" width="100%" xmlns="${SVG_NS}" style="${rootStyle}" viewBox="0 0 80 40">${inner}</svg>`;
+  const scoped = (css: string, rootStyle?: string): string =>
+    drawing(`<style>${css}</style><g><rect class="node" width="10" height="10"/></g>`, rootStyle);
+  const sheet = (page: Element): string | null | undefined =>
+    page.querySelector("style")?.textContent;
+  const styled = (css: string): Element => onPage(scoped(css));
+
+  it("a style reaches only the drawing: a rule for anything outside its root goes", () => {
+    const cases: [string, string][] = [
+      ["body{display:none}", ""],
+      ["*{visibility:hidden}", ""],
+      ['body::before{content:"x"}', ""],
+      [":root{--bg:red}", ""],
+      [`:root ${R}{fill:red}`, ""],
+      [`#other ${R}{fill:red}`, ""],
+      // a longer id is another element
+      [`${R}x .node{fill:red}`, ""],
+      // the root's siblings are the page's
+      [`${R} ~ p{display:none}`, ""],
+      [`${R}+p{display:none}`, ""],
+      [`${R}:hover ~ p{display:none}`, ""],
+      [`${R}.a:is(.b) ~ p{display:none}`, ""],
+      // a drawing without its own rules keeps nothing
+      ["{fill:red}", ""],
+      [`${R} .node{fill:red}`, `${R} .node{fill:red}`],
+      [`${R}{fill:red}`, `${R}{fill:red}`],
+      [`${R}>g,${R}.a:nth-child(2n+1) .b{fill:red}`, `${R}>g,${R}.a:nth-child(2n+1) .b{fill:red}`],
+      // only the selectors outside go from a list
+      [`${R} .a, body{fill:red}`, `${R} .a{fill:red}`],
+      [`body, ${R} .a{fill:red}`, `${R} .a{fill:red}`],
+      [`html,body, ${R} .a ,p,${R} .b{fill:red}`, `${R} .a ,${R} .b{fill:red}`],
+      [`:is(${R}, body) .a{fill:red}`, ""],
+      // garbage between rules is no rule
+      [`x;${R} .a{fill:red}`, `${R} .a{fill:red}`],
+      [`${R} .a{fill:red} body`, `${R} .a{fill:red}`],
+      // inside a rule a nested rule follows the same check
+      [`${R} .a{fill:red;&amp; ~ p{display:none}}`, `${R} .a{fill:red;}`],
+      // group rules: their rules are checked; a rule list the page reads page-wide goes
+      [`@media screen{body{display:none}${R} .a{fill:red}}`, `@media screen{${R} .a{fill:red}}`],
+      [`@supports (display:grid){*{color:red}}`, "@supports (display:grid){}"],
+      [`@layer a, b;${R} .a{fill:red}`, `${R} .a{fill:red}`],
+      [`@layer a{${R} .a{fill:red}}`, ""],
+      [`@namespace x "urn:x";${R} .a{fill:red}`, `${R} .a{fill:red}`],
+      ['@charset "utf-8";', ""],
+      ["@font-face{font-family:f}", ""],
+      ["@page{margin:0}", ""],
+      ['@property --bg{syntax:"*";inherits:false}', ""],
+      ["@container (width > 1px){body{display:none}}", ""],
+      ["@scope (body){:scope{display:none}}", ""],
+      // keyframe names are the page's: the app's (and its editors') are never taken over
+      ["@keyframes pm-fade{to{opacity:0}}", ""],
+      ['@keyframes "pm-glow-fade"{to{opacity:0}}', ""],
+      ["@-webkit-keyframes PM-fade{to{opacity:0}}", ""],
+      ["@keyframes svelte-1x2y3z-chip-in{to{opacity:0}}", ""],
+      ["@keyframes cm-blink{50%{opacity:0}}", ""],
+      ["@keyframes ProseMirror-cursor-blink{to{opacity:0}}", ""],
+      ["@keyframes dash{to{stroke-dashoffset:0;}}", "@keyframes dash{to{stroke-dashoffset:0;}}"],
+      [
+        "@keyframes edge-animation-frame{from{stroke-dashoffset:0}}",
+        "@keyframes edge-animation-frame{from{stroke-dashoffset:0}}",
+      ],
+    ];
+    for (const [written, kept] of cases) expect(sheet(styled(written)), written).toBe(kept);
+  });
+
+  it("a drawing's style reaches nothing when its root has no id the page reads as one", () => {
+    expect(sheet(onPage(svg('<style>svg .a{fill:red}</style><rect width="1" height="1"/>')))).toBe(
+      "",
+    );
+    // the page's HTML parse lowercases attribute names: two of them would be one id there
+    const twice = `<svg id="${ID}" ID="app" xmlns="${SVG_NS}"><style>${R} .a{fill:red}</style><g/></svg>`;
+    expect(sheet(onPage(twice))).toBe("");
+  });
+
+  it("a theme's CSS that would lift the drawing over the window loses its position, nothing else", () => {
+    // a Mermaid `themeCSS` of `position:fixed;inset:0` lands on the drawing's root: out of the flow, no box clips it
+    const page = onPage(
+      scoped(
+        `#${ID}{position:fixed;inset:0;background:red}#${ID} .node{fill:#eee;}`,
+        "max-width: 80px; position: fixed; top: 0",
+      ),
+    );
+    expect(sheet(page)).toBe(`#${ID}{inset:0;background:red}#${ID} .node{fill:#eee;}`);
+    expect(page.getAttribute("style")).toBe("max-width: 80px; top: 0");
+  });
+
+  it("reads a position the way the page does: any case, comment or escape; only an in-flow one stays", () => {
+    const dropped = [
+      "POSITION : FIXED !important",
+      String.raw`p\osition:fixed`,
+      String.raw`posit\69 on: sticky`,
+      String.raw`position: fix\65 d`,
+      "position:/**/fixed",
+      "position: -webkit-sticky",
+      "position: absolute",
+      "position: relative",
+      "position: var(--p)",
+      "position: inherit",
+      "position: static fixed",
+      "position: static !important fixed",
+    ];
+    for (const written of dropped) {
+      const page = onPage(
+        drawing(
+          `<style>${R} .a{${written}}</style><rect class="a" style="${written}" width="1" height="1"/>`,
+        ),
+      );
+      expect(sheet(page), written).toBe(`${R} .a{}`);
+      expect(page.querySelector("rect")?.getAttribute("style"), written).toBe("");
+    }
+    for (const kept of ["position: static", "position:STATIC !important", "position: initial"]) {
+      expect(sheet(styled(`${R} .a{${kept}}`)), kept).toBe(`${R} .a{${kept}}`);
+    }
+  });
+
+  it("a brace in a string, a comment or a function never hides a declaration", () => {
+    const cases: [string, string][] = [
+      [`${R} .a{content:"}";position:fixed}`, `${R} .a{content:"}";}`],
+      [`/* } */${R} .b{ position:fixed; }`, `/* } */${R} .b{ }`],
+      [`${R} .c{x:f({;});position:fixed}`, `${R} .c{x:f({;});}`],
+      [`@media screen{${R} .d{position:fixed}}`, `@media screen{${R} .d{}}`],
+      [`${R} .e{${R} .f{position:sticky}}`, `${R} .e{${R} .f{}}`],
+      [`} ${R} .g{position:fixed}`, `} ${R} .g{}`],
+    ];
+    for (const [written, kept] of cases) expect(sheet(styled(written)), written).toBe(kept);
+  });
+
+  it("an attribute keeps only CSS references to parts of the drawing", () => {
+    const page = onPage(
+      svg(
+        `<linearGradient id="g"/><rect fill="url(#g)" filter="url( #g )" stroke="url(https://x.test/p.png)" mask="url('x.svg#m')" clip-path="url(&quot; #g&quot;)" cursor="u&#x5C;72l(x.png), auto" marker-end="URL(pm-asset://x.svg#m)" aria-label="see url(x)" style="fill:url(&quot;#g&quot;); stroke:url(//x.test/a.png); cursor:image-set(&quot;x.png&quot; 1x)" width="1" height="1"/>`,
+      ),
+    );
+    const rect = page.querySelector("rect");
+    expect(rect?.getAttributeNames()).toEqual([
+      "fill",
+      "filter",
+      "aria-label",
+      "style",
+      "width",
+      "height",
+    ]);
+    expect(rect?.getAttribute("style")).toBe('fill:url("#g");');
+  });
+
+  it("a style keeps only CSS references to parts of the drawing", () => {
+    const cases: [string, string][] = [
+      [`${R} .a{fill:url(#g);background:url(pm-asset://x.png)}`, `${R} .a{fill:url(#g);}`],
+      [`${R} .a{marker-end:url("#m")}`, `${R} .a{marker-end:url("#m")}`],
+      [`${R} .b{background:image-set("https://x.test/a.png" 1x)}`, `${R} .b{}`],
+      [`${R} .b{background:-webkit-image-set("a.png" 1x)}`, `${R} .b{}`],
+      [`${R} .b{background:src("a.png")}`, `${R} .b{}`],
+      [`${R} .b{background:url(" #g")}`, `${R} .b{}`],
+      [`${R} .b{background:url(a"b)}`, `${R} .b{}`],
+      [String.raw`${R} .b{background:u\rl(//x.test/a)}`, `${R} .b{}`],
+      [`${R} .c{--u:url(//x.test/a);fill:red}`, `${R} .c{fill:red}`],
+      ["@font-face{font-family:f;src:url(data:font/woff2;base64,AA)}", ""],
+      [`@import "x.css";${R} .d{fill:red}`, `${R} .d{fill:red}`],
+      [`@import url(x.css);${R} .d{fill:red}`, `${R} .d{fill:red}`],
+      [
+        `@supports (background:url(x.png)){${R} .e{fill:red}}${R} .f{fill:red}`,
+        `${R} .f{fill:red}`,
+      ],
+      [`${R} .g{fill:red;background:url(https://x.test/a}`, `${R} .g{fill:red;`],
+    ];
+    for (const [written, kept] of cases) expect(sheet(styled(written)), written).toBe(kept);
+  });
+
+  it("a style holding elements goes: the page reads only its own text as CSS", () => {
+    const page = onPage(
+      svg('<style>.a{fill:red}<g/>.b{fill:url(</style><rect width="1" height="1"/>'),
+    );
+    expect(tags(page)).toEqual(["rect"]);
+  });
+
+  it("leaves a drawing's own CSS byte for byte when nothing in it moves or loads", () => {
+    const own = scoped(
+      `#${ID}{font-family:"trebuchet ms",verdana;font-size:16px;fill:#333;}#${ID} .marker{fill:#333;stroke:#333;}/* a } note */` +
+        `#${ID} .edge{marker-end:url(#${ID}_flowchart-v2-pointEnd);content:"{";}@keyframes dash{to{stroke-dashoffset:0;}}` +
+        `@media (prefers-reduced-motion){#${ID} .edge{animation:none;position:static}}`,
+    );
+    expect(sanitizeSvg(own)).toBe(own);
   });
 });
 

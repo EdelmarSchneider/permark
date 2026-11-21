@@ -102,8 +102,104 @@ fn corpus_keeps_every_guarantee() {
             ("anchors.yml", ANCHORS),
             ("k8s.yaml", K8S),
             ("multi.yaml", MULTI),
+            ("escapes.yaml", ESCAPES),
         ],
     );
+}
+
+/// Double-quoted strings: escapes the sheet writes back exactly (`plain`, `tags[1]`) beside YAML escapes it does not
+/// decode (a rewrite through its own escapes would change what they mean).
+const ESCAPES: &str = r#"plain: "tab\there \"q\" back\\slash é \/ nul\0"
+ansi: "\e[1m x"
+latin: "Configura\xE7\xE3o"
+emoji: "\U0001F600"
+half: "\uD800"
+short: "\u12"
+signed: "\u+041"
+spaced: "a\ b"
+tags: ["\e", "ok\n"]
+"#;
+
+fn set_text(text: &str, path: &str, to: &str) -> Result<String, EditRefusal> {
+    format()
+        .edit(
+            text,
+            &ConfigEdit::Set {
+                path: path.to_owned(),
+                value: NewValue::Text {
+                    text: to.to_owned(),
+                },
+            },
+        )
+        .map(|splice| splice.apply(text))
+}
+
+#[test]
+fn a_string_with_an_escape_the_sheet_cannot_keep_is_read_only() {
+    let sheet = format().sheet(ESCAPES).expect("parses");
+    let reason = |path: &str| match sheet.scalar(path).map(|s| &s.edit) {
+        Some(Editability::ReadOnly { reason }) => Some(reason.clone()),
+        _ => None,
+    };
+    for path in [
+        "ansi", "latin", "emoji", "half", "short", "signed", "spaced", "tags[0]",
+    ] {
+        assert_eq!(reason(path).as_deref(), Some("escape"), "{path}");
+        assert_eq!(
+            set_text(ESCAPES, path, "x"),
+            Err(EditRefusal::ReadOnly("escape".to_owned())),
+            "{path}"
+        );
+    }
+    assert_eq!(reason("plain"), None);
+    assert_eq!(reason("tags[1]"), None);
+    assert_eq!(
+        sheet.scalar("plain").map(|s| s.text.as_str()),
+        Some("tab\there \"q\" back\\slash \u{e9} / nul\0")
+    );
+    // an edit next to them leaves their bytes; an edit of a known-escape string writes its escapes back
+    assert_eq!(
+        set_text(ESCAPES, "tags[1]", "two").as_deref(),
+        Ok(ESCAPES.replace(r#""ok\n""#, r#""two""#).as_str())
+    );
+    let plain = r#""tab\there \"q\" back\\slash é \/ nul\0""#;
+    assert_eq!(
+        set_text(ESCAPES, "plain", "new \"q\"\tand \\ end").as_deref(),
+        Ok(ESCAPES
+            .replace(plain, r#""new \"q\"\tand \\ end""#)
+            .as_str())
+    );
+    // the properties of a Markdown document are edited as this same YAML
+    let front = "title: \"Configura\\xE7\\xE3o\"\ndraft: \"no\"\n";
+    assert_eq!(
+        set_text(front, "title", "Configuração"),
+        Err(EditRefusal::ReadOnly("escape".to_owned()))
+    );
+    assert_eq!(
+        set_text(front, "draft", "yes").as_deref(),
+        Ok("title: \"Configura\\xE7\\xE3o\"\ndraft: \"yes\"\n")
+    );
+}
+
+#[test]
+fn lists_and_mappings_nested_deeper_than_followed_are_one_read_only_row() {
+    // `- key:` under `key:` at the same indent: each level a list, then a mapping, 600 times
+    let mut text = String::from("k0:\n");
+    for level in 1..=600 {
+        let _ = writeln!(text, "{}- k{level}:", "  ".repeat(level - 1));
+    }
+    let _ = writeln!(text, "{}- leaf", "  ".repeat(600));
+    let worker = std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(move || {
+            let sheet = format().sheet(&text).expect("parses");
+            let nested = sheet.rows().any(
+                |(_, row)| matches!(&row.value, RowValue::Raw { reason, .. } if reason == "nested"),
+            );
+            nested
+        })
+        .expect("thread");
+    assert_eq!(worker.join().ok(), Some(true));
 }
 
 #[test]

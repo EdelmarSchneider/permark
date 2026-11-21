@@ -1568,6 +1568,7 @@ export default {
   "config.reason.noValue": "没有值的键。请在源码中修改。",
   "config.reason.empty": "空项目。请在源码中修改。",
   "config.reason.unterminated": "一个始终没有闭合的引号。请在源码中修改。",
+  "config.reason.escape": "包含此处无法精确保留的转义序列的值。请在源码中修改。",
   "config.reason.other": "此处无法精确编辑，请使用源码。",
   "config.refused.newline": "此处的值不能包含换行。",
   "config.refused.empty": "请输入内容。",

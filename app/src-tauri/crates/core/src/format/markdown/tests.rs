@@ -753,6 +753,431 @@ fn nesting_bombs_fall_back_to_plain_text_without_hanging() {
 }
 
 #[test]
+fn nesting_the_tokenizer_reads_falls_back_even_where_a_naive_scan_sees_none() {
+    let started = std::time::Instant::now();
+    let n = 5000;
+    let distinct = (0..n).fold(String::new(), |mut all, i| {
+        let _ = write!(all, "<p><b x={i}>a</p>");
+        all
+    });
+    for md in [
+        // a self-closing slash is ignored on an HTML element that is not void
+        "<div/>".repeat(n) + "x",
+        // a quote opens a value only after `=`
+        "<div b'c>".to_owned() + &"<div>".repeat(n),
+        // a comment also ends at `--!>`
+        "<!-- x --!>".to_owned() + &"<div>".repeat(n),
+        // an end tag with nothing open to close closes nothing
+        "<div></p>".repeat(n),
+        // raw text: a `<!--` in a style is text
+        "<div><style><!--</style>".to_owned() + &"<div>".repeat(n),
+        // script escapes: the first `</script>` after `<!--<script>` does not end the script
+        "<div><script><!--<script></script></div></script>".repeat(n),
+        // a bogus comment ends at the first `>`, quotes or not
+        "<div><?'>".to_owned() + &"<div>".repeat(n),
+        // an element the parser closed by itself is not closed again past what came after
+        "<p><ul></p>".repeat(n),
+        // formatting elements the parser opens again in each paragraph
+        distinct,
+    ] {
+        let (blocks, _, _, notes) = parts(&md, &all_features());
+        assert_eq!(notes, [DEEP_NESTING_NOTE], "{}", &md[..60]);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].kind, "pre");
+    }
+    assert!(
+        started.elapsed().as_secs() < 30,
+        "too slow: {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn shallow_svg_and_well_formed_html_still_render() {
+    let paths = format!(
+        "<svg viewBox=\"0 0 10 10\">\n{}</svg>\n\nAfter the drawing.\n",
+        "<path d=\"M0 0h1\"/>\n".repeat(1000)
+    );
+    let label = format!(
+        "<svg><foreignObject><div><span><p>label</p></span></div></foreignObject>\n{}</svg>\n\nAfter.\n",
+        "<rect/>".repeat(1000)
+    );
+    let anchors = "<a name=\"x\"/>\n\n## Heading\n\ntext\n\n".repeat(400);
+    let sloppy = [
+        // an HTML end tag inside SVG closes the HTML element around it
+        "<div><svg><g><circle/></div>\n\nAfter.\n".to_owned(),
+        // MathML that holds HTML
+        "<math><annotation-xml encoding=\"text/html\"><div><p>x</p></div></annotation-xml><mi>y</mi></math>\n\nAfter.\n"
+            .to_owned(),
+        "<math><mtext><b>x</b></mtext><mi>y</math>\n".to_owned(),
+        // a formatting element left open before a drawing with text
+        "<b>bold <svg><text>t</text></svg> after\n\nMore.\n".to_owned(),
+        // the parser closes these by itself
+        "<p>a<p>b<p>c\n".repeat(400),
+        "<ul><li>a<li>b<li>c</ul>\n".repeat(400),
+    ];
+    for md in [paths, label, anchors].into_iter().chain(sloppy) {
+        let (blocks, _, _, notes) = parts(&md, &all_features());
+        assert!(notes.is_empty(), "{}", md.get(..60).unwrap_or(&md));
+        assert!(blocks.iter().all(|b| b.kind != "pre"));
+    }
+}
+
+/// One open `div`, then rounds of a formatting element left open across blocks: the parser clones it into later blocks
+/// and moves the clones around again on each `</b>` (distinct ids: it keeps all of them), so the tree it builds grows
+/// with the square of the rounds while the tags of the input never nest more than a dozen deep.
+fn cloned_formatting(rounds: usize) -> String {
+    let mut html = String::from("<div>\n");
+    for i in 0..rounds {
+        let _ = write!(
+            html,
+            "<div><b id=i{i}></div><div>x{}</b>{}",
+            "<div>".repeat(9),
+            "</div>".repeat(10)
+        );
+    }
+    html
+}
+
+#[test]
+fn formatting_elements_cloned_by_the_parser_fall_back_fast() {
+    let started = std::time::Instant::now();
+    let (blocks, _, _, notes) = parts(&cloned_formatting(400), &all_features());
+    assert_eq!(notes, [DEEP_NESTING_NOTE]);
+    assert_eq!(blocks.len(), 1);
+    assert!(started.elapsed().as_secs() < 2, "{:?}", started.elapsed());
+}
+
+/// `count` pieces of `each(i)`, one after the other.
+fn run(count: usize, each: impl Fn(usize) -> String) -> String {
+    (0..count).map(each).collect()
+}
+
+#[test]
+fn html_the_sanitizer_would_parse_slowly_falls_back_fast() {
+    let mega = 1_000_000;
+    let attrs = run(200, |i| format!(" a{i}"));
+    for (what, md) in [
+        // nodes put before a table one by one: each passes every sibling put there before it
+        ("foster", format!("<table>{}", "<br>".repeat(mega / 4))),
+        // stray `<html>` tags: each looks at every attribute the root already holds
+        ("stray html", run(mega / 13, |i| format!("<html a{i}>"))),
+        // one tag with a huge number of attributes: each name is checked against every earlier one
+        (
+            "attributes",
+            format!("<div{}>x</div>", run(mega / 7, |i| format!(" a{i}"))),
+        ),
+        // a formatting element with many attributes copied into each later paragraph
+        (
+            "rebuilt",
+            format!("<p><b{attrs}></p>{}", "<p>x</p>".repeat(mega / 8)),
+        ),
+        // each new `<b>` compared with 250 open ones
+        (
+            "compared",
+            format!(
+                "{}{}",
+                run(250, |i| format!("<b x={i}>")),
+                "<b></b>".repeat(mega / 7)
+            ),
+        ),
+    ] {
+        let started = std::time::Instant::now();
+        let (blocks, _, _, notes) = parts(&md, &all_features());
+        let elapsed = started.elapsed();
+        assert_eq!(notes, [DEEP_NESTING_NOTE], "{what}");
+        assert_eq!(blocks.len(), 1, "{what}");
+        assert!(elapsed.as_secs() < 2, "{what}: {elapsed:?}");
+    }
+}
+
+#[test]
+fn the_guard_depth_holds_where_the_input_is_cut_into_chunks() {
+    // the guard hands the parser its input a chunk at a time: a tag, a character reference and a line end cut in two
+    // there are read as the sanitizer reads them whole
+    for (head, tail) in [
+        ("<di", "v class=a><div><p>x</p></div></div>"),
+        ("<div title=\"a&no", "tin;b\"><div><b>y</b></div></div>"),
+        ("<div>&no", "tin;<ul><li>z</ul></div>"),
+        ("<div>\r", "\n<div><p>w\r\n</div></div>"),
+    ] {
+        let pad = "a".repeat(nesting::CHUNK - head.len());
+        let html = format!("{pad}{head}{tail}");
+        assert_eq!(&html[nesting::CHUNK - head.len()..nesting::CHUNK], head);
+        let found = nesting::deepest(&html, usize::MAX - 1);
+        let made = sanitized_depth(&sanitize::sanitize(&html, "docs/a.md"));
+        assert_eq!(found, made, "{head}|{tail}");
+        assert!(found >= 2, "{head}|{tail}");
+    }
+}
+
+#[test]
+fn a_piece_cut_inside_raw_text_is_measured_as_the_sanitizer_reads_it() {
+    // the cuts between pieces come from a plain tag scan, which sees no raw text: the cut after `</p>` falls inside the
+    // text area, and the sanitizer parses the rest as markup on its own
+    let md = format!(
+        "<p><textarea>{}</p>{}</textarea></p>\n",
+        "a".repeat(40_000),
+        cloned_formatting(400)
+    );
+    let started = std::time::Instant::now();
+    let (blocks, _, _, notes) = parts(&md, &all_features());
+    assert!(started.elapsed().as_secs() < 2, "{:?}", started.elapsed());
+    // either the deep tree is caught, or what reached the sanitizer was shallow
+    let deepest = blocks
+        .iter()
+        .map(|b| sanitized_depth(b.html.as_deref().unwrap_or_default()))
+        .max()
+        .unwrap_or(0);
+    assert!(notes == [DEEP_NESTING_NOTE] || deepest <= MAX_TREE_DEPTH);
+}
+
+/// The deepest element nesting of sanitized HTML (balanced tags, quoted values, no comments); an element without an end
+/// tag is one level below its parent.
+fn sanitized_depth(html: &str) -> usize {
+    const VOID: [&str; 8] = ["area", "br", "col", "hr", "img", "input", "source", "wbr"];
+    let (mut depth, mut deepest, mut quote) = (0_usize, 0_usize, None);
+    let mut tag: Option<usize> = None;
+    for (at, c) in html.char_indices() {
+        match (tag, quote) {
+            (None, _) if c == '<' => tag = Some(at),
+            (Some(_), Some(q)) if c == q => quote = None,
+            (Some(_), None) if c == '"' || c == '\'' => quote = Some(c),
+            (Some(start), None) if c == '>' => {
+                let inner = &html[start + 1..at];
+                let name: String = inner
+                    .trim_start_matches('/')
+                    .chars()
+                    .take_while(char::is_ascii_alphanumeric)
+                    .collect();
+                if inner.starts_with('/') {
+                    depth = depth.saturating_sub(1);
+                } else if VOID.contains(&name.as_str()) {
+                    deepest = deepest.max(depth + 1);
+                } else {
+                    depth += 1;
+                    deepest = deepest.max(depth);
+                }
+                tag = None;
+            }
+            _ => {}
+        }
+    }
+    deepest
+}
+
+#[test]
+fn the_guard_depth_is_the_depth_of_the_sanitized_tree() {
+    let distinct = (0..40).fold(String::new(), |mut all, i| {
+        let _ = write!(all, "<p><b x={i}>a</p>");
+        all
+    });
+    // sloppy markup the parser mends, all with tags the sanitizer keeps: the tree it builds is the tree it hands on
+    for html in [
+        cloned_formatting(20),
+        distinct,
+        "<p><b>a</p>".repeat(50),
+        "<div></p>".repeat(30),
+        "<p><ul></p>".repeat(30),
+        "<span><div></span>".repeat(30),
+        "<a href=x>1<a href=y>2<div>3</a>4".repeat(20),
+        "<b><i><u>x<p>y</b>z</i>w</u>".repeat(20),
+        "<table><tr><td>a<b>b<table><td>c</b></table>".repeat(10),
+        "<table><div><table><div>x</div></table></div></table>".repeat(10),
+        "<table><b>x<tr><td>y</b></td></tr></table>".repeat(10),
+        "<ul><li><b>a<li>b</b><li><div>c</ul>".repeat(20),
+        "<dl><dt>a<dd><p>b<dt>c</dl>".repeat(20),
+        "<h1><b>a<h2>b</h1>c</b>".repeat(20),
+        "<pre><code><em>a</pre>b</em>".repeat(20),
+        "<p>x<br><img src=a.png></p>".to_owned(),
+    ] {
+        let found = nesting::deepest(&html, usize::MAX - 1);
+        let made = sanitized_depth(&sanitize::sanitize(&html, "docs/a.md"));
+        assert_eq!(found, made, "{}", html.get(..60).unwrap_or(&html));
+    }
+    // past the limit as the rounds grow
+    assert_eq!(
+        nesting::deepest(&cloned_formatting(400), MAX_TREE_DEPTH),
+        usize::MAX
+    );
+}
+
+#[test]
+fn sample_pages_render_without_the_depth_fallback() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let mut pages = Vec::new();
+    for dir in [
+        "../demo",
+        "../demo/station",
+        "e2e/deep/corpus",
+        "e2e/deep/corpus/security",
+    ] {
+        let Ok(entries) = std::fs::read_dir(root.join(dir)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "md") {
+                pages.push(path);
+            }
+        }
+    }
+    assert!(pages.len() >= 20, "{} pages", pages.len());
+    for page in pages {
+        let Ok(text) = std::fs::read_to_string(&page) else {
+            continue;
+        };
+        let (blocks, _, _, notes) = parts(&text, &all_features());
+        // the guard's answer matches the depth of what the sanitizer made
+        let deepest = blocks
+            .iter()
+            .map(|b| sanitized_depth(b.html.as_deref().unwrap_or_default()))
+            .max()
+            .unwrap_or(0);
+        assert!(notes.is_empty(), "{}", page.display());
+        assert!(deepest <= MAX_TREE_DEPTH, "{}", page.display());
+    }
+}
+
+#[test]
+fn an_unclosed_link_to_a_heading_keeps_the_text_after_it() {
+    let md = "Read <a href=\"#setup\">the setup\n\nMore text.\n\n## Setup\n\nBody.\n";
+    let (blocks, outline, _, _) = parts(md, &MarkdownFeatures::default());
+    let html = blocks
+        .iter()
+        .map(|b| b.html.clone().unwrap_or_default())
+        .collect::<String>();
+    assert!(html.contains("the setup"), "{html}");
+    assert!(html.contains("More text."), "{html}");
+    // the parser opens the link again around what follows, the heading included
+    assert!(html.contains("<h2 id=\"setup\""), "{html}");
+    assert_eq!(outline.len(), 1);
+    assert!(!outline[0].block.is_empty());
+}
+
+/// The outline as it was first written: the first block holding each heading's line, searched from the start.
+fn outline_by_search(
+    headings: &[Heading],
+    parts: &[blocks::RawBlock],
+    ids: &[String],
+) -> Vec<String> {
+    headings
+        .iter()
+        .map(|heading| {
+            parts
+                .iter()
+                .position(|p| p.line_start <= heading.line && heading.line <= p.line_end)
+                .and_then(|at| ids.get(at))
+                .cloned()
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+fn heading_at(line: u32) -> Heading {
+    Heading {
+        label: String::new(),
+        level: 2,
+        id: String::new(),
+        line,
+    }
+}
+
+fn block_over(line_start: u32, line_end: u32) -> blocks::RawBlock {
+    blocks::RawBlock {
+        html: String::new(),
+        tag: "p".to_owned(),
+        line_start,
+        line_end,
+    }
+}
+
+#[test]
+fn outline_links_each_heading_to_the_first_block_holding_its_line() {
+    // a small fixed generator: blocks in any order, overlapping or not; headings in line order, a few out of it
+    let mut state = 0x2545_f491_u32;
+    let mut next = |below: u32| {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        state % below
+    };
+    for _ in 0..300 {
+        let parts: Vec<_> = (0..next(30))
+            .map(|_| {
+                let start = next(60) + 1;
+                block_over(start, start + next(4))
+            })
+            .collect();
+        let ids: Vec<String> = (0..parts.len()).map(|i| format!("b{i}")).collect();
+        let mut lines: Vec<u32> = (0..next(20)).map(|_| next(66) + 1).collect();
+        lines.sort_unstable();
+        if next(4) == 0 && lines.len() > 2 {
+            lines.swap(0, 2);
+        }
+        // footnote headings: moved to the end of the document, they keep their (earlier) lines
+        if next(3) == 0 {
+            let mut notes: Vec<u32> = (0..next(8)).map(|_| next(66) + 1).collect();
+            notes.sort_unstable();
+            lines.extend(notes);
+        }
+        let headings: Vec<Heading> = lines.into_iter().map(heading_at).collect();
+        let fast: Vec<String> = outline_of(&headings, &parts, &ids)
+            .into_iter()
+            .map(|item| item.block)
+            .collect();
+        assert_eq!(fast, outline_by_search(&headings, &parts, &ids));
+    }
+}
+
+#[test]
+fn outline_of_many_headings_stays_linear() {
+    let count = 50_000_u32;
+    let parts: Vec<_> = (0..count)
+        .map(|i| block_over(2 * i + 1, 2 * i + 1))
+        .collect();
+    let ids: Vec<String> = (0..parts.len()).map(|i| format!("b{i}")).collect();
+    let headings: Vec<Heading> = (0..count).map(|i| heading_at(2 * i + 1)).collect();
+    let started = std::time::Instant::now();
+    let outline = outline_of(&headings, &parts, &ids);
+    let elapsed = started.elapsed();
+    assert_eq!(outline.len(), 50_000);
+    assert_eq!(outline[49_999].block, "b49999");
+    // a loose bound for debug builds: the search from the start took seconds here
+    assert!(elapsed.as_millis() < 1000, "{elapsed:?}");
+}
+
+#[test]
+fn headings_in_footnotes_come_last_and_still_find_their_blocks() {
+    let md = "x[^1] y[^2]\n\n# Top\n\n[^1]: # One\n\n[^2]: ## Two\n\n# End\n";
+    let (blocks, outline, _, _) = parts(md, &all_features());
+    // comrak moves the footnote definitions, headings and all, after the rest of the document
+    let lines: Vec<u32> = outline.iter().map(|item| item.line).collect();
+    assert_eq!(lines, [3, 9, 5, 7]);
+    let footnotes = blocks.iter().find(|b| b.kind == "section").map(|b| &b.id);
+    assert_eq!(
+        outline[2].block.as_str(),
+        footnotes.map_or("", |id| id.as_str())
+    );
+    // 200 000 of them: each found without a search over every block
+    let count = 200_000_u32;
+    let parts: Vec<_> = (0..count)
+        .map(|i| block_over(2 * i + 1, 2 * i + 1))
+        .collect();
+    let ids: Vec<String> = (0..parts.len()).map(|i| format!("b{i}")).collect();
+    let in_text = (0..count).map(|i| heading_at(2 * i + 1));
+    let in_notes = (0..count).map(|i| heading_at(2 * i + 2));
+    let headings: Vec<Heading> = in_text.chain(in_notes).collect();
+    let started = std::time::Instant::now();
+    let outline = outline_of(&headings, &parts, &ids);
+    let elapsed = started.elapsed();
+    assert_eq!(outline.len(), 400_000);
+    assert_eq!(outline[199_999].block, "b199999");
+    assert_eq!(outline[399_999].block, "");
+    assert!(elapsed.as_millis() < 1000, "{elapsed:?}");
+}
+
+#[test]
 fn odd_line_endings_nul_bidi_and_empty_input() {
     for md in [
         "",
