@@ -87,6 +87,11 @@ pub enum ToolError {
     /// (fail closed, `projects.md` §5.2).
     #[error("PerMark is still reading this folder")]
     Busy,
+    /// A rule file on what agents may see (`.aiignore`, `.permark/config.toml`) cannot be read and no last good rules
+    /// of it stand in: nothing is answered until the person fixes it (never "no rules"). Why, e.g. `too large`; never
+    /// the file (the person's own view names it).
+    #[error("agent rules unreadable: {0}")]
+    RulesUnreadable(String),
     /// The person ended this session in the app: its id is refused until the agent process restarts (a new id).
     #[error(
         "the person disconnected this agent from this project; restarting the agent connects again"
@@ -133,6 +138,7 @@ impl ToolError {
             Self::Invalid(_) => "invalid",
             Self::AppClosed => "appClosed",
             Self::Busy => "busy",
+            Self::RulesUnreadable(_) => "rulesUnreadable",
             Self::Disconnected => "disconnected",
             Self::NotConnected { .. } => "notConnected",
             Self::Failed(_) => "error",
@@ -155,6 +161,7 @@ impl ToolError {
             "notFound" => Self::NotFound(after("not found: ")),
             "invalid" => Self::Invalid(after("invalid: ")),
             "busy" => Self::Busy,
+            "rulesUnreadable" => Self::RulesUnreadable(after("agent rules unreadable: ")),
             "disconnected" => Self::Disconnected,
             _ => Self::Failed(message.to_owned()),
         }

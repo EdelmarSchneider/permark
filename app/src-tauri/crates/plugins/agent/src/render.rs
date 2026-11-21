@@ -240,6 +240,10 @@ pub fn error(tool: &str, error: &ToolError) -> String {
         ToolError::Busy => {
             "ERR busy: PerMark still reading this folder -> retry in a few seconds".to_owned()
         }
+        ToolError::RulesUnreadable(why) => format!(
+            "ERR rulesUnreadable: a rules file for this folder cannot be read ({}) -> PerMark shares nothing until the person fixes it; tell the person, do not retry",
+            one(why)
+        ),
         ToolError::Disconnected => {
             "ERR disconnected: the person disconnected this agent from this project -> do not retry; tell the person; restarting the agent connects again".to_owned()
         }
@@ -657,7 +661,12 @@ fn map(data: &Value) -> String {
         );
     }
     if !cut.is_empty() {
-        sub(&mut out, Header::new("dirs_cut").kv("n", cut.len()));
+        sub(
+            &mut out,
+            Header::new("dirs_cut")
+                .kv("n", cut.len())
+                .opt("more", u(data, "dirs_more").filter(|m| *m > 0)),
+        );
         let rows: Vec<Vec<String>> = cut
             .iter()
             .map(|d| {
