@@ -11,9 +11,12 @@
 //
 // release.json = GitHub API release object; asset-dir = the release's `.sig` assets and their installers, downloaded
 // under their asset names.
+//
+// The signing job of the release workflow also asks it which installers to sign (`bundles <dir>`) and checks what it
+// signed before uploading (`verify <dir>`). Node built-ins only: that job runs no installed package.
 
 import { createHash, createPublicKey, verify } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -179,6 +182,47 @@ export function updaterJson(input) {
 }
 
 /**
+ * File names -> the updater bundles among them (the installers a rule signs: not the `.dmg`), in name order. The release
+ * workflow signs exactly these, so what it signs and what `latest.json` needs come from the same rules.
+ * @param {readonly string[]} names
+ * @returns {string[]}
+ */
+export function updaterBundles(names) {
+  return names.filter((name) => RULES.some((rule) => rule.pattern.test(`${name}.sig`))).sort();
+}
+
+/**
+ * The signing job's check before anything is uploaded: every updater bundle among `names` has its `.sig` beside it and
+ * `verify` accepts it; a `.sig` of anything else is refused too (`latest.json` would refuse it later and keep the release
+ * a draft). Returns the bundles checked; throws on the first problem, naming the file.
+ * @param {{ names: readonly string[], signature: (sigName: string) => string,
+ *   verify: (bundle: string, signature: string) => void }} input
+ * @returns {string[]}
+ */
+export function checkSigned(input) {
+  const names = new Set(input.names);
+  const bundles = updaterBundles(input.names);
+  if (bundles.length === 0) throw new Error("no updater bundle to check");
+  for (const name of input.names) {
+    if (name.endsWith(".sig") && !bundles.includes(name.slice(0, -".sig".length))) {
+      throw new Error(`${name} signs no updater bundle`);
+    }
+  }
+  for (const bundle of bundles) {
+    const sig = `${bundle}.sig`;
+    if (!names.has(sig)) throw new Error(`${bundle} has no signature ${sig}`);
+    const signature = input.signature(sig);
+    if (signature.trim() === "") throw new Error(`${sig} is empty`);
+    try {
+      input.verify(bundle, signature);
+    } catch (error) {
+      throw new Error(`${sig}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return bundles;
+}
+
+/**
  * GitHub API release object -> its tag, body and asset names.
  * @param {string} text
  * @returns {{ tag: string, notes: string, assets: string[] }}
@@ -203,21 +247,47 @@ export function parseRelease(text) {
   return { tag, notes: typeof body === "string" ? body : "", assets: names };
 }
 
-function main() {
-  const [releasePath, assetDir, repo, outPath] = process.argv.slice(2);
-  if (!releasePath || !assetDir || !repo || !outPath) {
-    throw new Error(
-      "usage: node scripts/updater-json.mjs <release.json> <asset-dir> <owner/repo> <out-file>",
-    );
-  }
+/** @returns {{ version: string, pubkey: string }} the app's version and updater key, from tauri.conf.json */
+function appConfig() {
   const conf = JSON.parse(
     readFileSync(fileURLToPath(new URL("../src-tauri/tauri.conf.json", import.meta.url)), "utf8"),
   );
   const pubkey = conf.plugins?.updater?.pubkey;
   if (typeof pubkey !== "string") throw new Error("tauri.conf.json has no plugins.updater.pubkey");
+  return { version: String(conf.version), pubkey };
+}
+
+const USAGE = `usage:
+  node scripts/updater-json.mjs <release.json> <asset-dir> <owner/repo> <out-file>
+  node scripts/updater-json.mjs bundles <dir>   (lists the updater bundles in <dir>)
+  node scripts/updater-json.mjs verify <dir>    (checks their .sig files with the app's updater key)`;
+
+function main() {
+  const [command, dir] = process.argv.slice(2);
+  if (command === "bundles" || command === "verify") {
+    if (!dir) throw new Error(USAGE);
+    const names = readdirSync(dir);
+    if (command === "bundles") {
+      for (const name of updaterBundles(names)) console.log(name);
+      return;
+    }
+    const { pubkey } = appConfig();
+    const checked = checkSigned({
+      names,
+      signature: (name) => readFileSync(join(dir, name), "utf8"),
+      verify: (bundle, signature) =>
+        verifySignature(signature, readFileSync(join(dir, bundle)), pubkey),
+    });
+    const key = publicKeyOf(pubkey).id;
+    for (const bundle of checked) console.log(`${bundle}: signature verified with key ${key}`);
+    return;
+  }
+  const [releasePath, assetDir, repo, outPath] = process.argv.slice(2);
+  if (!releasePath || !assetDir || !repo || !outPath) throw new Error(USAGE);
+  const { version, pubkey } = appConfig();
   const release = parseRelease(readFileSync(releasePath, "utf8"));
   const json = updaterJson({
-    version: String(conf.version),
+    version,
     notes: release.notes,
     tag: release.tag,
     repo,

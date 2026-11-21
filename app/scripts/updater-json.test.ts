@@ -1,7 +1,16 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseRelease, publicKeyOf, updaterJson, verifySignature } from "./updater-json.mjs";
+import {
+  checkSigned,
+  parseRelease,
+  publicKeyOf,
+  updaterBundles,
+  updaterJson,
+  verifySignature,
+} from "./updater-json.mjs";
 
 // Asset names of the 0.6.1 release (unchanged since 0.6.0; `distribution.md` § Release pipeline), minus the `.msi`
 // (no longer built), and with the macOS updater bundle named as tauri-action 1.x names it: with the version, as in
@@ -244,6 +253,145 @@ describe("verifySignature", () => {
     );
     const legacy = editedSig((text) => text.replace("\nRUT5", "\nRWT5"));
     expect(() => verifySignature(legacy, file, FIXTURE_PUBKEY)).toThrow(/algorithm/);
+  });
+});
+
+// What one platform build hands to the signing job: its installers, never a signature.
+const INSTALLERS = [
+  "PerMark-0.6.1-1.x86_64.rpm",
+  "PerMark_0.6.1_amd64.AppImage",
+  "PerMark_0.6.1_amd64.deb",
+  "PerMark_0.6.1_universal.dmg",
+  "PerMark_0.6.1_x64-setup.exe",
+  "PerMark_0.6.1_universal.app.tar.gz",
+];
+
+describe("updaterBundles", () => {
+  it("picks the installers the updater downloads, in name order: not the .dmg", () => {
+    expect(updaterBundles(INSTALLERS)).toEqual([
+      "PerMark-0.6.1-1.x86_64.rpm",
+      "PerMark_0.6.1_amd64.AppImage",
+      "PerMark_0.6.1_amd64.deb",
+      "PerMark_0.6.1_universal.app.tar.gz",
+      "PerMark_0.6.1_x64-setup.exe",
+    ]);
+  });
+
+  it("takes what one rebuilt platform made", () => {
+    expect(
+      updaterBundles(["PerMark_0.6.1_universal.dmg", "PerMark_0.6.1_universal.app.tar.gz"]),
+    ).toEqual(["PerMark_0.6.1_universal.app.tar.gz"]);
+  });
+
+  it("skips signatures, the manifest and a stray .msi", () => {
+    expect(updaterBundles([...ASSETS, "PerMark_0.6.1_x64_en-US.msi"])).toEqual(
+      updaterBundles(INSTALLERS),
+    );
+  });
+});
+
+describe("checkSigned", () => {
+  const signed = [...INSTALLERS, ...updaterBundles(INSTALLERS).map((name) => `${name}.sig`)];
+
+  function check(names: readonly string[], verify = (_bundle: string, _signature: string) => {}) {
+    return checkSigned({ names, signature: (name) => `sig of ${name}`, verify });
+  }
+
+  it("checks every updater bundle against its own signature and names them", () => {
+    const checked: string[] = [];
+    const bundles = check(signed, (bundle, signature) => checked.push(`${bundle} <- ${signature}`));
+    expect(bundles).toEqual(updaterBundles(INSTALLERS));
+    expect(checked).toEqual(bundles.map((bundle) => `${bundle} <- sig of ${bundle}.sig`));
+  });
+
+  it("refuses an updater bundle left unsigned", () => {
+    expect(() => check(signed.filter((name) => name !== "PerMark_0.6.1_amd64.deb.sig"))).toThrow(
+      /PerMark_0.6.1_amd64.deb has no signature/,
+    );
+  });
+
+  it("refuses a signature of a file the updater never downloads (it would keep the release a draft)", () => {
+    expect(() => check([...signed, "PerMark_0.6.1_universal.dmg.sig"])).toThrow(
+      /PerMark_0.6.1_universal.dmg.sig signs no updater bundle/,
+    );
+  });
+
+  it("refuses an empty signature", () => {
+    expect(() =>
+      checkSigned({
+        names: signed,
+        signature: (name) => (name.endsWith(".rpm.sig") ? "\n" : "sig"),
+        verify: () => {},
+      }),
+    ).toThrow(/PerMark-0.6.1-1.x86_64.rpm.sig is empty/);
+  });
+
+  it("refuses a run with no updater bundle at all", () => {
+    expect(() => check(["PerMark_0.6.1_universal.dmg"])).toThrow(/no updater bundle/);
+  });
+
+  it("names the installer its signature does not match", () => {
+    const verify = (bundle: string) => {
+      if (bundle.endsWith(".AppImage")) throw new Error("the signature does not match the file");
+    };
+    expect(() => check(signed, verify)).toThrow(
+      /PerMark_0.6.1_amd64.AppImage.sig: the signature does not match the file/,
+    );
+  });
+
+  it("accepts a real signature and refuses the same one over a changed file", () => {
+    const file = Buffer.from(FIXTURE_FILE);
+    const names = ["PerMark_0.6.1_amd64.deb", "PerMark_0.6.1_amd64.deb.sig"];
+    const real = (data: Buffer) =>
+      checkSigned({
+        names,
+        signature: () => FIXTURE_SIG,
+        verify: (_bundle, signature) => verifySignature(signature, data, FIXTURE_PUBKEY),
+      });
+    expect(real(file)).toEqual(["PerMark_0.6.1_amd64.deb"]);
+    expect(() => real(Buffer.from(`${FIXTURE_FILE}!`))).toThrow(/does not match the file/);
+  });
+});
+
+describe("command line", () => {
+  const script = join(import.meta.dirname, "updater-json.mjs");
+
+  function run(...args: string[]) {
+    const done = spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
+    return done.status === 0 ? { ok: true, out: done.stdout } : { ok: false, out: done.stderr };
+  }
+
+  function withFolder(files: Record<string, string>, use: (dir: string) => void) {
+    const dir = mkdtempSync(join(tmpdir(), "updater-json-"));
+    try {
+      for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+      use(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("lists the updater bundles of a folder, one per line", () => {
+    withFolder(Object.fromEntries(INSTALLERS.map((name) => [name, "x"])), (dir) => {
+      expect(run("bundles", dir)).toEqual({
+        ok: true,
+        out: `${updaterBundles(INSTALLERS).join("\n")}\n`,
+      });
+    });
+  });
+
+  it("fails the check of a bundle signed with a key the app does not trust", () => {
+    const files = {
+      "PerMark_0.6.1_amd64.deb": FIXTURE_FILE,
+      "PerMark_0.6.1_amd64.deb.sig": FIXTURE_SIG,
+    };
+    withFolder(files, (dir) => {
+      const result = run("verify", dir);
+      expect(result.ok).toBe(false);
+      expect(result.out).toMatch(
+        /amd64.deb.sig: signed with key 8E20783F38D10BF9.*E5B5D80713C61885/,
+      );
+    });
   });
 });
 
