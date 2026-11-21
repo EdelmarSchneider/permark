@@ -401,6 +401,24 @@ impl Ignorer {
             })
     }
 
+    /// Whether a folder created at `abs`, below the ignored folder `top` (the topmost one on its way), may be a
+    /// repository that makes `top` lead to a nested project: no folder no marker un-hides (`node_modules`, the person's
+    /// lists) ever does, nor one deeper than [`Ignorer::is_container`] looks for a `.git`.
+    #[must_use]
+    pub(crate) fn may_lead_to_project(&self, top: &Path, abs: &Path) -> bool {
+        let Ok(below) = abs.strip_prefix(top) else {
+            return true;
+        };
+        // the search finds a `.git` at most PROJECT_SEARCH_DEPTH levels below `top`: its repository one level above
+        if below.components().count() >= PROJECT_SEARCH_DEPTH {
+            return false;
+        }
+        !matches!(
+            self.locate(top, true),
+            Some((Entry::Ignored, frames)) if self.hard_hidden(&frames, top, true)
+        )
+    }
+
     fn folder_layer(&self, dir: &Path) -> Option<Arc<Gitignore>> {
         if let Some(found) = lock(&self.folders).get(dir) {
             return found.clone();

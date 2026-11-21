@@ -974,6 +974,55 @@ fn a_single_file_root_path_is_its_folder_never_a_document() {
 }
 
 #[test]
+fn a_poll_reads_a_shown_file_only_when_its_size_or_time_changed_and_every_tenth_time() {
+    let p = project();
+    let path = p.dir.path().join("a.md");
+    // written well before it is read: its size and time are proof (a fresh file is read until it is older)
+    let past = std::time::SystemTime::now() - Duration::from_secs(3600);
+    let write_at = |bytes: &[u8], at: std::time::SystemTime| {
+        p.write("a.md", bytes);
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(at)
+            .unwrap();
+    };
+    write_at(b"version one", past);
+    p.open("w", "a.md").unwrap();
+    let before = read_count();
+    for _ in 0..3 {
+        p.docs.poll_now();
+    }
+    assert_eq!(read_count() - before, 0, "unchanged files are not read");
+    assert!(p.changes().is_empty());
+    // a write that changes the size: told at the next poll (one second at most)
+    let later = past + Duration::from_secs(60);
+    write_at(b"version two!", later);
+    p.docs.poll_now();
+    assert_eq!(p.changes().len(), 1);
+    // a write that keeps size and time (a coarse clock): caught by the tenth poll
+    write_at(b"version 3rd!", later);
+    for _ in 5..10 {
+        p.docs.poll_now();
+    }
+    assert!(p.changes().is_empty());
+    p.docs.poll_now();
+    let got = p.changes();
+    assert!(
+        matches!(got.as_slice(), [c] if c.change == DocChange::Changed { version: fsx::hash(b"version 3rd!").hex() }),
+        "{got:?}"
+    );
+    // a file written just before it was read is read at every poll until it is older
+    write_at(b"version 4th!", std::time::SystemTime::now());
+    p.docs.poll_now();
+    assert_eq!(p.changes().len(), 1);
+    let before = read_count();
+    p.docs.poll_now();
+    assert_eq!(read_count() - before, 1);
+}
+
+#[test]
 fn a_sibling_shown_in_a_single_file_window_is_polled_too() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("other.md"), b"v1").unwrap();

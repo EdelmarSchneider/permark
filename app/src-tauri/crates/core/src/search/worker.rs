@@ -2,7 +2,6 @@
 //! in batches so queries interleave), then keeps it current from watch batches. Nothing else writes the index.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError};
 use std::sync::{Arc, PoisonError};
@@ -15,7 +14,7 @@ use crate::events::{CoreEvent, EventSink};
 use crate::format::FormatRegistry;
 use crate::links::same_links;
 use crate::paths::{Vault, VaultPath};
-use crate::tree::{category_of, Category, Explorer, ScanFile};
+use crate::tree::{category_of, is_ignore_file, Category, Explorer, ScanFile};
 use crate::watch::{Change, ChangeKind, FsBatch};
 
 /// Stack of the threads that parse untrusted text.
@@ -184,7 +183,13 @@ impl Worker {
     // ---- reconcile: the index becomes what the disk is --------------------------------------------------------------
 
     fn reconcile(&self, initial: bool) {
-        let scans = self.explorer.scan(&self.stop);
+        // the first pass compares documents by the size and time the folder listings show; later passes (events were
+        // lost, many changes, other rules) ask each file, as a listing may lag behind a file still being written
+        let scans = if initial {
+            self.explorer.scan_with_listed_stats(&self.stop)
+        } else {
+            self.explorer.scan(&self.stop)
+        };
         if self.stopped() {
             return;
         }
@@ -223,11 +228,25 @@ impl Worker {
             // entries known from the cache only (files gone while closed)
             self.shared.harvest.keep_only(&on_disk);
         }
-        // 2. new files join the list; a link (the scan gives it no place on disk) keeps no text, nor tags, from before
+        let Some(total) = self.take_files(&files, initial) else {
+            return;
+        };
+        if initial {
+            self.shared.set_ready();
+            self.shared.harvest.set_ready();
+            self.emit(IndexPhase::Ready, total, total);
+        }
+        self.publish_linked();
+    }
+
+    /// Files a walk found: new ones join the list, documents whose length or time changed are read. Returns how many
+    /// documents were looked at; `None`: stopped.
+    fn take_files(&self, files: &[&ScanFile], initial: bool) -> Option<usize> {
+        // a link (the scan gives it no place on disk) keeps no text, nor tags, from before
         let mut links = Vec::new();
         for chunk in files.chunks(LIST_BATCH) {
             if self.stopped() {
-                return;
+                return None;
             }
             let mut index = self
                 .shared
@@ -245,27 +264,31 @@ impl Worker {
         for path in links {
             self.shared.harvest.remove(path, false);
         }
-        // 3. documents are read (the ones whose length or time changed)
+        // documents are read (the ones whose length or time changed)
         let formats = self.formats();
-        let todo: Vec<(&str, &PathBuf, Category)> = files
+        let todo: Vec<Todo<'_>> = files
             .iter()
             .filter(|f| reads_content(f.category) && wanted(&f.path, f.category, &formats))
-            .filter_map(|f| f.abs.as_ref().map(|abs| (f.path.as_str(), abs, f.category)))
+            .filter_map(|f| {
+                f.abs.as_ref().map(|abs| Todo {
+                    path: f.path.as_str(),
+                    abs,
+                    category: f.category,
+                    stat: listed_sig(f),
+                })
+            })
             .collect();
+        #[cfg(test)]
+        self.shared.listed.fetch_add(
+            todo.iter().filter(|doc| doc.stat.is_some()).count(),
+            Ordering::Relaxed,
+        );
         let total = self.read_documents(&todo, initial);
-        if self.stopped() {
-            return;
-        }
-        if initial {
-            self.shared.set_ready();
-            self.shared.harvest.set_ready();
-            self.emit(IndexPhase::Ready, total, total);
-        }
-        self.publish_linked();
+        (!self.stopped()).then_some(total)
     }
 
     /// Reads the documents of `todo` (the ones that changed); returns how many there are.
-    fn read_documents(&self, todo: &[(&str, &PathBuf, Category)], initial: bool) -> usize {
+    fn read_documents(&self, todo: &[Todo<'_>], initial: bool) -> usize {
         let total = todo.len();
         if initial {
             self.shared.set_building(0, total);
@@ -297,15 +320,19 @@ impl Worker {
                                 return;
                             }
                             let at = next.fetch_add(1, Ordering::Relaxed);
-                            let Some((path, abs, category)) = todo.get(at) else {
+                            let Some(doc) = todo.get(at) else {
                                 return;
                             };
                             let known = shared
                                 .index
                                 .read()
                                 .unwrap_or_else(PoisonError::into_inner)
-                                .sig_of(path);
-                            let outcome = outcome_of(path, abs, *category, known, formats);
+                                .sig_of(doc.path);
+                            let outcome = outcome_of(doc, known, formats);
+                            #[cfg(test)]
+                            if !matches!(outcome, Outcome::Unchanged) {
+                                shared.reads.fetch_add(1, Ordering::Relaxed);
+                            }
                             if tx.send((at, outcome)).is_err() {
                                 return;
                             }
@@ -394,15 +421,18 @@ impl Worker {
                 ChangeKind::Removed => self.forget(&change.path, change.is_dir),
                 ChangeKind::Renamed { from } => {
                     self.forget(from, change.is_dir);
-                    if !change.is_dir {
-                        self.learn(&change.path);
+                    if change.is_dir {
+                        self.learn_folder(&change.path);
+                    } else {
+                        self.learn(&change.path, false);
                     }
                 }
-                ChangeKind::Created | ChangeKind::Modified => {
-                    if !change.is_dir {
-                        self.learn(&change.path);
-                    }
-                }
+                ChangeKind::Created if change.is_dir => self.learn_folder(&change.path),
+                ChangeKind::Created => self.learn(&change.path, false),
+                // the watch saw other bytes: read again even when length and time stayed (a coarse clock)
+                ChangeKind::Modified if !change.is_dir => self.learn(&change.path, true),
+                // a folder's own change: its files report themselves
+                ChangeKind::Modified => {}
             }
         }
     }
@@ -423,8 +453,57 @@ impl Worker {
         self.shared.harvest.remove(path, is_dir);
     }
 
-    /// A file appeared or changed: it joins the list; documents are read again when their length or time differ.
-    fn learn(&self, path: &str) {
+    /// A folder appeared (created, moved in): it is walked on its own, as a walk of the whole project would find its
+    /// files; what the index held below it and is gone leaves.
+    fn learn_folder(&self, path: &str) {
+        let Ok(folder) = VaultPath::parse(path) else {
+            return;
+        };
+        let Ok(abs) = self.vault.resolve(&folder) else {
+            return;
+        };
+        // `resolve` follows links: a folder reached through one (or a link itself) is listed by name, never walked
+        let through_link = std::fs::symlink_metadata(&abs)
+            .is_ok_and(|m| m.file_type().is_symlink())
+            || self
+                .vault
+                .relativize(&abs)
+                .is_none_or(|real| real.key() != folder.key());
+        if through_link {
+            self.learn(path, false);
+            return;
+        }
+        let Ok(scan) = self.explorer.scan_below(&folder, &abs, &self.stop) else {
+            return;
+        };
+        if !scan.cut_off {
+            let found: HashSet<&str> = scan.files.iter().map(|f| f.path.as_str()).collect();
+            let gone: Vec<String> = {
+                let index = self
+                    .shared
+                    .index
+                    .read()
+                    .unwrap_or_else(PoisonError::into_inner);
+                let prefix = format!("{path}/");
+                index
+                    .files
+                    .range(prefix.clone()..)
+                    .take_while(|(p, _)| p.starts_with(&prefix))
+                    .filter(|(p, _)| !found.contains(p.as_str()))
+                    .map(|(p, _)| p.clone())
+                    .collect()
+            };
+            for file in gone {
+                self.forget(&file, false);
+            }
+        }
+        let files: Vec<&ScanFile> = scan.files.iter().collect();
+        let _ = self.take_files(&files, false);
+    }
+
+    /// A file appeared or changed: it joins the list; documents are read again when their length or time differ, or
+    /// always (`changed`: the watch saw other bytes).
+    fn learn(&self, path: &str, changed: bool) {
         let name = path.rsplit('/').next().unwrap_or(path);
         let category = category_of(name);
         let Ok(hinted) = VaultPath::parse(path) else {
@@ -473,13 +552,21 @@ impl Worker {
             index.set_mtime(path, sig.mtime_ms);
             if !reads_content(category)
                 || !wanted(path, category, &self.formats())
-                || index.sig_of(path) == Some(sig)
+                || (!changed && index.sig_of(path) == Some(sig))
             {
                 return;
             }
         }
         // read outside the lock
-        let outcome = outcome_of(path, &abs, category, None, &self.formats());
+        let doc = Todo {
+            path,
+            abs: &abs,
+            category,
+            stat: None,
+        };
+        let outcome = outcome_of(&doc, None, &self.formats());
+        #[cfg(test)]
+        self.shared.reads.fetch_add(1, Ordering::Relaxed);
         self.insert(vec![outcome], false);
     }
 }
@@ -490,15 +577,33 @@ fn wanted(path: &str, category: Category, formats: &FormatRegistry) -> bool {
     category != Category::Config || formats.pick(path, &[]).is_some()
 }
 
-fn outcome_of(
-    path: &str,
-    abs: &std::path::Path,
+/// A document to look at: where it is, and the length + time its walk saw (when the listing told them).
+struct Todo<'a> {
+    path: &'a str,
+    abs: &'a std::path::Path,
     category: Category,
-    known: Option<Sig>,
-    formats: &FormatRegistry,
-) -> Outcome {
-    if let (Some(known), Ok(meta)) = (known, std::fs::symlink_metadata(abs)) {
-        if Sig::of(&meta) == known {
+    stat: Option<Sig>,
+}
+
+/// Length + modified time a walk read from the folder listing (`None`: it did not, or the system told nothing).
+fn listed_sig(file: &ScanFile) -> Option<Sig> {
+    let mtime_ms = u64::try_from(file.modified_ms).ok()?;
+    ((file.size, mtime_ms) != (0, 0)).then_some(Sig {
+        len: file.size,
+        mtime_ms,
+    })
+}
+
+fn outcome_of(doc: &Todo<'_>, known: Option<Sig>, formats: &FormatRegistry) -> Outcome {
+    let Todo {
+        path,
+        abs,
+        category,
+        stat,
+    } = *doc;
+    if let Some(known) = known {
+        let now = stat.or_else(|| std::fs::symlink_metadata(abs).ok().map(|m| Sig::of(&m)));
+        if now == Some(known) {
             return Outcome::Unchanged;
         }
     }
@@ -518,14 +623,15 @@ fn outcome_of(
     }
 }
 
-/// Changes of a watch batch -> a message (any change of a folder other than its removal needs a look at the disk).
+/// Changes of a watch batch -> a message: lost events, many changes at once and other ignore rules make the index
+/// reconcile with the disk; a folder that appeared is walked on its own.
 pub fn message_of(batch: &FsBatch) -> Msg {
     let reconcile = batch.bulk
         || batch.rescan
-        || batch
-            .changes
-            .iter()
-            .any(|c| c.is_dir && !matches!(c.kind, ChangeKind::Removed));
+        || batch.changes.iter().any(|c| {
+            is_ignore_file(&c.path)
+                || matches!(&c.kind, ChangeKind::Renamed { from } if is_ignore_file(from))
+        });
     Msg::Changes {
         changes: batch.changes.clone(),
         reconcile,
@@ -545,9 +651,15 @@ mod tests {
             return;
         };
         let formats = FormatRegistry::core();
-        let read = outcome_of("far.md", &far, Category::Markdown, None, &formats);
+        let doc = |path, abs| Todo {
+            path,
+            abs,
+            category: Category::Markdown,
+            stat: None,
+        };
+        let read = outcome_of(&doc("far.md", &far), None, &formats);
         assert!(matches!(read, Outcome::Read(..)), "the target itself reads");
-        match outcome_of("alias.md", &link, Category::Markdown, None, &formats) {
+        match outcome_of(&doc("alias.md", &link), None, &formats) {
             Outcome::NameOnly(path, None) => assert_eq!(path, "alias.md"),
             Outcome::NameOnly(_, Some(tags)) => {
                 panic!("tags read through the link: {:?}", tags.tags)

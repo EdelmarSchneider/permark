@@ -9,7 +9,7 @@ use ignore::gitignore::Gitignore;
 
 use super::filter::{apply, Compiled, Visible};
 use super::ignore::Ignorer;
-use super::model::{key_of, scan_folder, scan_root, RootCtx, TreeModel};
+use super::model::{key_of, scan_folder, scan_root, scan_under, RootCtx, TreeModel};
 use super::{
     Added, NodeKind, Renamed, RootKind, RootNode, TreeChanged, TreeDelta, TreeError, TreeFilter,
     TreeNode, TreeSnapshot,
@@ -53,22 +53,36 @@ impl View {
     }
 }
 
-/// Difference between two lists: paths to drop, nodes to add (each after its predecessor in `new`).
+/// Difference between two lists: paths to drop, nodes to add (each after its predecessor in `new`). A path stands
+/// once in a list, so the runs both lists start and end with hold the same nodes at the same places and stay out of
+/// it; only what lies between is matched by path (a one-file change looks at a few nodes, not at two maps of the
+/// whole tree).
 pub(crate) fn diff(old: &[TreeNode], new: &[TreeNode]) -> (Vec<String>, Vec<Added>) {
+    let head = old.iter().zip(new).take_while(|(a, b)| a == b).count();
+    let (old, rest) = (&old[head..], &new[head..]);
+    let tail = old
+        .iter()
+        .rev()
+        .zip(rest.iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let (old, middle) = (&old[..old.len() - tail], &rest[..rest.len() - tail]);
     let old_map: HashMap<&str, &TreeNode> = old.iter().map(|n| (n.path.as_str(), n)).collect();
-    let new_map: HashMap<&str, &TreeNode> = new.iter().map(|n| (n.path.as_str(), n)).collect();
+    let new_map: HashMap<&str, &TreeNode> = middle.iter().map(|n| (n.path.as_str(), n)).collect();
     let removed = old
         .iter()
         .filter(|n| new_map.get(n.path.as_str()) != Some(n))
         .map(|n| n.path.clone())
         .collect();
-    let added = new
+    let added = middle
         .iter()
         .enumerate()
         .filter(|(_, n)| old_map.get(n.path.as_str()) != Some(n))
         .map(|(at, n)| Added {
             node: n.clone(),
-            after: at.checked_sub(1).map(|before| new[before].path.clone()),
+            after: (head + at)
+                .checked_sub(1)
+                .map(|before| new[before].path.clone()),
         })
         .collect();
     (removed, added)
@@ -92,6 +106,9 @@ pub struct Explorer {
     /// The first walk ended (set once, never reset: the model is never dropped).
     built: Mutex<bool>,
     built_cv: Condvar,
+    /// Whole-project listings handed to the search index.
+    #[cfg(test)]
+    index_walks: std::sync::atomic::AtomicUsize,
 }
 
 impl std::fmt::Debug for Explorer {
@@ -141,7 +158,15 @@ impl Explorer {
             sink,
             built: Mutex::new(false),
             built_cv: Condvar::new(),
+            #[cfg(test)]
+            index_walks: std::sync::atomic::AtomicUsize::new(0),
         }
+    }
+
+    /// Test hook: how many whole-project listings the search index took so far.
+    #[cfg(test)]
+    pub(crate) fn index_walks(&self) -> usize {
+        self.index_walks.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Ignore rules per root as the watch needs them: (folded root prefix, rules); the project folder first.
@@ -195,7 +220,7 @@ impl Explorer {
         let mut guard = lock(&self.model);
         if guard.is_none() {
             let mut model = TreeModel::new(self.roots.clone());
-            model.rebuild();
+            model.rebuild(false);
             *guard = Some(model);
             *lock(&self.built) = true;
             self.built_cv.notify_all();
@@ -337,7 +362,7 @@ impl Explorer {
         };
         let mut changed = false;
         if batch.rescan || batch.changes.iter().any(|c| is_ignore_file(&c.path)) {
-            model.rebuild();
+            model.rebuild(true);
             changed = true;
         } else {
             for change in &batch.changes {
@@ -381,7 +406,7 @@ impl Explorer {
         };
         let mut changed = false;
         if paths.iter().any(|path| is_ignore_file(path)) {
-            model.rebuild();
+            model.rebuild(true);
             changed = true;
         } else {
             for path in paths {
@@ -423,12 +448,16 @@ impl Explorer {
         if same && !always {
             return;
         }
-        let old_paths: HashSet<&str> = view.list.iter().map(|n| n.path.as_str()).collect();
-        let hints = renames
-            .iter()
-            .filter(|r| old_paths.contains(r.from.as_str()))
-            .cloned()
-            .collect();
+        let hints = if renames.is_empty() {
+            Vec::new()
+        } else {
+            let old_paths: HashSet<&str> = view.list.iter().map(|n| n.path.as_str()).collect();
+            renames
+                .iter()
+                .filter(|r| old_paths.contains(r.from.as_str()))
+                .cloned()
+                .collect()
+        };
         view.seq += 1;
         view.total = visible.total_files;
         view.shown = visible.shown_files;
@@ -451,14 +480,56 @@ impl Explorer {
 
     // ---- reading the model (file operations) -------------------------------------------------------------------
 
-    /// A fresh walk of every root without the large-folder guard (the search index reads it).
+    /// A fresh walk of every root without the large-folder guard (the search index reads it); no sizes nor times.
     #[must_use]
     pub fn scan(&self, cancel: &std::sync::atomic::AtomicBool) -> Vec<(String, super::Scan)> {
+        self.scan_roots(cancel, false)
+    }
+
+    /// [`Self::scan`] with the size and modified time of the files whose content the index reads, as the folder
+    /// listings show them (no look at each file). Not after lost events: on Windows a listing may still show the old
+    /// size and time of a file its writer holds open (the folder entry is updated lazily).
+    #[must_use]
+    pub fn scan_with_listed_stats(
+        &self,
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> Vec<(String, super::Scan)> {
+        self.scan_roots(cancel, true)
+    }
+
+    fn scan_roots(
+        &self,
+        cancel: &std::sync::atomic::AtomicBool,
+        stat: bool,
+    ) -> Vec<(String, super::Scan)> {
         self.pass_gate();
+        #[cfg(test)]
+        self.index_walks
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.roots
             .iter()
-            .map(|root| (root.prefix.clone(), scan_root(root, cancel)))
+            .map(|root| (root.prefix.clone(), scan_root(root, cancel, stat)))
             .collect()
+    }
+
+    /// [`Self::scan`] limited to one folder (`folder`, a project path; `abs`, where the vault resolved it): the files a
+    /// walk of the whole project finds below it.
+    ///
+    /// # Errors
+    /// `NotAFolder`: no root holds the folder, or it is not a folder on disk.
+    pub fn scan_below(
+        &self,
+        folder: &VaultPath,
+        abs: &std::path::Path,
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> Result<super::Scan, TreeError> {
+        self.pass_gate();
+        let not_a_folder = || TreeError::NotAFolder(folder.as_str().to_owned());
+        let root = self.root_of(folder.as_str()).ok_or_else(not_a_folder)?;
+        if !std::fs::symlink_metadata(abs).is_ok_and(|m| m.is_dir()) {
+            return Err(not_a_folder());
+        }
+        Ok(scan_under(root, folder.as_str(), abs, cancel))
     }
 
     /// A fresh walk inside one folder (`folder`, a project path; `abs`, where the vault resolved it) with the tree's
@@ -506,7 +577,7 @@ impl Explorer {
         let Some(root) = self.roots.iter().find(|r| key_of(&r.prefix) == key) else {
             return (Vec::new(), Vec::new());
         };
-        let scan = scan_root(root, &never);
+        let scan = scan_root(root, &never, false);
         let mut docs: Vec<String> = scan
             .files
             .into_iter()
@@ -643,10 +714,13 @@ impl Explorer {
     }
 }
 
-/// `.gitignore` | `.ignore` changed: what the walk read from ignore files is stale.
-fn is_ignore_file(path: &str) -> bool {
-    let name = path.rsplit('/').next().unwrap_or(path);
-    Ignorer::is_ignore_file(name) && name != "exclude"
+/// A `.gitignore` | `.ignore` | a repository's `.git/info/exclude` changed: what a walk read from ignore files is stale.
+pub(crate) fn is_ignore_file(path: &str) -> bool {
+    let (folder, name) = path.rsplit_once('/').unwrap_or(("", path));
+    match name {
+        "exclude" => folder == ".git/info" || folder.ends_with("/.git/info"),
+        _ => Ignorer::is_ignore_file(name),
+    }
 }
 
 impl TreeSnapshot {
