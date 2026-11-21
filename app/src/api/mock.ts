@@ -45,7 +45,10 @@ import type {
   AppPluginEvents,
   AppSettings,
   CommandName,
+  CrashOffer,
   DemoOffer,
+  NativeWords,
+  Reloaded,
   EventName,
   Events,
   JsonValue,
@@ -73,6 +76,44 @@ export const MOCK_FOLDER = "C:/Users/demo/permark-docs";
 export const MOCK_FILE = "C:/Users/demo/Downloads/proposal.md";
 /** Where the mock's demo pages land (`Documents/PerMark Demo`). */
 export const MOCK_DEMO_FOLDER = "C:/Users/demo/Documents/PerMark Demo";
+
+const MOCK_CRASH_REPORT = [
+  "PerMark crash report",
+  `Version: ${MOCK_VERSION}`,
+  "System: windows x86_64",
+  "Mode: app",
+  "Time: 2026-11-20T21:14:03Z",
+  "Thread: main",
+  "Location: src\\main.rs:16:9",
+  "",
+  "Message:",
+  "forced crash for testing (PERMARK_DEBUG_PANIC)",
+  "",
+  "Backtrace:",
+  "   0: std::backtrace::Backtrace::force_capture",
+  "   1: permark::main",
+  "             at ~\\permark\\app\\src-tauri\\src\\main.rs:16",
+  "",
+].join("\n");
+
+/** A crash report as the backend offers it (`?crash` in `dev:mock`; tests set `probe.crash.offer`): the issue link
+ *  built as `crash.rs issue_url` does. */
+export const MOCK_CRASH: CrashOffer = {
+  report: MOCK_CRASH_REPORT,
+  issueUrl: (() => {
+    const url = new URL("https://github.com/EdelmarSchneider/permark/issues/new");
+    url.searchParams.append("title", `Crash report: PerMark ${MOCK_VERSION} on windows x86_64`);
+    // like the backend's link: the report without its message, which may quote the person's text
+    const head = MOCK_CRASH_REPORT.split("\n\nMessage:")[0];
+    const trace = MOCK_CRASH_REPORT.split("\n\nBacktrace:\n")[1] ?? "";
+    url.searchParams.append(
+      "body",
+      `PerMark closed unexpectedly.\n\n\`\`\`\`text\n${head}\n\nBacktrace:\n${trace}\n\`\`\`\`\n\n` +
+        "The message is left out of this link. Use Copy report in PerMark, review it, and paste it here.\n",
+    );
+    return url.toString();
+  })(),
+};
 /** A WSL folder (`watch/wsl.rs`): `\\wsl$\` | `\\wsl.localhost\`, also behind `\\?\UNC\` | `\\.\UNC\`, `/` | `\`. */
 const WSL_ROOT = /^[\\/]{2}(?:[?.][\\/]unc[\\/])?wsl(?:\$|\.localhost)(?:[\\/]|$)/i;
 
@@ -273,14 +314,21 @@ export type MockProbe = {
     fire: (event: DropEvent) => void;
   };
   /** The tabs: moved to a new window, moved into another window (`[tab, window]`), the close prompt's answers, saves
-   * reported. `refuseMove`: the next moves fail (the backend could not move the view). */
+   * reported, close asks the view said it heard. `refuseMove`: the next moves fail (the backend could not move the
+   * view). */
   tabs: {
     moved: number[];
     movedTo: [number, string][];
     answers: string[];
     saved: boolean[];
+    heard: number;
     refuseMove: boolean;
   };
+  /** The words of the system dialogs the views sent, in order (the backend keeps the last fit ones). */
+  nativeWords: NativeWords[];
+  /** The next view that boots had its page loaded again after its page process ended (`null`: not); told once, as
+   *  the backend does. */
+  reloaded: Reloaded | null;
   /** Web pictures asked for, by address; the per-project choice. */
   remote: { asked: string[]; always: boolean };
   /** Projects inside the folder: the fixture per folder, what was asked, news for the Changes panel. */
@@ -298,6 +346,16 @@ export type MockProbe = {
     installs: number;
     dismissed: number;
     fail: ErrorKind | null;
+  };
+  /** The last run's crash report the backend offers (`null`: none), whether a boot took it already (once per start,
+   *  as the backend hands it to the first window only), dismissals, reveals of its file, a refusal for the next
+   *  reveal. */
+  crash: {
+    offer: CrashOffer | null;
+    handed: boolean;
+    dismissed: number;
+    revealed: number;
+    failReveal: ErrorKind | null;
   };
 };
 
@@ -657,7 +715,9 @@ export function createMockApi(): Api & {
       },
     },
     remote: { asked: [], always: false },
-    tabs: { moved: [], movedTo: [], answers: [], saved: [], refuseMove: false },
+    tabs: { moved: [], movedTo: [], answers: [], saved: [], heard: 0, refuseMove: false },
+    nativeWords: [],
+    reloaded: null,
     projects: projects.probe,
     context: {
       set: (over) => {
@@ -670,6 +730,7 @@ export function createMockApi(): Api & {
     opening: { ms: 0, fails: new Set(), refused: [] },
     // offered in the dev build, as on a first start
     demo: { offer: "install", available: true, installs: 0, dismissed: 0, fail: null },
+    crash: { offer: null, handed: false, dismissed: 0, revealed: 0, failReveal: null },
   };
   let tree: TreeView | null = null;
   /** The version of the shown document last told to the window (`null`: gone), as `document/mod.rs` keeps it. */
@@ -896,8 +957,12 @@ export function createMockApi(): Api & {
     emit,
     probe,
     appInfo: () => ok({ version: MOCK_VERSION }),
-    windowBoot: () =>
-      ok({
+    windowBoot: () => {
+      const crash = probe.crash.handed ? null : probe.crash.offer;
+      probe.crash.handed = true;
+      const reloaded = probe.reloaded;
+      probe.reloaded = null;
+      return ok({
         window: "main",
         label: "main",
         tab: activeTab,
@@ -905,10 +970,13 @@ export function createMockApi(): Api & {
         context: context(),
         settings,
         notices: [],
+        crash,
+        reloaded,
         failures: [],
         platform: "windows",
         region: null,
-      }),
+      });
+    },
     openPath: (path, placement) => {
       const open = tabOf(path);
       if (open !== null) {
@@ -1053,6 +1121,14 @@ export function createMockApi(): Api & {
     viewSaved: (saved) => {
       probe.tabs.saved.push(saved);
       if (saved) editing.probe.closed = true;
+      return ok(null);
+    },
+    viewHeard: () => {
+      probe.tabs.heard += 1;
+      return ok(null);
+    },
+    nativeWords: (words) => {
+      probe.nativeWords.push(words);
       return ok(null);
     },
     ...shell.api,
@@ -1457,6 +1533,23 @@ export function createMockApi(): Api & {
       probe.demo.offer = "hidden";
       return ok(null);
     },
+    // as the backend: the report read at start, whether or not a window took it; none -> nothing to record
+    crashDismiss: () => {
+      if (probe.crash.offer !== null) probe.crash.dismissed += 1;
+      return ok(null);
+    },
+    crashReveal: () => {
+      if (probe.crash.offer === null) {
+        return Promise.resolve(refused<null>("crash_reveal", "notFound", "crash report"));
+      }
+      const failure = probe.crash.failReveal;
+      if (failure !== null) {
+        probe.crash.failReveal = null;
+        return Promise.resolve(refused<null>("crash_reveal", failure, null));
+      }
+      probe.crash.revealed += 1;
+      return ok(null);
+    },
     onAppPlugin: (event, handler) => {
       appListeners[event].add(handler);
       return Promise.resolve(() => {
@@ -1513,6 +1606,16 @@ if (
   new URLSearchParams(location.search).get("teamFile") === "broken"
 ) {
   mockApi.probe.shell.teamFileBroken(MOCK_FOLDER, 7);
+}
+
+// `dev:mock` opened with `?crash` starts as after a crash: the first view offers the last run's report
+if (typeof location !== "undefined" && new URLSearchParams(location.search).has("crash")) {
+  mockApi.probe.crash.offer = MOCK_CRASH;
+}
+
+// `dev:mock` opened with `?reloaded` boots as a view whose page process ended with unsaved edits of the guide
+if (typeof location !== "undefined" && new URLSearchParams(location.search).has("reloaded")) {
+  mockApi.probe.reloaded = { lost: "docs/guide.md" };
 }
 
 // `dev:mock` opened with `?unshared` shows the notice about sharing an update turned off (once, like the app)

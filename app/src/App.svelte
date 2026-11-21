@@ -36,6 +36,7 @@
   import LayoutsDialog from "./core/shell/LayoutsDialog.svelte";
   import { answerInit } from "./core/shell/initProject";
   import { layout } from "./core/shell/layout.svelte";
+  import { nativeWords } from "./core/shell/nativeWords";
   import { hasSidebar, hasToggle } from "./core/shell/sides";
   import { tabs } from "./core/shell/tabs.svelte";
   import { ui } from "./core/shell/ui.svelte";
@@ -139,8 +140,14 @@
   // this window's tabs, for the top bar chips and their keys
   $effect(() => tabs.start(store.window));
   $effect(() => look.watchSystem());
+  // the system dialogs' words in the interface language (the backend holds no translations): now and on each change
+  $effect(() => {
+    void api.nativeWords(nativeWords());
+  });
   // the backend asks this view (events for other views are theirs): the window close prompt (tabs with unsaved
-  // edits), a save before the window closes (Save all), the unsaved prompt before this tab closes
+  // edits), a save before the window closes (Save all), the unsaved prompt before this tab closes. A prompt says it
+  // heard at once: the backend times the hearing (a dead | hung page gets its not-responding dialog), never the
+  // person's answer; Save all's answer needs no step of the person's, so the answer itself is what it waits for
   $effect(() => {
     const offs: (() => void)[] = [];
     let gone = false;
@@ -150,7 +157,9 @@
     };
     void api
       .on("close-requested", (event) => {
-        if (event.window === store.label) ui.closePrompt = event.tabs;
+        if (event.window !== store.label) return;
+        void api.viewHeard();
+        ui.closePrompt = event.tabs;
       })
       .then(keep);
     void api
@@ -161,7 +170,9 @@
       .then(keep);
     void api
       .on("tab-close-requested", (event) => {
-        if (event.window === store.label) void closeHere();
+        if (event.window !== store.label) return;
+        void api.viewHeard();
+        void closeHere();
       })
       .then(keep);
     // this tab moved to another window: its chips are that window's tabs now

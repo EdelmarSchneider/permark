@@ -56,6 +56,11 @@ export default {
     "保存されていた PerMark のデータの一部を読み取れなかったため、別の場所に移しました：{file}。以前のコピーはこちらにあります：{backup}",
   "notice.stateUnreadable":
     "保存されていた PerMark のデータの一部を読み取れませんでした。データはそのまま残してあり、もう一度読み取れるようになるまで（通常は再起動後）PerMark は変更しません：{file}",
+  "crash.notice":
+    "前回、PerMark が予期せず終了しました。レポートはこのコンピューターに保存され、何も送信されていません。共有する場合は、先に内容を確認してください。ファイル名や文章の一部が含まれていることがあります。「GitHub で報告」を選ぶとレポートもコピーされるため、GitHub のページに貼り付けられます。",
+  "crash.copy": "レポートをコピー",
+  "crash.report": "GitHub で報告",
+  "crash.openFolder": "フォルダーを開く",
 
   // ---- settings
   "settings.title": "設定",
@@ -2330,6 +2335,21 @@ export default {
   "closeWindow.body.other": "次のタブには保存されていない変更があります：",
   "closeWindow.saveAll": "すべて保存",
   "closeWindow.discard": "破棄",
+  "stuck.title": "PerMark が応答していません",
+  "stuck.detail":
+    "このウィンドウ内のページが応答していません。このまま閉じると、このウィンドウのタブの保存されていない変更が失われる可能性があります。",
+  "stuck.closeAnyway": "このまま閉じる",
+  "stuck.wait": "待つ",
+  "stuck.engineStopped":
+    "PerMark のウィンドウを表示する部分が動作を停止したため、PerMark を終了する必要があります。保存されていない変更は失われます。開いていたタブは、次回 PerMark を起動したときに戻ります。",
+  "stuck.reloaded": "このタブが動作を停止したため、再読み込みしました。",
+  "stuck.reloadedLost":
+    "このタブが動作を停止したため、再読み込みしました。{file} の保存されていない変更は失われました。",
+  "stuck.reloadedPage": "このページが動作を停止したため、再読み込みしました。",
+  "stuck.windowFailed":
+    "PerMark のウィンドウがページを開けなかったため、閉じました。ほかのウィンドウは引き続き使えます。",
+  "stuck.viewFailedExit":
+    "PerMark はウィンドウを開けなかったため、終了する必要があります。開いていたタブは、次回 PerMark を起動したときに戻ります。",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "内部のプロジェクト",

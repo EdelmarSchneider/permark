@@ -53,6 +53,11 @@ const en = {
     "Some saved PerMark data couldn't be read and was set aside: {file}. You can find the old copy here: {backup}",
   "notice.stateUnreadable":
     "Some saved PerMark data couldn't be read. It was left untouched, and PerMark won't change it until it can read it again, usually after a restart: {file}",
+  "crash.notice":
+    "PerMark closed unexpectedly last time. A report was saved on this computer, and nothing was sent. If you share it, review it first: it may include file names or bits of your text. Report on GitHub also copies the report, so you can paste it there.",
+  "crash.copy": "Copy report",
+  "crash.report": "Report on GitHub",
+  "crash.openFolder": "Open folder",
 
   // ---- settings
   "settings.title": "Settings",
@@ -2274,6 +2279,21 @@ const en = {
   "closeWindow.body.other": "These tabs have unsaved changes:",
   "closeWindow.saveAll": "Save all",
   "closeWindow.discard": "Discard",
+  "stuck.title": "PerMark isn't responding",
+  "stuck.detail":
+    "A page in this window isn't answering. If you close anyway, unsaved changes in this window's tabs may be lost.",
+  "stuck.closeAnyway": "Close anyway",
+  "stuck.wait": "Wait",
+  "stuck.engineStopped":
+    "The part of PerMark that shows its windows stopped working, so PerMark has to close. Unsaved changes are lost; your open tabs come back the next time you start PerMark.",
+  "stuck.reloaded": "This tab stopped working and was reloaded.",
+  "stuck.reloadedLost":
+    "This tab stopped working and was reloaded. Unsaved changes to {file} were lost.",
+  "stuck.reloadedPage": "This page stopped working and was reloaded.",
+  "stuck.windowFailed":
+    "A PerMark window couldn't open its page and was closed. Your other windows keep working.",
+  "stuck.viewFailedExit":
+    "PerMark couldn't open its window, so it has to close. Your open tabs come back the next time you start PerMark.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Projects inside",

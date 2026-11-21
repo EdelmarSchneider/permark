@@ -55,6 +55,11 @@ export default {
     "Alcuni dati salvati di PerMark non sono leggibili e sono stati messi da parte: {file}. La copia precedente si trova qui: {backup}",
   "notice.stateUnreadable":
     "Alcuni dati salvati di PerMark non sono leggibili. Sono stati lasciati intatti e PerMark non li modificherà finché non riuscirà a leggerli di nuovo, di solito dopo un riavvio: {file}",
+  "crash.notice":
+    "L'ultima volta PerMark si è chiuso in modo imprevisto. Su questo computer è stato salvato un rapporto e non è stato inviato nulla. Se lo condividi, controllalo prima: può contenere nomi di file o parti del tuo testo. “Segnala su GitHub” copia anche il rapporto, così puoi incollarlo lì.",
+  "crash.copy": "Copia rapporto",
+  "crash.report": "Segnala su GitHub",
+  "crash.openFolder": "Apri cartella",
 
   // ---- settings
   "settings.title": "Impostazioni",
@@ -2331,6 +2336,21 @@ export default {
   "closeWindow.body.other": "Queste schede hanno modifiche non salvate:",
   "closeWindow.saveAll": "Salva tutto",
   "closeWindow.discard": "Scarta",
+  "stuck.title": "PerMark non risponde",
+  "stuck.detail":
+    "Una pagina di questa finestra non risponde. Se chiudi comunque, le modifiche non salvate nelle schede di questa finestra potrebbero andare perse.",
+  "stuck.closeAnyway": "Chiudi comunque",
+  "stuck.wait": "Attendi",
+  "stuck.engineStopped":
+    "La parte di PerMark che mostra le finestre ha smesso di funzionare, quindi PerMark deve chiudersi. Le modifiche non salvate vanno perse; le schede aperte torneranno al prossimo avvio di PerMark.",
+  "stuck.reloaded": "Questa scheda ha smesso di funzionare ed è stata ricaricata.",
+  "stuck.reloadedLost":
+    "Questa scheda ha smesso di funzionare ed è stata ricaricata. Le modifiche non salvate a {file} sono andate perse.",
+  "stuck.reloadedPage": "Questa pagina ha smesso di funzionare ed è stata ricaricata.",
+  "stuck.windowFailed":
+    "Una finestra di PerMark non è riuscita ad aprire la sua pagina ed è stata chiusa. Le altre finestre continuano a funzionare.",
+  "stuck.viewFailedExit":
+    "PerMark non è riuscito ad aprire la sua finestra, quindi deve chiudersi. Le schede aperte torneranno al prossimo avvio di PerMark.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Progetti interni",

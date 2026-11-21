@@ -55,6 +55,11 @@ export default {
     "Alguns dados salvos do PerMark não puderam ser lidos e foram guardados à parte: {file}. A cópia antiga está aqui: {backup}",
   "notice.stateUnreadable":
     "Alguns dados salvos do PerMark não puderam ser lidos. Eles foram deixados intactos, e o PerMark não vai alterá-los até conseguir lê-los de novo, geralmente depois de reiniciar: {file}",
+  "crash.notice":
+    "O PerMark fechou inesperadamente da última vez. Um relatório foi salvo neste computador e nada foi enviado. Se for compartilhá-lo, revise antes: ele pode conter nomes de arquivos ou trechos do seu texto. “Relatar no GitHub” também copia o relatório, pronto para colar lá.",
+  "crash.copy": "Copiar relatório",
+  "crash.report": "Relatar no GitHub",
+  "crash.openFolder": "Abrir pasta",
 
   // ---- settings
   "settings.title": "Configurações",
@@ -2310,6 +2315,21 @@ export default {
   "closeWindow.body.other": "Estas abas têm alterações não salvas:",
   "closeWindow.saveAll": "Salvar tudo",
   "closeWindow.discard": "Descartar",
+  "stuck.title": "O PerMark não está respondendo",
+  "stuck.detail":
+    "Uma página desta janela não está respondendo. Se fechar mesmo assim, as alterações não salvas nas abas desta janela podem ser perdidas.",
+  "stuck.closeAnyway": "Fechar mesmo assim",
+  "stuck.wait": "Aguardar",
+  "stuck.engineStopped":
+    "A parte do PerMark que mostra as janelas parou de funcionar, então o PerMark precisa fechar. As alterações não salvas serão perdidas; as abas abertas voltam na próxima vez que o PerMark for aberto.",
+  "stuck.reloaded": "Esta aba parou de funcionar e foi recarregada.",
+  "stuck.reloadedLost":
+    "Esta aba parou de funcionar e foi recarregada. As alterações não salvas em {file} foram perdidas.",
+  "stuck.reloadedPage": "Esta página parou de funcionar e foi recarregada.",
+  "stuck.windowFailed":
+    "Uma janela do PerMark não conseguiu abrir a página e foi fechada. As outras janelas continuam funcionando.",
+  "stuck.viewFailedExit":
+    "O PerMark não conseguiu abrir a janela, então precisa fechar. As abas abertas voltam na próxima vez que o PerMark for aberto.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Projetos dentro",

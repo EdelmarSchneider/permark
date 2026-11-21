@@ -9,12 +9,15 @@ import {
   type AppSettings,
   type CharacterGroup,
   type CharactersStatus,
+  type CrashOffer,
   type GitBackendPref,
   type IpcError,
   type LinkUpdate,
   type OpenIn,
   type OpenPlacement,
   type RecentFolder,
+  type Reloaded,
+  type Result,
   type StartIn,
   type SettingChange,
   type StateRecovered,
@@ -121,6 +124,11 @@ export type ProjectView = Extract<WorkspaceView, { kind: "project" }>;
 const BOTH_HOLD_DATA = "bothHoldData";
 /** The folder's own copy of PerMark data, relative to the folder. */
 const FOLDER_DATA = ".permark/local";
+
+/** The one notice offering the last run's crash report. */
+const CRASH_KEY = "crash";
+/** The one notice saying this view's page was loaded again. */
+const RELOADED_KEY = "reloaded";
 
 /** One notice about the place of a folder's data per workspace (a newer one takes its place). */
 function dataKey(project: ProjectView): string {
@@ -260,6 +268,8 @@ export class WindowStore {
       language.region = info.region;
       await language.choose(parsePreference(info.settings.language));
       for (const notice of info.notices) this.#notify({ kind: "stateRecovered", notice });
+      if (info.crash !== null) this.#offerCrash(info.crash);
+      if (info.reloaded !== null) this.#tellReloaded(info.reloaded, info.tab !== null);
       for (const failed of info.failures) {
         this.#notify({ kind: "openFailed", path: failed.path, error: failed.error });
       }
@@ -270,6 +280,75 @@ export class WindowStore {
       this.boot = { status: "failed", error: booted.error };
     }
     return () => offs.forEach((off) => off());
+  }
+
+  /** The last run ended in a crash: one notice that waits for the person. PerMark sends nothing: the person copies
+   *  the report, or opens the issue page in the browser, pastes the report and submits it there. A button that did its work, or
+   *  Dismiss, answers the offer for good; a button that failed says why and offers the report again; pushed out by
+   *  newer notices before the person saw it, it comes back at the next start. */
+  #offerCrash(offer: CrashOffer): void {
+    const answered = (): void => void this.#api.crashDismiss();
+    const done = (worked: boolean): void => {
+      if (worked) answered();
+      else this.#offerCrash(offer);
+    };
+    this.notifyLasting({
+      key: CRASH_KEY,
+      text: t("crash.notice"),
+      actions: [
+        { label: t("crash.copy"), run: async () => done(await this.#copyReport(offer.report)) },
+        {
+          label: t("crash.report"),
+          // the link leaves the report out (it can quote document text), so the page asks to paste it: copy first;
+          // the page opens even without the copy, and then the offer stays for Copy report | Open folder
+          run: async () => {
+            const copied = await this.#copyReport(offer.report);
+            const opened = this.#worked(await this.#api.openWeb(offer.issueUrl));
+            done(copied && opened);
+          },
+        },
+        {
+          label: t("crash.openFolder"),
+          run: async () => done(this.#worked(await this.#api.crashReveal())),
+        },
+      ],
+      onGone: (how) => {
+        if (how === "dismissed") answered();
+      },
+    });
+  }
+
+  /** This view's page process ended and the backend loaded the page again. Its unsaved edits went with the page (the
+   *  backend keeps only which document had them, never the text): the notice names that document and waits for the
+   *  person; with nothing lost, a quiet note (the window's Welcome view is no tab: its note says page). */
+  #tellReloaded(reloaded: Reloaded, inTab: boolean): void {
+    if (reloaded.lost === null) {
+      this.notifyKeyed(RELOADED_KEY, t(inTab ? "stuck.reloaded" : "stuck.reloadedPage"));
+      return;
+    }
+    this.notifyLasting({
+      key: RELOADED_KEY,
+      text: t("stuck.reloadedLost", { file: reloaded.lost }),
+      actions: [],
+      onGone: () => {},
+    });
+  }
+
+  async #copyReport(report: string): Promise<boolean> {
+    try {
+      await navigator.clipboard.writeText(report);
+      this.notifyNote(t("edit.copied"));
+      return true;
+    } catch {
+      this.notifyNote(t("doc.copyFailed"));
+      return false;
+    }
+  }
+
+  /** Whether `result` went through; a refusal is said in a notice. */
+  #worked(result: Result<null>): boolean {
+    if (!result.ok) this.#notify({ kind: "apiFailed", path: null, error: result.error });
+    return result.ok;
   }
 
   /** The settings the window follows, from the boot read and from every change (the language apart: boot waits

@@ -56,6 +56,11 @@ export default {
     "Non foi posíbel ler algúns datos gardados de PerMark e apartáronse: {file}. A copia anterior está aquí: {backup}",
   "notice.stateUnreadable":
     "Non foi posíbel ler algúns datos gardados de PerMark. Deixáronse intactos, e PerMark non os cambiará ata que poida volver lelos, normalmente despois de reinicialo: {file}",
+  "crash.notice":
+    "PerMark pechouse de forma inesperada a última vez. Gardouse un informe neste ordenador e non se enviou nada. Se o comparte, revíseo antes: pode incluír nomes de ficheiros ou anacos do seu texto. «Informar en GitHub» tamén copia o informe para que o poida pegar alí.",
+  "crash.copy": "Copiar o informe",
+  "crash.report": "Informar en GitHub",
+  "crash.openFolder": "Abrir o cartafol",
 
   // ---- settings
   "settings.title": "Configuración",
@@ -2320,6 +2325,21 @@ export default {
   "closeWindow.body.other": "Estas lapelas teñen cambios sen gardar:",
   "closeWindow.saveAll": "Gardar todo",
   "closeWindow.discard": "Descartar",
+  "stuck.title": "PerMark non responde",
+  "stuck.detail":
+    "Unha páxina desta xanela non responde. Se pecha igualmente, poden perderse os cambios sen gardar das lapelas desta xanela.",
+  "stuck.closeAnyway": "Pechar igualmente",
+  "stuck.wait": "Agardar",
+  "stuck.engineStopped":
+    "A parte de PerMark que mostra as súas xanelas deixou de funcionar, así que PerMark ten que pecharse. Perderanse os cambios sen gardar; as lapelas abertas volverán a próxima vez que inicie PerMark.",
+  "stuck.reloaded": "Esta lapela deixou de funcionar e volveuse cargar.",
+  "stuck.reloadedLost":
+    "Esta lapela deixou de funcionar e volveuse cargar. Perdéronse os cambios sen gardar de {file}.",
+  "stuck.reloadedPage": "Esta páxina deixou de funcionar e volveuse cargar.",
+  "stuck.windowFailed":
+    "Unha xanela de PerMark non puido abrir a súa páxina e pechouse. As outras xanelas seguen funcionando.",
+  "stuck.viewFailedExit":
+    "PerMark non puido abrir a súa xanela, así que ten que pecharse. As lapelas abertas volverán a próxima vez que inicie PerMark.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Proxectos internos",

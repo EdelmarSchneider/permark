@@ -53,6 +53,11 @@ export default {
     "部分已保存的 PerMark 数据无法读取，已另行保留：{file}。旧副本位于：{backup}",
   "notice.stateUnreadable":
     "部分已保存的 PerMark 数据无法读取。这些数据已保持原样，在能够再次读取之前（通常是重新启动后），PerMark 不会更改这些数据：{file}",
+  "crash.notice":
+    "PerMark 上次意外关闭。报告已保存在这台电脑上，没有发送任何内容。分享前请先检查：报告可能包含文件名或部分文本。“在 GitHub 上报告”也会复制报告，以便粘贴到页面中。",
+  "crash.copy": "复制报告",
+  "crash.report": "在 GitHub 上报告",
+  "crash.openFolder": "打开文件夹",
 
   // ---- settings
   "settings.title": "设置",
@@ -2212,6 +2217,19 @@ export default {
   "closeWindow.body.other": "这些标签页有未保存的更改：",
   "closeWindow.saveAll": "全部保存",
   "closeWindow.discard": "放弃",
+  "stuck.title": "PerMark 没有响应",
+  "stuck.detail":
+    "此窗口中的某个页面没有响应。如果仍要关闭，此窗口标签页中未保存的更改可能会丢失。",
+  "stuck.closeAnyway": "仍然关闭",
+  "stuck.wait": "等待",
+  "stuck.engineStopped":
+    "PerMark 中显示窗口的部分已停止工作，PerMark 必须关闭。未保存的更改将会丢失；下次启动 PerMark 时，打开的标签页会恢复。",
+  "stuck.reloaded": "此标签页已停止工作并已重新加载。",
+  "stuck.reloadedLost": "此标签页已停止工作并已重新加载。{file} 中未保存的更改已丢失。",
+  "stuck.reloadedPage": "此页面已停止工作并已重新加载。",
+  "stuck.windowFailed": "一个 PerMark 窗口无法打开其页面，已被关闭。其他窗口仍可正常使用。",
+  "stuck.viewFailedExit":
+    "PerMark 无法打开窗口，必须关闭。下次启动 PerMark 时，打开的标签页会恢复。",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "内含项目",

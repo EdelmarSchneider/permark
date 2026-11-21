@@ -56,6 +56,11 @@ export default {
     "Unele date salvate de PerMark nu au putut fi citite și au fost puse deoparte: {file}. Copia veche se află aici: {backup}",
   "notice.stateUnreadable":
     "Unele date salvate de PerMark nu au putut fi citite. Au fost lăsate neatinse, iar PerMark nu le va modifica până nu le va putea citi din nou, de obicei după o repornire: {file}",
+  "crash.notice":
+    "Ultima dată, PerMark s-a închis neașteptat. Un raport a fost salvat pe acest computer și nu s-a trimis nimic. Dacă îl distribui, verifică-l mai întâi: poate conține nume de fișiere sau fragmente din textul tău. „Raportează pe GitHub” copiază și raportul, ca să îl poți lipi acolo.",
+  "crash.copy": "Copiază raportul",
+  "crash.report": "Raportează pe GitHub",
+  "crash.openFolder": "Deschide dosarul",
 
   // ---- settings
   "settings.title": "Setări",
@@ -2437,6 +2442,21 @@ export default {
   "closeWindow.body.other": "Aceste file au modificări nesalvate:",
   "closeWindow.saveAll": "Salvează tot",
   "closeWindow.discard": "Renunță",
+  "stuck.title": "PerMark nu răspunde",
+  "stuck.detail":
+    "O pagină din această fereastră nu răspunde. Dacă închizi oricum, modificările nesalvate din filele acestei ferestre se pot pierde.",
+  "stuck.closeAnyway": "Închide oricum",
+  "stuck.wait": "Așteaptă",
+  "stuck.engineStopped":
+    "Partea din PerMark care afișează ferestrele a încetat să funcționeze, așa că PerMark trebuie să se închidă. Modificările nesalvate se pierd; filele deschise revin la următoarea pornire a PerMark.",
+  "stuck.reloaded": "Această filă a încetat să funcționeze și a fost reîncărcată.",
+  "stuck.reloadedLost":
+    "Această filă a încetat să funcționeze și a fost reîncărcată. Modificările nesalvate din {file} s-au pierdut.",
+  "stuck.reloadedPage": "Această pagină a încetat să funcționeze și a fost reîncărcată.",
+  "stuck.windowFailed":
+    "O fereastră PerMark nu și-a putut deschide pagina și a fost închisă. Celelalte ferestre funcționează în continuare.",
+  "stuck.viewFailedExit":
+    "PerMark nu și-a putut deschide fereastra, așa că trebuie să se închidă. Filele deschise revin la următoarea pornire a PerMark.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Proiecte din dosar",

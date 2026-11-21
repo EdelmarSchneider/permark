@@ -54,6 +54,11 @@ export default {
     "저장된 PerMark 데이터 일부를 읽을 수 없어 따로 보관했습니다: {file}. 이전 사본은 여기에 있습니다: {backup}",
   "notice.stateUnreadable":
     "저장된 PerMark 데이터 일부를 읽을 수 없었습니다. 데이터는 그대로 두었으며, 다시 읽을 수 있을 때까지(보통 다시 시작한 후) PerMark는 이 데이터를 변경하지 않습니다: {file}",
+  "crash.notice":
+    "지난번에 PerMark가 예기치 않게 종료되었습니다. 보고서가 이 컴퓨터에 저장되었으며 아무것도 전송되지 않았습니다. 공유하려면 먼저 내용을 확인하세요. 파일 이름이나 문서 내용 일부가 들어 있을 수 있습니다. “GitHub에 보고”를 선택하면 보고서도 복사되므로 GitHub 페이지에 붙여 넣을 수 있습니다.",
+  "crash.copy": "보고서 복사",
+  "crash.report": "GitHub에 보고",
+  "crash.openFolder": "폴더 열기",
 
   // ---- settings
   "settings.title": "설정",
@@ -2273,6 +2278,21 @@ export default {
   "closeWindow.body.other": "다음 탭에 저장하지 않은 변경 내용이 있습니다:",
   "closeWindow.saveAll": "모두 저장",
   "closeWindow.discard": "저장 안 함",
+  "stuck.title": "PerMark가 응답하지 않습니다",
+  "stuck.detail":
+    "이 창의 페이지가 응답하지 않습니다. 그래도 닫으면 이 창의 탭에 있는 저장하지 않은 변경 내용이 사라질 수 있습니다.",
+  "stuck.closeAnyway": "그래도 닫기",
+  "stuck.wait": "기다리기",
+  "stuck.engineStopped":
+    "PerMark의 창을 표시하는 부분이 작동을 멈춰 PerMark를 종료해야 합니다. 저장하지 않은 변경 내용은 사라지며, 열려 있던 탭은 다음에 PerMark를 시작할 때 다시 열립니다.",
+  "stuck.reloaded": "이 탭이 작동을 멈춰 다시 불러왔습니다.",
+  "stuck.reloadedLost":
+    "이 탭이 작동을 멈춰 다시 불러왔습니다. {file}의 저장하지 않은 변경 내용이 사라졌습니다.",
+  "stuck.reloadedPage": "이 페이지가 작동을 멈춰 다시 불러왔습니다.",
+  "stuck.windowFailed":
+    "PerMark 창이 페이지를 열지 못해 닫혔습니다. 다른 창은 계속 사용할 수 있습니다.",
+  "stuck.viewFailedExit":
+    "PerMark가 창을 열지 못해 종료해야 합니다. 열려 있던 탭은 다음에 PerMark를 시작할 때 다시 열립니다.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "하위 프로젝트",

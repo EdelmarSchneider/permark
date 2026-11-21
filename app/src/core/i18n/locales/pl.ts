@@ -68,6 +68,11 @@ export default {
     "Części zapisanych danych PerMark nie udało się odczytać i odłożono je na bok: {file}. Starą kopię znajdziesz tutaj: {backup}",
   "notice.stateUnreadable":
     "Części zapisanych danych PerMark nie udało się odczytać. Pozostawiono je bez zmian i PerMark nie zmieni ich, dopóki znów nie będzie mógł ich odczytać (zwykle po ponownym uruchomieniu): {file}",
+  "crash.notice":
+    "Ostatnim razem PerMark zamknął się nieoczekiwanie. Raport zapisano na tym komputerze i nic nie zostało wysłane. Jeśli chcesz go udostępnić, najpierw go przejrzyj: może zawierać nazwy plików lub fragmenty tekstu. „Zgłoś na GitHubie” również kopiuje raport, więc możesz go tam wkleić.",
+  "crash.copy": "Kopiuj raport",
+  "crash.report": "Zgłoś na GitHubie",
+  "crash.openFolder": "Otwórz folder",
 
   // ---- settings
   "settings.title": "Ustawienia",
@@ -2407,6 +2412,21 @@ export default {
   "closeWindow.body.other": "Te karty mają niezapisane zmiany:",
   "closeWindow.saveAll": "Zapisz wszystko",
   "closeWindow.discard": "Odrzuć",
+  "stuck.title": "PerMark nie odpowiada",
+  "stuck.detail":
+    "Strona w tym oknie nie odpowiada. Jeśli mimo to zamkniesz, niezapisane zmiany w kartach tego okna mogą zostać utracone.",
+  "stuck.closeAnyway": "Zamknij mimo to",
+  "stuck.wait": "Czekaj",
+  "stuck.engineStopped":
+    "Część aplikacji PerMark, która wyświetla okna, przestała działać, więc PerMark musi zostać zamknięty. Niezapisane zmiany zostaną utracone; otwarte karty wrócą przy następnym uruchomieniu aplikacji PerMark.",
+  "stuck.reloaded": "Ta karta przestała działać i została ponownie wczytana.",
+  "stuck.reloadedLost":
+    "Ta karta przestała działać i została ponownie wczytana. Niezapisane zmiany w {file} zostały utracone.",
+  "stuck.reloadedPage": "Ta strona przestała działać i została ponownie wczytana.",
+  "stuck.windowFailed":
+    "Okno aplikacji PerMark nie mogło otworzyć swojej strony i zostało zamknięte. Pozostałe okna działają dalej.",
+  "stuck.viewFailedExit":
+    "PerMark nie mógł otworzyć swojego okna, więc musi zostać zamknięty. Otwarte karty wrócą przy następnym uruchomieniu aplikacji PerMark.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Projekty wewnątrz",

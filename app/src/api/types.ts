@@ -7,6 +7,7 @@ import type { CommandName } from "./generated/CommandName";
 import type { DefaultAppView } from "./generated/DefaultAppView";
 import type { DemoOffer } from "./generated/DemoOffer";
 import type { DemoStatus } from "./generated/DemoStatus";
+import type { CrashOffer } from "./generated/CrashOffer";
 import type { FileGroup } from "./generated/FileGroup";
 import type { ShellEntry } from "./generated/ShellEntry";
 import type { ShellState } from "./generated/ShellState";
@@ -159,6 +160,8 @@ import type { TabId } from "./generated/TabId";
 import type { ClosingTab } from "./generated/ClosingTab";
 import type { CloseAnswer } from "./generated/CloseAnswer";
 import type { BarTheme } from "./generated/BarTheme";
+import type { NativeWords } from "./generated/NativeWords";
+import type { Reloaded } from "./generated/Reloaded";
 import type { ViewRequest } from "./generated/ViewRequest";
 import type { ViewMoved } from "./generated/ViewMoved";
 import type { Basis } from "./generated/Basis";
@@ -299,6 +302,8 @@ export type {
   ClosingTab,
   CloseAnswer,
   BarTheme,
+  NativeWords,
+  Reloaded,
   ConfigEdit,
   ConfigEdited,
   EditSource,
@@ -563,6 +568,8 @@ export interface Commands {
   window_close: { args: Record<string, never>; result: null };
   window_close_answer: { args: { answer: CloseAnswer }; result: null };
   view_saved: { args: { saved: boolean }; result: null };
+  view_heard: { args: Record<string, never>; result: null };
+  native_words: { args: { words: NativeWords }; result: null };
   view_ready: { args: Record<string, never>; result: null };
   view_set_title: { args: { title: string }; result: null };
   view_set_theme: { args: { theme: BarTheme | null }; result: null };
@@ -575,6 +582,8 @@ export interface Commands {
   demo_offer: { args: Record<string, never>; result: DemoStatus };
   demo_install: { args: Record<string, never>; result: string };
   demo_dismiss: { args: Record<string, never>; result: null };
+  crash_dismiss: { args: Record<string, never>; result: null };
+  crash_reveal: { args: Record<string, never>; result: null };
 }
 
 /**
@@ -1016,6 +1025,7 @@ export interface AppPluginEvents {
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type {
+  CrashOffer,
   DefaultAppView,
   DemoOffer,
   DemoStatus,
@@ -1432,6 +1442,10 @@ export interface Api {
   demoInstall(): Promise<Result<string>>;
   /** The demo pages offer was dismissed: not shown again. */
   demoDismiss(): Promise<Result<null>>;
+  /** The last run's crash report offer was answered (a button that did its work, or Dismiss): not offered again. */
+  crashDismiss(): Promise<Result<null>>;
+  /** Shows the offered crash report's file in the file manager (the path the backend read at start). */
+  crashReveal(): Promise<Result<null>>;
   /** Creates `.permark/` in a folder; a project open on it reloads its state at once. */
   projectInit(path: string): Promise<Result<null>>;
   /** Keeps a folder's private data on this computer (its window's offer); Move is `projectInit`. */
@@ -1458,6 +1472,11 @@ export interface Api {
   windowCloseAnswer(answer: CloseAnswer): Promise<Result<null>>;
   /** This view answered `save-requested`. */
   viewSaved(saved: boolean): Promise<Result<null>>;
+  /** A `close-requested` | `tab-close-requested` reached this view and its prompt is up: the backend stops timing the
+   *  view (the person's answer has no deadline). */
+  viewHeard(): Promise<Result<null>>;
+  /** The words of the app's own system dialogs, in the person's language (the backend holds no translations). */
+  nativeWords(words: NativeWords): Promise<Result<null>>;
   /** URL the webview loads a picture | sound | video of a workspace from. `version`: changes when the file does. */
   assetUrl(workspace: WorkspaceId, path: string, version: string | null): string;
   /** Listens to a backend event. Resolves to teardown. */
