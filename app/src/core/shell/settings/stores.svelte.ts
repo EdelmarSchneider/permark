@@ -9,6 +9,7 @@ import {
   type ProjectSettingChange,
   type ProjectSettings,
   type Sharing,
+  type Unlisten,
 } from "../../../api";
 
 export type ProjectState =
@@ -35,9 +36,39 @@ class ProjectSettingsStore {
   #seq = 0;
 
   async load(backend: Api = api): Promise<void> {
+    this.state = { status: "loading" };
+    await this.#read(backend);
+  }
+
+  /** Reads the settings of the folder at `root` now and again whenever they change (a setting written in another
+   *  window, the file changed on disk: a git pull, a hand edit); returns what stops following. Listens first, then
+   *  reads: a change between the two is never lost. */
+  follow(root: string | null, backend: Api = api): () => void {
+    this.state = { status: "loading" };
+    let gone = false;
+    let off: Unlisten | null = null;
+    void backend
+      .on("project-config-changed", (e) => {
+        if (!gone && e.root === root) void this.#read(backend);
+      })
+      .then((stop) => {
+        if (gone) {
+          stop();
+          return;
+        }
+        off = stop;
+        void this.#read(backend);
+      });
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }
+
+  /** What shows stays until the answer is there (read again after a change: no flash of an empty page). */
+  async #read(backend: Api): Promise<void> {
     this.#api = backend;
     const seq = ++this.#seq;
-    this.state = { status: "loading" };
     const result = await backend.projectConfigGet();
     if (seq !== this.#seq) return;
     this.state = result.ok

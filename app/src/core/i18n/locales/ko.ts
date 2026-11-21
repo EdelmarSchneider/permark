@@ -50,7 +50,8 @@ export default {
     "이 위치는 변경 내용을 알릴 수 없으므로 PerMark가 실시간으로 따라갈 수 없습니다. 창으로 돌아오면 새로 고칩니다.",
 
   // ---- notices
-  "notice.stateRecovered": "저장된 PerMark 데이터 일부를 읽을 수 없어 따로 보관했습니다: {file}",
+  "notice.stateRecovered":
+    "저장된 PerMark 데이터 일부를 읽을 수 없어 따로 보관했습니다: {file}. 이전 사본은 여기에 있습니다: {backup}",
   "notice.stateUnreadable":
     "저장된 PerMark 데이터 일부를 읽을 수 없었습니다. 데이터는 그대로 두었으며, 다시 읽을 수 있을 때까지(보통 다시 시작한 후) PerMark는 이 데이터를 변경하지 않습니다: {file}",
 
@@ -1733,6 +1734,8 @@ export default {
   "project.shareGitOn": "켜짐",
   "project.shareInit": "모두와 공유하려면 PerMark를 초기화하세요",
   "project.sharedFileHint": "이 폴더를 여는 모든 사람과 공유됩니다.",
+  "project.sharedFileUnreadable":
+    "PerMark가 이 파일의 {line}번째 줄을 읽을 수 없습니다. 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
   "settings.all": "모든 설정",
   "settings.editorPreview": "예:",
   "settings.linkUpdateHint": "파일을 이동하거나 이름을 바꿀 때 링크를 어떻게 처리할지 정합니다.",
@@ -1770,6 +1773,8 @@ export default {
   "settings.problem.noPath": "명령에는 {path} 자리 표시자가 필요합니다.",
   "settings.problem.notInitialized": "이 폴더에는 아직 PerMark 설정이 없습니다.",
   "settings.problem.tomlOnly": ".toml로 끝나는 파일 이름을 사용하세요.",
+  "settings.problem.notToml":
+    "PerMark가 .permark/config.toml을 읽을 수 없어 아무것도 변경되지 않았습니다.",
   "settings.problem.other": "이 값은 허용되지 않습니다.",
   "welcome.newProject": "새 프로젝트…",
   "welcome.newProjectHint": "폴더를 선택하면 PerMark가 프로젝트로 설정합니다.",

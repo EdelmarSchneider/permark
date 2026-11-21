@@ -6,7 +6,8 @@
   // only described, never written over);
   // where the person's data for the folder is kept while it is not in the folder's `.permark/` (Move stays here after
   // Keep); the folder's own card where it holds projects. Nothing is written into the folder until the person answers
-  // the Initialize question | presses Move.
+  // the Initialize question | presses Move. A shared file that is not TOML is said here with its line: the backend
+  // refuses every change to it until it is fixed by hand.
   import type { Sharing } from "../../../api";
   import { conditions } from "../../conditions/context.svelte";
   import { documents } from "../../doc/document.svelte";
@@ -52,6 +53,10 @@
   const sharing = $derived(
     projectSettings.state.status === "ready" ? projectSettings.state.settings.sharing : null,
   );
+  /** The line where the shared file stops being TOML (`null`: it reads, or is not read yet). */
+  const unreadableLine = $derived(
+    projectSettings.state.status === "ready" ? projectSettings.state.settings.unreadableLine : null,
+  );
   const SHARING: { value: Exclude<Sharing, "custom">; label: MessageKey }[] = [
     { value: "shared", label: "project.shareGitOn" },
     { value: "private", label: "project.shareGitOff" },
@@ -76,6 +81,13 @@
         >
           {t("menu.showInFileManager")}
         </button>
+        {#snippet note()}
+          {#if unreadableLine !== null}
+            <span class="problem" role="alert">
+              {t("project.sharedFileUnreadable", { line: unreadableLine })}
+            </span>
+          {/if}
+        {/snippet}
       </SettingRow>
       {#if sharing !== null}
         <SettingRow

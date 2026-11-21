@@ -98,6 +98,7 @@ import type { ProjectEvent } from "./generated/ProjectEvent";
 import type { ProjectMarker } from "./generated/ProjectMarker";
 import type { ProjectRow } from "./generated/ProjectRow";
 import type { ProjectUid } from "./generated/ProjectUid";
+import type { ProjectConfigChanged } from "./generated/ProjectConfigChanged";
 import type { ProjectsChanged } from "./generated/ProjectsChanged";
 import type { ProjectsUndone } from "./generated/ProjectsUndone";
 import type { ProjectsView } from "./generated/ProjectsView";
@@ -411,6 +412,7 @@ export type {
   ProjectMarker,
   ProjectRow,
   ProjectUid,
+  ProjectConfigChanged,
   ProjectsChanged,
   ProjectsUndone,
   ProjectsView,
@@ -1191,6 +1193,9 @@ export interface Events {
   "index-progress": IndexProgress;
   /** The projects of a folder changed: the window showing `root` reads `projectsView` again. */
   "projects-changed": ProjectsChanged;
+  /** The shared settings of a folder changed (a setting written, the file changed on disk): the window showing
+   *  `root` reads `projectConfigGet` again. */
+  "project-config-changed": ProjectConfigChanged;
   "import-progress": ImportProgressEvent;
 }
 export type EventName = keyof Events;

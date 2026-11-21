@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PluginInfo, Result } from "./types";
+import type { PluginInfo, ProjectSettingChange, Result } from "./types";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -75,6 +75,28 @@ describe("mock project settings", () => {
       }
     }
     expect(value(await api.projectConfigGet()).sharing).toBe("custom");
+  });
+
+  it("a shared file that is not TOML says where it stops being TOML and refuses every change", async () => {
+    const api = createMockApi();
+    api.probe.shell.teamFileBroken(MOCK_FOLDER, 7);
+    await api.openPath(MOCK_FOLDER, "tab");
+    const settings = value(await api.projectConfigGet());
+    expect(settings.initialized).toBe(true);
+    expect(settings.unreadableLine).toBe(7);
+    const changes: ProjectSettingChange[] = [
+      off("comments", true),
+      { key: "ignore", value: ["x/"] },
+    ];
+    for (const change of changes) {
+      const refused = await api.projectConfigSet(change);
+      expect(refused.ok).toBe(false);
+      if (!refused.ok && refused.error.kind === "backend") {
+        expect(refused.error.error.kind).toBe("settingsUnreadable");
+        expect(refused.error.error.detail).toBe("notToml");
+      }
+    }
+    expect(value(await api.projectConfigGet()).ignore).toEqual([]);
   });
 
   it("refuses a plugin of the app or one that does not exist", async () => {

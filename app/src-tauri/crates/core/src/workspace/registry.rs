@@ -836,6 +836,7 @@ impl WorkspaceRegistry {
                     core
                 } else {
                     let core = ProjectCore::open(root.clone(), &self.env);
+                    core.follow_config(&self.env);
                     *weak = Arc::downgrade(&core);
                     core
                 };

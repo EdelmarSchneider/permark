@@ -1591,7 +1591,8 @@ pub fn project_config_get(handle: AppHandle, window: Webview) -> Result<ProjectS
     Ok(ProjectSettings::of(initialized, sharing, &core.config()))
 }
 
-/// One shared setting of the project: written surgically to `.permark/config.toml`, live at once.
+/// One shared setting of the project: written surgically to `.permark/config.toml`, live at once (the core tells the
+/// windows, the plugins page included when the plugins moved).
 #[tauri::command(async)]
 pub fn project_config_set(
     handle: AppHandle,
@@ -1599,15 +1600,11 @@ pub fn project_config_set(
     change: ProjectSettingChange,
 ) -> Result<ProjectSettings, IpcError> {
     let shell = state(&handle);
-    let touches_plugins = matches!(change, ProjectSettingChange::PluginOff { .. });
     if let ProjectSettingChange::PluginOff { plugin, .. } = &change {
         project_plugin(&shell.env.registry, plugin)?;
     }
     let core = project_of(&handle, &window)?;
     let config = core.change_config(&shell.env, &change)?;
-    if touches_plugins {
-        plugins_changed(&shell);
-    }
     let sharing = permark_core::state::sharing(core.root());
     Ok(ProjectSettings::of(true, sharing, &config))
 }

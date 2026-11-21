@@ -137,12 +137,13 @@ fn io_why(error: &io::Error) -> Option<RulesWhy> {
 
 fn config_why(error: &ConfigUnreadable) -> RulesWhy {
     match error {
-        ConfigUnreadable::NotToml => RulesWhy::NotToml,
+        ConfigUnreadable::NotToml { .. } => RulesWhy::NotToml,
         ConfigUnreadable::LinkedFolder => RulesWhy::NotAFile,
         ConfigUnreadable::Read(SettingsError::Unreadable { why, .. }) => match why {
             Unreadable::TooLarge => RulesWhy::TooLarge,
             Unreadable::NotText => RulesWhy::NotText,
             Unreadable::Locked => RulesWhy::Locked,
+            Unreadable::NotToml { .. } => RulesWhy::NotToml,
         },
         ConfigUnreadable::Read(SettingsError::Io { source, .. }) => {
             io_why(source).unwrap_or(RulesWhy::Failed)

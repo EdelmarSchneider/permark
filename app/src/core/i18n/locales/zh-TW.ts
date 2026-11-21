@@ -59,7 +59,8 @@ export default {
   "status.liveOffHint": "此位置無法回報變更，因此 PerMark 無法即時追蹤。切換回此視窗即可重新整理。",
 
   // ---- notices
-  "notice.stateRecovered": "部分已儲存的 PerMark 資料無法讀取，已另行保留：{file}",
+  "notice.stateRecovered":
+    "部分已儲存的 PerMark 資料無法讀取，已另行保留：{file}。舊副本位於：{backup}",
   "notice.stateUnreadable":
     "部分已儲存的 PerMark 資料無法讀取。這些資料維持原狀，在 PerMark 能再次讀取之前（通常是重新啟動後）不會變更：{file}",
 
@@ -1703,6 +1704,8 @@ export default {
   "project.shareGitOn": "開啟",
   "project.shareInit": "初始化 PerMark 以便與所有人共用",
   "project.sharedFileHint": "與開啟此資料夾的每個人共用。",
+  "project.sharedFileUnreadable":
+    "PerMark 無法讀取此檔案的第 {line} 行，因此在修正之前無法變更標示為「所有人」的設定。",
   "settings.all": "所有設定",
   "settings.editorPreview": "範例：",
   "settings.linkUpdateHint": "移動或重新命名檔案時，連結會如何處理。",
@@ -1738,6 +1741,7 @@ export default {
   "settings.problem.noPath": "命令必須包含 {path}。",
   "settings.problem.notInitialized": "此資料夾尚無 PerMark 設定。",
   "settings.problem.tomlOnly": "請使用以 .toml 結尾的檔案名稱。",
+  "settings.problem.notToml": "PerMark 無法讀取 .permark/config.toml，因此未做任何變更。",
   "settings.problem.other": "不接受此值。",
   "welcome.newProject": "新增專案…",
   "welcome.newProjectHint": "選擇資料夾；PerMark 會將它設定為專案。",

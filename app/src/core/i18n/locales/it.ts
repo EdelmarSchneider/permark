@@ -52,7 +52,7 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Alcuni dati salvati di PerMark non sono leggibili e sono stati messi da parte: {file}",
+    "Alcuni dati salvati di PerMark non sono leggibili e sono stati messi da parte: {file}. La copia precedente si trova qui: {backup}",
   "notice.stateUnreadable":
     "Alcuni dati salvati di PerMark non sono leggibili. Sono stati lasciati intatti e PerMark non li modificherà finché non riuscirà a leggerli di nuovo, di solito dopo un riavvio: {file}",
 
@@ -1781,6 +1781,8 @@ export default {
   "project.shareGitOn": "Attivo",
   "project.shareInit": "Inizializza PerMark per condividerlo con tutti",
   "project.sharedFileHint": "Condiviso con chiunque apra questa cartella.",
+  "project.sharedFileUnreadable":
+    "PerMark non riesce a leggere questo file alla riga {line}, quindi le impostazioni contrassegnate con Tutti non si possono cambiare finché non viene corretto.",
   "settings.all": "Tutte le impostazioni",
   "settings.editorPreview": "Esempio:",
   "settings.linkUpdateHint": "Cosa succede ai link quando un file viene spostato o rinominato.",
@@ -1817,6 +1819,8 @@ export default {
   "settings.problem.noPath": "Il comando richiede {path}.",
   "settings.problem.notInitialized": "Questa cartella non ha ancora impostazioni di PerMark.",
   "settings.problem.tomlOnly": "Usa un nome di file che termina con .toml.",
+  "settings.problem.notToml":
+    "PerMark non riesce a leggere .permark/config.toml, quindi non è stato cambiato nulla.",
   "settings.problem.other": "Questo valore non è stato accettato.",
   "welcome.newProject": "Nuovo progetto…",
   "welcome.newProjectHint": "Scegli una cartella; PerMark la prepara come progetto.",

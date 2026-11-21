@@ -2,14 +2,15 @@
 //! down its plugins in reverse dependency order.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, RwLock};
 
 use serde::{Deserialize, Serialize};
 
 use crate::activity::{system_clock, ActivityLog};
 use crate::conditions::{Context, Distribution};
 use crate::document::{DocScope, Documents};
-use crate::events::{CoreEvent, EventSink, PluginFailed};
+use crate::events::{CoreEvent, EventSink, PluginFailed, ProjectConfigChanged};
 use crate::fileops::FileOps;
 use crate::format::FormatRegistry;
 use crate::notes::{NotesCore, NotesScope};
@@ -26,13 +27,15 @@ use crate::projects::{
 };
 use crate::search::{SearchFilter, SearchIndex, SearchOptions};
 use crate::settings::{
-    AppSettings, ProjectConfig, ProjectConfigFile, ProjectSettingChange, SettingsError,
+    AppSettings, ConfigRead, ConfigUnreadable, ProjectConfig, ProjectConfigFile,
+    ProjectSettingChange, SettingsError,
 };
 use crate::state::location::DataOffer;
 use crate::state::{AppDirs, ProjectId, Sharing, StateData, StateLocation, StateStore};
 use crate::tree::Explorer;
 use crate::watch::{
-    FsBatch, LiveStatus, OwnWrites, PathHold, StatusHook, Subscription, WatchHub, Watcher,
+    ChangeKind, FsBatch, LiveStatus, OwnWrites, PathHold, StatusHook, Subscription, WatchHub,
+    Watcher,
 };
 
 /// Process-wide services every workspace uses.
@@ -254,6 +257,8 @@ pub struct ProjectCore {
     _documents_sub: Subscription,
     _search_sub: Subscription,
     _activity_sub: Subscription,
+    /// Follows `.permark/config.toml` on disk ([`ProjectCore::follow_config`]).
+    config_sub: Mutex<Option<Subscription>>,
     /// The journal follows where each included project keeps its state (`projects.md` §9.2).
     _activity_owners: ProjectsSubscription,
     search: Arc<SearchIndex>,
@@ -277,6 +282,15 @@ pub struct ProjectCore {
     /// read it, never the disk.
     data_offer: RwLock<DataOffer>,
     config: RwLock<ProjectConfig>,
+    /// One change of `config` at a time (a setting written here, the file changed on disk, Initialize): each reads the
+    /// file and applies what it read in one turn, so an older read never lands over a newer one.
+    config_turn: Mutex<()>,
+    /// A read of the team file is waiting for its turn ([`ProjectCore::follow_config`]): it reads after every report
+    /// so far, so reports meanwhile start no other.
+    config_pending: Arc<AtomicBool>,
+    /// Tests: reads of the team file done ([`ProjectCore::reread_config`]).
+    #[cfg(test)]
+    config_reads: std::sync::atomic::AtomicUsize,
     enablement: Mutex<BTreeMap<PluginId, Enablement>>,
     plugins: Mutex<PluginSet>,
     // what the plugins share; they outlive the plugins (stopped first in Drop)
@@ -452,6 +466,7 @@ impl ProjectCore {
             _documents_sub: documents_sub,
             _search_sub: search_sub,
             _activity_sub: activity_sub,
+            config_sub: Mutex::new(None),
             _activity_owners: activity_owners,
             search,
             watcher,
@@ -467,6 +482,10 @@ impl ProjectCore {
             store: RwLock::new(store),
             data_offer: RwLock::new(data_offer),
             config: RwLock::new(config),
+            config_turn: Mutex::new(()),
+            config_pending: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            config_reads: std::sync::atomic::AtomicUsize::new(0),
             vault,
             enablement: Mutex::new(BTreeMap::new()),
             plugins: Mutex::new(PluginSet::new(PluginScope::Project)),
@@ -477,7 +496,10 @@ impl ProjectCore {
             app_services: Arc::clone(env.services()),
             agent_files,
         });
-        core.start_plugins(env, enablement, &on);
+        {
+            let mut plugins = core.plugins.lock().unwrap_or_else(PoisonError::into_inner);
+            core.start_plugins(env, &mut plugins, enablement, &on);
+        }
         core
     }
 
@@ -491,6 +513,24 @@ impl ProjectCore {
     #[cfg(test)]
     pub(crate) fn hub(&self) -> &Arc<WatchHub> {
         &self.hub
+    }
+
+    /// Tests: how many reads of the team file are done.
+    #[cfg(test)]
+    pub(crate) fn config_reads(&self) -> usize {
+        self.config_reads.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Tests: the config turn, held until the guard goes (a read of the team file waits meanwhile).
+    #[cfg(test)]
+    pub(crate) fn hold_config_turn(&self) -> MutexGuard<'_, ()> {
+        self.config_turn()
+    }
+
+    /// Tests: the plugin set, held until the guard goes (starting | stopping plugins waits meanwhile).
+    #[cfg(test)]
+    pub(crate) fn hold_plugins(&self) -> MutexGuard<'_, PluginSet> {
+        self.plugins.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// What plugins publish about the project (the git condition windows read).
@@ -636,6 +676,9 @@ impl ProjectCore {
     /// # Errors
     /// What `init_project` refuses: both places hold data (`Conflict`), a link or a file in the way, IO.
     pub fn initialize(&self, env: &CoreEnv) -> Result<(), crate::IpcError> {
+        // one config turn from the stop to the reload: a read of the team file meanwhile would start the plugins again
+        // on the place being copied from
+        let turn = self.config_turn();
         self.plugins
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -644,7 +687,7 @@ impl ProjectCore {
             self.apply_plugins(env);
             return Err(error.into());
         }
-        self.reload_state(env);
+        self.reload_state_in(&turn, env);
         Ok(())
     }
 
@@ -668,17 +711,20 @@ impl ProjectCore {
                 false,
             ));
         }
-        // plugins flush their files into `.permark/local/` first; the state then goes back to the profile
+        // plugins flush their files into `.permark/local/` first; the state then goes back to the profile (one config
+        // turn throughout: a read of the team file meanwhile would start them again on the place being removed)
+        let turn = self.config_turn();
         self.plugins
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .stop_all();
         let removed = crate::state::uninit_project(&env.dirs, self.vault.main()).unwrap_or(false);
         if removed {
-            self.reload_state(env);
+            self.reload_state_in(&turn, env);
         } else {
             self.apply_plugins(env);
         }
+        drop(turn);
         Ok((
             ProjectsUndone {
                 undone: true,
@@ -812,6 +858,19 @@ impl ProjectCore {
     /// journal moves, the project plugins start over on the new state, the tree is walked again. The caller tells the
     /// windows (`WorkspaceRegistry::refresh`).
     pub fn reload_state(&self, env: &CoreEnv) {
+        let turn = self.config_turn();
+        self.reload_state_in(&turn, env);
+    }
+
+    /// The config turn, held until the guard goes: one change of the config at a time.
+    fn config_turn(&self) -> MutexGuard<'_, ()> {
+        self.config_turn
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// [`ProjectCore::reload_state`] inside the config turn the caller holds (`_turn`: proof of it).
+    fn reload_state_in(&self, _turn: &MutexGuard<'_, ()>, env: &CoreEnv) {
         let store = StateStore::for_project(&env.dirs, self.vault.main());
         let config = ProjectConfig::load(self.vault.main());
         *self
@@ -837,20 +896,111 @@ impl ProjectCore {
     /// ignore rules, the plugins turned off for everyone; the agent reads the file at each call).
     ///
     /// # Errors
-    /// `NotInitialized`, an invalid value, an IO failure.
+    /// `NotInitialized`, an invalid value, the file is not TOML (refused, untouched), an IO failure.
     pub fn change_config(
         &self,
         env: &CoreEnv,
         change: &ProjectSettingChange,
     ) -> Result<ProjectConfig, SettingsError> {
+        let _turn = self.config_turn();
+        let before = self.config();
         let config = ProjectConfigFile::of(self.vault.main()).apply(change)?;
-        *self.config.write().unwrap_or_else(PoisonError::into_inner) = config.clone();
-        if matches!(change, ProjectSettingChange::PluginOff { .. }) {
-            self.apply_plugins(env);
-        }
-        self.explorer.reconfigure(&config);
-        self.rescan();
+        self.use_config(env, &before, &config);
         Ok(config)
+    }
+
+    /// Follows `.permark/config.toml` on disk while the folder is open: a change made outside (a git pull, a hand edit,
+    /// the config sheet) applies as a setting written here does. A batch that names the file or its folder, or asks to
+    /// rebuild (lost reports, Refresh), has it read on a thread of its own: starting | stopping plugins is no work for
+    /// the watch thread, and a read never waits there on a write of this core in progress. One read waiting for its
+    /// turn serves every report until it starts. Once listening, the file is read again: a change between the open's
+    /// read and the subscription applies now, not at the next report.
+    pub fn follow_config(self: &Arc<Self>, env: &Arc<CoreEnv>) {
+        let core = Arc::downgrade(self);
+        let weak_env = Arc::downgrade(env);
+        let pending = Arc::clone(&self.config_pending);
+        let keys = [
+            crate::paths::key_of(&format!("{}/config.toml", crate::state::PERMARK_DIR)),
+            crate::paths::key_of(crate::state::PERMARK_DIR),
+        ];
+        let team_file = move |path: &str| keys.contains(&crate::paths::key_of(path));
+        let subscription = self.hub.subscribe(move |batch| {
+            let touched = batch.rescan
+                || batch.changes.iter().any(|change| {
+                    team_file(&change.path)
+                        || matches!(&change.kind, ChangeKind::Renamed { from } if team_file(from))
+                });
+            if !touched || pending.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            let (core, env) = (core.clone(), weak_env.clone());
+            let spawned = std::thread::Builder::new()
+                .name("permark-config".to_owned())
+                .spawn(move || {
+                    if let (Some(core), Some(env)) = (core.upgrade(), env.upgrade()) {
+                        core.reread_config(&env);
+                    }
+                });
+            if spawned.is_err() {
+                pending.store(false, Ordering::SeqCst);
+            }
+        });
+        *self
+            .config_sub
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(subscription);
+        self.reread_config(env);
+    }
+
+    /// Reads `.permark/config.toml` again and applies what differs from what applied so far, by the rules of an open
+    /// (the app's own write and the same bytes again differ in nothing: no work). A file that is not TOML keeps what
+    /// applied, so a broken file never lifts what the team narrowed, and says where it stops being TOML; one that
+    /// cannot be read now (locked, too large, not text, a linked `.permark`) changes nothing.
+    pub(crate) fn reread_config(&self, env: &CoreEnv) {
+        let _turn = self.config_turn();
+        // a report from now on needs a read after this one: what changes during it may be missed by it
+        self.config_pending.store(false, Ordering::SeqCst);
+        let before = self.config();
+        let read = ProjectConfig::load_checked(self.vault.main());
+        #[cfg(test)]
+        self.config_reads
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let after = match read {
+            ConfigRead::Read(_, config) => config,
+            ConfigRead::Absent => ProjectConfig::default(),
+            ConfigRead::Unreadable(ConfigUnreadable::NotToml { line }) => ProjectConfig {
+                unreadable_line: Some(line),
+                ..before.clone()
+            },
+            ConfigRead::Unreadable(_) => return,
+        };
+        self.use_config(env, &before, &after);
+    }
+
+    /// `after` becomes the config (`before`: the one that applied until now) and what follows it is brought along: the
+    /// plugins turned off for everyone, the Explorer's default filter + ignore rules (the folder read again); windows
+    /// are told. Called inside the config turn.
+    fn use_config(&self, env: &CoreEnv, before: &ProjectConfig, after: &ProjectConfig) {
+        if before == after {
+            return;
+        }
+        *self.config.write().unwrap_or_else(PoisonError::into_inner) = after.clone();
+        if before.plugins_off != after.plugins_off {
+            self.apply_plugins(env);
+            env.sink.emit(CoreEvent::PluginsChanged);
+            // the windows' contexts name the plugins that are on
+            if let Some(hook) = env.status_hook() {
+                hook();
+            }
+        }
+        if before.tree != after.tree || before.ignore != after.ignore {
+            self.explorer.reconfigure(after);
+            self.rescan();
+        }
+        env.sink
+            .emit(CoreEvent::ProjectConfigChanged(ProjectConfigChanged {
+                root: self.root().path().display().to_string(),
+            }));
     }
 
     /// What git may see of the folder's `.permark/` ([`crate::state::set_sharing`]): a rewritten ignore file reaches the
@@ -947,22 +1097,28 @@ impl ProjectCore {
 
     /// Re-resolves enablement (settings | choices changed) and starts | stops project plugins to match.
     pub fn apply_plugins(&self, env: &CoreEnv) {
-        let (enablement, on) = project_enablement(env, &self.config(), &self.store());
-        self.start_plugins(env, enablement, &on);
+        let mut plugins = self.plugins.lock().unwrap_or_else(PoisonError::into_inner);
+        self.apply_plugins_to(env, &mut plugins);
     }
 
     /// Stops plugin `id` and its dependents, then starts them again (a setting of `id` changed).
     pub fn restart_plugin(&self, env: &CoreEnv, id: &PluginId) {
-        self.plugins
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .stop_with_dependents(&env.registry, id);
-        self.apply_plugins(env);
+        let mut plugins = self.plugins.lock().unwrap_or_else(PoisonError::into_inner);
+        plugins.stop_with_dependents(&env.registry, id);
+        self.apply_plugins_to(env, &mut plugins);
+    }
+
+    /// Enablement worked out and applied in one hold of the plugin set: an apply that read older settings | config
+    /// never lands after one that read newer ones (a plugin the person just turned off never starts again).
+    fn apply_plugins_to(&self, env: &CoreEnv, plugins: &mut PluginSet) {
+        let (enablement, on) = project_enablement(env, &self.config(), &self.store());
+        self.start_plugins(env, plugins, enablement, &on);
     }
 
     fn start_plugins(
         &self,
         env: &CoreEnv,
+        plugins: &mut PluginSet,
         enablement: BTreeMap<PluginId, Enablement>,
         on: &BTreeSet<PluginId>,
     ) {
@@ -990,30 +1146,23 @@ impl ProjectCore {
         let mut context = Context::welcome(env.distribution);
         context.workspace = crate::conditions::WorkspaceKind::Project;
         context.plugins.clone_from(on);
-        let failures = self
-            .plugins
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .apply(&env.registry, on, |id| {
-                // the person's own settings only: a shared project file never sets a plugin's keys for everyone
-                PluginCx::new(
-                    id.clone(),
-                    CxWorkspace::Project(self.vault.clone()),
-                    store.plugin_dir(id),
-                    settings.plugin_tables.get(id).map(|t| t.0.clone()),
-                    context.clone(),
-                    Arc::clone(&env.sink),
-                )
-                .with_watch(Arc::clone(&self.hub))
-                .with_project(self.project_services())
-                .with_store(store.clone())
-            });
+        let failures = plugins.apply(&env.registry, on, |id| {
+            // the person's own settings only: a shared project file never sets a plugin's keys for everyone
+            PluginCx::new(
+                id.clone(),
+                CxWorkspace::Project(self.vault.clone()),
+                store.plugin_dir(id),
+                settings.plugin_tables.get(id).map(|t| t.0.clone()),
+                context.clone(),
+                Arc::clone(&env.sink),
+            )
+            .with_watch(Arc::clone(&self.hub))
+            .with_project(self.project_services())
+            .with_store(store.clone())
+        });
         // plugins that kept running are told, so what they read with the old formats (links of documents) is read again
         if formats_changed {
-            self.plugins
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .formats_changed();
+            plugins.formats_changed();
         }
         // named as the project's views name it (`WorkspaceView::Project.root`)
         let root = self.root().path().display().to_string();

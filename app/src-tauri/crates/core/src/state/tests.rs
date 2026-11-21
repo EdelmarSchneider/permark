@@ -1,4 +1,5 @@
 use super::*;
+use crate::fsx::tests::file_link;
 use std::collections::BTreeMap;
 use std::fs;
 
@@ -697,18 +698,6 @@ fn uninit_project_keeps_a_folder_whose_files_changed() {
     init_project(&f.dirs, &f.root()).unwrap();
     assert!(uninit_project(&f.dirs, &f.root()).unwrap());
     assert!(!f.permark().exists());
-}
-
-/// A file symlink at `link` to `target` (Windows: only with the symlink privilege, else `false`: skipped).
-fn file_link(link: &Path, target: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(target, link).is_ok()
-    }
-    #[cfg(windows)]
-    {
-        std::os::windows::fs::symlink_file(target, link).is_ok()
-    }
 }
 
 /// Undo of an init also takes the folder back after the sharing choice (either form PerMark writes, with the line

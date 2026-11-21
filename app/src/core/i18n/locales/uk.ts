@@ -65,7 +65,7 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Частину збережених даних PerMark не вдалося прочитати, тому їх відкладено: {file}",
+    "Частину збережених даних PerMark не вдалося прочитати, тому їх відкладено: {file}. Стару копію збережено тут: {backup}",
   "notice.stateUnreadable":
     "Частину збережених даних PerMark не вдалося прочитати. Їх залишено без змін, і PerMark не змінюватиме їх, доки знову не зможе їх прочитати (зазвичай після перезапуску): {file}",
 
@@ -1831,6 +1831,8 @@ export default {
   "project.shareGitOn": "Увімкнено",
   "project.shareInit": "Ініціалізуйте PerMark, щоб поділитися цим з усіма",
   "project.sharedFileHint": "Спільне для кожного, хто відкриває цю папку.",
+  "project.sharedFileUnreadable":
+    "PerMark не може прочитати цей файл у рядку {line}, тому налаштування з позначкою «Усі» не можна змінити, доки файл не виправлено.",
   "settings.all": "Усі налаштування",
   "settings.editorPreview": "Приклад:",
   "settings.linkUpdateHint":
@@ -1868,6 +1870,8 @@ export default {
   "settings.problem.noPath": "Команда має містити {path}.",
   "settings.problem.notInitialized": "У цій папці ще немає налаштувань PerMark.",
   "settings.problem.tomlOnly": "Використовуйте імʼя файлу із закінченням .toml.",
+  "settings.problem.notToml":
+    "PerMark не може прочитати .permark/config.toml, тому нічого не змінено.",
   "settings.problem.other": "Це значення не прийнято.",
   "welcome.newProject": "Новий проєкт…",
   "welcome.newProjectHint": "Виберіть папку; PerMark налаштує її як проєкт.",

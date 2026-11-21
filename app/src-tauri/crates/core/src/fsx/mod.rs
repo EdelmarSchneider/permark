@@ -471,16 +471,42 @@ pub(crate) mod slip {
 /// [`write_atomic_checked`] guarded by `seen`: `bytes` replace `path` only while it still holds the bytes hashed `seen`.
 /// Check, then rename: two steps, not one atomic compare-and-swap. The check runs right before each rename attempt,
 /// which narrows the window but does not close it: on Unix any writer, and on Windows a writer that does not keep the
-/// file open, can still land between the two. `Ok(false)`: the file changed or went meanwhile, untouched.
+/// file open, can still land between the two. `Ok(false)`: the file changed or went meanwhile, untouched. Only a
+/// plain file still holds what was read: a link is followed (a profile file a dotfile manager links elsewhere stays
+/// writable; the rename then puts a plain file where the link was, as a plain atomic write does), a folder, FIFO or
+/// device at the path or behind a link is a change, never read.
 ///
 /// # Errors
 /// IO failure; temp removed, target untouched.
 pub fn write_atomic_if_unchanged(path: &Path, bytes: &[u8], seen: ContentHash) -> io::Result<bool> {
-    write_atomic_checked(path, bytes, || match std::fs::read(path) {
+    write_atomic_checked(path, bytes, || still_holds(path, seen))
+}
+
+/// Whether the plain file at `path` (a link followed) holds the bytes hashed `seen`. Anything else there answers
+/// `false` without being read: a FIFO would keep the check waiting, a device (`/dev/zero`) reading, forever. The file
+/// is read no further than the size it had when looked at (one that grew since has changed).
+fn still_holds(path: &Path, seen: ContentHash) -> io::Result<bool> {
+    let meta = match std::fs::metadata(path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    if !meta.is_file() {
+        return Ok(false);
+    }
+    match read_regular(path, meta.len(), Zone::Anywhere) {
         Ok(now) => Ok(hash(&now) == seen),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(e),
-    })
+        Err(FsxError::Io { source, .. })
+            if matches!(
+                source.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::InvalidData
+            ) =>
+        {
+            Ok(false)
+        }
+        Err(FsxError::Io { source, .. }) => Err(source),
+        Err(FsxError::TooLarge { .. } | FsxError::Binary(_)) => Ok(false),
+    }
 }
 
 /// [`write_atomic_checked`] that only creates: `bytes` land at `path` only while nothing (file, folder, link) is
@@ -876,6 +902,67 @@ pub(crate) mod tests {
         assert!(write_atomic_if_unchanged(&path, b"mine", seen).unwrap());
         assert_eq!(std::fs::read(&path).unwrap(), b"mine");
         assert_eq!(names_in(dir.path()), ["a.md"]);
+    }
+
+    /// A file symlink at `link` to `target` (Windows: only with the symlink privilege, else `false`: skipped).
+    pub(crate) fn file_link(link: &Path, target: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(target, link).is_ok()
+        }
+    }
+
+    /// Only a plain file can still hold what was read: a folder or a FIFO at the path is a change, never read (a FIFO
+    /// would keep the check waiting forever); a link to a plain file is followed, so a linked file stays writable.
+    /// Nothing is written on a change and no temp stays behind.
+    #[test]
+    fn a_write_while_unchanged_takes_anything_but_a_plain_file_for_a_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let seen = hash(b"seen");
+        let folder = dir.path().join("folder.md");
+        std::fs::create_dir(&folder).unwrap();
+        assert!(!write_atomic_if_unchanged(&folder, b"mine", seen).unwrap());
+        assert!(folder.is_dir());
+        // a link to a file holding other bytes: a change, link and target stay as they are
+        let target = dir.path().join("target.md");
+        std::fs::write(&target, "other").unwrap();
+        let link = dir.path().join("link.md");
+        if file_link(&link, &target) {
+            assert!(!write_atomic_if_unchanged(&link, b"mine", seen).unwrap());
+            assert!(std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink());
+            // a link to a file holding the bytes read: the write lands where the link was, the target untouched
+            std::fs::write(&target, "seen").unwrap();
+            assert!(write_atomic_if_unchanged(&link, b"mine", seen).unwrap());
+            assert_eq!(std::fs::read(&link).unwrap(), b"mine");
+            assert_eq!(std::fs::read(&target).unwrap(), b"seen");
+        } else {
+            eprintln!("skipped the link case: no file links here");
+            std::fs::write(&link, "seen").unwrap();
+        }
+        #[cfg(unix)]
+        {
+            let fifo = dir.path().join("fifo.md");
+            let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+            assert!(made.is_ok_and(|s| s.success()));
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(write_atomic_if_unchanged(&fifo, b"mine", seen).ok());
+            });
+            let answer = rx
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .expect("the check waited on a FIFO");
+            assert_eq!(answer, Some(false));
+        }
+        let mut names = names_in(dir.path());
+        names.retain(|name| name != "fifo.md");
+        assert_eq!(names, ["folder.md", "link.md", "target.md"]);
     }
 
     #[test]

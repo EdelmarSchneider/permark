@@ -53,7 +53,7 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "保存されていた PerMark のデータの一部を読み取れなかったため、別の場所に移しました：{file}",
+    "保存されていた PerMark のデータの一部を読み取れなかったため、別の場所に移しました：{file}。以前のコピーはこちらにあります：{backup}",
   "notice.stateUnreadable":
     "保存されていた PerMark のデータの一部を読み取れませんでした。データはそのまま残してあり、もう一度読み取れるようになるまで（通常は再起動後）PerMark は変更しません：{file}",
 
@@ -1780,6 +1780,8 @@ export default {
   "project.shareGitOn": "オン",
   "project.shareInit": "全員と共有するには PerMark を初期化してください",
   "project.sharedFileHint": "このフォルダーを開く全員と共有されます。",
+  "project.sharedFileUnreadable":
+    "PerMark はこのファイルの {line} 行目を読み取れません。修正されるまで「全員」の設定は変更できません。",
   "settings.all": "すべての設定",
   "settings.editorPreview": "例：",
   "settings.linkUpdateHint": "ファイルの移動や名前の変更時に、リンクをどうするかを指定します。",
@@ -1817,6 +1819,8 @@ export default {
   "settings.problem.noPath": "コマンドには {path} が必要です。",
   "settings.problem.notInitialized": "このフォルダーにはまだ PerMark の設定がありません。",
   "settings.problem.tomlOnly": "末尾が .toml のファイル名を使ってください。",
+  "settings.problem.notToml":
+    "PerMark は .permark/config.toml を読み取れないため、何も変更されませんでした。",
   "settings.problem.other": "この値は受け付けられませんでした。",
   "welcome.newProject": "新しいプロジェクト…",
   "welcome.newProjectHint": "フォルダーを選ぶと、PerMark がプロジェクトとして設定します。",

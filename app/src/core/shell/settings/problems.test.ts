@@ -14,6 +14,15 @@ describe("a refused setting in words", () => {
     expect(en["settings.problem.tomlOnly"]).toBe("Use a file name ending in .toml.");
   });
 
+  it("words a change refused because the shared settings file is not TOML", () => {
+    const refused: ApiError = {
+      kind: "backend",
+      command: "project_config_set",
+      error: { kind: "settingsUnreadable", subject: ".permark/config.toml", detail: "notToml" },
+    };
+    expect(problemKey(reasonCode(refused))).toBe("settings.problem.notToml");
+  });
+
   it("falls back to a general sentence for a reason it does not know", () => {
     expect(problemKey("somethingNew")).toBe("settings.problem.other");
   });

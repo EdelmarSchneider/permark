@@ -49,7 +49,8 @@ const en = {
     "This location can't report changes, so PerMark can't follow them live. Switch back to the window to refresh.",
 
   // ---- notices
-  "notice.stateRecovered": "Some saved PerMark data couldn't be read and was set aside: {file}",
+  "notice.stateRecovered":
+    "Some saved PerMark data couldn't be read and was set aside: {file}. You can find the old copy here: {backup}",
   "notice.stateUnreadable":
     "Some saved PerMark data couldn't be read. It was left untouched, and PerMark won't change it until it can read it again, usually after a restart: {file}",
 
@@ -1735,6 +1736,8 @@ const en = {
   "project.shareGitOn": "On",
   "project.shareInit": "Initialize PerMark to share this with everyone",
   "project.sharedFileHint": "Shared with whoever opens this folder.",
+  "project.sharedFileUnreadable":
+    "PerMark can't read this file at line {line}, so settings marked Everyone can't be changed until it's fixed.",
   "settings.all": "All settings",
   "settings.editorPreview": "Example:",
   "settings.linkUpdateHint": "What happens to links when a file is moved or renamed.",
@@ -1770,6 +1773,7 @@ const en = {
   "settings.problem.noPath": "The command needs {path}.",
   "settings.problem.notInitialized": "This folder has no PerMark settings yet.",
   "settings.problem.tomlOnly": "Use a file name ending in .toml.",
+  "settings.problem.notToml": "PerMark can't read .permark/config.toml, so nothing was changed.",
   "settings.problem.other": "This value was not accepted.",
   "welcome.newProject": "New project…",
   "welcome.newProjectHint": "Choose a folder; PerMark sets it up as a project.",

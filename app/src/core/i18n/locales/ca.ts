@@ -53,7 +53,7 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Algunes dades desades del PerMark no s'han pogut llegir i s'han apartat: {file}",
+    "Algunes dades desades del PerMark no s'han pogut llegir i s'han apartat: {file}. Trobareu la còpia antiga aquí: {backup}",
   "notice.stateUnreadable":
     "Algunes dades desades del PerMark no s'han pogut llegir. S'han deixat intactes, i el PerMark no les canviarà fins que les pugui tornar a llegir, normalment després de reiniciar-lo: {file}",
 
@@ -1782,6 +1782,8 @@ export default {
   "project.shareGitOn": "Activat",
   "project.shareInit": "Inicialitzeu el PerMark per compartir-ho amb tothom",
   "project.sharedFileHint": "Compartit amb qui obri aquesta carpeta.",
+  "project.sharedFileUnreadable":
+    "El PerMark no pot llegir aquest fitxer a la línia {line}, de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
   "settings.all": "Tota la configuració",
   "settings.editorPreview": "Exemple:",
   "settings.linkUpdateHint":
@@ -1820,6 +1822,8 @@ export default {
   "settings.problem.noPath": "L'ordre necessita {path}.",
   "settings.problem.notInitialized": "Aquesta carpeta encara no té configuració del PerMark.",
   "settings.problem.tomlOnly": "Utilitzeu un nom de fitxer acabat en .toml.",
+  "settings.problem.notToml":
+    "El PerMark no pot llegir .permark/config.toml, de manera que no s'ha canviat res.",
   "settings.problem.other": "No s'ha acceptat aquest valor.",
   "welcome.newProject": "Projecte nou…",
   "welcome.newProjectHint": "Trieu una carpeta; el PerMark la configura com a projecte.",

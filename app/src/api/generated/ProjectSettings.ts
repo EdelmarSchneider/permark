@@ -14,4 +14,9 @@ sharing: Sharing, tree: TreeConfig, ignore: Array<string>, agentDeny: Array<stri
 /**
  * Plugin keys of the file no plugin reads (`<id>.<key>`, sorted).
  */
-ignoredPluginKeys: Array<string>, };
+ignoredPluginKeys: Array<string>, 
+/**
+ * The file is there but not TOML: the line where it stops being TOML (1-based); the page says so and nothing is
+ * written to it.
+ */
+unreadableLine: number | null, };

@@ -53,7 +53,7 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Non foi posíbel ler algúns datos gardados de PerMark e apartáronse: {file}",
+    "Non foi posíbel ler algúns datos gardados de PerMark e apartáronse: {file}. A copia anterior está aquí: {backup}",
   "notice.stateUnreadable":
     "Non foi posíbel ler algúns datos gardados de PerMark. Deixáronse intactos, e PerMark non os cambiará ata que poida volver lelos, normalmente despois de reinicialo: {file}",
 
@@ -1767,6 +1767,8 @@ export default {
   "project.shareGitOn": "Activado",
   "project.shareInit": "Inicialice PerMark para compartir isto con todos",
   "project.sharedFileHint": "Compartido con quen abra este cartafol.",
+  "project.sharedFileUnreadable":
+    "PerMark non pode ler este ficheiro na liña {line}, así que a configuración marcada con Todos non se pode cambiar ata que se corrixa.",
   "settings.all": "Toda a configuración",
   "settings.editorPreview": "Exemplo:",
   "settings.linkUpdateHint": "Que lles pasa ás ligazóns cando se move ou se renomea un ficheiro.",
@@ -1804,6 +1806,8 @@ export default {
   "settings.problem.noPath": "A orde necesita {path}.",
   "settings.problem.notInitialized": "Este cartafol aínda non ten configuración de PerMark.",
   "settings.problem.tomlOnly": "Use un nome de ficheiro que remate en .toml.",
+  "settings.problem.notToml":
+    "PerMark non pode ler .permark/config.toml, así que non se cambiou nada.",
   "settings.problem.other": "Non se aceptou este valor.",
   "welcome.newProject": "Novo proxecto…",
   "welcome.newProjectHint": "Escolla un cartafol; PerMark configúrao como proxecto.",

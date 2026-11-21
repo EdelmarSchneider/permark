@@ -5,12 +5,12 @@ use std::io;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use toml_edit::{Array, DocumentMut, Item, Table, Value};
+use toml_edit::{Array, DocumentMut, Item, Value};
 use ts_rs::TS;
 
 use super::{
-    edit_file, plugin_tables, read_team_text, set_keeping_decor, set_plugin_key, tokenizers_of,
-    tokenizers_value, valid_tokenizers, SettingsError,
+    edit_file, plugin_tables, read_team_text, set_key_at, set_plugin_key, tokenizers_of,
+    tokenizers_value, toml_error_line, valid_tokenizers, Kept, SettingsError,
 };
 use crate::fsx;
 use crate::paths::Root;
@@ -79,6 +79,9 @@ pub struct ProjectConfig {
     /// `<id>.<key>` of every other plugin key in the file, sorted: a plugin reads its settings from the person's own
     /// app settings only, so a shared file never changes them for everyone.
     pub ignored_plugin_keys: Vec<String>,
+    /// The file is there but not TOML: the line (1-based) where the parser stopped. The values are then not the
+    /// file's, and every write to it is refused ([`ProjectConfigFile::apply`]).
+    pub unreadable_line: Option<usize>,
 }
 
 /// The one plugin key besides `enabled` a project file is read for.
@@ -111,8 +114,8 @@ pub enum ConfigUnreadable {
     Read(SettingsError),
     /// `.permark/` is a link: never followed, so the team file it may lead to stays unknown.
     LinkedFolder,
-    /// Not TOML (a merge conflict left in it).
-    NotToml,
+    /// Not TOML (a merge conflict left in it); `line`: where the parser stopped (1-based).
+    NotToml { line: usize },
 }
 
 /// `.permark/config.toml` read checked ([`ProjectConfig::load_checked`]).
@@ -126,11 +129,16 @@ pub enum ConfigRead {
 }
 
 impl ProjectConfig {
-    /// Reads `<root>/.permark/config.toml`; defaults when `.permark/` is no real folder | file missing | invalid.
+    /// Reads `<root>/.permark/config.toml`; defaults when `.permark/` is no real folder | file missing | invalid (not
+    /// TOML: the defaults + [`ProjectConfig::unreadable_line`]).
     #[must_use]
     pub fn load(root: &Root) -> Self {
         match Self::load_checked(root) {
             ConfigRead::Read(_, config) => config,
+            ConfigRead::Unreadable(ConfigUnreadable::NotToml { line }) => Self {
+                unreadable_line: Some(line),
+                ..Self::default()
+            },
             ConfigRead::Absent | ConfigRead::Unreadable(_) => Self::default(),
         }
     }
@@ -161,18 +169,23 @@ impl ProjectConfig {
             Ok(None) => return ConfigRead::Absent,
             Err(error) => return ConfigRead::Unreadable(ConfigUnreadable::Read(error)),
         };
-        match Self::from_text(&text) {
-            Some(config) => ConfigRead::Read(text, config),
-            None => ConfigRead::Unreadable(ConfigUnreadable::NotToml),
+        match Self::parse(&text) {
+            Ok(config) => ConfigRead::Read(text, config),
+            Err(line) => ConfigRead::Unreadable(ConfigUnreadable::NotToml { line }),
         }
     }
 
     /// What a config text says; `None`: not TOML.
     #[must_use]
     pub fn from_text(text: &str) -> Option<Self> {
+        Self::parse(text).ok()
+    }
+
+    /// What a config text says; `Err`: not TOML, the line (1-based) where the parser stopped.
+    fn parse(text: &str) -> Result<Self, usize> {
         text.parse::<DocumentMut>()
-            .ok()
             .map(|doc| Self::from_doc(&doc))
+            .map_err(|error| toml_error_line(text, &error))
     }
 
     /// Lenient: each key on its own; wrong types read as defaults.
@@ -231,6 +244,7 @@ impl ProjectConfig {
             ),
             plugins_off,
             ignored_plugin_keys,
+            unreadable_line: None,
         }
     }
 }
@@ -258,6 +272,9 @@ pub struct ProjectSettings {
     pub tokenizers: Vec<String>,
     /// Plugin keys of the file no plugin reads (`<id>.<key>`, sorted).
     pub ignored_plugin_keys: Vec<String>,
+    /// The file is there but not TOML: the line where it stops being TOML (1-based); the page says so and nothing is
+    /// written to it.
+    pub unreadable_line: Option<u32>,
 }
 
 impl ProjectSettings {
@@ -272,6 +289,9 @@ impl ProjectSettings {
             agent_deny_paths: config.agent_deny_paths.clone(),
             tokenizers: config.tokenizers.clone(),
             ignored_plugin_keys: config.ignored_plugin_keys.clone(),
+            unreadable_line: config
+                .unreadable_line
+                .map(|line| u32::try_from(line).unwrap_or(u32::MAX)),
         }
     }
 }
@@ -390,37 +410,6 @@ fn strings_value(entries: &[String]) -> Option<Value> {
     (!array.is_empty()).then(|| Value::Array(array))
 }
 
-/// Sets | removes `key` (in `[table]` when given); a table left empty goes with its last key.
-fn set_key(root: &mut Table, table: Option<&str>, key: &str, value: Option<Value>) {
-    let Some(name) = table else {
-        match value {
-            Some(value) => set_keeping_decor(root, key, value),
-            None => {
-                root.remove(key);
-            }
-        }
-        return;
-    };
-    match value {
-        Some(value) => {
-            if !root.get(name).is_some_and(Item::is_table) {
-                root.insert(name, Item::Table(Table::new()));
-            }
-            if let Some(Item::Table(table)) = root.get_mut(name) {
-                set_keeping_decor(table, key, value);
-            }
-        }
-        None => {
-            if let Some(Item::Table(table)) = root.get_mut(name) {
-                table.remove(key);
-                if table.is_empty() {
-                    root.remove(name);
-                }
-            }
-        }
-    }
-}
-
 /// Bytes of the file's header: its first whole lines, while blank or a comment, up to the last comment (blank lines
 /// after it belong to what follows: they go with it).
 fn header_len(text: &str) -> usize {
@@ -460,25 +449,20 @@ fn change_keys(doc: &mut DocumentMut, change: &ProjectSettingChange) {
     let root = doc.as_table_mut();
     match change {
         ProjectSettingChange::TreeShow(v) => {
-            set_key(
-                root,
-                Some("tree"),
-                "show",
-                v.map(|v| Value::from(v.as_str())),
-            );
+            set_key_at(root, &["tree"], "show", v.map(|v| Value::from(v.as_str())));
         }
         ProjectSettingChange::TreeInclude(v) => {
-            set_key(root, Some("tree"), "include", strings_value(v));
+            set_key_at(root, &["tree"], "include", strings_value(v));
         }
         ProjectSettingChange::TreeExclude(v) => {
-            set_key(root, Some("tree"), "exclude", strings_value(v));
+            set_key_at(root, &["tree"], "exclude", strings_value(v));
         }
-        ProjectSettingChange::Ignore(v) => set_key(root, None, "ignore", strings_value(v)),
+        ProjectSettingChange::Ignore(v) => set_key_at(root, &[], "ignore", strings_value(v)),
         ProjectSettingChange::AgentDeny(v) => {
-            set_key(root, Some("agent"), "deny", strings_value(v));
+            set_key_at(root, &["agent"], "deny", strings_value(v));
         }
         ProjectSettingChange::AgentDenyPaths(v) => {
-            set_key(root, Some("agent"), "deny_paths", strings_value(v));
+            set_key_at(root, &["agent"], "deny_paths", strings_value(v));
         }
         ProjectSettingChange::Tokenizers(ids) => {
             set_plugin_key(
@@ -517,10 +501,13 @@ impl ProjectConfigFile {
         std::fs::symlink_metadata(&self.permark).is_ok_and(|m| m.file_type().is_dir())
     }
 
-    /// Applies one change to the file on disk (read fresh: hand edits kept) and returns the config now.
+    /// Applies one change to the file on disk (read fresh: hand edits kept) and returns the config now. A file that is
+    /// not TOML is everyone's settings: the change is refused and its bytes stay as they are.
     ///
     /// # Errors
-    /// `NotInitialized` (no real `.permark/`); `Invalid` value; the file is a link; IO failure.
+    /// `NotInitialized` (no real `.permark/`); `Invalid` value; the file is a link; `Unreadable` (not TOML: the line
+    /// where it stops being TOML; not text | too large | locked); `Conflict` (another program kept changing it
+    /// meanwhile); IO failure.
     pub fn apply(&self, change: &ProjectSettingChange) -> Result<ProjectConfig, SettingsError> {
         change.validate()?;
         if !self.initialized() {
@@ -532,10 +519,16 @@ impl ProjectConfigFile {
                 reason: "link".to_owned(),
             });
         }
-        let doc = edit_file(&self.path, |doc| {
-            apply_project_change(doc, change);
-            Ok(())
-        })?;
+        let doc = edit_file(
+            &self.path,
+            Kept::Team {
+                permark: &self.permark,
+            },
+            |doc| {
+                apply_project_change(doc, change);
+                Ok(())
+            },
+        )?;
         Ok(ProjectConfig::from_doc(&doc))
     }
 }
