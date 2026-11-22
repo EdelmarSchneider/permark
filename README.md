@@ -486,6 +486,10 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 **PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
 
+- **0.18.0:** a release about trust and polish: a folder from elsewhere can no longer make PerMark act for it, where PerMark keeps
+  a folder's data is chosen once, a crash leaves a report on your computer (nothing is sent), large folders and many files at once
+  are much faster, the keyboard and screen readers reach everything, PerMark asks before it starts a program for the first time,
+  and many fixes across editing, review, git and settings.
 - **0.17.0:** the Assistant shows replies as formatted text, continues your last conversation (also after a restart), lets
   you choose the agent's model and reasoning level in the panel, and has its own settings page.
 - **0.16.0:** the experimental **Assistant**, off until you turn it on: an AI agent you choose works on a copy of your folder,
