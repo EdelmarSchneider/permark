@@ -525,6 +525,9 @@ impl Shared {
         if markdown && asked == Basis::Read && self.own_save_unreported(path, current.hash) {
             return Ok(status(ReviewState::Same));
         }
+        if !markdown && asked == Basis::Read {
+            self.own_save_seen(path, &current);
+        }
         let base = if markdown {
             self.base(path, asked)
         } else {
@@ -727,6 +730,22 @@ impl Shared {
         }
         self.set_seen(path, current.hash);
         Ok(())
+    }
+
+    /// `current` (not Markdown) is the person's own save and no review is open: it counts as seen at once. The page
+    /// reloads right after a save and asks before the person's next look, and nothing else follows a text that is not
+    /// Markdown: the save would be offered as a change, and a change by another program before that look would come
+    /// mixed with it.
+    fn own_save_seen(&self, path: &str, current: &Version) {
+        if self.held_hash(path).is_none()
+            && self.seen_hash(path) != Some(current.hash)
+            && self
+                .project
+                .documents
+                .saved_as(path, &fsx::ContentHash(current.hash).hex())
+        {
+            self.count_as_read(path, current);
+        }
     }
 
     fn lines_base(&self, path: &str, asked: Basis) -> Result<Base, NoBase> {

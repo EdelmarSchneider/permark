@@ -107,6 +107,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - The **Undo** button in file notices announces its shortcut, and the **Remove data** question in Settings takes the keyboard to its **Cancel** button. <!-- f: accessibility, plugins -->
 - **Bring back this version** now brings back the whole text of that version, front matter included, and neither it nor its **Undo** makes PerMark offer to show what changed since you last read. The review's own blocks no longer glow, and no red lines are left after **Done**. <!-- f: review-changes, document-history -->
 - Assistant: continuing your last conversation no longer shows its replies as raw Markdown for a moment before they are formatted. <!-- f: assistant -->
+- Saving your own edit to a text or code file no longer brings up an offer to show what changed since you last read; a change another program makes afterwards is still offered. <!-- f: review-changes -->
 
 ### Security
 - **A document can no longer freeze PerMark with deeply nested HTML.** PerMark now measures how deep a document's HTML goes with the same parser that cleans it, so every document that is too deep to show safely falls back to plain text at once, with a note. Documents with slightly broken inline SVG or MathML keep showing as before. <!-- f: view-mode -->

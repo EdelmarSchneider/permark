@@ -269,6 +269,28 @@ fn the_persons_own_save_is_not_news_to_the_person() {
 }
 
 #[test]
+fn the_persons_own_save_is_no_news_before_the_person_looks_again() {
+    let mut h = Harness::new(false);
+    h.write("app.properties", "a=1\nb=2\n");
+    h.open();
+    look(&h, "app.properties");
+    // the page reloads right after a save and asks at once, long before the next look
+    h.write("app.properties", "a=1\nb=3\n");
+    h.core
+        .as_ref()
+        .unwrap()
+        .documents()
+        .saved("w", "app.properties", &h.hash("app.properties"));
+    assert_eq!(state(&h, "app.properties"), "same");
+    // another program's change after the save is news, and only that change
+    h.write("app.properties", "a=0\nb=3\n");
+    assert_eq!(h.state("app.properties")["count"], 1);
+    let view = open(&h, "app.properties");
+    assert_eq!(view["changes"][0]["old"], json!(["a=1"]));
+    assert_eq!(view["changes"].as_array().map(Vec::len), Some(1));
+}
+
+#[test]
 fn what_was_looked_at_is_remembered_between_sessions() {
     let mut h = Harness::new(false);
     h.write("p.rs", CODE);
