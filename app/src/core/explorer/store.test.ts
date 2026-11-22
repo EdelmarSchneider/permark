@@ -1129,7 +1129,9 @@ describe("delete and undo", () => {
     expect(f.acted.at(-1)?.text).toContain("README.md");
     expect(f.acted.at(-1)?.actions.map((a) => a.label)).toEqual(["Undo"]);
     // the shortcut that does the same in the tree, where file operations are done, told to screen readers
-    expect(f.acted.at(-1)?.actions[0]?.keys).toBe("Control+Z");
+    expect(f.acted.at(-1)?.actions[0]?.keys).toBe(
+      conditions.current.platform === "mac" ? "Meta+Z" : "Control+Z",
+    );
     f.acted.at(-1)?.actions[0]?.run();
     await vi.waitFor(() => expect(paths(f.store)).toContain("README.md"));
     expect(undo).toHaveBeenCalledTimes(1);
