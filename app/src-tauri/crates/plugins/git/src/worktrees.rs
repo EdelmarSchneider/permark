@@ -1321,14 +1321,17 @@ pub(crate) mod tests {
             "gitdir",
             &format!("{}\n", tree_b.join(".git").display()),
         ));
+        assert_eq!(names(linked_worktrees(&main, None)), ["c"]);
+        assert!(!opens_locally(&dir.path().join("a")));
+        assert!(opens_locally(&dir.path().join("c")));
+        // a ref that is a link: anything below `refs` may be read by git, so the whole repository is refused
         assert!(replace(
             &git.join("refs").join("heads").join("c"),
             "ref",
             &format!("{A}\n"),
         ));
-        assert_eq!(names(linked_worktrees(&main, None)), ["c"]);
-        assert!(!opens_locally(&dir.path().join("a")));
-        assert!(opens_locally(&dir.path().join("c")));
+        assert!(linked_worktrees(&main, None).is_empty());
+        assert!(!opens_locally(&dir.path().join("c")));
         // git opens `HEAD` and `packed-refs` of the common folder on every look, through a link too: the whole
         // repository is refused then
         assert!(replace(&git.join("HEAD"), "HEAD", "ref: refs/heads/main\n"));
