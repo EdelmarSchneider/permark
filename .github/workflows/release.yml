@@ -464,7 +464,12 @@ jobs:
           PATH="$tool:$PATH" cargo cyclonedx --manifest-path app/src-tauri/Cargo.toml --format json --spec-version 1.5 --target all
           name="PerMark_${TAG#v}"
           mv app/src-tauri/permark.cdx.json "$RUNNER_TEMP/sbom/${name}_rust.cdx.json"
-          (cd app && npm sbom --omit dev --sbom-format cyclonedx --sbom-type application --package-lock-only) \
+          # npm 10 (the runner's) names the root component after the folder it runs in ("app"), not the package, and
+          # has no flag for it: it reads a copy of the manifest and lockfile in a folder named after the package.
+          npm_root="$RUNNER_TEMP/permark"
+          mkdir -p "$npm_root"
+          cp app/package.json app/package-lock.json "$npm_root/"
+          (cd "$npm_root" && npm sbom --omit dev --sbom-format cyclonedx --sbom-type application --package-lock-only) \
             > "$RUNNER_TEMP/sbom/${name}_npm.cdx.json"
 
       - name: Keep the SBOMs for the publish job
