@@ -5,7 +5,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.18.0] - 2026-11-21
+## [0.18.0] - 2026-11-22
 
 ### Added
 - **A crash leaves a report on your computer.** If PerMark closes unexpectedly, it saves a report on this computer, with your home folder shown as `~`, and offers it the next time it starts: **Copy report**, **Report on GitHub** (copies the report and opens a prefilled issue in your browser; you review it, paste the report and submit it yourself) and **Open folder**. PerMark sends nothing. <!-- f: shell -->
