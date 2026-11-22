@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-21
+
 ### Added
 - **A crash leaves a report on your computer.** If PerMark closes unexpectedly, it saves a report on this computer, with your home folder shown as `~`, and offers it the next time it starts: **Copy report**, **Report on GitHub** (copies the report and opens a prefilled issue in your browser; you review it, paste the report and submit it yourself) and **Open folder**. PerMark sends nothing. <!-- f: shell -->
 - **Comments removed outside PerMark can come back.** When something other than PerMark removes comments from a folder's comments file — a sync tool, another program, a copy of the folder from elsewhere — the Comments panel says how many went, with **Restore** and **Dismiss**. When many go at once, a notice says so too. Restore adds back only the comments that are missing and never changes the ones that are there. PerMark keeps the removed comments for 30 days. <!-- f: comments -->
