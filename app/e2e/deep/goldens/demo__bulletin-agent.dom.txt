@@ -157,16 +157,188 @@ div.reading
                 "input"
               div.code-block
                 div.toon-block
-                  pre
-                    code
-                      "week: 46 audience: "Port Avery Elementary, grade 4" max_words: 120 note: LH-07 pH flagged for sensor drift since November 15 readings[3]{station,name,temp_c,sal…"
-                  p.reason role="note"
-                    "Not valid TOON 4.4"
+                  div.sheet role="group" aria-label="Settings in this file"
+                    section.card
+                      header
+                        button.icon-btn.icon-btn--sm.fold aria-label="Fold or unfold Top level"
+                          icon lucide-chevron-down
+                        h3
+                          span.last
+                            "Top level"
+                      div.rows
+                        div.row
+                          span.key title="week"
+                            "week"
+                          div.body
+                            span.value
+                              span.text.code
+                                "46"
+                          span.tools
+                        div.row
+                          span.key title="audience"
+                            "audience"
+                          div.body
+                            span.value
+                              span.text
+                                "Port Avery Elementary, grade 4"
+                          span.tools
+                        div.row
+                          span.key title="max_words"
+                            "max_words"
+                          div.body
+                            span.value
+                              span.text.code
+                                "120"
+                          span.tools
+                        div.row
+                          span.key title="note"
+                            "note"
+                          div.body
+                            span.value
+                              span.text
+                                "LH-07 pH flagged for sensor drift since November 15"
+                          span.tools
+                    section.card
+                      header
+                        button.icon-btn.icon-btn--sm.fold aria-label="Fold or unfold readings"
+                          icon lucide-chevron-down
+                        h3
+                          span.parent
+                          span.last
+                            "readings"
+                      div.sheet-table
+                        p.meta
+                          "3 rows"
+                        div.scroll-x
+                          table
+                            thead
+                              tr
+                                th
+                                  "station"
+                                th
+                                  "name"
+                                th
+                                  "temp_c"
+                                th
+                                  "sal_psu"
+                                th
+                                  "ph"
+                                th
+                                  "do_mgl"
+                                th
+                                  "hs_m"
+                                th
+                                  "flags"
+                            tbody
+                              tr
+                                td.cell
+                                  span.value
+                                    span.text
+                                      "LH-04"
+                                td.cell
+                                  span.value
+                                    span.text
+                                      "Gannet Point"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "12.6"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "33.8"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "8.02"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "7.9"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "1.4"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "17"
+                              tr
+                                td.cell
+                                  span.value
+                                    span.text
+                                      "LH-07"
+                                td.cell
+                                  span.value
+                                    span.text
+                                      "Kittiwake Shoal"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "12.1"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "33.4"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "7.96"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "8.1"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "1.8"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "64"
+                              tr
+                                td.cell
+                                  span.value
+                                    span.text
+                                      "LH-11"
+                                td.cell
+                                  span.value
+                                    span.text
+                                      "Heron Flats"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "11.4"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "31.6"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "7.97"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "8.4"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "0.4"
+                                td.cell
+                                  span.value
+                                    span.text.code
+                                      "24"
+                    p.spec title="The version of the TOON specification this file is read with"
+                      "TOON 4.4"
                   div.corner
                     span.lang
                       "TOON"
                     button.icon-btn.icon-btn--sm.code-action title="Convert…" aria-label="Convert…"
                       icon lucide-arrow-left-right
+                    button.icon-btn.icon-btn--sm.copy-json title="Copy as JSON" aria-label="Copy as JSON"
+                      icon lucide-braces
+                    span.sr-only
                     button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
                       icon lucide-copy
                     span.sr-only
