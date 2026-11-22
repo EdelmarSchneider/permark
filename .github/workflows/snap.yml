@@ -41,10 +41,6 @@ jobs:
     timeout-minutes: 60
     # The Snap Store credentials live in this environment, which only release tags and main | develop may use.
     environment: release
-    env:
-      # "true" only when the Store credentials exist. A step's `if` cannot read secrets, and this keeps their value out
-      # of the build step: only the publish step gets it.
-      SNAP_STORE: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS != '' }}
     steps:
       # By hand: the branch or tag the run was started on (no `ref` input then).
       - name: Checkout
@@ -65,10 +61,20 @@ jobs:
         id: build
         uses: snapcore/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79 # v1.3.0
 
+      # Whether the Store credentials exist, asked in a step: the environment's secrets reach the job's steps, while a
+      # job-level `env` of this called workflow is worked out before them and always read empty. A step's `if` cannot
+      # read secrets, and only this check and the publish step see the value.
+      - name: Look for the Store credentials
+        id: store
+        env:
+          CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          if [ -n "$CREDENTIALS" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+
       # Without the Store credentials (a fork, a test copy of the repository) the snap is built and checked, then left
       # unpublished, with a warning.
       - name: Publish to the Snap Store
-        if: env.SNAP_STORE == 'true'
+        if: steps.store.outputs.present == 'true'
         uses: snapcore/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40 # v1.2.0
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
@@ -77,5 +83,5 @@ jobs:
           release: ${{ inputs.channel }}
 
       - name: Say that the snap was not published
-        if: env.SNAP_STORE != 'true'
+        if: steps.store.outputs.present != 'true'
         run: echo "::warning::The snap was built but not published to the Snap Store, because the SNAPCRAFT_STORE_CREDENTIALS secret is not set."
