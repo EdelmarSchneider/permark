@@ -85,7 +85,8 @@ export type ToolState = AcpToolStatus | "stopped";
 export type Entry =
   /** The person's message (`passage`: attached; `null` also for a message replayed from a continued conversation). */
   | { kind: "you"; id: number; text: string; passage: PromptSelection | null }
-  | { kind: "agent"; id: number; text: string }
+  /** The agent's message (`replayed`: sent again by a continued conversation, already whole when it comes). */
+  | { kind: "agent"; id: number; text: string; replayed: boolean }
   | { kind: "tool"; id: number; tool: string; title: string; status: ToolState }
   | {
       kind: "question";
@@ -333,13 +334,18 @@ export class AcpStore {
       }
       case "text": {
         this.thinking = false;
+        // the backend replays a continued conversation while the agent starts (ready once restored) and moves to
+        // working before any turn's reply: the state tells a replay apart, whichever window asked for it and after a
+        // sign-in in between too
+        const replayed = this.status?.state === "starting";
         const last = this.transcript.at(-1);
-        if (last?.kind === "agent")
+        // a live reply never joins a replayed one: each keeps how it is drawn
+        if (last?.kind === "agent" && last.replayed === replayed)
           this.transcript = [
             ...this.transcript.slice(0, -1),
             { ...last, text: last.text + update.text },
           ];
-        else this.#push({ kind: "agent", text: update.text });
+        else this.#push({ kind: "agent", text: update.text, replayed });
         return;
       }
       case "you": {
