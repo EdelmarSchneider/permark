@@ -1678,8 +1678,8 @@ fn initializing_an_included_project_holds_its_writes_around_the_copy() {
 
 /// The window's `permark` condition tells whether the folder has a team folder (`.permark/` a real folder), as the
 /// folder's state was read (at open, after Initialize | a reload): also while the private state stays in the profile
-/// (here `local/` is a file); a `.permark/` that arrives while the project is open counts from the next read, and a
-/// file in its place is none. Building a context never looks at the disk.
+/// (here `local/` is a file); a `.permark/` that arrives while the project is open counts from the next read (the watch
+/// asks for one), and a file in its place is none. Building a context never looks at the disk.
 #[test]
 fn the_permark_condition_follows_the_team_folder_as_last_read() {
     let f = fx();
@@ -1694,11 +1694,7 @@ fn the_permark_condition_follows_the_team_folder_as_last_read() {
     std::fs::remove_file(&permark).unwrap();
     std::fs::create_dir(&permark).unwrap();
     std::fs::write(permark.join("local"), "x").unwrap();
-    assert_eq!(
-        condition(),
-        PermarkCondition::NotInitialized,
-        "not read yet"
-    );
+    // the watch also asks for this read when the folder arrives, so the moment between is not asserted
     core.reload_state(f.registry.env());
     assert_eq!(core.state_location(), StateLocation::Profile);
     assert_eq!(condition(), PermarkCondition::Initialized);
