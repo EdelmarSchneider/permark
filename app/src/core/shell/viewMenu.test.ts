@@ -285,6 +285,23 @@ describe("the entries of a view's menu", () => {
     ]);
   });
 
+  it("a group of closed views is not drawn and leaves room: show above | below acts, three groups at most", () => {
+    panel(LEFT, "left", () => import("../testing/StripSecond.svelte"));
+    arrange([[FILES], [LEFT], [SEARCH, PROBE]], [[OTHER]]);
+    layout.setOpen(LEFT, false);
+    flushSync();
+    expect(menuOf(PROBE).slice(0, 2)).toEqual(["Show above", "Show below"]);
+    const [above] = viewMenu.entries(PROBE);
+    if (above?.kind !== "item") throw new Error("no move entry");
+    above.run(false);
+    flushSync();
+    expect(arrangement.saved.left.map((g) => [...g.views])).toEqual([
+      [FILES, LEFT],
+      [PROBE],
+      [SEARCH],
+    ]);
+  });
+
   it("a region folded by a small window says why and arranges nothing: taller at a side, wider at the bottom", () => {
     arrangement.setSize("right", 2 * MIN_GROUP_PX + DIVIDER_PX - 1);
     expect(menuOf(PROBE).slice(0, 5)).toEqual([

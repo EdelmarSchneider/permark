@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use permark_core::events::OpenFailed;
+use permark_core::fsx::now_ms;
 use permark_core::open::{
     create_untitled_markdown, place_open, route, OpenPlacement, OpenRequest, Placed, Route,
 };
@@ -43,12 +44,6 @@ pub enum OpenOutcome {
     OpenedElsewhere {
         window: String,
     },
-}
-
-pub fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 fn path_of(reference: &WorkspaceRef) -> PathBuf {
@@ -385,6 +380,7 @@ pub fn first_launch(handle: &AppHandle, request: OpenRequest) {
     let handle = handle.clone();
     std::thread::spawn(move || {
         restore_session(&handle, &session, request.is_empty());
+        state(&handle).restore_done();
         if !request.is_empty() {
             handle_request(&handle, &request);
         }
@@ -469,12 +465,46 @@ fn restore_session(handle: &AppHandle, session: &AppSession, nothing_asked: bool
 
 // ---- opens from outside -----------------------------------------------------------------------------------------
 
+/// Where a plain second start brings the app forward.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Forward {
+    /// The work window on screen focused last.
+    Focus(String),
+    /// No work window on screen: the one still hidden shows now (the person asked for the app).
+    Show(String),
+    /// No work window at all (the only ones ask to close | are closing): a new one on Welcome.
+    NewWindow,
+}
+
+/// `last`: the work window an outside open goes to (on screen first); `shown`: it is on screen.
+fn forward_target(last: Option<String>, shown: bool) -> Forward {
+    match last {
+        Some(window) if shown => Forward::Focus(window),
+        Some(window) => Forward::Show(window),
+        None => Forward::NewWindow,
+    }
+}
+
 /// A second launch forwarded its request.
 pub fn forwarded(handle: &AppHandle, request: &OpenRequest) {
     if request.is_empty() && !request.flags.new_window {
-        // plain second start: bring the app forward
-        if let Some(window) = state(handle).registry.last_focused_work() {
-            windows::focus(handle, &window);
+        // plain second start: bring the app forward, never leaving it out of sight
+        let shell = state(handle);
+        let last = shell.registry.last_focused_work();
+        let shown = last
+            .as_deref()
+            .is_some_and(|w| shell.registry.is_window_shown(w));
+        match forward_target(last, shown) {
+            Forward::Focus(window) => windows::focus(handle, &window),
+            Forward::Show(window) => {
+                crate::views::show_window(handle, &window);
+                windows::focus(handle, &window);
+            }
+            Forward::NewWindow => {
+                let mut new = request.clone();
+                new.flags.new_window = true;
+                handle_request(handle, &new);
+            }
         }
         return;
     }
@@ -612,5 +642,19 @@ mod tests {
         assert_eq!(active_of(None, &[], notes), notes);
         assert_eq!(active_of(Some(7), &[], None), None, "Welcome");
         assert_eq!(active_of(Some(7), &[a], None), a, "out of range");
+    }
+
+    /// Regression (a second start did nothing): with no work window on screen, a plain second start shows the one
+    /// still hidden, or opens a new window when there is no work window at all.
+    #[test]
+    fn a_second_start_always_brings_a_window_to_the_screen() {
+        let w = |label: &str| Some(label.to_owned());
+        assert_eq!(forward_target(w("w-1"), true), Forward::Focus("w-1".into()));
+        assert_eq!(
+            forward_target(w("main"), false),
+            Forward::Show("main".into())
+        );
+        assert_eq!(forward_target(None, false), Forward::NewWindow);
+        assert_eq!(forward_target(None, true), Forward::NewWindow);
     }
 }

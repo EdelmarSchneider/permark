@@ -1,12 +1,23 @@
 //! Safety of `.permark/` state folders: a repository decides what its `.permark/` holds, links included. A link in
 //! place of `.permark/` | `local/` | `cache/` would send our writes (and deletes) wherever it points -> never used.
-//! Each state folder ignores itself (`.gitignore` = `*`): private whatever the project's own ignore says.
+//! Each state folder ignores itself (`.gitignore` = `*`, set back at each write when the folder brought another one):
+//! private whatever the project's own ignore says. The cache folder carries a cache directory tag for backup tools.
 
+use std::fs::Metadata;
 use std::io::{self, Write};
 use std::path::Path;
 
+use crate::fsx::{read_regular, write_atomic, Zone};
+
 /// `.gitignore` of a state folder: everything, itself included.
 pub(super) const SELF_IGNORE: &str = "*\n";
+/// Name of the state folder that holds only rebuildable files.
+const CACHE: &str = "cache";
+/// `CACHEDIR.TAG` (<https://bford.info/cachedir/>): backup tools that honor it skip the folder.
+const CACHEDIR_TAG: &str = "Signature: 8a477f597d28d172789f06886806bc55\n\
+# This file is a cache directory tag created by PerMark.\n\
+# For information about cache directory tags, see:\n\
+#\thttps://bford.info/cachedir/\n";
 
 /// What is on disk at a path, links NOT followed.
 pub(super) enum Entry {
@@ -16,25 +27,23 @@ pub(super) enum Entry {
     Other,
 }
 
+/// A link here is what std reports as one ([`crate::fsx::is_link`]: symlink, junction). A cloud placeholder folder
+/// (OneDrive Files On-Demand) carries a reparse point too, yet is a plain folder: a team folder in a synced folder is
+/// read and written like any other, as the zone reads and [`prepare`] see it.
 pub(super) fn entry(path: &Path) -> Entry {
+    entry_as(path, crate::fsx::is_link)
+}
+
+/// What is on disk at a path, `link` telling what counts as a link (never followed). Another `link` than std's: the
+/// rule of earlier versions for where a project's state lives (any reparse point), or a test standing for a cloud
+/// folder, which no test can make.
+pub(super) fn entry_as(path: &Path, link: fn(&Metadata) -> bool) -> Entry {
     match std::fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_dir() && !is_reparse(&meta) => Entry::Folder,
+        // a junction is a directory to `symlink_metadata` on some std versions: `link` looks at it too
+        Ok(meta) if meta.file_type().is_dir() && !link(&meta) => Entry::Folder,
         Err(error) if error.kind() == io::ErrorKind::NotFound => Entry::Missing,
         Ok(_) | Err(_) => Entry::Other,
     }
-}
-
-/// Junctions are directories to `symlink_metadata` on some std versions: check the reparse flag explicitly.
-#[cfg(windows)]
-fn is_reparse(meta: &std::fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-    meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-}
-
-#[cfg(not(windows))]
-fn is_reparse(_: &std::fs::Metadata) -> bool {
-    false
 }
 
 pub(super) fn is_real_folder(path: &Path) -> bool {
@@ -64,31 +73,73 @@ pub(super) fn create_if_missing(path: &Path, content: &str) -> io::Result<()> {
     }
 }
 
+/// Makes the file at `path` (below `permark`) hold exactly `content`: written when missing or different. A link or a
+/// FIFO in its place is replaced by the rename, never followed, read or written through; a folder is left, as it cannot
+/// be replaced without deleting what it holds, and so is a folder link on Windows (a file cannot be renamed over one).
+fn enforce(permark: &Path, path: &Path, content: &str) -> io::Result<()> {
+    // the cap is the content's length: anything longer differs without being read
+    let limit = content.len() as u64;
+    if read_regular(path, limit, Zone::Inside(permark)).is_ok_and(|b| b == content.as_bytes()) {
+        return Ok(());
+    }
+    // the entry itself: a link followed here could reach a network share
+    if std::fs::symlink_metadata(path).is_ok_and(|meta| holds_folder(&meta)) {
+        return Ok(());
+    }
+    write_atomic(path, content.as_bytes())
+}
+
+/// A folder, or on Windows a folder link | junction: a rename of a file over it fails.
+fn holds_folder(meta: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTypeExt;
+        meta.is_dir() || meta.file_type().is_symlink_dir()
+    }
+    #[cfg(not(windows))]
+    {
+        meta.is_dir()
+    }
+}
+
 /// Makes `dir` (a project state folder `.permark/<sub>`, or a folder inside one) ready: never behind a link,
 /// created when missing, its state folder self-ignoring. `permark` = the `.permark` folder, `state` = `local` | `cache`.
 pub(super) fn prepare(permark: &Path, state: &Path, dir: &Path) -> io::Result<()> {
+    // a link as the zone reads see one: a cloud placeholder folder on the way is a folder, so saves go where loads read
+    let walked = entry;
+    // top-down, `.permark` to `dir` (plugin namespaces): a link is refused before anything below it is looked up (a
+    // lookup through it could reach a network share); below a missing folder nothing is there yet
     let check = || -> io::Result<()> {
-        for folder in [permark, state] {
-            if matches!(entry(folder), Entry::Other) {
-                return Err(refused(folder));
-            }
+        let below = crate::paths::strip_root(dir, state).ok_or_else(|| refused(dir))?;
+        if matches!(walked(permark), Entry::Other) {
+            return Err(refused(permark));
         }
-        // every folder from the state folder down to `dir` (plugin namespaces) is real too
-        let mut walk = dir;
-        while walk != state {
-            if matches!(entry(walk), Entry::Other) {
-                return Err(refused(walk));
+        let mut walk = state.to_path_buf();
+        let mut names = below.into_iter();
+        loop {
+            match walked(&walk) {
+                Entry::Other => return Err(refused(&walk)),
+                Entry::Missing => break,
+                Entry::Folder => {}
             }
-            walk = walk.parent().ok_or_else(|| refused(dir))?;
+            let Some(name) = names.next() else {
+                break;
+            };
+            walk.push(name);
         }
         Ok(())
     };
-    if !matches!(entry(permark), Entry::Folder) {
+    if !matches!(walked(permark), Entry::Folder) {
         return Err(refused(permark));
     }
     check()?;
     std::fs::create_dir_all(dir)?;
     // looked at again once it exists: a link swapped in meanwhile is still refused
     check()?;
-    create_if_missing(&state.join(".gitignore"), SELF_IGNORE)
+    // best effort: git ignore files keep the state out of commits but guard nothing, so they never refuse a write
+    let _ = enforce(permark, &state.join(".gitignore"), SELF_IGNORE);
+    if state.file_name().is_some_and(|name| name == CACHE) {
+        let _ = create_if_missing(&state.join("CACHEDIR.TAG"), CACHEDIR_TAG);
+    }
+    Ok(())
 }

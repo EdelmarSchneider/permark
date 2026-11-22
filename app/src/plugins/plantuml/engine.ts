@@ -2,7 +2,20 @@
 // refused before the engine runs, and a standard-library include is refused the same way. The diagram kinds the
 // engine draws on its own (sequence, class, activity, state, component) need neither.
 
-import { diagrams, sanitizeSvg } from "../../core/doc/diagram";
+import { diagrams, sanitizeSvg, type DrawFailure } from "../../core/doc/diagram";
+import { t } from "../../core/i18n";
+
+/** Longest source drawn: the engine and its layout run on the page's thread, which a long diagram would hold up. */
+const MAX_SOURCE = 50_000;
+/** Most lines + links drawn (a few thousand messages | classes already take seconds to lay out). */
+const MAX_PARTS = 3_000;
+
+/** Whether a PlantUML source is too big to draw on the page's thread without stalling the window. */
+export function plantumlTooLarge(source: string): boolean {
+  if (source.length > MAX_SOURCE) return true;
+  const parts = source.match(/->|--|\.\.>|\n/g)?.length ?? 0;
+  return parts > MAX_PARTS;
+}
 
 /** Whether the source asks the engine to load something from outside (an include, an import, a remote theme). */
 export function plantumlFetches(source: string): boolean {
@@ -58,10 +71,17 @@ function withoutBuildLine(svg: string): string {
   return svg.replace(BUILD_LINE, "");
 }
 
-/** The SVG for a PlantUML source in this theme, or null when it cannot be drawn or asks for something off the machine. */
-export function drawPlantuml(source: string, theme: "light" | "dark"): Promise<string | null> {
+/**
+ * The SVG for a PlantUML source in this theme; null when it cannot be drawn or asks for something off the machine; a
+ * failure with its words when it is too big to draw here.
+ */
+export function drawPlantuml(
+  source: string,
+  theme: "light" | "dark",
+): Promise<string | DrawFailure | null> {
   if (plantumlFetches(source)) return Promise.resolve(null);
-  return diagrams.draw(`plantuml\u0000${theme}\u0000${source}`, () =>
+  if (plantumlTooLarge(source)) return Promise.resolve({ problem: t("plantuml.tooLarge") });
+  return diagrams.draw<string | null>(`plantuml\u0000${theme}\u0000${source}`, () =>
     loadEngine().then(
       (renderToString) =>
         new Promise<string | null>((resolve) => {

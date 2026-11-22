@@ -3,7 +3,9 @@
   // replaces only that value in the text and answers with the new text and sheet; the editing session compares the
   // text with the version on disk (unsaved), and saving writes only the changed lines through the usual path
   // (hash check, conflicts, line breaks).
+  import { tick } from "svelte";
   import { api, type Body, type ConfigEdit, type NewValue } from "../../api";
+  import { changedRuns } from "../editing/lines";
   import type { Content, EditingSession } from "../editing/session.svelte";
   import { t } from "../i18n";
   import ConfigSheet from "./ConfigSheet.svelte";
@@ -21,24 +23,25 @@
   let failed = $state(false);
   const sheet = $derived(body?.kind === "sheet" ? body.sheet : null);
   const matches = new Matches();
-
-  /** Runs of lines that differ from `base` (the save message). */
-  function changedRuns(base: string, next: string): number {
-    const a = base.split("\n");
-    const b = next.split("\n");
-    let runs = 0;
-    let inRun = false;
-    for (let i = 0; i < Math.max(a.length, b.length); i++) {
-      const differs = a[i] !== b[i];
-      if (differs && !inRun) runs += 1;
-      inRun = differs;
-    }
-    return runs;
-  }
+  let shown = $state<{
+    locate(line: number, asked: boolean): Promise<void>;
+    topLine(): number | null;
+  }>();
+  /** A line asked for before the sheet was drawn: shown once it is. */
+  let asked: number | null = null;
+  /** The last edit sent: the next one waits for its answer, so it starts from the text that answer made (two edits
+   *  sent at once would both start from the same text, and the later answer would drop the other edit). */
+  let queue: Promise<unknown> = Promise.resolve();
+  /** The document edited (kept once the editor is gone: an edit already in line still goes out from its text). */
+  let file = "";
+  /** The `seq` of the content on screen; `null` once the editor is gone (another one holds the document's text). */
+  let attached: number | null = null;
 
   // The editor of this content: its text, its first sheet, its place in the session.
   $effect(() => {
     const current = content;
+    file = current.path;
+    attached = current.seq;
     text = current.text;
     body = null;
     failed = false;
@@ -48,18 +51,35 @@
       if (result.ok && result.value.kind === "sheet") {
         body = result.value;
         if (result.value.sheet.kind === "ignore") matches.request(current.path, text, true);
+        // the editor opens where it was asked to (a mode switch keeps the place; line 1 is where a sheet opens); a place
+        // asked for (a search hit) is tinted as the page tints it
+        const line = asked ?? current.line;
+        const tinted = asked !== null || current.located;
+        asked = null;
+        if (line > 1 || tinted) {
+          void tick().then(() => {
+            if (!gone) void shown?.locate(line, tinted);
+          });
+        }
       } else failed = true;
     });
     const detach = session.attach(current.seq, {
       kind: "edit",
       text: () => text,
+      // a mode switch | rename takes the text over once the edits sent are back in it
+      settle: () => queue.then(() => undefined),
       changes: (base) => changedRuns(base, text),
-      topLine: () => current.line,
+      topLine: () => shown?.topLine() ?? current.line,
+      showLine: (line) => {
+        if (shown) void shown.locate(line, true);
+        else asked = line;
+      },
       selection: () => "",
       focus: () => {},
     });
     return () => {
       gone = true;
+      attached = null;
       detach();
       matches.stop();
     };
@@ -72,12 +92,22 @@
       : "other";
   }
 
-  async function apply(edit: ConfigEdit): Promise<string | null> {
-    const path = content.path;
+  function apply(edit: ConfigEdit): Promise<string | null> {
+    const next = queue.then(() => send(edit));
+    queue = next.catch(() => undefined);
+    return next;
+  }
+
+  async function send(edit: ConfigEdit): Promise<string | null> {
+    const path = file;
+    const seq = attached;
     const result = await api.configEdit(path, text, edit);
-    if (content.path !== path) return null;
-    if (!result.ok) return wordOf(result);
+    const here = seq !== null && attached === seq;
+    if (!result.ok) return here ? wordOf(result) : null;
+    // the next edit in line was made on top of this one: it starts from this text, on screen or not
     text = result.value.text;
+    // the editor is gone (a reload, a mode switch): the answer reaches neither its sheet nor the session
+    if (!here) return null;
     body = result.value.body;
     session.changed();
     if (result.value.body.kind === "sheet" && result.value.body.sheet.kind === "ignore") {
@@ -96,6 +126,7 @@
 
 {#if sheet}
   <ConfigSheet
+    bind:this={shown}
     {sheet}
     editable={true}
     {commit}

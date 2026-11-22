@@ -24,6 +24,13 @@
   });
 
   const view = $derived(defaultApp.view);
+
+  async function choose(group: FileGroup, input: HTMLInputElement): Promise<void> {
+    await defaultApp.set(group, input.checked);
+    // the switch drew the click itself: when the system kept its choice, it shows that choice again
+    const now = defaultApp.view?.groups.find((g) => g.group === group);
+    if (now !== undefined) input.checked = now.ours;
+  }
 </script>
 
 {#if view !== null}
@@ -52,7 +59,7 @@
             type="checkbox"
             role="switch"
             checked={group.ours}
-            onchange={(e) => void defaultApp.set(group.group, e.currentTarget.checked)}
+            onchange={(e) => void choose(group.group, e.currentTarget)}
           />
         {:else}
           <span class="state" class:ours={group.ours} aria-labelledby={`default-${group.group}`}>

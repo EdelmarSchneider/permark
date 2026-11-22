@@ -105,3 +105,49 @@ for (const theme of THEMES) {
     }
   });
 }
+
+/** A corpus page whose link target is deleted at run time (its goldens and baselines stay as they are). */
+const MISSING = {
+  page: "corpus/gfm-blocks.md",
+  href: "gfm-tables.md",
+  gone: "corpus/gfm-tables.md",
+} as const;
+
+// Edit draws View's missing-link look (class + "not found" title) only while a plugin that checks links is on. The
+// switch flips with no edit in between, so only a repaint of the editor's inline looks can take the marks away and
+// bring them back.
+test.describe("missing-link marks in Edit", () => {
+  test.skip(QUICK, "a quick run checks View only");
+  test.skip(
+    !PAGES.some((view) => view.path === MISSING.page),
+    `${MISSING.page} is not in this corpus`,
+  );
+
+  test(`${MISSING.page} follows the broken-links plugin`, async ({ app }) => {
+    await app.deleteFiles([MISSING.gone]);
+    await app.show(MISSING.page);
+    await app.mode("edit");
+    await app.drawn();
+    const link = app.page.locator(`.pm-editor a[href="${MISSING.href}"]`);
+    // the title sits on the text inside the link, split where another feature marks a word (spelling); the run's
+    // locale is English (playwright.config.ts)
+    const titled = link.locator(`[title="Not found: ${MISSING.gone}"]`);
+    const marked = /(^|\s)is-missing(\s|$)/;
+
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveClass(marked);
+    await expect(titled.first()).toBeAttached();
+
+    await app.setPlugin("broken-links", false);
+    await expect(link).toHaveCount(1);
+    await expect(link).not.toHaveClass(marked);
+    await expect(titled).toHaveCount(0);
+
+    await app.setPlugin("broken-links", true);
+    await expect(link).toHaveClass(marked);
+    await expect(titled.first()).toBeAttached();
+
+    await app.checkpoint("edit");
+    expectClean(app.labeled);
+  });
+});

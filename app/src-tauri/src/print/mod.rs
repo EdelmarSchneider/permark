@@ -244,6 +244,7 @@ impl Sheet {
                 .disable_javascript()
                 .on_navigation(is_page_url)
                 .on_new_window(|_url, _features| NewWindowResponse::Deny)
+                .on_download(|_webview, _event| false)
                 .on_page_load(move |_webview, payload| {
                     if payload.event() == PageLoadEvent::Finished {
                         let _ = tx.send(());

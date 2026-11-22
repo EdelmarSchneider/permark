@@ -1,6 +1,7 @@
 <script lang="ts">
   // The choice of tokenizers with where it is kept: for every project, or for this project only (shared with the team in
-  // `.permark/config.toml`, only in a project that has it). `mode`: where the choice can be made from.
+  // `.permark/config.toml`, only in a project that has it). `mode`: where the choice can be made from. The project's
+  // own choice shows as it is and can't be changed while its file does not read.
   import { t } from "../../core/i18n";
   import TokenChooser from "./TokenChooser.svelte";
   import { tokens } from "./store.svelte";
@@ -15,6 +16,7 @@
 
   const canOwn = $derived(mode !== "app" && tokens.projectCanChoose);
   const own = $derived(tokens.ownChoice);
+  const locked = $derived(tokens.projectLocked);
   /** The list the chooser edits. */
   const scope = $derived(mode === "project" || (canOwn && own) ? "project" : "app");
   const ids = $derived(
@@ -32,7 +34,12 @@
 
 {#if canOwn}
   <label class="own">
-    <input type="checkbox" checked={own} onchange={(e) => ownChanged(e.currentTarget.checked)} />
+    <input
+      type="checkbox"
+      checked={own}
+      disabled={locked}
+      onchange={(e) => ownChanged(e.currentTarget.checked)}
+    />
     <span class="text">
       <span>{t("tokens.own")}</span>
       <span class="hint">{t("tokens.ownHint")}</span>
@@ -40,7 +47,12 @@
   </label>
 {/if}
 {#if mode !== "project" || own}
-  <TokenChooser {ids} {removable} onchange={(next) => void tokens.choose(scope, next)} />
+  <TokenChooser
+    {ids}
+    {removable}
+    disabled={scope === "project" && locked}
+    onchange={(next) => void tokens.choose(scope, next)}
+  />
 {:else}
   <p class="note">{t("tokens.projectUsesApp")}</p>
 {/if}

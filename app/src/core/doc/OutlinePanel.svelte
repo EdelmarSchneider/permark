@@ -34,11 +34,28 @@
     return null;
   }
 
-  // the current heading stays in view in a long outline
+  // the row of the current heading is marked here, not by each row: a change touches the old row and the new one
+  // (a row reading the current heading itself made every scroll frame re-check every row of a long outline); the
+  // rows are kept by place, so the row at that place is the heading's. It stays in view in a long outline.
+  let inView: HTMLElement | null = null;
   $effect(() => {
     const at = documents.currentHeading;
-    if (at < 0 || !list) return;
-    list.querySelector<HTMLElement>(`[data-at="${at}"]`)?.scrollIntoView({ block: "nearest" });
+    // rows made anew (another outline) take the mark at their place
+    void items;
+    const row =
+      at < 0 ? null : (list?.children.item(at)?.querySelector<HTMLElement>("button.item") ?? null);
+    if (!row) {
+      inView = null;
+      return;
+    }
+    row.classList.add("is-current");
+    row.setAttribute("aria-current", "location");
+    if (row !== inView) row.scrollIntoView({ block: "nearest" });
+    inView = row;
+    return () => {
+      row.classList.remove("is-current");
+      row.removeAttribute("aria-current");
+    };
   });
 </script>
 
@@ -68,10 +85,8 @@
           <button
             type="button"
             class="item"
-            class:is-current={documents.currentHeading === at}
             data-at={at}
             title={mark?.title === undefined ? item.label : `${item.label} · ${mark.title}`}
-            aria-current={documents.currentHeading === at ? "location" : undefined}
             onclick={() => documents.goToHeading(at)}
           >
             <span class="text">{item.label === "" ? t("outline.untitled") : item.label}</span>
@@ -187,7 +202,8 @@
     background: var(--hover);
     color: var(--text);
   }
-  .item.is-current {
+  /* set by the script (one row at a time), not by the markup */
+  .item:global(.is-current) {
     background: var(--accent-soft);
     color: var(--accent-text);
     font-weight: 600;

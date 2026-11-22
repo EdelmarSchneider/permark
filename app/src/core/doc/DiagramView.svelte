@@ -33,6 +33,23 @@
     return () => holder?.classList.remove("diagram");
   });
 
+  // a click on a <use> outside any link is held: the page resolves its `#id` against the whole page, so it may copy a
+  // link of another drawing, and a click on that copy is retargeted to the <use>, past every link router
+  $effect(() => {
+    const figure = host;
+    if (!figure) return;
+    const holdCopies = (event: MouseEvent): void => {
+      const use = event.target instanceof Element ? event.target.closest("use") : null;
+      if (use !== null && use.closest("a") === null) event.preventDefault();
+    };
+    figure.addEventListener("click", holdCopies, true);
+    figure.addEventListener("auxclick", holdCopies, true);
+    return () => {
+      figure.removeEventListener("click", holdCopies, true);
+      figure.removeEventListener("auxclick", holdCopies, true);
+    };
+  });
+
   // draws (again) when the source, the theme or the tone changes; an older answer never overwrites a newer
   $effect(() => {
     const forced = theme !== undefined;
@@ -67,12 +84,17 @@
       {@html drawn.svg}
     </div>
   {:else if drawn.status === "failed"}
-    <pre class="source"><code>{source}</code></pre>
-    <!-- the engine's words go inside the note: an export keeps the note and drops the source -->
+    <!-- the engine's words go inside the note: an export keeps the note and drops the source. The note comes first:
+         a source refused for its size would push it thousands of lines down -->
     <figcaption class="message">
       {t("doc.diagramFailed")}
       {#if drawn.problem}<span class="problem">{drawn.problem}</span>{/if}
     </figcaption>
+    <!-- a scroller of its own, so the keyboard can read a long source -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <pre class="source" tabindex="0" role="region" aria-label={t("doc.diagramSource")}><code
+        >{source}</code
+      ></pre>
   {:else}
     <span class="pending">{t("doc.diagramRendering")}</span>
   {/if}
@@ -86,6 +108,8 @@
     border-radius: var(--radius-card);
     background: var(--bg);
     text-align: center;
+    /* also the drawing's box: its cleaned CSS keeps every part in the flow, and in-flow overflow (transforms,
+       margins, shadows) is clipped here */
     overflow-x: auto;
   }
   .figure.is-pending {
@@ -108,9 +132,11 @@
   }
   .source {
     white-space: pre;
+    max-height: 24em;
+    overflow: auto;
   }
   .message {
-    margin: 6px 0 0;
+    margin: 0 0 6px;
     font-size: 12px;
     color: var(--muted);
   }

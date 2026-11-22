@@ -21,7 +21,6 @@ use crate::error::{ErrorKind, IpcError};
 use crate::events::{ContextChanged, CoreEvent, WindowChanged, WindowsChanged};
 use crate::paths::{FileScope, RootKey, Vault, VaultPath};
 use crate::plugins::PluginId;
-use crate::state::StateLocation;
 
 #[derive(Debug, thiserror::Error)]
 pub enum OpenError {
@@ -397,6 +396,15 @@ impl WorkspaceRegistry {
         }
     }
 
+    /// The native window was shown once (minimized still counts); `false` while being made | unknown.
+    #[must_use]
+    pub fn is_window_shown(&self, window: &str) -> bool {
+        lock(&self.inner)
+            .windows
+            .get(window)
+            .is_some_and(|w| w.shown)
+    }
+
     /// No other window is on screen: `window` closing ends the session (it is saved as this one). Windows closing
     /// and windows still being made (not shown yet) do not count; a minimized one does.
     #[must_use]
@@ -416,7 +424,9 @@ impl WorkspaceRegistry {
         self.publish(&mut inner);
     }
 
-    /// The work window focused last (open, not asking to close): where outside opens go.
+    /// The work window focused last (open, not asking to close): where outside opens go. Windows on screen come first:
+    /// one still being made (hidden until its first view paints) is taken only when none is on screen, so an open never
+    /// lands out of sight while a shown window is there, and opens during startup still join the window being made.
     #[must_use]
     pub fn last_focused_work(&self) -> Option<String> {
         let inner = lock(&self.inner);
@@ -424,7 +434,7 @@ impl WorkspaceRegistry {
             .windows
             .iter()
             .filter(|(_, w)| matches!(w.fsm, WindowState::Open(_)))
-            .max_by_key(|(_, w)| (w.focused_ms, w.created))
+            .max_by_key(|(_, w)| (w.shown, w.focused_ms, w.created))
             .map(|(label, _)| label.clone())
     }
 
@@ -837,6 +847,7 @@ impl WorkspaceRegistry {
                     core
                 } else {
                     let core = ProjectCore::open(root.clone(), &self.env);
+                    core.follow_config(&self.env);
                     *weak = Arc::downgrade(&core);
                     core
                 };
@@ -1078,6 +1089,16 @@ impl WorkspaceRegistry {
         inner.workspaces.get(&id).map(|e| (id, e.workspace.clone()))
     }
 
+    /// The project a view shows, only while it is still workspace `id`: a call sent for the project the view showed
+    /// before (still on its way when another folder opened in the view) must not act on the one shown now.
+    #[must_use]
+    pub fn project_shown(&self, view: &str, id: WorkspaceId) -> Option<Arc<ProjectCore>> {
+        match self.workspace_of(view)? {
+            (shown, Workspace::Project(core)) if shown == id => Some(core),
+            _ => None,
+        }
+    }
+
     /// Every view label (live tabs + Welcome views).
     #[must_use]
     pub fn views(&self) -> Vec<String> {
@@ -1139,6 +1160,52 @@ impl WorkspaceRegistry {
                 Workspace::SingleFile(_) | Workspace::Notes(_) => None,
             })
             .collect()
+    }
+
+    /// Initializes PerMark in a folder (Explorer, New project, Settings), then every window is told. A core open on the
+    /// folder stops its plugins around the copy of the person's data ([`ProjectCore::initialize`]); a core that keeps
+    /// the folder as an included project holds that project's writes meanwhile ([`crate::projects::Projects::hold_member`]).
+    ///
+    /// # Errors
+    /// What [`crate::state::init_project`] refuses.
+    pub fn init_project(&self, root: &crate::paths::Root) -> Result<(), IpcError> {
+        let cores = self.cores();
+        let held: Vec<_> = cores
+            .iter()
+            .filter_map(|core| core.projects().hold_member(root))
+            .collect();
+        let done = match cores.iter().find(|core| core.root().key() == root.key()) {
+            Some(core) => core.initialize(&self.env),
+            None => crate::state::init_project(&self.env.dirs, root)
+                .map(|_| ())
+                .map_err(IpcError::from),
+        };
+        drop(held);
+        done?;
+        self.refresh();
+        Ok(())
+    }
+
+    /// The person keeps a folder's data on this computer (its window's offer), then every window is told: a core open
+    /// on the folder works its offer out again ([`ProjectCore::keep_data`]); no core, only the row is written.
+    ///
+    /// # Errors
+    /// The folder's data is in its own `.permark/local/` (a conflict, nothing written); the profile's row file cannot be
+    /// written.
+    pub fn keep_data(&self, root: &crate::paths::Root) -> Result<(), IpcError> {
+        match self
+            .cores()
+            .iter()
+            .find(|core| core.root().key() == root.key())
+        {
+            Some(core) => core.keep_data()?,
+            None => crate::state::location::keep(&crate::state::StateStore::for_project(
+                &self.env.dirs,
+                root,
+            ))?,
+        }
+        self.refresh();
+        Ok(())
     }
 
     /// Recomputes + emits what changed (after settings | plugin | unsaved changes).
@@ -1514,6 +1581,7 @@ fn workspace_view(id: WorkspaceId, entry: &Entry) -> WorkspaceView {
             name: core.root().name(),
             root: core.root().path().display().to_string(),
             state_location: core.state_location(),
+            data_offer: core.data_offer(),
         },
         Workspace::SingleFile(file) => WorkspaceView::SingleFile {
             id,
@@ -1570,7 +1638,8 @@ fn context_of(
     match &entry.workspace {
         Workspace::Project(core) => {
             context.workspace = WorkspaceKind::Project;
-            context.permark = if core.state_location() == StateLocation::Project {
+            // as the folder's state was last read: a context is built at every change, never with a look at the disk
+            context.permark = if core.has_team_folder() {
                 PermarkCondition::Initialized
             } else {
                 PermarkCondition::NotInitialized

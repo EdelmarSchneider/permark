@@ -8,7 +8,15 @@ import type { Segment } from "../../../api/generated/Segment";
 import type { TextEdit } from "../session.svelte";
 import { buildDoc, compose, type Built, type Composed } from "./compose";
 import { createCore, type Core } from "./core";
-import { applyEdits, blockOf, changeable, docRange, scopeIn, selectRange } from "./edits";
+import {
+  applyEdits,
+  blockAtLine,
+  blockOf,
+  changeable,
+  docRange,
+  scopeIn,
+  selectRange,
+} from "./edits";
 import { markAt, marksPlugin, setMarks } from "./marks";
 
 let core: Core;
@@ -246,6 +254,32 @@ describe("checked edits in the Edit-mode editor", () => {
     );
     expect(applyEdits(core, now(), [fix(text, "Math", "Maths")])).toBe(false);
     expect(core.view.state.doc).toBe(before);
+  });
+
+  it("a selection in a block an edit remakes stays there: the block kept as written after it is not selected", async () => {
+    const text = "One here.\n\nTwo there.\n\nMath $x_1\ny$ here.\n";
+    await load(text);
+    const view = core.view;
+    view.focus();
+    // a whole block's text replaced while a review shows it selected (a translation)
+    const block = wordAt(text, "Two there.");
+    expect(selectRange(view, now(), block)).toBe(true);
+    expect(
+      applyEdits(core, now(), [{ ...block, insert: "Deux là-bas.", expect: "Two there." }]),
+    ).toBe(true);
+    const { selection, doc } = view.state;
+    expect(selection).toBeInstanceOf(TextSelection);
+    expect(selection.empty).toBe(true);
+    // the caret right after the new text
+    expect(selection.$head.parent).toBe(doc.child(1));
+    expect(selection.$head.parentOffset).toBe(doc.child(1).content.size);
+    // nothing drawn as selected over what the locked block shows (its outline, the page's highlight)
+    expect(view.dom.querySelector(".ProseMirror-selectednode")).toBeNull();
+    const locked = view.nodeDOM(doc.child(0).nodeSize + doc.child(1).nodeSize);
+    const page = document.getSelection();
+    expect(locked).toBeInstanceOf(HTMLElement);
+    expect(page?.anchorNode && locked?.contains(page.anchorNode)).toBeFalsy();
+    expect(page?.focusNode && locked?.contains(page.focusNode)).toBeFalsy();
   });
 
   it("refuses a fix that would make its block read as something else", async () => {
@@ -617,5 +651,32 @@ describe("a piece after the same text written as prose", () => {
     // the first one is escaped prose, the second one inside the piece's own source
     expect(docText(docRange(doc, now(), wordAt(text, word, 0)))).toBe(word);
     expect(docRange(doc, now(), wordAt(text, word, 1))).toBeNull();
+  });
+});
+
+describe("the caret at a line (an editor opened scrolled down, a place asked)", () => {
+  it("starts at the first text of the block holding the line", async () => {
+    const text = "# One\n\nFirst para.\n\n- item a\n- item b\n\nLast para.\n";
+    await load(text);
+    const composed = compose(core, built, built.doc);
+    const cases: [number, string][] = [
+      [0, "One"],
+      [1, "One"],
+      [3, "First para."],
+      // a line between blocks: the block above it
+      [4, "First para."],
+      [5, "item a"],
+      // a line inside a block: that block, from its start
+      [6, "item a"],
+      [8, "Last para."],
+      [99, "Last para."],
+    ];
+    for (const [line, block] of cases) {
+      core.setDoc(built.doc, blockAtLine(built.doc, composed, line));
+      const selection = core.view.state.selection;
+      expect(selection.empty, `line ${line}`).toBe(true);
+      expect(selection.$from.parent.textContent, `line ${line}`).toBe(block);
+      expect(selection.$from.parentOffset, `line ${line}`).toBe(0);
+    }
   });
 });

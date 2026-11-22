@@ -70,9 +70,12 @@ class FakeSession implements SpellingSession {
   };
   markAt = (layer = "correction"): number | null => {
     const last = this.last(layer);
+    return last === undefined ? null : this.rangeAt(last.ranges);
+  };
+  rangeAt = (ranges: readonly TextRange[]): number | null => {
     const caret = this.caret;
-    if (caret === null || last === undefined) return null;
-    const at = last.ranges.findIndex((r) => r.from <= caret && caret <= r.to);
+    if (caret === null) return null;
+    const at = ranges.findIndex((r) => r.from <= caret && caret <= r.to);
     return at < 0 ? null : at;
   };
   composing = (): boolean => this.composingNow;
@@ -192,6 +195,23 @@ describe("marks", () => {
     session.caret = 16;
     await settle();
     expect(session.marked()).toEqual(["wrold"]);
+  });
+
+  it("one drawing per pass while typing, the word at the caret left out of it", async () => {
+    await startWith("Hello wrold and teh");
+    expect(session.marked()).toEqual(["wrold", "teh"]);
+    const before = session.drawn.length;
+    session.text = "Hello wrold and teh nwe";
+    session.caret = 23;
+    await settle();
+    expect(session.drawn.length - before).toBe(1);
+    expect(session.marked()).toEqual(["wrold", "teh"]);
+    // the caret on no word: the whole list in one drawing
+    session.text = "Hello wrold and teh nwe text";
+    session.caret = 0;
+    await settle();
+    expect(session.drawn.length - before).toBe(2);
+    expect(session.marked()).toEqual(["wrold", "teh", "nwe"]);
   });
 
   it("nothing while text is composed; the pass waits for the composition to end", async () => {
@@ -698,6 +718,62 @@ describe("what the person sees", () => {
     expect(session.applied).toEqual([[{ from: 6, to: 11, insert: "world", expect: "wrold" }]]);
     expect(document.querySelector('[role="menu"]')).toBeNull();
     expect(document.activeElement).toBe(editor);
+  });
+
+  it("Edit: a pick by Shift+F10 then Enter and one by the mouse leave the same caret, right after the new word", async () => {
+    await startWith("Hello wrold and wrold");
+    session.mode = "edit";
+    showStatus();
+    const editor = editorElement();
+    editor.tabIndex = 0;
+    editor.focus();
+    const pick = async (open: () => void, choose: () => void): Promise<unknown> => {
+      session.revealed = [];
+      session.focused = 0;
+      open();
+      await settle();
+      flushSync();
+      choose();
+      flushSync();
+      await settle();
+      return { revealed: session.revealed, focused: session.focused };
+    };
+    // the keyboard: the browser aims its menu at the caret in the word, Enter picks the first correction
+    session.caret = 8;
+    const byKeyboard = await pick(
+      () => contextMenu(editor, 0),
+      () =>
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+        ),
+    );
+    expect(byKeyboard).toEqual({ revealed: [{ from: 11, to: 11 }], focused: 1 });
+    // the pointer: a right-click on the other mark, a click on its first correction
+    session.text = "Hello world and wrold";
+    await settle();
+    const byMouse = await pick(
+      () => session.last()?.options.menu?.(0, 10, 20),
+      () => itemNamed("world")?.click(),
+    );
+    expect(byMouse).toEqual({ revealed: [{ from: 21, to: 21 }], focused: 1 });
+    expect(session.applied).toEqual([
+      [{ from: 6, to: 11, insert: "world", expect: "wrold" }],
+      [{ from: 16, to: 21, insert: "world", expect: "wrold" }],
+    ]);
+    expect(document.activeElement).toBe(editor);
+  });
+
+  it("Source: a pick leaves the caret to the editor (no scroll to it), the keyboard back in the editor", async () => {
+    await startWith("Hello wrold");
+    showStatus();
+    session.last()?.options.menu?.(0, 10, 20);
+    await settle();
+    flushSync();
+    itemNamed("world")?.click();
+    flushSync();
+    expect(session.applied).toHaveLength(1);
+    expect(session.revealed).toEqual([]);
+    expect(session.focused).toBe(1);
   });
 
   it("the settings: the person's words with a remove button each", async () => {

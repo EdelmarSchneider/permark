@@ -22,10 +22,11 @@ use permark_core::organizing::{
 };
 use permark_core::paths::Root;
 use permark_core::plugins::{
-    CxWorkspace, PluginCx, PluginId, PluginRegistry, RpcCall, ServiceLease,
+    CxWorkspace, NoTracking, PluginCx, PluginId, PluginRegistry, RepoHandle, RepoReader, RpcCall,
+    ServiceLease,
 };
 use permark_core::settings::AppSettings;
-use permark_core::state::{AppDirs, ProjectId, StateStore};
+use permark_core::state::{AppDirs, ProjectId, StateLocation, StateStore};
 use permark_core::workspace::{CoreEnv, ProjectCore};
 use permark_core::{ErrorKind, IpcError};
 use serde_json::{json, Value};
@@ -126,6 +127,7 @@ fn comment(id: &str, path: &str, quote: &str) -> CommentItem {
         edited: false,
         done: false,
         reply: None,
+        withheld: false,
     }
 }
 
@@ -153,6 +155,19 @@ impl CommentBook for Comments {
         found.done = true;
         found.reply = reply.map(str::to_owned);
         Ok(())
+    }
+}
+
+/// Lists comment `c1` on a shared file, then refuses to mark it done with its error kind (the comment changed between
+/// the two calls).
+struct Refusing(ErrorKind);
+
+impl CommentBook for Refusing {
+    fn list(&self, _: CommentFilter) -> Result<Vec<CommentItem>, IpcError> {
+        Ok(vec![comment("c1", "README.md", "Hello")])
+    }
+    fn resolve(&self, _: &str, _: Option<&str>) -> Result<(), IpcError> {
+        Err(IpcError::new(self.0))
     }
 }
 
@@ -296,6 +311,11 @@ fn write(root: &Path, path: &str, text: &str) {
 }
 
 fn fx() -> Fx {
+    fx_with(|_| {})
+}
+
+/// [`fx`] with `prepare` run on the project folder before the app opens it.
+fn fx_with(prepare: impl FnOnce(&Path)) -> Fx {
     let dir = tempfile::Builder::new().prefix("pma").tempdir().unwrap();
     let root = dunce::canonicalize(dir.path()).unwrap().join("proj");
     for (path, text) in [
@@ -319,6 +339,7 @@ fn fx() -> Fx {
     ] {
         write(&root, path, text);
     }
+    prepare(&root);
     let dirs = AppDirs::under(&dir.path().join("state"));
     let sink = Arc::new(Rec::default());
     let env = Arc::new(CoreEnv::new(
@@ -702,6 +723,84 @@ fn device_names_huge_or_binary_files_and_other_spellings_never_get_through() {
     }
 }
 
+/// A rule file that cannot be read never counts as "no rules": with no earlier good read of it every tool refuses,
+/// saying why and that the person must fix it, never naming the file (its name and place are the rules' to keep);
+/// once read well, its last good rules stand in and tools answer. The settings name the file.
+#[test]
+fn an_unreadable_rule_file_refuses_every_tool_until_last_good_rules_stand_in() {
+    // never read well in this profile: a folder where the file belongs from the start
+    let fx = fx_with(|root| {
+        std::fs::remove_file(root.join(".aiignore")).unwrap();
+        std::fs::create_dir(root.join(".aiignore")).unwrap();
+    });
+    fx.on();
+    let tools = fx.tools();
+    for (tool, _) in crate::tools::TOOLS {
+        let refused = tools.call(
+            tool,
+            json!({ "path": "README.md", "id": "c1", "note": "n" }),
+        );
+        assert_eq!(
+            refused,
+            Err(ToolError::RulesUnreadable("not a file".to_owned())),
+            "{tool}"
+        );
+    }
+    let refusal = ToolError::RulesUnreadable("not a file".to_owned());
+    assert_eq!(
+        ToolError::from_wire(refusal.code(), &refusal.to_string()),
+        refusal
+    );
+    let line = crate::render::error("read", &refusal);
+    assert!(
+        line.starts_with("ERR rulesUnreadable: ")
+            && line.contains("(not a file)")
+            && !line.contains(".aiignore")
+            && line.contains("person"),
+        "{line}"
+    );
+    assert!(tools.guard_now(Duration::ZERO).is_err());
+    let status = fx.rpc("status", json!({})).unwrap();
+    assert_eq!(
+        status["rules"],
+        json!({ "file": ".aiignore", "why": "notAFile", "fallback": "closed" })
+    );
+
+    // read well: kept as the last good rules
+    std::fs::remove_dir(fx.root.join(".aiignore")).unwrap();
+    write(&fx.root, ".aiignore", "private/\n");
+    assert!(tools.call("read", json!({ "path": "README.md" })).is_ok());
+    assert!(fx.rpc("status", json!({})).unwrap().get("rules").is_none());
+
+    // too large now (a cut would lose rules): the last good ones hide what they hid, the rest answers
+    let big = format!("private/\n{}", "#".repeat(1_153_434));
+    write(&fx.root, ".aiignore", &big);
+    assert!(tools.call("read", json!({ "path": "README.md" })).is_ok());
+    assert!(not_found(
+        tools.call("read", json!({ "path": "private/secret.md" }))
+    ));
+    assert_eq!(
+        fx.rpc("status", json!({})).unwrap()["rules"],
+        json!({ "file": ".aiignore", "why": "tooLarge", "fallback": "lastGood" })
+    );
+
+    // the team file left with a merge conflict: its last good `deny_paths` still hide
+    write(
+        &fx.root,
+        ".permark/config.toml",
+        "<<<<<<< HEAD\n[agent]\ndeny_paths = []\n",
+    );
+    assert!(not_found(
+        tools.call("read", json!({ "path": "denied/x.md" }))
+    ));
+    assert!(tools.call("read", json!({ "path": "README.md" })).is_ok());
+    // the one told first: the team file has last good rules too, the `.aiignore` problem comes first
+    assert_eq!(
+        fx.rpc("status", json!({})).unwrap()["rules"]["file"],
+        ".aiignore"
+    );
+}
+
 /// The text and the JSON of an MCP answer.
 fn mcp_answer(tool: &str, value: &Value, structured: bool) -> (String, Option<Value>) {
     let done =
@@ -842,6 +941,70 @@ fn hidden_files_never_reach_any_list_or_snippet() {
     ));
     let search = tools.call("search", json!({ "query": "launch" })).unwrap();
     assert!(!search.to_string().contains("docs/plan.md"), "{search}");
+}
+
+/// A rule file names what agents may not see: no tool lists, reads, outlines or finds one (the folder's or any other).
+#[test]
+fn rule_files_never_reach_any_tool() {
+    let fx = fx_with(|root| write(root, "docs/.aiignore", "drafts/\n"));
+    fx.on();
+    let tools = fx.tools();
+    let map = tools.call("map", json!({ "depth": 5 })).unwrap();
+    assert!(map.to_string().contains("docs/plan.md"), "{map}");
+    assert!(!map.to_string().contains(".aiignore"), "{map}");
+    for path in [".aiignore", "docs/.aiignore"] {
+        for tool in ["read", "outline", "open"] {
+            assert!(
+                not_found(tools.call(tool, json!({ "path": path }))),
+                "{tool} {path}"
+            );
+        }
+    }
+    for query in ["aiignore", "drafts", "agents never"] {
+        let search = tools.call("search", json!({ "query": query })).unwrap();
+        assert!(!search.to_string().contains(".aiignore"), "{search}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn search_never_answers_with_text_behind_a_link() {
+    let fx = fx();
+    fx.on();
+    let tools = fx.tools();
+    std::os::unix::fs::symlink(
+        fx.root.join("private/secret.md"),
+        fx.root.join("docs/alias.md"),
+    )
+    .unwrap();
+    write(&fx.root, "docs/fence.md", "# Fence\n\nfenceword\n");
+    // the watch reports in order: once the later file is found, the link was looked at
+    assert!(wait_for(|| tools
+        .call("search", json!({ "query": "fenceword" }))
+        .is_ok_and(|s| s["hits"]
+            .as_array()
+            .is_some_and(|h| !h.is_empty()))));
+    let search = tools
+        .call("search", json!({ "query": "launch code", "limit": 25 }))
+        .unwrap();
+    let hits = search["hits"].to_string();
+    assert!(
+        !hits.contains("alias") && !hits.contains("launch code"),
+        "{search}"
+    );
+}
+
+#[test]
+fn a_hit_whose_file_is_gone_is_left_out() {
+    let fx = fx();
+    fx.on();
+    let tools = fx.tools();
+    let before = tools.call("search", json!({ "query": "Friday" })).unwrap();
+    assert!(before.to_string().contains("docs/plan.md"), "{before}");
+    // asked before the watch tells the index (it waits for a quiet moment first)
+    std::fs::remove_file(fx.root.join("docs/plan.md")).unwrap();
+    let after = tools.call("search", json!({ "query": "Friday" })).unwrap();
+    assert!(!after.to_string().contains("docs/plan.md"), "{after}");
 }
 
 #[test]
@@ -1114,6 +1277,43 @@ fn comments_are_listed_and_resolved_with_a_reply() {
     ));
 }
 
+/// A comment removed or withheld between the list the resolve checks and the resolve itself is not there for the
+/// agent, as if it had never been listed; any other refusal stays a failure.
+#[test]
+fn a_comment_gone_or_withheld_while_resolving_is_not_found() {
+    let fx = fx();
+    fx.set_choice(&ProjectChoice {
+        enabled: true,
+        groups: [("comments.resolve".to_owned(), true)]
+            .into_iter()
+            .collect(),
+        resolve_asked: true,
+        folder: None,
+    });
+    for (kind, not_found) in [
+        (ErrorKind::NotFound, true),
+        (ErrorKind::Denied, true),
+        (ErrorKind::Io, false),
+    ] {
+        let _lease = fx.core().services().services.provide(Arc::new(CommentsApi(
+            Arc::new(Refusing(kind)) as Arc<dyn CommentBook>,
+        )));
+        let answer = fx.tools().call("resolve_comment", json!({ "id": "c1" }));
+        if not_found {
+            assert_eq!(
+                answer,
+                Err(ToolError::NotFound("c1".to_owned())),
+                "{kind:?}"
+            );
+        } else {
+            assert!(
+                matches!(answer, Err(ToolError::Failed(_))),
+                "{kind:?}: {answer:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn an_edited_comment_carries_a_flag() {
     let fx = fx();
@@ -1251,6 +1451,36 @@ fn session_of(status: &Value, agent: &Agent) -> Value {
         .find(|s| s["id"] == agent.session_id().as_str())
         .cloned()
         .unwrap_or(Value::Null)
+}
+
+/// Every `location.json` under the profile's project folders, with its bytes.
+fn location_rows(dirs: &AppDirs) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut rows: Vec<(PathBuf, Vec<u8>)> = std::fs::read_dir(dirs.profile.join("projects"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|e| e.path().join("location.json"))
+                .filter_map(|path| std::fs::read(&path).ok().map(|bytes| (path, bytes)))
+                .collect()
+        })
+        .unwrap_or_default();
+    rows.sort();
+    rows
+}
+
+/// The agent's side looks up the connected folder from its working folder up with profile files only: it keeps no
+/// record of where a folder's data sits, for none of the folders it passes.
+#[test]
+fn finding_the_project_from_a_working_folder_writes_nothing_in_the_profile() {
+    let fx = fx();
+    fx.on();
+    let deeper = fx.root.join("docs").join("deeper");
+    std::fs::create_dir_all(&deeper).unwrap();
+    let before = location_rows(&fx.dirs);
+    let agent = Agent::discover(&fx.dirs, &deeper, no_launch());
+    assert_eq!(agent.root().map(Root::path), Some(fx.root.as_path()));
+    assert!(crate::cli::discover(&fx.dirs, &deeper).is_some());
+    assert_eq!(location_rows(&fx.dirs), before);
 }
 
 #[test]
@@ -1752,8 +1982,12 @@ fn an_agent_over_the_session_cap_is_told_still_answered_and_pairs_when_a_place_f
     agent.call("map", &Value::Null).unwrap();
     held.pop();
     assert!(wait_for(|| count() < ipc_local::MAX_SESSIONS));
-    agent.ensure_session();
-    assert!(wait_for(|| paired(&fx, &agent)));
+    // the running agent re-pairs on a loop (`keep_paired`): one hello that lands while the freed place is still
+    // being released (a loaded machine) is followed by the next
+    assert!(wait_for(|| {
+        agent.ensure_session();
+        paired(&fx, &agent)
+    }));
 }
 
 #[test]
@@ -1841,6 +2075,46 @@ fn groups_and_defaults_are_the_persons_choice_in_the_profile() {
 }
 
 #[test]
+fn choices_changed_at_the_same_time_all_reach_the_file() {
+    // each change reads the file and writes it back: two at once must not let the later write put back what the
+    // earlier one changed (a switch just turned off coming back on)
+    let fx = fx();
+    let core = Arc::clone(fx.core());
+    let call = |method: &str, args: Value| {
+        core.rpc().call(
+            "agent",
+            method,
+            &RpcCall {
+                window: "w".to_owned(),
+                args,
+            },
+        )
+    };
+    for round in 0..10 {
+        let on = round % 2 == 0;
+        fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+        std::thread::scope(|s| {
+            s.spawn(|| call("setEnabled", json!({ "enabled": false })).unwrap());
+            for group in Group::ALL {
+                s.spawn(move || {
+                    call("setGroup", json!({ "group": group.id(), "on": on })).unwrap()
+                });
+            }
+        });
+        let choice = perms::load(&fx.core().store());
+        assert!(!choice.enabled, "round {round}: the switch came back on");
+        for group in Group::ALL {
+            assert_eq!(
+                choice.groups.get(group.id()),
+                Some(&on),
+                "round {round}: {}",
+                group.id()
+            );
+        }
+    }
+}
+
+#[test]
 fn the_context_file_exists_only_while_the_context_group_is_on() {
     let fx = fx();
     let file = fx.root.join(".permark/local").join(crate::CONTEXT_FILE);
@@ -1894,6 +2168,137 @@ fn the_context_file_exists_only_while_the_context_group_is_on() {
     std::fs::write(&file, b"{\"v\":1,\"doc\":\"docs/plan.md\"}").unwrap();
     fx.core().restart_plugin(&fx.env, &PluginId::of("agent"));
     assert!(!file.exists(), "stale file removed on start");
+}
+
+#[test]
+fn the_context_file_holds_the_published_context_and_nothing_else() {
+    let fx = fx();
+    let file = fx.root.join(".permark/local").join(crate::CONTEXT_FILE);
+    let read = || -> serde_json::Map<String, Value> {
+        serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap()
+    };
+    let keys = |map: &serde_json::Map<String, Value>| -> Vec<String> {
+        let mut keys: Vec<String> = map.keys().cloned().collect();
+        keys.sort();
+        keys
+    };
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    fx.rpc(
+        "publish",
+        json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+    )
+    .unwrap();
+    let map = read();
+    assert_eq!(keys(&map), ["doc", "mode", "openComments", "token", "v"]);
+    // only this install can make it for this folder and this content: a copy that came with the folder, or one
+    // changed since, has none it accepts
+    let mut published = map.clone();
+    published.shift_remove("token");
+    let token = permark_core::state::context::token(&fx.core().store(), &published).unwrap();
+    assert_eq!(map["token"], json!(token));
+    assert_eq!(map["v"], json!(1));
+    assert_eq!(map["doc"], json!("docs/plan.md"));
+    assert_eq!(map["mode"], json!("view"));
+    // the comment in a file agents never see is not counted
+    assert_eq!(map["openComments"], json!(1));
+    // no open comment: no count
+    fx.comments.0.lock().unwrap().clear();
+    fx.rpc(
+        "publish",
+        json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+    )
+    .unwrap();
+    assert_eq!(keys(&read()), ["doc", "mode", "token", "v"]);
+}
+
+/// A context file that came with the folder (a zip, a clone) is removed when the project opens, even while the
+/// connection is on (the plugin then leaves the file to the next publish); the one this install wrote stays.
+#[test]
+fn a_context_file_that_came_with_the_folder_is_removed_at_open() {
+    let mut fx = fx();
+    let file = fx.root.join(".permark/local").join(crate::CONTEXT_FILE);
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    std::fs::write(&file, b"{\"v\":1,\"doc\":\"docs/plan.md\"}").unwrap();
+    fx.reopen();
+    assert!(!file.exists(), "no token of this install: removed");
+    // right after an open the projects inside may still be unknown: a publish then leaves the file to a later one
+    assert!(wait_for(|| {
+        fx.rpc(
+            "publish",
+            json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+        )
+        .unwrap();
+        file.exists()
+    }));
+    let written = std::fs::read(&file).unwrap();
+    fx.reopen();
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        written,
+        "this install's file stays"
+    );
+}
+
+/// The person keeps the folder's data in the profile while it has a team folder: no context file is written (nothing
+/// of the person's goes into a folder a sync tool | teammates share, no `local/` made there), while a copy found in the
+/// team folder's `local/` is still removed: at open when this install did not write it, and when the switch or the
+/// context group goes off.
+#[test]
+fn a_folder_whose_data_stays_in_the_profile_gets_no_context_file() {
+    let mut fx = fx();
+    let profile = fx
+        .dirs
+        .profile
+        .join("projects")
+        .join(ProjectId::of(fx.core().root()).as_str());
+    std::fs::create_dir_all(&profile).unwrap();
+    // the row the person's choice writes: data in the profile, for any folder at this path
+    std::fs::write(
+        profile.join("location.json"),
+        br#"{"version":1,"data":{"rows":[{"place":"profile","decided":true,"at":1}]}}"#,
+    )
+    .unwrap();
+    // whatever the first open put in `local/` gone, as in a team folder that arrived after it
+    fx.core.take();
+    let local = fx.root.join(".permark/local");
+    if local.exists() {
+        std::fs::remove_dir_all(&local).unwrap();
+    }
+    fx.reopen();
+    let store = fx.core().store();
+    assert_eq!(store.location(), StateLocation::Profile);
+    assert!(store.has_team_folder());
+    let file = local.join(crate::CONTEXT_FILE);
+    let publish = |fx: &Fx| {
+        fx.rpc(
+            "publish",
+            json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+        )
+        .unwrap();
+    };
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    publish(&fx);
+    assert!(!local.exists(), "no local/ made in the team folder");
+    assert!(!store.dir().join(crate::CONTEXT_FILE).exists());
+    // one that came with the folder: removed at open
+    std::fs::create_dir(&local).unwrap();
+    std::fs::write(&file, b"{\"v\":1,\"doc\":\"docs/plan.md\"}").unwrap();
+    fx.reopen();
+    assert!(!file.exists(), "no token of this install: removed");
+    // one there while the group | the switch goes off: removed
+    for (rpc, args) in [
+        ("setGroup", json!({ "group": "context", "on": false })),
+        ("setEnabled", json!({ "enabled": false })),
+    ] {
+        fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+        fx.rpc("setGroup", json!({ "group": "context", "on": true }))
+            .unwrap();
+        std::fs::write(&file, b"{\"v\":1}").unwrap();
+        publish(&fx);
+        assert_eq!(std::fs::read(&file).unwrap(), b"{\"v\":1}", "never written");
+        fx.rpc(rpc, args).unwrap();
+        assert!(!file.exists(), "{rpc}: removed");
+    }
 }
 
 #[test]
@@ -2003,6 +2408,161 @@ fn the_agent_proxies_to_the_app_and_refuses_while_it_is_closed() {
 
 fn no_launch() -> crate::cli::Launcher {
     Arc::new(|_: &Path| Ok(()))
+}
+
+/// An answer far longer than a request line crosses the socket whole; the agent reads it cut at the ceiling.
+#[test]
+fn a_long_answer_crosses_the_socket_and_is_cut_at_the_ceiling() {
+    use crate::format::CEILING_CHARS;
+    let fx = fx();
+    fx.on();
+    fx.comments.0.lock().unwrap().extend(
+        (0..100).map(|i| comment(&format!("m{i}"), "README.md", &"quoted words ".repeat(77))),
+    );
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let agent = Agent::discover(&fx.dirs, &fx.root, no_launch());
+    let list = agent
+        .call("list_comments", &json!({ "which": "all" }))
+        .unwrap();
+    assert_eq!(list["comments"].as_array().unwrap().len(), 100);
+    assert!(list.to_string().len() as u64 > ipc_local::MAX_LINE);
+    for structured in [false, true] {
+        let (text, _) = mcp_answer("list_comments", &list, structured);
+        assert!(text.chars().count() <= CEILING_CHARS, "{structured}");
+        assert!(
+            text.ends_with(&format!("…cut ceiling={CEILING_CHARS}\n")),
+            "{structured}: {}",
+            &text[text.len() - 80..]
+        );
+    }
+}
+
+/// Unread markers whose first look never ends in time: each wait takes the whole time it is given.
+struct NeverReady;
+
+impl UnreadLookup for NeverReady {
+    fn unread(&self) -> UnreadNow {
+        UnreadNow {
+            ready: false,
+            paths: std::iter::empty().collect(),
+        }
+    }
+    fn wait_ready(&self, timeout: Duration) -> bool {
+        std::thread::sleep(timeout);
+        false
+    }
+}
+
+/// A call that waits its whole time for a first look still reaches the agent, as the partial answer it was made to be
+/// (the real waits fit the agent's call timeout: a const assert beside them).
+#[test]
+fn a_call_waiting_for_a_first_look_answers_partially_through_the_socket() {
+    let fx = fx();
+    fx.on();
+    let _slow = fx
+        .core()
+        .services()
+        .services
+        .provide(Arc::new(UnreadApi(Arc::new(NeverReady))));
+    let wait = Duration::from_millis(300);
+    let events = PluginCx::new(
+        PluginId::of("agent"),
+        CxWorkspace::Project(fx.core().vault().clone()),
+        fx.root.clone(),
+        None,
+        permark_core::conditions::Context::welcome(Distribution::Direct),
+        fx.sink.clone(),
+    )
+    .events()
+    .clone();
+    let hub = crate::server::Hub::new(
+        fx.tools().with_ready_wait(wait),
+        Arc::clone(&fx.core().services().facts),
+        events,
+    );
+    let switch = crate::server::Switch::new(hub, Ok(fx.endpoint()));
+    switch.apply();
+    let agent = Agent::discover(&fx.dirs, &fx.root, no_launch()).with_call_timeout(wait * 10);
+    let started = Instant::now();
+    let answer = agent.call("list_unread", &Value::Null).unwrap();
+    assert_eq!(answer["ready"], false);
+    assert!(started.elapsed() >= wait);
+}
+
+/// An app that answers later than the agent waits reads as busy, never as a broken pipe.
+#[test]
+fn an_answer_later_than_the_wait_reads_as_busy() {
+    let fx = fx();
+    fx.on();
+    let _listener = ipc_local::Server::spawn(fx.endpoint().listen().unwrap(), |_: Value| {
+        std::thread::sleep(Duration::from_millis(600));
+        Response::of(Ok(json!({})))
+    })
+    .unwrap();
+    let agent = Agent::discover(&fx.dirs, &fx.root, no_launch())
+        .with_call_timeout(Duration::from_millis(100));
+    assert_eq!(agent.call("map", &Value::Null), Err(ToolError::Busy));
+}
+
+/// An app started for `open` that answers slowly never stretches the launch wait by a whole call timeout: each try
+/// fits what is left of the launch wait.
+#[test]
+fn a_slow_app_started_for_open_never_outlasts_the_launch_wait() {
+    let fx = fx();
+    fx.on();
+    let listening: Arc<Mutex<Vec<ipc_local::Server>>> = Arc::default();
+    let launcher: crate::cli::Launcher = {
+        let listening = Arc::clone(&listening);
+        let endpoint = fx.endpoint();
+        Arc::new(move |_: &Path| {
+            let server = ipc_local::Server::spawn(endpoint.listen().unwrap(), |_: Value| {
+                std::thread::sleep(Duration::from_secs(3));
+                Response::of(Ok(json!({})))
+            })
+            .unwrap();
+            listening.lock().unwrap().push(server);
+            Ok(())
+        })
+    };
+    let agent =
+        Agent::discover(&fx.dirs, &fx.root, launcher).with_launch_wait(Duration::from_millis(400));
+    let started = Instant::now();
+    let answer = agent.call("open", &json!({ "path": "docs/plan.md" }));
+    assert!(matches!(answer, Err(ToolError::Failed(_))), "{answer:?}");
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+/// Folders past the depth are counted up to a cap; the rest are counted in one number.
+#[test]
+fn folders_past_the_depth_are_capped_and_the_rest_counted() {
+    let over = crate::map::MAX_DIRS_CUT + 7;
+    let fx = fx_with(|root| {
+        for i in 0..over {
+            write(root, &format!("many/f{i:03}/a.md"), "# A\n");
+        }
+    });
+    fx.on();
+    let tools = fx.tools();
+    let map = tools
+        .call("map", json!({ "path": "many", "depth": 1 }))
+        .unwrap();
+    assert_eq!(
+        map["dirs_cut"].as_array().unwrap().len(),
+        crate::map::MAX_DIRS_CUT
+    );
+    assert_eq!(map["dirs_more"], 7);
+    let text = crate::render::render("map", &map);
+    assert!(
+        text.contains(&format!(
+            "\n-- dirs_cut n={} more=7\n",
+            crate::map::MAX_DIRS_CUT
+        )),
+        "{text}"
+    );
 }
 
 impl Fx {
@@ -2385,7 +2945,7 @@ fn mcp_initialize_list_and_call_over_stdio_lines() {
             assert!(init["result"]["capabilities"]["tools"].is_object(), "{init}");
             let instructions = init["result"]["instructions"].as_str().unwrap();
             let lines: Vec<&str> = instructions.lines().collect();
-            assert!(lines.len() <= 6 && instructions.len() < 4096, "{instructions}");
+            assert!(lines.len() <= 7 && instructions.len() < 4096, "{instructions}");
             assert!(lines[0].contains("use these tools when"), "line 1 says when");
             assert!(instructions.contains("project="), "where the project's name is read");
             assert_eq!(
@@ -2713,4 +3273,374 @@ fn with_the_notes_off_the_tools_and_the_popover_refuse_cleanly() {
             "{method}"
         );
     }
+}
+
+// ---- folder data: source label, data withheld while git tracks the private folder ----------------------------------
+
+/// A repository whose index answers every folder by `answer` (the `git` plugin's reader, played).
+struct Index(fn(&str) -> Result<bool, NoTracking>);
+
+impl RepoReader for Index {
+    fn blob_at_head(&self, _: &str) -> Option<Vec<u8>> {
+        None
+    }
+    fn tracked_under(&self, path: &str) -> Result<bool, NoTracking> {
+        (self.0)(path)
+    }
+}
+
+impl Fx {
+    /// Offers a repository reader answering `answer` until the lease goes.
+    fn repo(&self, answer: fn(&str) -> Result<bool, NoTracking>) -> ServiceLease {
+        self.core()
+            .services()
+            .services
+            .provide(Arc::new(RepoHandle(Arc::new(Index(answer)))))
+    }
+}
+
+/// An answer as it was before folder data carried its source: the `source` key out of the JSON, the label out of the
+/// text's first line.
+fn unlabeled(value: &Value, text: &str) -> (Value, String) {
+    let mut value = value.clone();
+    if let Some(map) = value.as_object_mut() {
+        map.remove("source");
+    }
+    let text = match text.split_once('\n') {
+        Some((head, rest)) => format!("{}\n{rest}", head.replace(" source=folder", "")),
+        None => text.replace(" source=folder", ""),
+    };
+    (value, text)
+}
+
+fn answer(tools: &Tools, tool: &str, args: Value) -> (Value, String) {
+    let value = tools.call(tool, args).unwrap();
+    let text = crate::render::render(tool, &value);
+    (value, text)
+}
+
+#[test]
+fn a_folder_whose_git_leaves_the_private_folder_alone_gets_comments_and_activity_as_before() {
+    let fx = fx();
+    fx.set_choice(&ProjectChoice {
+        enabled: true,
+        groups: [("comments.resolve".to_owned(), true)]
+            .into_iter()
+            .collect(),
+        resolve_asked: true,
+        folder: None,
+    });
+    let _repo = fx.repo(|_| Ok(false));
+    let tools = fx.tools();
+    let (value, text) = answer(&tools, "list_comments", Value::Null);
+    let (value, text) = unlabeled(&value, &text);
+    assert_eq!(
+        value,
+        json!({ "which": "open", "comments": [{
+            "id": "c1", "path": "README.md", "quote": "Hello API_KEY=sekret123", "text": "simplify",
+            "headingPath": [], "line": 3, "state": "anchored", "created": "1970-01-01T00:00:00Z", "done": false
+        }] })
+    );
+    assert_eq!(
+        text,
+        "list_comments which=open n=1\n#cols id place state quote text heading reply\nc1\tREADME.md:3\tanchored\tHello API_KEY=sekret123\tsimplify\n"
+    );
+    assert_eq!(
+        tools
+            .call("resolve_comment", json!({ "id": "c1", "reply": "Done" }))
+            .unwrap(),
+        json!({ "resolved": "c1" })
+    );
+    let tz = crate::format::tz();
+    let (value, text) = answer(&tools, "activity", Value::Null);
+    let (value, text) = unlabeled(&value, &text);
+    assert_eq!(
+        value,
+        json!({ "since": "handoff", "tz": tz, "no_handoff": true })
+    );
+    assert_eq!(
+        text,
+        format!("activity since=handoff tz={tz} n=0 no_handoff\n")
+    );
+    fx.core()
+        .services()
+        .activity
+        .person(permark_core::activity::Fact::Save {
+            path: "docs/plan.md".to_owned(),
+            sections: vec!["Plan > Rollout".to_owned()],
+            blocks: 1,
+        });
+    let (value, text) = answer(&tools, "activity", json!({ "since": "0" }));
+    let (value, text) = unlabeled(&value, &text);
+    let keys: Vec<&str> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(keys, ["since", "tz", "rows"], "{value}");
+    assert_eq!(value["rows"].as_array().unwrap().len(), 1, "{value}");
+    assert!(
+        text.starts_with(&format!("activity since=0 tz={tz} n=1\n#cols ")),
+        "{text}"
+    );
+    // the hand-off: offered, frozen, then answered exactly as frozen
+    let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
+    let crate::handoff::HandOffPreview::Ready { upto, sessions, .. } =
+        crate::handoff::preview(&tools, &guard, None).unwrap()
+    else {
+        panic!("a preview");
+    };
+    let checked: Vec<u32> = sessions.iter().map(|s| s.id).collect();
+    let done = crate::handoff::confirm(&tools, &guard, upto, &checked).unwrap();
+    assert_eq!(
+        done.line,
+        "PerMark: 1 actions since last hand-off -> call activity since=handoff"
+    );
+    let (value, text) = answer(&tools, "activity", Value::Null);
+    let (value, text) = unlabeled(&value, &text);
+    assert_eq!(value, json!({ "frozen": done.full }));
+    assert_eq!(text, done.full);
+}
+
+const WHY: &str = "git tracks .permark/local or it could not be checked";
+
+#[test]
+fn withheld_comments_are_left_out_counted_with_the_reason_and_cannot_be_resolved() {
+    let fx = fx();
+    fx.set_choice(&ProjectChoice {
+        enabled: true,
+        groups: [("comments.resolve".to_owned(), true)]
+            .into_iter()
+            .collect(),
+        resolve_asked: true,
+        folder: None,
+    });
+    fx.comments.0.lock().unwrap().extend([
+        CommentItem {
+            withheld: true,
+            text: "planted words".to_owned(),
+            ..comment("c3", "README.md", "Hello")
+        },
+        CommentItem {
+            withheld: true,
+            done: true,
+            ..comment("c4", "docs/plan.md", "Ship")
+        },
+        // on a hidden path: neither listed nor counted, withheld or not
+        CommentItem {
+            withheld: true,
+            ..comment("c5", "private/secret.md", "launch")
+        },
+    ]);
+    let tools = fx.tools();
+    let (value, text) = answer(&tools, "list_comments", Value::Null);
+    let ids: Vec<&str> = value["comments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["c1"]);
+    assert_eq!(value["withheld"], 1, "{value}");
+    assert_eq!(value["why"], WHY, "{value}");
+    assert_eq!(value["source"], "folder", "{value}");
+    assert!(!value.to_string().contains("planted"), "{value}");
+    assert_eq!(
+        text.lines().next().unwrap(),
+        "list_comments which=open n=1 withheld=1 why=\"git tracks .permark/local or it could not be checked\" source=folder"
+    );
+    let (value, _) = answer(&tools, "list_comments", json!({ "which": "all" }));
+    assert_eq!(value["comments"].as_array().unwrap().len(), 1, "{value}");
+    assert_eq!(value["withheld"], 2, "{value}");
+    // the same answer as an id that does not exist: no way to tell a withheld comment is there
+    assert!(not_found(tools.call(
+        "resolve_comment",
+        json!({ "id": "c3", "reply": "done" })
+    )));
+    assert!(!fx.comments.0.lock().unwrap()[2].done, "never marked done");
+}
+
+#[test]
+fn activity_and_the_hand_off_are_withheld_while_git_tracks_the_root_s_private_folder() {
+    let fx = fx();
+    fx.on();
+    let tools = fx.tools();
+    let activity = &fx.core().services().activity;
+    let save = |path: &str| permark_core::activity::Fact::Save {
+        path: path.to_owned(),
+        sections: vec!["Plan > Rollout".to_owned()],
+        blocks: 1,
+    };
+    activity.person(save("docs/plan.md"));
+    let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
+    // a package frozen while the folder was not tracked
+    let crate::handoff::HandOffPreview::Ready { upto, sessions, .. } =
+        crate::handoff::preview(&tools, &guard, None).unwrap()
+    else {
+        panic!("a preview");
+    };
+    let checked: Vec<u32> = sessions.iter().map(|s| s.id).collect();
+    let done = crate::handoff::confirm(&tools, &guard, upto, &checked).unwrap();
+    activity.person(save("README.md"));
+    let tz = crate::format::tz();
+
+    for answer_of in [
+        |p: &str| Ok(p == ".permark/local"),
+        |p: &str| {
+            if p == ".permark/local" {
+                Err(NoTracking::Slow)
+            } else {
+                Ok(false)
+            }
+        },
+    ] as [fn(&str) -> Result<bool, NoTracking>; 2]
+    {
+        let repo = fx.repo(answer_of);
+        for (args, since) in [
+            (Value::Null, "handoff"),
+            (json!({ "since": "0", "limit": 5 }), "0"),
+            (json!({ "since": "handoff", "by": "person" }), "handoff"),
+        ] {
+            let (value, text) = answer(&tools, "activity", args.clone());
+            assert_eq!(
+                value,
+                json!({ "since": since, "tz": tz, "rows": [], "withheld": true, "why": WHY, "source": "folder" }),
+                "{args}"
+            );
+            assert_eq!(
+                text,
+                format!(
+                    "activity since={since} tz={tz} n=0 withheld why=\"git tracks .permark/local or it could not be checked\" source=folder\n"
+                )
+            );
+            assert!(!text.contains("docs/plan.md") && !text.contains("README.md"));
+        }
+        let refusal = ToolError::Invalid(
+            "this folder's repository tracks PerMark's private files or it could not be checked; activity is not given to agents"
+                .to_owned(),
+        );
+        // the person's dialog learns why (its own answer), with nothing to confirm
+        assert_eq!(
+            crate::handoff::preview(&tools, &guard, None),
+            Ok(crate::handoff::HandOffPreview::Withheld)
+        );
+        assert_eq!(
+            fx.rpc("handOffPreview", json!({})).unwrap(),
+            json!({ "state": "withheld" })
+        );
+        let before = activity.snapshot();
+        assert_eq!(
+            crate::handoff::confirm(&tools, &guard, before.next.saturating_sub(1), &[1]).err(),
+            Some(refusal)
+        );
+        let after = activity.snapshot();
+        assert_eq!(after.checkpoint, before.checkpoint, "nothing written");
+        assert_eq!(after.package, before.package, "nothing written");
+        drop(repo);
+    }
+
+    // only folders other than the root's private one tracked (a member's), or no usable repository: served again
+    for answer_of in [
+        |p: &str| Ok(p != ".permark/local"),
+        |_: &str| Err(NoTracking::NoRepository),
+    ] as [fn(&str) -> Result<bool, NoTracking>; 2]
+    {
+        let _repo = fx.repo(answer_of);
+        let (value, text) = answer(&tools, "activity", Value::Null);
+        let (value, text) = unlabeled(&value, &text);
+        assert_eq!(value, json!({ "frozen": done.full }));
+        assert_eq!(text, done.full);
+        assert!(matches!(
+            crate::handoff::preview(&tools, &guard, None),
+            Ok(crate::handoff::HandOffPreview::Ready { .. })
+        ));
+    }
+}
+
+/// A journal with no seq left for the hand-off marker notes nothing: the confirm says it failed instead of handing the
+/// person a line for a package that was never frozen.
+#[test]
+fn a_hand_off_the_journal_cannot_note_fails_and_writes_nothing() {
+    use permark_core::activity::{Journal, JOURNAL_FILE, MAX_SEQ};
+    use permark_core::state::StateData as _;
+    let mut fx = fx();
+    let path = fx
+        .core()
+        .store()
+        .file::<Journal>(JOURNAL_FILE)
+        .path()
+        .to_path_buf();
+    // the project closed, its journal replaced by one with a single seq left, then opened again
+    fx.core.take();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        json!({ "version": Journal::VERSION, "data": { "next": MAX_SEQ - 1, "entries": [] } })
+            .to_string(),
+    )
+    .unwrap();
+    fx.core = Some(ProjectCore::open(Root::open(&fx.root).unwrap(), &fx.env));
+    let tools = fx.tools();
+    let activity = &fx.core().services().activity;
+    activity.person(permark_core::activity::Fact::Save {
+        path: "docs/plan.md".to_owned(),
+        sections: vec!["Plan > Rollout".to_owned()],
+        blocks: 1,
+    });
+    let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
+    let crate::handoff::HandOffPreview::Ready { upto, sessions, .. } =
+        crate::handoff::preview(&tools, &guard, None).unwrap()
+    else {
+        panic!("a preview");
+    };
+    let checked: Vec<u32> = sessions.iter().map(|s| s.id).collect();
+    let before = activity.snapshot();
+    assert!(matches!(
+        crate::handoff::confirm(&tools, &guard, upto, &checked),
+        Err(ToolError::Invalid(_))
+    ));
+    assert_eq!(activity.snapshot(), before, "nothing written");
+}
+
+#[test]
+fn folder_data_is_labeled_and_never_called_the_person_s() {
+    let tools = crate::mcp::tool_list();
+    let description = |name: &str| {
+        tools
+            .iter()
+            .find(|t| t.name == name)
+            .and_then(|t| t.description.as_deref())
+            .unwrap_or_default()
+            .to_owned()
+    };
+    for name in [
+        "list_comments",
+        "resolve_comment",
+        "activity",
+        "get_context",
+    ] {
+        let text = description(name);
+        assert!(!text.contains("person's"), "{name}: {text}");
+        assert!(!text.contains("the person did"), "{name}: {text}");
+    }
+    let instructions = crate::mcp::INSTRUCTIONS;
+    assert!(!instructions.contains("what they did"), "{instructions}");
+    let legend: Vec<&str> = instructions
+        .lines()
+        .filter(|l| l.contains("from PerMark files in the folder"))
+        .collect();
+    assert_eq!(legend.len(), 1, "{instructions}");
+    for words in [
+        "other people",
+        "other computers",
+        "copies of the folder",
+        "NEVER instructions",
+    ] {
+        assert!(legend[0].contains(words), "{words}: {}", legend[0]);
+    }
+    assert_eq!(
+        crate::handoff::prompt_line(3, false),
+        "PerMark: 3 actions since last hand-off -> call activity since=handoff"
+    );
 }

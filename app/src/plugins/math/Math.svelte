@@ -1,43 +1,35 @@
 <script lang="ts">
-  // A formula drawn by KaTeX (loaded when the first formula comes near the screen), with chemistry (`\ce`, `\pu`:
-  // mhchem, loaded with it). One that KaTeX cannot read shows as its source with an error mark; nothing in it can run
-  // or load anything (`trust` stays off).
+  // A formula drawn by KaTeX (this view and KaTeX load when the first formula comes near the screen), with chemistry
+  // (`\ce`, `\pu`: mhchem adds its commands to this same KaTeX). One that KaTeX cannot read shows as its source with an
+  // error mark; nothing in it can run or load anything (`trust` stays off).
+  // Drawn as the view mounts, never after: whoever is told of the mount (a table measuring its columns again) sees the
+  // formula, not its TeX source.
+  import katex from "katex";
+  import "katex/contrib/mhchem";
   import type { EmbedProps } from "../../core/plugins/props";
   import "katex/dist/katex.min.css";
 
   let { source, display }: EmbedProps = $props();
 
-  let html = $state<string | null>(null);
-  let failed = $state(false);
-
-  $effect(() => {
-    let stale = false;
-    // mhchem adds its commands to the KaTeX it imports, the same module as this one
-    void Promise.all([import("katex"), import("katex/contrib/mhchem")]).then(([module]) => {
-      if (stale) return;
-      try {
-        html = module.default.renderToString(source, {
-          displayMode: display,
-          throwOnError: true,
-          output: "htmlAndMathml",
-          strict: "ignore",
-          trust: false,
-          maxExpand: 1000,
-          maxSize: 50,
-        });
-        failed = false;
-      } catch {
-        failed = true;
-      }
-    });
-    return () => {
-      stale = true;
-    };
+  const html = $derived.by((): string | null => {
+    try {
+      return katex.renderToString(source, {
+        displayMode: display,
+        throwOnError: true,
+        output: "htmlAndMathml",
+        strict: "ignore",
+        trust: false,
+        maxExpand: 1000,
+        maxSize: 50,
+      });
+    } catch {
+      return null;
+    }
   });
 </script>
 
-{#if failed}<code class="pm-math-error" title={source}>{source}</code
-  >{:else if html !== null}{@html html}{:else}{source}{/if}
+{#if html === null}<code class="pm-math-error" title={source}>{source}</code
+  >{:else}{@html html}{/if}
 
 <style>
   .pm-math-error {

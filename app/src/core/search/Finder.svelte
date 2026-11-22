@@ -144,6 +144,14 @@
     }
   });
   const activeKey = $derived(finder.current?.key ?? null);
+  /** Element ids of the list and its rows: from the component and the row's index, never a row key (it holds paths:
+   *  spaces, quotes, any length). */
+  const uid = $props.id();
+  const listId = `finder-${uid}-list`;
+  const optionId = (at: number): string => `finder-${uid}-${at}`;
+  /** Each row's index among all rows (the groups draw them in this order). */
+  const indexOf = $derived(new Map(finder.view.rows.map((row, at) => [row.key, at])));
+  const activeAt = $derived(activeKey === null ? undefined : indexOf.get(activeKey));
 
   function onkeydown(e: KeyboardEvent): void {
     if (e.isComposing || e.keyCode === 229) return;
@@ -262,8 +270,8 @@
       type="text"
       role="combobox"
       aria-expanded="true"
-      aria-controls="finder-list"
-      aria-activedescendant={activeKey ? `finder-${activeKey}` : undefined}
+      aria-controls={listId}
+      aria-activedescendant={activeAt === undefined ? undefined : optionId(activeAt)}
       autocomplete="off"
       autocapitalize="off"
       spellcheck="false"
@@ -278,14 +286,14 @@
       {/await}
     {/each}
 
-    <div class="list" id="finder-list" role="listbox" aria-label={label} bind:this={list}>
+    <div class="list" id={listId} role="listbox" aria-label={label} bind:this={list}>
       {#each finder.view.groups as group (group.title)}
         <div class="group" role="presentation">{t(GROUP_LABEL[group.title])}</div>
         {#each group.rows as row (row.key)}
           {@const remedy = row.type === "command" ? remedyFor(row) : null}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
-            id={`finder-${row.key}`}
+            id={optionId(indexOf.get(row.key) ?? -1)}
             data-key={row.key}
             class="row"
             class:active={activeKey === row.key}
@@ -501,8 +509,23 @@
     margin-top: 2px;
     color: var(--muted);
   }
+  /* the row the keyboard is on: a 2 px accent ring (3:1 against the box in both themes) over the soft fill */
   .row.active {
     background: var(--accent-soft);
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+  /* Windows High Contrast drops fills and shadows: the row takes the system's highlight colors, kept as set */
+  @media (forced-colors: active) {
+    .row.active {
+      forced-color-adjust: none;
+      background: Highlight;
+      color: HighlightText;
+    }
+    .row.active :global(*) {
+      border-color: HighlightText;
+      background: transparent;
+      color: HighlightText;
+    }
   }
   .row.dim {
     color: var(--muted);

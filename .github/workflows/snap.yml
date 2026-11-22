@@ -17,7 +17,7 @@ on:
         description: "The tag to build from"
         type: string
         required: true
-    # SNAPCRAFT_STORE_CREDENTIALS: from the `release` environment of the job below (or inherited from the caller).
+    # SNAPCRAFT_STORE_CREDENTIALS: a secret of the `release` environment of the job below.
   workflow_dispatch:
     inputs:
       channel:
@@ -26,6 +26,10 @@ on:
         default: edge
         type: choice
         options: [edge, stable]
+      latest_release:
+        description: "Package the latest release's .deb when the branch's version has none (else the build fails)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -37,21 +41,41 @@ jobs:
     timeout-minutes: 60
     # The Snap Store credentials live in this environment, which only release tags and main | develop may use.
     environment: release
+    env:
+      # "true" only when the Store credentials exist. A step's `if` cannot read secrets, and this keeps their value out
+      # of the build step: only the publish step gets it.
+      SNAP_STORE: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS != '' }}
     steps:
       # By hand: the branch or tag the run was started on (no `ref` input then).
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      # snap/snapcraft.yaml packages the .deb of the version in app/package.json and fails when that release has none;
+      # this file (read from the build's copy of the source) lets it take the latest release's .deb instead.
+      - name: Allow the latest release's .deb
+        if: github.event_name == 'workflow_dispatch' && inputs.latest_release
+        run: |
+          mkdir -p snap/local
+          echo latest > snap/local/deb-release
 
       - name: Build the snap
         id: build
         uses: snapcore/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79 # v1.3.0
 
+      # Without the Store credentials (a fork, a test copy of the repository) the snap is built and checked, then left
+      # unpublished, with a warning.
       - name: Publish to the Snap Store
+        if: env.SNAP_STORE == 'true'
         uses: snapcore/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40 # v1.2.0
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
           snap: ${{ steps.build.outputs.snap }}
           release: ${{ inputs.channel }}
+
+      - name: Say that the snap was not published
+        if: env.SNAP_STORE != 'true'
+        run: echo "::warning::The snap was built but not published to the Snap Store, because the SNAPCRAFT_STORE_CREDENTIALS secret is not set."

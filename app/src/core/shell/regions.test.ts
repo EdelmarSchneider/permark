@@ -115,6 +115,7 @@ function showOutline(): void {
     mtimeMs: 1,
     editable: { editable: "surgical" },
     notes: [],
+    opensOutside: true,
   };
   documents.state = { status: "ready", view: shown, deleted: null, fresh: true };
   flushSync();
@@ -426,6 +427,60 @@ describe("a project", () => {
     expect(document.querySelector("[data-view-status]")?.textContent).toBe(
       "Outline moved to the bottom panel. Make the window taller to show it.",
     );
+  });
+
+  it("the Panels menu open with no right panel on screen: the notices keep to its left, a press on their Undo keeps it", () => {
+    layout.setRightHidden(true);
+    flushSync();
+    const button = document.querySelector<HTMLElement>('footer button[aria-label="Panels"]');
+    if (button === null) throw new Error("no Panels button");
+    // jsdom has no layout: the button where a status bar puts it, at the bottom right of the window
+    vi.spyOn(button, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(window.innerWidth - 60, window.innerHeight - 24, 24, 24),
+    );
+    try {
+      button.click();
+      flushSync();
+      const menu = document.querySelector<HTMLElement>('[role="menu"]');
+      if (menu === null) throw new Error("no menu");
+      const left = Number.parseFloat(menu.style.left);
+      // a view closed from the menu: its notice, with an Undo, while the menu stays for the next pick
+      const item = [...menu.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find(
+        (el) => el.getAttribute("aria-checked") === "true" && !el.hasAttribute("aria-disabled"),
+      );
+      if (item === undefined) throw new Error("no view to close");
+      item.click();
+      flushSync();
+      const notices = document.querySelector<HTMLElement>("[data-notices]");
+      expect(ui.panels).toBe(true);
+      // the notices' right edge sits at the menu's left edge or further left: no part of them under the menu
+      expect(notices?.style.getPropertyValue("--notices-right")).toBe(
+        `${window.innerWidth - left}px`,
+      );
+      const undo = [...(notices?.querySelectorAll("button") ?? [])].find(
+        (b) => b.textContent?.trim() === "Undo",
+      );
+      if (undo === undefined) throw new Error("no Undo");
+      undo.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      flushSync();
+      // the press is the notice's: the menu, and so the notices' place, stay until the click lands
+      expect(ui.panels).toBe(true);
+      expect(notices?.style.getPropertyValue("--notices-right")).toBe(
+        `${window.innerWidth - left}px`,
+      );
+      const name = item.textContent?.trim();
+      undo.click();
+      flushSync();
+      const back = [...menu.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find(
+        (el) => el.textContent?.trim() === name,
+      );
+      expect(back?.getAttribute("aria-checked")).toBe("true");
+    } finally {
+      ui.closePanels();
+      layout.setRightHidden(false);
+      for (const notice of store.notices) store.dismiss(notice.id);
+      flushSync();
+    }
   });
 
   it("focus mode folds the bottom region with the others: only the page", () => {

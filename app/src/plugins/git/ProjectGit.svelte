@@ -11,8 +11,8 @@
     changedLine,
     checking,
     gitMissing,
+    gitErrorText,
     headText,
-    reasonText,
     stateHint,
   } from "./facts";
   import { members } from "./members.svelte";
@@ -39,9 +39,11 @@
     {:else if gitMissing(repo)}
       <p class="muted">{t("projects.card.gitMissing")}</p>
     {:else if repo.error?.kind === "failed"}
+      {@const why = gitErrorText(repo.error.code, repo.error.reason)}
       {#if head}<p>{t("projects.card.branch", { branch: head })}</p>{/if}
       <p>{t("projects.card.gitError")}</p>
-      <p class="muted cut" title={repo.error.reason}>{reasonText(repo.error.reason)}</p>
+      <!-- whole, never cut: read without a hover -->
+      {#if why !== ""}<p class="muted" data-git-why>{why}</p>{/if}
     {:else}
       <p class="line">
         {#if head}

@@ -114,6 +114,27 @@ describe("the combo of a key event", () => {
     expect(comboFromEvent(key({ key: " ", ctrlKey: true }), false)).toBe("Mod+Space");
   });
 
+  it("AZERTY digit row: a bound punctuation key on a digit key is that key; a digit typed with Shift is the plain digit", () => {
+    // `-` sits on the 6 key: Ctrl+- is zoom out, not tab 6
+    expect(comboFromEvent(key({ key: "-", ctrlKey: true, code: "Digit6" }), false)).toBe("Mod+-");
+    expect(comboFromEvent(key({ key: "=", ctrlKey: true, code: "Digit0" }), false)).toBe("Mod+=");
+    // the digits themselves need Shift there: Ctrl+Shift+6 is Mod+6 (tab 6)
+    expect(
+      comboFromEvent(key({ key: "6", ctrlKey: true, shiftKey: true, code: "Digit6" }), false),
+    ).toBe("Mod+6");
+    expect(
+      comboFromEvent(key({ key: "6", metaKey: true, shiftKey: true, code: "Digit6" }), true),
+    ).toBe("Mod+6");
+    // other characters of the digit row stay the physical digit
+    expect(comboFromEvent(key({ key: "&", ctrlKey: true, code: "Digit1" }), false)).toBe("Mod+1");
+    expect(comboFromEvent(key({ key: "_", ctrlKey: true, code: "Digit8" }), false)).toBe("Mod+8");
+    // US: Shift+1 types `!`, Shift stays part of the combo
+    expect(
+      comboFromEvent(key({ key: "!", ctrlKey: true, shiftKey: true, code: "Digit1" }), false),
+    ).toBe("Mod+Shift+1");
+    expect(comboFromEvent(key({ key: "6", ctrlKey: true, code: "Digit6" }), false)).toBe("Mod+6");
+  });
+
   it("falls back to the physical letter on other layouts and for macOS Option characters", () => {
     expect(
       comboFromEvent(key({ key: "з", ctrlKey: true, shiftKey: true, code: "KeyP" }), false),

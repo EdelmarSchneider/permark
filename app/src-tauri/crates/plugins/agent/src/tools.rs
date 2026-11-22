@@ -10,11 +10,12 @@ use permark_core::notes::{ProjectKey, SharedNotesApi};
 use permark_core::organizing::{CommentFilter, CommentsApi, TagsApi, UnreadApi};
 use permark_core::paths::Vault;
 use permark_core::plugins::ProjectServices;
-use permark_core::projects::agent_view::Guard;
+use permark_core::projects::agent_view::{Guard, RulesWhy};
 use permark_core::search::SearchFilter;
 use permark_core::settings::ProjectConfig;
 use permark_core::state::StateStore;
 use permark_core::tokens::TokenCounterApi;
+use permark_core::ErrorKind;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -28,6 +29,13 @@ use crate::ToolError;
 pub const READY_WAIT: Duration = Duration::from_secs(10);
 /// How long a call waits for the projects inside the folder to be known before answering `busy`.
 pub const PROJECTS_WAIT: Duration = Duration::from_secs(5);
+/// How long `permark mcp` waits for the app's answer to a tool call: longer than all the waits of one call together
+/// (the projects, then at most two first looks: tags, then the index), so a call that waits still reaches the agent as
+/// the `partial` | `busy` answer it was made to be.
+pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
+const _: () = assert!(
+    PROJECTS_WAIT.as_millis() + 2 * READY_WAIT.as_millis() + 2_000 < CALL_TIMEOUT.as_millis()
+);
 /// Largest file `outline` | `read` open.
 pub const MAX_READ_BYTES: u64 = 8 * 1024 * 1024;
 /// Longest text one `read` returns (characters); the answer says where to go on.
@@ -39,6 +47,11 @@ pub const SEARCH_BUDGET: (u64, u64) = (200, 12_000);
 pub const MAX_LINKS: usize = 50;
 /// Most comments one `list_comments` lists (the answer counts the rest in `more`).
 pub const MAX_COMMENTS: usize = 100;
+/// Where comments, done replies, the activity and the hand-off come from: PerMark's files in the folder, which may
+/// hold text written elsewhere (a copy of the folder, a sync partner, a clone). The answers carry it as `source`.
+pub const FOLDER_SOURCE: &str = "folder";
+/// Why data is withheld from agents (`why` next to `withheld`).
+pub const WITHHELD_WHY: &str = "git tracks .permark/local or it could not be checked";
 
 /// The tools, their groups, in the order agents list them.
 pub const TOOLS: [(&str, Group); 13] = [
@@ -74,6 +87,8 @@ pub struct Tools {
     live: Arc<Live>,
     /// Sizes of files `map` measured: path -> (bytes, modified, size).
     sizes: crate::map::SizeCache,
+    /// How long a tool waits for a first look ([`READY_WAIT`]; tests: shorter).
+    ready_wait: Duration,
 }
 
 fn args<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, ToolError> {
@@ -221,7 +236,19 @@ impl Tools {
             services,
             live,
             sizes: crate::map::SizeCache::default(),
+            ready_wait: READY_WAIT,
         }
+    }
+
+    /// How long a tool waits for a first look before answering partially (tests: shorter than [`READY_WAIT`]).
+    #[must_use]
+    pub fn with_ready_wait(mut self, wait: Duration) -> Self {
+        self.ready_wait = wait;
+        self
+    }
+
+    pub(crate) fn ready_wait(&self) -> Duration {
+        self.ready_wait
     }
 
     /// The project's services (the hand-off reads the journal and the repository through them).
@@ -249,47 +276,74 @@ impl Tools {
     /// projects inside the folder.
     ///
     /// # Errors
-    /// `Busy` while they are not known yet.
+    /// `Busy` while they are not known yet; `RulesUnreadable`.
     pub fn guard_now(&self, wait: Duration) -> Result<Arc<Guard>, ToolError> {
-        self.guard(&ProjectConfig::load(self.vault.main()), None, wait)
+        self.guard(self.own_rules(), None, wait)
     }
 
-    /// The rules of one call: `.aiignore`, `[agent] deny_paths`, the projects inside the folder (silenced paths stay
-    /// visible). Fails closed: `Busy` until the projects inside are known.
+    /// The folder's own rules read now: `.aiignore` and the `[agent]` part of `.permark/config.toml`, each read
+    /// checked (one that cannot be read stands on its last good rules, kept in the profile).
+    fn own_rules(&self) -> Guard {
+        Guard::checked(self.vault.main(), &self.store)
+    }
+
+    /// The rules as read now with the projects inside when already known (never waits): what the settings show.
+    #[must_use]
+    pub fn rules_now(&self) -> Guard {
+        let own = self.own_rules();
+        match self
+            .services
+            .projects()
+            .and_then(|p| p.agent_map(Duration::ZERO))
+        {
+            Some(map) => own.with_projects(map, None),
+            None => own,
+        }
+    }
+
+    /// The rules of one call: the folder's own (`own`), the projects inside the folder (silenced paths stay visible).
+    /// Fails closed: `Busy` until the projects inside are known; `RulesUnreadable` while a rule file governing the
+    /// whole folder cannot be read and has no last good rules (every path would be hidden).
     fn guard(
         &self,
-        config: &ProjectConfig,
+        own: Guard,
         group: Option<Group>,
         wait: Duration,
     ) -> Result<Arc<Guard>, ToolError> {
-        let guard = Guard::new(self.vault.main(), &config.agent_deny_paths);
-        Ok(Arc::new(match self.services.projects() {
+        if own.closed() {
+            return Err(rules_refusal(&own));
+        }
+        let guard = match self.services.projects() {
             Some(projects) => {
                 let map = projects.agent_map(wait).ok_or(ToolError::Busy)?;
-                guard.with_projects(map, group.map(Group::id))
+                own.with_projects(map, group.map(Group::id))
             }
-            None => guard,
-        }))
+            None => own,
+        };
+        if guard.closed() {
+            return Err(rules_refusal(&guard));
+        }
+        Ok(Arc::new(guard))
     }
 
-    /// Whether `group` is open now: the switch on for this folder and the group on for this project (read fresh, the
-    /// project's denial counted).
+    /// Whether `group` is open now: the switch on for this folder, the rules readable (or standing on their last
+    /// good ones) and the group on for this project (read fresh, the project's denial counted).
     #[must_use]
     pub fn allows(&self, group: Group) -> bool {
         let choice = perms::load(&self.store);
-        choice.is_on(self.vault.main().path())
-            && perms::effective(
-                &choice.groups,
-                &ProjectConfig::load(self.vault.main()).agent_deny,
-            )
-            .get(&group)
+        if !choice.is_on(self.vault.main().path()) {
+            return false;
+        }
+        let own = self.own_rules();
+        !own.closed()
+            && perms::effective(&choice.groups, own.denied_groups()).get(&group)
                 == Some(&Access::On)
     }
 
-    /// Checks the switch and the group, then runs the tool.
+    /// Checks the switch, the rules and the group, then runs the tool.
     ///
     /// # Errors
-    /// `Off`, `Denied`, `Invalid`, `NotFound`, `Failed`.
+    /// `Off`, `RulesUnreadable`, `Denied`, `Busy`, `Invalid`, `NotFound`, `Failed`.
     pub fn call(&self, tool: &str, args: Value) -> Result<Value, ToolError> {
         let group =
             group_of(tool).ok_or_else(|| ToolError::Invalid(format!("unknown tool {tool}")))?;
@@ -297,11 +351,14 @@ impl Tools {
         if !choice.is_on(self.vault.main().path()) {
             return Err(ToolError::Off);
         }
-        let config = ProjectConfig::load(self.vault.main());
-        let access = perms::effective(&choice.groups, &config.agent_deny)
-            .get(&group)
-            .copied()
-            .unwrap_or(Access::Off);
+        // nothing is answered while the rules cannot be read; the team's denials as read checked (a broken team file
+        // keeps its last good ones, never "none")
+        let own = self.own_rules();
+        if own.closed() {
+            return Err(rules_refusal(&own));
+        }
+        let effective = perms::effective(&choice.groups, own.denied_groups());
+        let access = effective.get(&group).copied().unwrap_or(Access::Off);
         if access != Access::On {
             return Err(ToolError::Denied {
                 group,
@@ -310,11 +367,8 @@ impl Tools {
                     && !choice.resolve_asked,
             });
         }
-        let guard = self.guard(&config, Some(group), PROJECTS_WAIT)?;
-        let changes = perms::effective(&choice.groups, &config.agent_deny)
-            .get(&Group::Changes)
-            .copied()
-            == Some(Access::On);
+        let changes = effective.get(&Group::Changes).copied() == Some(Access::On);
+        let guard = self.guard(own, Some(group), PROJECTS_WAIT)?;
         match tool {
             "get_context" => self.get_context(args, &guard),
             "list_unread" => self.list_unread(args, &guard),
@@ -391,7 +445,7 @@ impl Tools {
         let api = self.services.services.get::<UnreadApi>().ok_or_else(|| {
             ToolError::Invalid("unread markers are off in this project".to_owned())
         })?;
-        let ready = api.0.wait_ready(READY_WAIT);
+        let ready = api.0.wait_ready(self.ready_wait);
         let now = api.0.unread();
         let mut items: Vec<(String, u64)> = now
             .paths
@@ -420,12 +474,13 @@ impl Tools {
             .services
             .get::<TagsApi>()
             .ok_or_else(|| ToolError::Invalid("tags are off in this project".to_owned()))?;
-        api.0.wait_ready(READY_WAIT);
+        api.0.wait_ready(self.ready_wait);
         Ok(api)
     }
 
-    fn tagged(&self, tags: &[String], guard: &Guard) -> Result<Vec<String>, ToolError> {
-        let api = self.tags_api()?;
+    /// Files holding all `tags`, by path. `api` = the one [`Self::tags_api`] gave this call: its first look is
+    /// waited for once per call, never again per file.
+    fn tagged(api: &TagsApi, tags: &[String], guard: &Guard) -> Vec<String> {
         let mut paths: Vec<String> = api
             .0
             .files_with_all(tags)
@@ -433,14 +488,11 @@ impl Tools {
             .filter(|p| !guard.hidden(p, false))
             .collect();
         paths.sort_by_key(|p| p.to_lowercase());
-        Ok(paths)
+        paths
     }
 
-    fn file_entry(&self, path: &str) -> Value {
-        let (description, tags) = self.tags_api().map_or_else(
-            |_| (String::new(), Vec::new()),
-            |api| (api.0.description_of(path), api.0.tags_of(path)),
-        );
+    fn file_entry(api: &TagsApi, path: &str) -> Value {
+        let (description, tags) = (api.0.description_of(path), api.0.tags_of(path));
         let mut entry = Map::new();
         entry.insert("path".to_owned(), json!(path));
         if !description.is_empty() {
@@ -468,11 +520,12 @@ impl Tools {
             if tags.is_empty() {
                 return Err(ToolError::Invalid("give a query, tags, or both".to_owned()));
             }
-            let paths = self.tagged(&tags, guard)?;
+            let api = self.tags_api()?;
+            let paths = Self::tagged(&api, &tags, guard);
             let max = limit(asked, 20, 100);
             return Ok(json!({
                 "tags": tags,
-                "documents": paths.iter().take(max).map(|p| self.file_entry(p)).collect::<Vec<_>>(),
+                "documents": paths.iter().take(max).map(|p| Self::file_entry(&api, p)).collect::<Vec<_>>(),
                 "total": paths.len(),
                 "more": paths.len().saturating_sub(max),
             }));
@@ -480,7 +533,11 @@ impl Tools {
         let only = if tags.is_empty() {
             None
         } else {
-            Some(self.tagged(&tags, guard)?.into_iter().collect())
+            Some(
+                Self::tagged(self.tags_api()?.as_ref(), &tags, guard)
+                    .into_iter()
+                    .collect(),
+            )
         };
         let filter = SearchFilter {
             only,
@@ -490,13 +547,21 @@ impl Tools {
             within: None,
         };
         let index = &self.services.search;
-        let ready = index.wait_ready(READY_WAIT);
+        let ready = index.wait_ready(self.ready_wait);
         let results = index.sections(query.trim(), limit(asked, 10, 25), &filter);
         let formats = self.services.formats();
         let hits: Vec<Value> = results
             .hits
             .into_iter()
-            .map(|hit| {
+            .filter_map(|hit| {
+                // the index knows a path only: where the file really is now decides (gone, a link to a hidden part)
+                let read = crate::guard::text(guard, &hit.path);
+                if matches!(
+                    read,
+                    Err(ToolError::NotFound(_) | ToolError::DeniedBelow { .. })
+                ) {
+                    return None;
+                }
                 let snippet: String = hit.snippet.iter().map(|p| p.text.as_str()).collect();
                 let mut item = json!({
                     "path": hit.path,
@@ -505,15 +570,13 @@ impl Tools {
                     "snippet": snippet.trim(),
                 });
                 // the size of reading this section next (`read at=<heading path>`)
-                let size = crate::guard::text(guard, &hit.path)
-                    .ok()
-                    .and_then(|(path, text)| {
-                        structure::section_size(&formats, &path, &text, &hit.heading_path, hit.line)
-                    });
+                let size = read.ok().and_then(|(path, text)| {
+                    structure::section_size(&formats, &path, &text, &hit.heading_path, hit.line)
+                });
                 if let (Some(size), Some(map)) = (size, item.as_object_mut()) {
                     map.insert("size_tok".to_owned(), json!(size));
                 }
-                item
+                Some(item)
             })
             .collect();
         let mut answer = json!({
@@ -534,11 +597,11 @@ impl Tools {
         let TagArgs { tag, limit: asked } = args(raw)?;
         let api = self.tags_api()?;
         if let Some(tag) = tag.filter(|t| !t.trim().is_empty()) {
-            let paths = self.tagged(&[tag.trim().to_owned()], guard)?;
+            let paths = Self::tagged(&api, &[tag.trim().to_owned()], guard);
             let max = limit(asked, 20, 100);
             return Ok(json!({
                 "tag": tag.trim(),
-                "files": paths.iter().take(max).map(|p| self.file_entry(p)).collect::<Vec<_>>(),
+                "files": paths.iter().take(max).map(|p| Self::file_entry(&api, p)).collect::<Vec<_>>(),
                 "total": paths.len(),
                 "more": paths.len().saturating_sub(max),
             }));
@@ -606,10 +669,13 @@ impl Tools {
         let list = self.comments()?.0.list(filter).map_err(|e| {
             ToolError::Failed(format!("the comments cannot be read now: {}", why(&e)))
         })?;
-        let shared: Vec<_> = list
+        let mut shared: Vec<_> = list
             .into_iter()
             .filter(|c| !guard.hidden(&c.path, false))
             .collect();
+        // counted after the hidden paths are out: a hidden path's comment is never told, not even as a number
+        let withheld = shared.iter().filter(|c| c.withheld).count();
+        shared.retain(|c| !c.withheld);
         let more = shared.len().saturating_sub(MAX_COMMENTS);
         let comments: Vec<Value> = shared
             .into_iter()
@@ -640,6 +706,11 @@ impl Tools {
         if more > 0 {
             answer["more"] = json!(more);
         }
+        if withheld > 0 {
+            answer["withheld"] = json!(withheld);
+            answer["why"] = json!(WITHHELD_WHY);
+        }
+        answer["source"] = json!(FOLDER_SOURCE);
         Ok(answer)
     }
 
@@ -649,16 +720,20 @@ impl Tools {
         let list = api.0.list(CommentFilter::All).map_err(|e| {
             ToolError::Failed(format!("the comments cannot be read now: {}", why(&e)))
         })?;
-        // a comment on a file agents do not get is not there for them
+        // a comment on a file agents do not get, or a withheld one, is not there for them
         if !list
             .iter()
-            .any(|c| c.id == id && !guard.hidden(&c.path, false))
+            .any(|c| c.id == id && !c.withheld && !guard.hidden(&c.path, false))
         {
             return Err(ToolError::NotFound(id));
         }
         api.0
             .resolve(&id, reply.as_deref())
-            .map_err(|e| ToolError::Failed(format!("not marked done: {}", why(&e))))?;
+            .map_err(|e| match e.kind {
+                // removed | withheld since the list above: not there for the agent, as if never listed
+                ErrorKind::NotFound | ErrorKind::Denied => ToolError::NotFound(id.clone()),
+                _ => ToolError::Failed(format!("not marked done: {}", why(&e))),
+            })?;
         Ok(json!({ "resolved": id }))
     }
 
@@ -863,6 +938,29 @@ pub(crate) fn fit_budget(answer: &mut Value, budget: u64) {
                 }
             }
         }
+    }
+}
+
+/// The refusal while `guard` is closed: why its rule file cannot be read, never which file (its name and place in
+/// the folder are what the rules keep from agents; the person's own view names it).
+fn rules_refusal(guard: &Guard) -> ToolError {
+    let why = guard
+        .rules_problem()
+        .map_or(RulesWhy::Failed, |problem| problem.why);
+    ToolError::RulesUnreadable(why_words(why).to_owned())
+}
+
+fn why_words(why: RulesWhy) -> &'static str {
+    match why {
+        RulesWhy::TooLarge => "too large",
+        RulesWhy::NotText => "not text",
+        RulesWhy::NotToml => "not TOML",
+        RulesWhy::BadValue => "a value of the wrong kind",
+        RulesWhy::BadPattern => "a pattern that does not build",
+        RulesWhy::NotAFile => "not a file",
+        RulesWhy::Locked => "locked by another program",
+        RulesWhy::Denied => "permission denied",
+        RulesWhy::Failed => "read failed",
     }
 }
 

@@ -35,6 +35,10 @@ const NAMED_KEYS: ReadonlySet<string> = new Set([
   ...Array.from({ length: 24 }, (_, i) => `F${i + 1}`),
 ]);
 
+/** Bound punctuation that some layouts put on a digit key (AZERTY `-` on 6): read as the character, else zoom out
+ * (`Mod+-`) has no key there. Its digit stays reachable with Shift, which types digits on those layouts. */
+const PUNCTUATION_ON_DIGITS: ReadonlySet<string> = new Set(["-", "="]);
+
 /** One printable ASCII character that is not a space (lowercase letters only). */
 const SINGLE = /^[a-z0-9!-/:-@[-`{-~]$/;
 
@@ -100,10 +104,13 @@ export function comboFromEvent(event: KeyEventLike, mac: boolean): string | null
   let key = event.key === " " ? "Space" : event.key;
   if (key.length === 1) {
     const code = event.code ?? "";
-    const digit = /^Digit(\d)$/.exec(code);
+    const digit = /^Digit(\d)$/.exec(code)?.[1];
     const letter = /^Key([A-Z])$/.exec(code);
-    if (digit?.[1] !== undefined) key = digit[1];
-    else if (/^[A-Za-z]$/.test(key)) key = key.toLowerCase();
+    if (digit !== undefined && !PUNCTUATION_ON_DIGITS.has(key)) {
+      // the physical digit (Shift+1 types `!` on US); a digit the Shift key made (AZERTY's digit row) is the plain one
+      if (/^\d$/.test(key)) shift = false;
+      key = digit;
+    } else if (/^[A-Za-z]$/.test(key)) key = key.toLowerCase();
     else if (!/^[\x21-\x7e]$/.test(key)) {
       // another layout (Cyrillic, Greek) or a mac Option character: the physical letter
       if (letter?.[1] === undefined) return null;

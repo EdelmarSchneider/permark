@@ -1,0 +1,64 @@
+# cargo-deny: known advisories, licenses, banned crates and sources of every crate PerMark ships.
+# CI runs `cargo deny --locked check` (workflow supply-chain.yml). An advisory listed under `ignore` was checked: the
+# reason says why PerMark is not affected or why no fixed release exists yet. Remove the entry once a fix ships.
+
+[graph]
+# The three desktop platforms (as about.toml), every feature: a crate used on one platform still ships there.
+targets = [
+  "x86_64-pc-windows-msvc",
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+]
+all-features = true
+# Tests and their helpers never ship.
+exclude-dev = true
+
+[advisories]
+yanked = "deny"
+ignore = [
+  { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained; no maintained drop-in yet. Used for dates only, no known vulnerability." },
+  { id = "RUSTSEC-2026-0370", reason = "zvariant (zbus stack, Linux secret service through keyring) is unmaintained; no replacement release yet." },
+  { id = "RUSTSEC-2026-0371", reason = "zbus_names (zbus stack, Linux secret service through keyring) is unmaintained; no replacement release yet." },
+  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive (zbus stack, Linux secret service through keyring) is unmaintained; no replacement release yet." },
+  { id = "RUSTSEC-2024-0370", reason = "proc-macro-error is unmaintained; a build-time macro of the gtk 0.18 stack (Tauri on Linux), not shipped code." },
+  { id = "RUSTSEC-2024-0429", reason = "glib 0.18 VariantStrIter unsoundness; comes with Tauri's gtk 0.18 stack on Linux and PerMark never iterates a VariantStrIter. Goes away when Tauri moves to gtk 4." },
+]
+
+[licenses]
+# Same list as about.toml (the third-party notices): a new license is a decision, made in both files.
+allow = [
+  "Apache-2.0",
+  "MIT",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "0BSD",
+  "CC0-1.0",
+  "BSL-1.0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "CDLA-Permissive-2.0",
+  "MPL-2.0",
+]
+confidence-threshold = 0.9
+exceptions = [
+  # build-time only (cfg-expr, used by system-deps in build scripts); about.toml leaves build dependencies out
+  { allow = ["Apache-2.0 WITH LLVM-exception"], crate = "target-lexicon" },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# PerMark's own crates refer to each other by path only.
+allow-wildcard-paths = true
+deny = [
+  # TLS goes through rustls everywhere: no OpenSSL to patch on the person's system.
+  { crate = "openssl-sys", reason = "TLS is rustls only" },
+  { crate = "native-tls", reason = "TLS is rustls only" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

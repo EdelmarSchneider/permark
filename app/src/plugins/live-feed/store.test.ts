@@ -99,6 +99,24 @@ describe("the feed store", () => {
     stop();
   });
 
+  it("counts each document once while the toast is up, however often its change is sent again", async () => {
+    const { api, store, stop } = await setup("shown.md");
+    api.probe.plugins.feed([entry(20, "plan.md")]);
+    // the backend sends a coalesced entry again (same id, more saves) as the file keeps changing
+    api.probe.plugins.feed([entry(20, "plan.md", "modified", { saves: 2 })]);
+    expect(store.toast).toMatchObject({ count: 1, path: "plan.md" });
+    api.probe.plugins.feed([entry(21, "spec.md", "created")]);
+    expect(store.toast).toMatchObject({ count: 2, path: "spec.md" });
+    api.probe.plugins.feed([entry(22, "plan.md")]);
+    expect(store.toast).toMatchObject({ count: 2, path: "plan.md" });
+    // a new toast counts afresh
+    store.dismissToast();
+    api.probe.plugins.feed([entry(23, "spec.md")]);
+    expect(store.toast).toMatchObject({ count: 1, path: "spec.md" });
+    store.dismissToast();
+    stop();
+  });
+
   it("says nothing for the person's own doing, folders, other files or the document being read", async () => {
     const { api, store, stop } = await setup("shown.md");
     api.probe.plugins.feed([

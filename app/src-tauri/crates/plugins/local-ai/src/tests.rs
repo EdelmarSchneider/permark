@@ -15,7 +15,7 @@ use crate::catalog::{FileRole, PUBLISHERS};
 mod host;
 mod installs;
 mod pieces;
-mod store;
+pub(crate) mod store;
 mod testrun;
 
 /// Shared with vitest (`app/src/plugins/local-ai/tasks.test.ts`): both mirrors give the same answers.
@@ -108,7 +108,7 @@ fn the_manifest_is_an_app_feature_that_starts_on() {
     assert!(manifest.depends_on.is_empty());
 }
 
-/// AC-1: on but dormant -> starting and serving the read-only RPC creates no file | folder (profile, cache).
+/// On but dormant -> starting and serving the read-only RPC creates no file | folder (profile, cache).
 #[test]
 fn starting_and_answering_creates_nothing_on_disk() {
     let mut h = Harness::start();
@@ -118,7 +118,7 @@ fn starting_and_answering_creates_nothing_on_disk() {
     assert_eq!(entries(h.tmp.path()), Vec::<String>::new());
 }
 
-/// AC-9: the machine RPC answers the profile, a fit per catalog model, no budget warning (nothing assigned); it
+/// The machine RPC answers the profile, a fit per catalog model, no budget warning (nothing assigned); it
 /// reads only (no file | folder).
 #[test]
 fn the_machine_rpc_advises_on_every_model_and_creates_nothing() {
@@ -191,7 +191,7 @@ fn the_tasks_rpc_lists_every_task_with_its_needs() {
     );
 }
 
-// ---- catalog (AC-2)
+// ---- catalog
 
 #[test]
 fn the_bundled_catalog_parses_and_holds_the_initial_models() {
@@ -394,7 +394,7 @@ fn a_gated_model_is_just_marked() {
     assert!(catalog.models[0].gated);
 }
 
-// ---- tasks (AC-8 registry)
+// ---- tasks (registry)
 
 #[derive(Deserialize)]
 struct Fixture {
@@ -428,12 +428,12 @@ fn every_task_but_read_aloud_has_a_bundled_model() {
     let catalog = catalog::bundled().unwrap();
     for task in Task::ALL {
         let any = catalog.models.iter().any(|m| task.accepts(&m.capabilities));
-        // no voice model in the initial catalog (OS voices first, epic D-6)
+        // no voice model in the initial catalog (OS voices first)
         assert_eq!(any, task != Task::ReadAloud, "{task:?}");
     }
 }
 
-/// AC-6: "Remove data" tells the engine files too (plugin off: read from the profile).
+/// "Remove data" tells the engine files too (plugin off: read from the profile).
 #[test]
 fn data_bytes_count_the_engine_files() {
     let tmp = tempfile::tempdir().unwrap();

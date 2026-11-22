@@ -1,24 +1,25 @@
 // Marks in Edit mode (session `marks`), one decoration set per layer: text offsets -> document positions
-// (`docRange`), an inline decoration per range found (an empty range: a caret-width widget), the current one with its
+// (`docRanges`), an inline decoration per range found (an empty range: a caret-width widget), the current one with its
 // own class; set by a meta transaction kept out of the undo history, each layer mapped through every change until its
 // next set, and a set of one layer never touches another's. A range not found in its block (markup inside, a locked
 // block) gets no mark. A click on one picks it and leaves the caret alone; a right-click opens its layer's menu when it
 // has one. Classes, attributes + routing: `../marks.ts`, look: `../marks.css`.
 
-import { Plugin, PluginKey, type EditorState } from "@milkdown/kit/prose/state";
+import { Plugin, PluginKey, TextSelection, type EditorState } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/view";
 import {
   DEFAULT_LAYER,
   markAttrs,
   markClass,
   menuClicked,
+  onMark,
   pickClicked,
   type MarkHandlers,
   type MarkOptions,
 } from "../marks";
 import type { TextRange } from "../session.svelte";
 import type { Composed } from "./compose";
-import { docRange } from "./edits";
+import { docRanges } from "./edits";
 
 type Layer = MarkHandlers & { set: DecorationSet };
 /** Every layer, and all their decorations as one set (what the view draws). */
@@ -53,7 +54,11 @@ export function marksPlugin(): Plugin<Marks> {
         if (meta.marks === null) layers.delete(meta.layer);
         else layers.set(meta.layer, meta.marks);
         if (layers.size === 0) return NONE;
-        const all = [...layers.values()].flatMap((l) => l.set.find());
+        const sets = [...layers.values()];
+        // one layer: its own set is the one drawn (a set made again from its marks is the same, at the same cost as
+        // the first: every top-level block against every mark)
+        if (sets.length === 1 && sets[0]) return { layers, all: sets[0].set };
+        const all = sets.flatMap((l) => l.set.find());
         return { layers, all: DecorationSet.create(state.doc, all) };
       },
     },
@@ -61,8 +66,11 @@ export function marksPlugin(): Plugin<Marks> {
       decorations: (state) => marksKey.getState(state)?.all ?? null,
       handleDOMEvents: {
         click: (view, event) => {
+          // the caret goes where the person clicked, as always: a click quicker than the browser's news of the caret
+          // it placed (a short press, automation) puts it into the state first, else the marks drawn anew for the
+          // pick would write the earlier selection (a suggestion shown before) back over the click
+          if (onMark(event.target)) takePageSelection(view);
           pickClicked(marksKey.getState(view.state)?.layers ?? NONE.layers, event.target);
-          // the caret goes where the person clicked, as always
           return false;
         },
         contextmenu: (view, event) =>
@@ -70,6 +78,28 @@ export function marksPlugin(): Plugin<Marks> {
       },
     },
   });
+}
+
+/** The page's selection into the editor's state when they differ: the browser placed it, the editor has not read it
+ *  yet. One that leaves the editor | names no place of its document: nothing. */
+function takePageSelection(view: EditorView): void {
+  const page = view.dom.ownerDocument.getSelection();
+  const anchorNode = page?.anchorNode;
+  const focusNode = page?.focusNode;
+  if (!page || !anchorNode || !focusNode) return;
+  if (!view.dom.contains(anchorNode) || !view.dom.contains(focusNode)) return;
+  let anchor: number;
+  let head: number;
+  try {
+    anchor = view.posAtDOM(anchorNode, page.anchorOffset);
+    head = view.posAtDOM(focusNode, page.focusOffset);
+  } catch {
+    return;
+  }
+  const { doc, selection } = view.state;
+  if (selection.anchor === anchor && selection.head === head) return;
+  const placed = TextSelection.between(doc.resolve(anchor), doc.resolve(head));
+  view.dispatch(view.state.tr.setSelection(placed).setMeta("pointer", true));
 }
 
 function insertMark(layer: string, index: number, current: boolean, base?: string): HTMLElement {
@@ -95,8 +125,7 @@ export function setMarks(
   const doc = view.state.doc;
   const base = options.className;
   const decorations: Decoration[] = [];
-  ranges.forEach((range, index) => {
-    const found = docRange(doc, composed, range);
+  docRanges(doc, composed, ranges).forEach((found, index) => {
     if (found === null) return;
     const now = index === current;
     decorations.push(
@@ -129,4 +158,27 @@ export function markAt(state: EditorState, layer: string = DEFAULT_LAYER): numbe
   const found = marksKey.getState(state)?.layers.get(layer)?.set.find(head, head) ?? [];
   const index: unknown = found[0]?.spec.index;
   return typeof index === "number" ? index : null;
+}
+
+/** Index of the first of `ranges` (offsets of `composed.text`, sorted, not overlapping) holding the caret, also right
+ *  at its edges, among those `setMarks` would mark: what `markAt` answers once they are marked; `null`: none. Only
+ *  the ranges inside the caret's top-level block are placed (a mark never leaves its block). */
+export function rangeAt(
+  state: EditorState,
+  composed: Composed,
+  ranges: readonly TextRange[],
+): number | null {
+  const head = state.selection.head;
+  const block = composed.ranges[state.selection.$head.index(0)];
+  if (!block) return null;
+  const near: number[] = [];
+  const inBlock: TextRange[] = [];
+  ranges.forEach((range, index) => {
+    if (block.from > range.from || range.to > block.to) return;
+    near.push(index);
+    inBlock.push(range);
+  });
+  const found = docRanges(state.doc, composed, inBlock);
+  const at = found.findIndex((place) => place !== null && place.from <= head && head <= place.to);
+  return at < 0 ? null : (near[at] ?? null);
 }

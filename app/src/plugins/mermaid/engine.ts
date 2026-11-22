@@ -46,6 +46,23 @@ async function load(theme: "light" | "dark", forced: boolean): Promise<Mermaid> 
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: "strict",
+        // an absolute marker address carries the page's own address into the drawing (`url(http://…#id)`), which the
+        // cleaning then removes with the arrowheads; a diagram's init directive may not turn it on, nor HTML labels
+        // (below) nor a DOMPurify config of its own (it would widen what Mermaid lets through). Mermaid's own secure
+        // keys listed too: they stay secure whether a version merges this list with its own or replaces it. Mermaid
+        // drops a secure key at any depth of a directive (`flowchart.htmlLabels` too)
+        arrowMarkerAbsolute: false,
+        secure: [
+          "secure",
+          "securityLevel",
+          "startOnLoad",
+          "maxTextSize",
+          "suppressErrorRendering",
+          "maxEdges",
+          "arrowMarkerAbsolute",
+          "dompurifyConfig",
+          "htmlLabels",
+        ],
         // labels are SVG text, not HTML in a foreignObject: the drawing is cleaned of foreign content before it enters the page
         htmlLabels: false,
         flowchart: { htmlLabels: false },
@@ -129,11 +146,13 @@ export function drawMermaid(
 ): Promise<string | null> {
   return diagrams.draw(`mermaid\u0000${paletteKey(theme, forced)}\u0000${source}`, async () => {
     counter += 1;
-    const id = `pm-mermaid-${counter}`;
+    // not guessable: Mermaid removes any page element with this id before it draws, and scopes its CSS to it, while a
+    // document can give its own drawings any id: the cleaning keeps only CSS at this root
+    const id = `pm-mermaid-${counter}-${Math.random().toString(36).slice(2, 10)}`;
     try {
       const mermaid = await load(theme, forced);
       const { svg } = await mermaid.render(id, source);
-      return sanitizeSvg(svg);
+      return sanitizeSvg(svg, id);
     } catch {
       // Mermaid leaves its error graphic behind in the page when a render fails
       document.getElementById(id)?.remove();

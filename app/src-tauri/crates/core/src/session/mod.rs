@@ -290,6 +290,9 @@ fn entry_key(path: &str) -> crate::paths::RootKey {
 #[derive(Debug)]
 pub struct RecentStore {
     file: StateFile<RecentList>,
+    /// One load-change-save of the list at a time: folders open on threads of their own, and two changes of one list
+    /// read at once would each save it without the other's entry.
+    turn: std::sync::Mutex<()>,
 }
 
 impl RecentStore {
@@ -297,7 +300,14 @@ impl RecentStore {
     pub fn new(app: &StateStore) -> Self {
         Self {
             file: app.file("recent.json"),
+            turn: std::sync::Mutex::new(()),
         }
+    }
+
+    fn turn(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.turn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Newest first, missing ones marked, paths plain (0.6 saved shares as `\\?\UNC\...`; an old entry and a new
@@ -321,16 +331,15 @@ impl RecentStore {
         }
     }
 
-    /// Moves | adds a project to the top (dedup by `RootKey`), capped at [`MAX_RECENT`].
+    /// Moves | adds a project to the top (dedup by `RootKey`), capped at [`MAX_RECENT`]. Saved entries are compared by
+    /// their key alone, never looked up on disk: one on an offline network share would stall the open that touches.
     ///
     /// # Errors
     /// Write failure.
     pub fn touch(&self, root: &Root, now_ms: u64) -> Result<(), StateError> {
+        let _turn = self.turn();
         let mut list = self.load();
-        list.entries.retain(|e| {
-            Root::open(Path::new(&e.path))
-                .map_or_else(|_| entry_key(&e.path) != *root.key(), |r| r != *root)
-        });
+        list.entries.retain(|e| entry_key(&e.path) != *root.key());
         list.entries.insert(
             0,
             RecentEntry {
@@ -348,6 +357,7 @@ impl RecentStore {
     /// # Errors
     /// Write failure.
     pub fn remove(&self, path: &str) -> Result<(), StateError> {
+        let _turn = self.turn();
         let mut list = self.load();
         let before = list.entries.len();
         let key = entry_key(path);
@@ -562,6 +572,58 @@ mod tests {
         recent.remove(&path).unwrap();
         assert_eq!(recent.list().len(), 1);
         recent.remove("never there").unwrap();
+    }
+
+    #[test]
+    fn touching_a_folder_compares_saved_entries_by_their_spelling_and_never_opens_them() {
+        let (_b, store) = app();
+        let recent = RecentStore::new(&store);
+        let base = tempfile::tempdir().unwrap();
+        let real = base.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let linked = base.path().join("linked");
+        if !crate::tree::tests::link_out(&linked, &real) {
+            return; // no links here
+        }
+        // an entry saved under a spelling only the disk could match (an older version, a hand edit): opening it to
+        // compare would stall on an offline share, so it stays as saved
+        recent
+            .file
+            .save(&RecentList {
+                entries: vec![RecentEntry {
+                    path: linked.display().to_string(),
+                    name: "linked".to_owned(),
+                    opened_ms: 1,
+                }],
+            })
+            .unwrap();
+        recent.touch(&Root::open(&real).unwrap(), 2).unwrap();
+        let list = recent.list();
+        assert_eq!(list.len(), 2, "{list:?}");
+        assert_eq!(list[1].path, plain_text(&linked.display().to_string()));
+    }
+
+    #[test]
+    fn touches_from_several_threads_keep_every_folder() {
+        let (_b, store) = app();
+        let recent = RecentStore::new(&store);
+        let dirs: Vec<tempfile::TempDir> = (0..MAX_RECENT)
+            .map(|_| tempfile::tempdir().unwrap())
+            .collect();
+        let roots: Vec<Root> = dirs.iter().map(|d| Root::open(d.path()).unwrap()).collect();
+        std::thread::scope(|scope| {
+            for (i, root) in roots.iter().enumerate() {
+                let recent = &recent;
+                scope.spawn(move || recent.touch(root, i as u64).unwrap());
+            }
+        });
+        let listed: std::collections::BTreeSet<String> =
+            recent.list().into_iter().map(|r| r.path).collect();
+        let touched: std::collections::BTreeSet<String> = roots
+            .iter()
+            .map(|r| plain_text(&r.path().display().to_string()))
+            .collect();
+        assert_eq!(listed, touched);
     }
 
     #[test]

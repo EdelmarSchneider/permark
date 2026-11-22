@@ -1,0 +1,70 @@
+# Known advisories, licenses, banned crates and sources (cargo-deny, rules in app/src-tauri/deny.toml) and npm
+# advisories of what ships, on every dependency change and once a week (a new advisory can appear without a change).
+name: Supply chain
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "app/src-tauri/Cargo.lock"
+      - "app/src-tauri/**/Cargo.toml"
+      - "app/src-tauri/deny.toml"
+      - "app/package-lock.json"
+      - ".github/workflows/supply-chain.yml"
+  pull_request:
+    paths:
+      - "app/src-tauri/Cargo.lock"
+      - "app/src-tauri/**/Cargo.toml"
+      - "app/src-tauri/deny.toml"
+      - "app/package-lock.json"
+      - ".github/workflows/supply-chain.yml"
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust crates (cargo-deny)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Pinned prebuilt binary, checked against its published sha256 (as scripts/get-cargo-about.sh). Bumping: new
+      # version + the sha256 published beside that release's x86_64-unknown-linux-musl asset.
+      - name: Install cargo-deny
+        env:
+          VERSION: "0.20.2"
+          SHA256: "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          name="cargo-deny-${VERSION}-x86_64-unknown-linux-musl"
+          curl -fsSL --retry 3 -o deny.tar.gz \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${VERSION}/${name}.tar.gz"
+          echo "${SHA256}  deny.tar.gz" | sha256sum -c -
+          tar -xzf deny.tar.gz
+          echo "$RUNNER_TEMP/${name}" >> "$GITHUB_PATH"
+      - name: Check advisories, licenses, bans and sources
+        run: cargo-deny --manifest-path app/src-tauri/Cargo.toml --locked check advisories licenses bans sources
+
+  npm:
+    name: npm packages (npm audit)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # What ships only (dev tools never reach the person's machine); reads the lockfile, installs nothing.
+      - name: Audit
+        working-directory: app
+        run: npm audit --package-lock-only --omit=dev --audit-level=moderate

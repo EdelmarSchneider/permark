@@ -9,10 +9,11 @@
 //!   in order: too long for the context -> `tooLong`; else the job's answer ([`answer`]); `Finish::Length` ->
 //!   `length`, [`THINKING`] in the answer (thinking leak) -> `thinking`, else `output`. Cancel between pieces + inside
 //!   generate. End: `done` | `cancelled` | `failed` (stable [`IpcError`]).
-//! - Session unloaded under a run by its source (engine call answers `NotLoaded` + [`Session::serves`] no more: the
-//!   person chose another device | removed the model | moved the store) -> `cancelled`, session dropped, whoever
-//!   loaded it (this run: its load token is cancelled too); the person runs again. Any other engine error (crash,
-//!   `NotLoaded` on a session that still serves) -> `failed`.
+//! - Session unloaded under a run by its source (the person chose another device | removed the model | moved the
+//!   store: [`Session::chosen`] no more) -> `cancelled` whatever the engine call answers (`NotLoaded` between two
+//!   calls; `EngineCrashed` when the call outlasted the unload's wait and its worker was killed under it), session
+//!   dropped, whoever loaded it (this run: its load token is cancelled too); the person runs again. An engine error
+//!   on a session still chosen (crash, `NotLoaded`) -> `failed`.
 //! - Warm session: kept after a run, unloaded after [`IDLE`] without a run, at plugin off
 //!   ([`PieceRunner::shutdown`]: cancel + join, no thread left) and when it no longer serves (model reassigned |
 //!   released).
@@ -187,6 +188,13 @@ pub trait Session: Send {
     /// Still the assigned model + still loaded (else the next run opens a new one).
     fn serves(&self) -> bool;
 
+    /// Still the model + place the person chooses now, loaded or not (state alone): an engine error on a session no
+    /// longer chosen = its source unloaded it. Default: [`Session::serves`] (a source whose `serves` reads the
+    /// choice alone).
+    fn chosen(&self) -> bool {
+        self.serves()
+    }
+
     /// Tokens of `text`.
     ///
     /// # Errors
@@ -246,8 +254,11 @@ struct HostedSession {
 
 impl Session for HostedSession {
     fn serves(&self) -> bool {
+        self.chosen() && self.session.engine().context_len(self.session.id()).is_ok()
+    }
+
+    fn chosen(&self) -> bool {
         self.host.serves(&self.session, self.task)
-            && self.session.engine().context_len(self.session.id()).is_ok()
     }
 
     fn count_tokens(&self, text: &str) -> Result<usize, EngineError> {
@@ -591,9 +602,10 @@ impl<J: PieceJob> Shared<J> {
             Ok(()) => RunPhase::Done,
             Err(EngineError::Cancelled) => RunPhase::Cancelled,
             // unloaded under the run by its source (the person's change in the model service): stopped, as the
-            // run that loaded the model itself is (its load token cancelled); not an engine failure. Never
-            // loaded again mid-run: no silent change of model | device under a run
-            Err(EngineError::NotLoaded) if !session.serves() => {
+            // run that loaded the model itself is (its load token cancelled); not an engine failure, whatever the
+            // call answered (a call outlasting the unload's wait ends `EngineCrashed`: its worker was killed).
+            // Never loaded again mid-run: no silent change of model | device under a run
+            Err(_) if !session.chosen() => {
                 return (RunPhase::Cancelled, None);
             }
             Err(error) => {

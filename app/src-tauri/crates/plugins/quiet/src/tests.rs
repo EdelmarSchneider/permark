@@ -283,6 +283,28 @@ fn the_marks_of_the_person_are_read_when_the_project_opens() {
     );
 }
 
+/// "Remove data" takes the marks file, which sits straight in the project's state folder (the layout of 0.5).
+#[test]
+fn remove_data_takes_the_marks_file() {
+    let mut h = Harness::new();
+    h.write("docs/a.md", "# A\n");
+    h.open();
+    h.call("set", json!({ "paths": ["docs"], "interest": "quiet" }))
+        .unwrap();
+    let file = h.file();
+    assert!(file.is_file());
+    h.core = None;
+    let root = Root::open(&h.root()).unwrap();
+    permark_core::state::remove_plugin_data_everywhere(
+        &AppDirs::under(h.base.path()),
+        &ID,
+        plugin().root_files(),
+        &[root],
+    )
+    .unwrap();
+    assert!(!file.exists(), "{}", file.display());
+}
+
 #[test]
 fn listening_again_drops_a_mark_that_changes_nothing_and_keeps_an_override() {
     let mut h = Harness::new();
@@ -431,4 +453,35 @@ fn off_leaves_nothing_and_the_marks_wait_for_the_next_time() {
     core.apply_plugins(&h.env);
     assert_eq!(h.marks().len(), 1);
     drop(core);
+}
+
+#[test]
+fn a_batch_without_moves_never_waits_for_the_owners() {
+    // batches reach the subscribers one after another on the watch thread: a plain save must not wait for owners the
+    // projects worker has not told yet
+    let dir = tempfile::tempdir().unwrap();
+    let file = permark_core::state::StateStore::for_project(
+        &AppDirs::under(dir.path()),
+        &Root::open(dir.path()).unwrap(),
+    )
+    .raw_file(FILE);
+    let service = QuietService::load(file, Arc::new(|_: &QuietMarks| {}));
+    service.start_paused();
+    let batch = FsBatch {
+        changes: vec![permark_core::watch::Change {
+            path: "a.md".to_owned(),
+            kind: ChangeKind::Modified,
+            is_dir: false,
+            own: false,
+        }],
+        ..FsBatch::default()
+    };
+    let started = Instant::now();
+    service.on_batch(&batch);
+    // well before the owners' wait would end (a loaded machine may still take a while)
+    assert!(
+        started.elapsed() < permark_core::projects::OwnersGate::WAIT / 2,
+        "{:?}",
+        started.elapsed()
+    );
 }

@@ -9,9 +9,9 @@ list_tags	27
 outline	91
 outline+links	120
 read	78
-list_comments	110
+list_comments	113
 resolve_comment	9
 list_notes	50
 read_note	55
 open	8
-activity	194
+activity	197

@@ -48,6 +48,11 @@ type MockModule = {
     projectSessionSet(key: string, value: unknown): Promise<unknown>;
     openPath(path: string, placement: string): Promise<unknown>;
     showDocument(path: string): Promise<unknown>;
+    deleteFiles(paths: string[]): Promise<{ ok: boolean }>;
+    settingsSet(change: {
+      key: "pluginEnabled";
+      value: { plugin: string; enabled: boolean | null };
+    }): Promise<{ ok: boolean }>;
   };
 };
 type DocumentsModule = { documents: { decorator: { idle(): Promise<void> } } };
@@ -105,11 +110,42 @@ export class DeepApp {
     await this.drawn();
   }
 
-  /** Waits until every embed started is loaded and drawn and the page is quiet. */
+  /** Deletes `paths` from the project as the Explorer's Delete does: links to them lead nowhere from now on. */
+  async deleteFiles(paths: readonly string[]): Promise<void> {
+    const done = await this.page.evaluate(
+      async ({ url, paths }) => {
+        const m = (await import(url)) as MockModule;
+        return (await m.mockApi.deleteFiles([...paths])).ok;
+      },
+      { url: MOCK_URL, paths },
+    );
+    expect(done, `delete ${paths.join(", ")}`).toBe(true);
+    await settle(this.page);
+  }
+
+  /** Switches plugin `plugin` on | off in the app's settings, as Settings > Plugins does. */
+  async setPlugin(plugin: string, enabled: boolean): Promise<void> {
+    const done = await this.page.evaluate(
+      async ({ url, plugin, enabled }) => {
+        const m = (await import(url)) as MockModule;
+        const change = { key: "pluginEnabled", value: { plugin, enabled } } as const;
+        return (await m.mockApi.settingsSet(change)).ok;
+      },
+      { url: MOCK_URL, plugin, enabled },
+    );
+    expect(done, `${plugin} ${enabled ? "on" : "off"}`).toBe(true);
+    await settle(this.page);
+  }
+
+  /** Waits until every embed started is loaded and drawn, the fonts they use are in, and the page is quiet. */
   async drawn(): Promise<void> {
     await this.page.evaluate(async (url) => {
       const m = (await import(url)) as DocumentsModule;
       await m.documents.decorator.idle();
+      // a layout now starts the loads of the fonts the drawn embeds use (a formula's); table columns are measured
+      // again once they are in
+      document.body.getBoundingClientRect();
+      await document.fonts.ready;
     }, DOCUMENTS_URL);
     await this.page.waitForFunction((busy) => document.querySelector(busy) === null, BUSY);
     await settle(this.page);

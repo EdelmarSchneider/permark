@@ -18,6 +18,7 @@ const REASONS: Readonly<Record<string, MessageKey>> = {
   noValue: "config.reason.noValue",
   empty: "config.reason.empty",
   unterminated: "config.reason.unterminated",
+  escape: "config.reason.escape",
   firstField: "config.reason.firstField",
 };
 

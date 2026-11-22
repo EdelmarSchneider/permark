@@ -1,17 +1,25 @@
 <script lang="ts">
   // The Explorer of the project this window shows: one store per project shown (the parent re-creates this component
   // when the workspace changes), listening while it lives.
-  import { api } from "../../api";
+  import { untrack } from "svelte";
+  import { api, type WorkspaceId } from "../../api";
   import type { WindowStore } from "../window.svelte";
   import { setExplorer } from "./current";
   import ExplorerPanel from "./ExplorerPanel.svelte";
   import { ui } from "../shell/ui.svelte";
   import { ExplorerStore } from "./store.svelte";
 
-  type Props = { store: WindowStore; document: string | null };
-  let { store, document: active }: Props = $props();
+  type Props = {
+    store: WindowStore;
+    /** The project this Explorer is for (the parent makes a new one for each). */
+    workspace: WorkspaceId;
+    document: string | null;
+  };
+  let { store, workspace, document: active }: Props = $props();
 
-  const explorer = new ExplorerStore(api, {
+  // read once: the Explorer keeps naming the project it was made for, also in calls that land after a switch
+  const made = untrack(() => workspace);
+  const explorer = new ExplorerStore(api, made, {
     fail: (error) => store.notifyFileOpFailed(error),
     // one file-operation note with Undo at a time: its Undo is always the newest operation, the one Ctrl+Z takes back
     note: (text, ...actions) =>

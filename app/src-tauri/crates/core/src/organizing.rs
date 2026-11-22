@@ -86,6 +86,9 @@ pub struct CommentItem {
     pub done: bool,
     /// What the one who marked it done answered.
     pub reply: Option<String>,
+    /// Kept in a private folder git tracks (`OwnerSlot::private_tracked` of its owner): never given to agents, only
+    /// counted, and an agent cannot mark it done.
+    pub withheld: bool,
 }
 
 /// What the agent asks of the comments.
@@ -98,7 +101,7 @@ pub trait CommentBook: Send + Sync {
     /// Marks a comment done by the agent, with an optional short reply.
     ///
     /// # Errors
-    /// No such comment (`NotFound`), or the file cannot be used.
+    /// No such comment (`NotFound`), a withheld one (`Denied`), or the file cannot be used.
     fn resolve(&self, id: &str, reply: Option<&str>) -> Result<(), IpcError>;
 }
 

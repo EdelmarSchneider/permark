@@ -54,13 +54,13 @@ use serde::Deserialize;
 
 use crate::context::WindowContext;
 use crate::live::Live;
-use crate::perms::{Group, ProjectChoice};
+use crate::perms::Group;
 use crate::server::{Hub, Switch};
 use crate::tools::Tools;
 
 const ID: PluginId = PluginId::of("agent");
 /// The last published context, for scripts without MCP (only in a project with `.permark/`).
-pub const CONTEXT_FILE: &str = "agent-context.json";
+pub const CONTEXT_FILE: &str = permark_core::state::context::FILE;
 
 /// Why a tool call gave no answer. The words are what the agent reads.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -87,6 +87,11 @@ pub enum ToolError {
     /// (fail closed, `projects.md` §5.2).
     #[error("PerMark is still reading this folder")]
     Busy,
+    /// A rule file on what agents may see (`.aiignore`, `.permark/config.toml`) cannot be read and no last good rules
+    /// of it stand in: nothing is answered until the person fixes it (never "no rules"). Why, e.g. `too large`; never
+    /// the file (the person's own view names it).
+    #[error("agent rules unreadable: {0}")]
+    RulesUnreadable(String),
     /// The person ended this session in the app: its id is refused until the agent process restarts (a new id).
     #[error(
         "the person disconnected this agent from this project; restarting the agent connects again"
@@ -133,6 +138,7 @@ impl ToolError {
             Self::Invalid(_) => "invalid",
             Self::AppClosed => "appClosed",
             Self::Busy => "busy",
+            Self::RulesUnreadable(_) => "rulesUnreadable",
             Self::Disconnected => "disconnected",
             Self::NotConnected { .. } => "notConnected",
             Self::Failed(_) => "error",
@@ -155,6 +161,7 @@ impl ToolError {
             "notFound" => Self::NotFound(after("not found: ")),
             "invalid" => Self::Invalid(after("invalid: ")),
             "busy" => Self::Busy,
+            "rulesUnreadable" => Self::RulesUnreadable(after("agent rules unreadable: ")),
             "disconnected" => Self::Disconnected,
             _ => Self::Failed(message.to_owned()),
         }
@@ -215,18 +222,20 @@ fn saved(result: Result<(), permark_core::state::StateError>) -> Result<(), IpcE
 }
 
 /// Keeps the context file in step with the person's choice: removed while the switch or the `context` group is off
-/// (a script reads it with no check of its own); `write`: the current context written while both are on.
+/// (a script reads it with no check of its own); `write`: the current context written while both are on and the
+/// folder keeps the person's private state in its `.permark/local/`.
 fn sync_context_file(hub: &Hub, write: bool) {
     let store = hub.tools.store();
-    if store.location() != StateLocation::Project {
+    // in the team folder's `local/` (where scripts read it): removed from there whatever place holds the private state
+    let Some(file) = store.local_raw_file(CONTEXT_FILE) else {
         return;
-    }
-    let file = store.raw_file(CONTEXT_FILE);
+    };
     if !hub.tools.allows(Group::Context) {
         let _ = file.remove();
         return;
     }
-    if !write {
+    // data kept on this computer: nothing of it goes into a folder teammates | a sync tool share, no `local/` made there
+    if !write || store.location() != StateLocation::Project {
         return;
     }
     // never waits: before the projects inside are known the file is left as it is
@@ -238,15 +247,23 @@ fn sync_context_file(hub: &Hub, write: bool) {
         return;
     };
     // compact, no empty fields, versioned like the agent's text answers
-    let mut value = serde_json::to_value(&shared).unwrap_or_default();
-    if let Some(map) = value.as_object_mut() {
-        map.insert("v".to_owned(), serde_json::json!(1));
-        if open > 0 {
-            map.insert("openComments".to_owned(), serde_json::json!(open));
-        }
+    let serde_json::Value::Object(mut map) = serde_json::to_value(&shared).unwrap_or_default()
+    else {
+        return;
+    };
+    map.insert("v".to_owned(), serde_json::json!(1));
+    if open > 0 {
+        map.insert("openComments".to_owned(), serde_json::json!(open));
     }
-    if let Ok(bytes) = serde_json::to_vec(&value) {
-        let _ = file.write(&bytes);
+    // sealed: tells this install's file from one that came with the folder or changed since (removed when the
+    // project opens); a context too large for that check is not kept, nor the older one
+    match permark_core::state::context::encode(store, map) {
+        Some(bytes) => {
+            let _ = file.write(&bytes);
+        }
+        None => {
+            let _ = file.remove();
+        }
     }
 }
 
@@ -254,21 +271,20 @@ fn sync_context_file(hub: &Hub, write: bool) {
 /// folder created again at the path later is not connected); off forgets the folder.
 fn set_enabled(hub: &Hub, enabled: bool) -> Result<(), IpcError> {
     let store = hub.tools.store();
-    let mut choice = perms::load(store);
-    if enabled && !choice.enabled && choice.groups.is_empty() {
-        choice.groups = perms::clean(&perms::defaults(store));
-    }
-    choice.enabled = enabled;
-    choice.folder = if enabled {
+    let folder = if enabled {
         FolderIdentity::of(hub.tools.vault_root().path())
     } else {
         None
     };
-    saved(
-        store
-            .profile_file::<ProjectChoice>(perms::PROJECT_FILE)
-            .save(&choice),
-    )
+    perms::change(store, |choice| {
+        if enabled && !choice.enabled && choice.groups.is_empty() {
+            choice.groups = perms::clean(&perms::defaults(store));
+        }
+        choice.enabled = enabled;
+        choice.folder = folder;
+        true
+    })
+    .map_err(IpcError::from)
 }
 
 impl Plugin for AgentPlugin {
@@ -319,14 +335,10 @@ impl Plugin for AgentPlugin {
             "setGroup",
             typed(move |args: GroupArgs, _| {
                 let group = Group::parse(&args.group).ok_or_else(|| invalid("group"))?;
-                let store = h.tools.store();
-                let mut choice = perms::load(store);
-                choice.groups.insert(group.id().to_owned(), args.on);
-                saved(
-                    store
-                        .profile_file::<ProjectChoice>(perms::PROJECT_FILE)
-                        .save(&choice),
-                )?;
+                perms::change(h.tools.store(), |choice| {
+                    choice.groups.insert(group.id().to_owned(), args.on);
+                    true
+                })?;
                 h.changed();
                 sync_context_file(&h, true);
                 Ok(h.status())
@@ -415,7 +427,8 @@ impl Plugin for AgentPlugin {
                     .tools
                     .guard_now(tools::PROJECTS_WAIT)
                     .map_err(|e| IpcError::new(ErrorKind::Unavailable).detail(e.to_string()))?;
-                Ok(handoff::preview(&h.tools, &guard, args.checked.as_deref()))
+                handoff::preview(&h.tools, &guard, args.checked.as_deref())
+                    .map_err(|e| IpcError::new(ErrorKind::Unavailable).detail(e.to_string()))
             }),
         ));
         let h = Arc::clone(&hub);

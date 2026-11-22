@@ -30,6 +30,7 @@ const en = {
   "welcome.noRecents": "No recent folders yet.",
   "welcome.notFound": "(not found)",
   "welcome.remove": "Remove",
+  "welcome.recentKeys": "Press Delete to remove the selected folder from the list.",
   "welcome.dropHint": "Drop folders or files here to open them.",
   "welcome.openFailed": "Can't open {path}: {message}",
 
@@ -49,9 +50,15 @@ const en = {
     "This location can't report changes, so PerMark can't follow them live. Switch back to the window to refresh.",
 
   // ---- notices
-  "notice.stateRecovered": "Some saved PerMark data couldn't be read and was set aside: {file}",
+  "notice.stateRecovered":
+    "Some saved PerMark data couldn't be read and was set aside: {file}. You can find the old copy here: {backup}",
   "notice.stateUnreadable":
     "Some saved PerMark data couldn't be read. It was left untouched, and PerMark won't change it until it can read it again, usually after a restart: {file}",
+  "crash.notice":
+    "PerMark closed unexpectedly last time. A report was saved on this computer, and nothing was sent. If you share it, review it first: it may include file names or bits of your text. Report on GitHub also copies the report, so you can paste it there.",
+  "crash.copy": "Copy report",
+  "crash.report": "Report on GitHub",
+  "crash.openFolder": "Open folder",
 
   // ---- settings
   "settings.title": "Settings",
@@ -74,6 +81,10 @@ const en = {
   "error.invalidPath": "{subject} isn't a valid path.",
   "error.denied": "No permission to use {subject}.",
   "error.io": "Couldn't access {subject}: {detail}",
+  "error.locked":
+    "{subject} is open in another program that keeps it from being changed. Close it there, then try again.",
+  "error.diskFull": "The disk is full, so {subject} couldn't be written.",
+  "error.readOnly": "{subject} is read-only, so it can't be changed.",
   "error.exists": "{subject} already exists.",
   "error.binary": "{subject} is a binary file, so it can't be shown as text.",
   "error.tooLarge": "{subject} is too large.",
@@ -160,6 +171,7 @@ const en = {
   "fileOps.summaryMoved": "Moved {what}",
   "fileOps.summaryRenamed": "Renamed {from} to {to}",
   "fileOps.summaryDeleted": "Deleted {what}",
+  "fileOps.partlyDeleted": "Deleted {what}. Couldn't move {refused} to the recycle bin.",
   "fileOps.dropInto": "Move into {folder}",
   "fileOps.projectRoot": "the project folder",
   "fileOps.dialogLabel": "Update links",
@@ -294,6 +306,7 @@ const en = {
   "doc.deleted.title": "This file was deleted at {time}.",
   "doc.diagramFailed": "Diagram could not be rendered",
   "doc.diagramRendering": "Rendering diagram…",
+  "doc.diagramSource": "Diagram source",
   "doc.error.title": "This file can't be opened",
   "doc.footnoteBackref": "Back to reference {ref}",
   "doc.frontmatter": "Front matter",
@@ -398,7 +411,7 @@ const en = {
   "role.copilot": "Copilot instructions",
   "role.model-card": "Model card",
   "role.dataset-card": "Dataset card",
-  "structured.mode": "View",
+  "structured.mode": "Display",
   "structured.tree": "Tree",
   "structured.source": "Source",
   "structured.invalid": "This isn't valid, so it is shown as text.",
@@ -914,6 +927,8 @@ const en = {
   "since.nothing": "Nothing changed since {when}.",
   "review.offer.one": "Changed since you last read · {n} change",
   "review.offer.other": "Changed since you last read · {n} changes",
+  "review.offerCommit.one": "Changed since the last commit · {n} change",
+  "review.offerCommit.other": "Changed since the last commit · {n} changes",
   "review.review": "Review",
   "review.reviewing.one": "Reviewing {n} change",
   "review.reviewing.other": "Reviewing {n} changes",
@@ -938,6 +953,7 @@ const en = {
   "review.change": "Change {i} of {n}, {kind}",
   "review.keptAll": "All changes kept",
   "review.revertedAll": "All changes reverted in {name}",
+  "review.endedMixed": "Some changes kept, others reverted in {name}",
   "review.undo": "Undo",
   "review.undoStale": "Can't undo: {name} changed since.",
   "review.allDone": "All changes reviewed",
@@ -990,6 +1006,15 @@ const en = {
   "git.stateHint.busy": "Git is in the middle of another task that isn't finished yet.",
   "git.unavailableHint": "The git you chose is not available. Choose another in the settings.",
   "git.errorOwnership": "Git doesn't trust this folder's owner.",
+  "git.why.timeout": "Git didn't answer in time.",
+  "git.why.tooLarge": "Git's answer was too long to read.",
+  "git.why.spawn": "Git couldn't be started.",
+  "git.why.parse": "Git's answer couldn't be understood.",
+  "git.why.notLocal":
+    "This repository's git folder leads off this computer or through a link, so PerMark doesn't open it.",
+  "git.why.noGit": "This folder has no .git that leads to a repository.",
+  "git.why.stopped": "Git was stopped before it answered.",
+  "git.why.failed": "Details: {detail}",
   "git.errorHint": "Open the settings to choose another git (the built-in one needs no trust).",
   "git.folderChanged.one": "{n} changed file inside",
   "git.folderChanged.other": "{n} changed files inside",
@@ -1076,6 +1101,8 @@ const en = {
   "review.versions.list": "Versions",
   "review.versions.loading": "Reading the history…",
   "review.versions.more": "Show more",
+  "review.versions.added.one": "{n} more version",
+  "review.versions.added.other": "{n} more versions",
   "review.versions.same": "Same text as now",
   "review.versions.authors": "{author} with {others}",
   "review.versions.compare": "Compare",
@@ -1233,6 +1260,16 @@ const en = {
   "comments.replyPlaceholder": "Write a reply…",
   "comments.deleteConfirm": "Delete comment?",
   "comments.copyFailed": "Couldn't copy to the clipboard.",
+  "comments.aside.line.one": "{n} comment was removed outside PerMark.",
+  "comments.aside.line.other": "{n} comments were removed outside PerMark.",
+  "comments.aside.restore": "Restore",
+  "comments.aside.dismiss": "Dismiss",
+  "comments.aside.dismissHint": "Let these comments go. They can't be restored afterward.",
+  "comments.aside.restored.one": "Restored {n} comment.",
+  "comments.aside.restored.other": "Restored {n} comments.",
+  "comments.aside.nothing": "Those comments are back already.",
+  "comments.aside.restoreFailed": "Couldn't restore the comments: {message}",
+  "comments.aside.dismissFailed": "Couldn't dismiss the removed comments: {message}",
   "brokenLinks.title": "Broken links",
   "brokenLinks.checking": "Looking through the documents…",
   "brokenLinks.none": "No broken links",
@@ -1420,7 +1457,7 @@ const en = {
   "agent.title": "Agent connection",
   "agent.switch": "Share this folder with agents",
   "agent.switchHint":
-    "An agent you connect (an AI tool that supports MCP, such as Claude Code or Cursor) can see what you're looking at and what changed, search and read this folder's files, read your comments and the notes you share, and show you a place. Only on this computer. Files listed in .aiignore stay out of their reach. Agents connected this way only read and never edit files through PerMark; to let an agent propose edits, use the Assistant. This covers only what agents get from PerMark: an agent can still open files on your computer by itself.",
+    "An agent you connect (an AI tool that supports MCP, such as Claude Code or Cursor) can see what you're looking at and what changed, search and read this folder's files, read your comments and the notes you share, and show you a place. Only on this computer. Files listed in .aiignore stay out of their reach. Agents connected this way never edit files through PerMark: they read, and mark your comments done only if you allow it. To let an agent propose edits, use the Assistant. This covers only what agents get from PerMark: an agent can still open files on your computer by itself.",
   "agent.folderReplaced":
     "This folder changed since you connected it. Turn the connection on again to allow agents here.",
   "agent.groups": "What agents may do",
@@ -1518,6 +1555,20 @@ const en = {
   "agent.outcome.off": "off",
   "agent.outcome.notOpen": "not open",
   "agent.outcome.error": "failed",
+  "agentRules.lastGood":
+    "Couldn't read {file}: {why}. PerMark uses the last rules from it that worked until you fix it.",
+  "agentRules.closed":
+    "Couldn't read {file}: {why}. Agents get nothing it covers until you fix it.",
+  "agentRules.why.tooLarge": "it's too large",
+  "agentRules.why.notText": "it isn't plain text",
+  "agentRules.why.notToml": "it isn't valid TOML",
+  "agentRules.why.badValue": "one of its settings has the wrong kind of value",
+  "agentRules.why.badPattern": "one of its patterns isn't valid",
+  "agentRules.why.notAFile": "it isn't a regular file",
+  "agentRules.why.locked": "another program is using it",
+  "agentRules.why.denied": "PerMark isn't allowed to read it",
+  "agentRules.why.failed": "it couldn't be read",
+  "agent.outcome.rulesUnreadable": "rules unreadable",
   "agent.open.notice": "An agent wants to show you {path}.",
   "agent.open.show": "Show",
   "agent.ask.resolve": "An agent asked to mark your comments done. Allow it for this project?",
@@ -1558,6 +1609,8 @@ const en = {
   "agent.handoff.done.one": "Handed off {n} action — copied, ready to paste in your prompt.",
   "agent.handoff.done.other": "Handed off {n} actions — copied, ready to paste in your prompt.",
   "agent.handoff.failed": "The hand-off didn't work. Try again.",
+  "agent.handoff.withheld":
+    "PerMark does not hand this folder's activity to agents: its git repository tracks PerMark's private folder (.permark/local), or PerMark could not check that.",
   "agent.handoff.copyFailed": "Handed off, but copying didn't work.",
   "config.sheet": "Settings in this file",
   "config.root": "Top level",
@@ -1582,6 +1635,8 @@ const en = {
   "config.reason.noValue": "A key with no value. Change it in Source.",
   "config.reason.empty": "An empty item. Change it in Source.",
   "config.reason.unterminated": "A quote that never closes. Change it in Source.",
+  "config.reason.escape":
+    "A value with escape codes that can't be kept exactly here. Change it in Source.",
   "config.reason.other": "This can't be edited exactly here. Use Source.",
   "config.refused.newline": "A value can't hold a line break here.",
   "config.refused.empty": "Type something.",
@@ -1644,6 +1699,8 @@ const en = {
     "Your choice for each plugin in this folder. Off for everyone is kept in .permark/config.toml and applies to whoever opens the folder.",
   "plugins.removeConfirm": "Remove the data of {name}?",
   "plugins.removeConfirmBytes": "Remove the data of {name}? This frees {size}.",
+  "plugins.removeScope":
+    "Folders that keep their data in their own .permark folder are cleaned only while they are open.",
   "plugins.removeData": "Remove data",
   "plugins.removeYes": "Remove",
   "plugins.turnOn": "Turn on {name}",
@@ -1651,15 +1708,31 @@ const en = {
   "project.ignoreHint":
     "Files that match are not searched and never appear in the live feed. The file list shows them dimmed, as it does files git ignores.",
   "project.ignoreLabel": "Left out of search and live feed",
+  "project.dataAsk":
+    "This folder now has a .permark folder. Your comments, read marks and other data for it are still kept on this computer.",
+  "project.dataMove": "Move into the folder",
+  "project.dataKeep": "Keep on this computer",
+  "project.dataMissing":
+    "This folder's .permark folder is missing or can't be used. PerMark is using the copy of your data kept on this computer, which may be older.",
+  "project.dataKeepCopy": "Keep using this copy",
+  "project.dataPlace": "Your data for this folder",
+  "project.dataPlaceProfile": "Kept on this computer, in your user profile.",
+  "project.dataMoved": "Your data for this folder is now in its .permark folder.",
+  "project.dataMoveHeld":
+    "This folder's .permark folder already holds PerMark data from elsewhere, so your data stays on this computer.",
+  "project.dataMoveFailed": "Couldn't move your data into the folder: {message}",
   "project.initButton": "Initialize PerMark",
   "project.initConfig": "The settings this project shares with its team.",
   "project.initConfirm": "Initialize PerMark",
   "project.initFailed": "Couldn't initialize PerMark in {path}: {message}",
+  "project.initHeld":
+    "{path}/.permark/local already holds PerMark data from elsewhere; nothing was changed.",
   "project.initIgnore": "Keeps the private folders out of git.",
   "project.initIntro": "PerMark creates a .permark folder here with:",
-  "project.initLocal": "Your private data for this project (comments, read marks) and its cache.",
+  "project.initLocal":
+    "Your private data for this project (comments, read marks, undo history) and a cache that PerMark can rebuild at any time.",
   "project.initNote":
-    "Your files are not touched. Tags, comments and read marks you already have for this project are copied in.",
+    "Your files are not touched. Tags, comments and read marks you already have for this project are copied in. What you allow for this folder, such as agent access, stays in your own PerMark data on this computer.",
   "project.initTitle": "Initialize PerMark in {name}?",
   "project.newTitle": "Make {name} a project?",
   "project.newWhy":
@@ -1683,8 +1756,30 @@ const en = {
   "project.treeUnset": "Not set",
   "project.scopes":
     "Settings marked Everyone are kept in this folder's .permark/config.toml and shared with whoever opens it. Settings marked Only you stay on this computer.",
+  "project.shareGit": "Let git see this folder's PerMark settings",
+  "project.shareGitCustom":
+    "This folder's .permark/.gitignore was written by someone else, so PerMark leaves it as it is.",
+  "project.shareGitFailed": "Couldn't change what git sees in .permark: {message}",
+  "project.shareGitHint":
+    "On: git sees the settings, tags, list of projects and project descriptions in .permark, so you can commit them for your team. Off: git ignores the whole .permark folder; files already committed stay committed. If .permark/.gitignore is committed, your team gets this change too. Your private data and caches always stay out of git.",
+  "project.shareGitOff": "Off",
+  "project.shareGitOn": "On",
   "project.shareInit": "Initialize PerMark to share this with everyone",
   "project.sharedFileHint": "Shared with whoever opens this folder.",
+  "project.sharedFileUnreadable":
+    "PerMark can't read this file at line {line}, so settings marked Everyone can't be changed until it's fixed.",
+  "project.sharedLocked":
+    "PerMark can't read .permark/config.toml, so settings marked Everyone can't be changed until it's fixed.",
+  "project.sharedLocked.line":
+    "PerMark can't read .permark/config.toml at line {line}, so settings marked Everyone can't be changed until it's fixed.",
+  "project.sharedLocked.notText":
+    "PerMark can't read .permark/config.toml (it isn't plain text), so settings marked Everyone can't be changed until it's fixed.",
+  "project.sharedLocked.tooLarge":
+    "PerMark can't read .permark/config.toml (it's too large), so settings marked Everyone can't be changed until it's fixed.",
+  "project.sharedLocked.locked":
+    "PerMark can't read .permark/config.toml (another program is using it), so settings marked Everyone can't be changed until it's fixed.",
+  "project.privateTracked":
+    "Agents don't get this folder's comments or activity: its git repository tracks PerMark's private folder (.permark/local), or PerMark could not check that.",
   "settings.all": "All settings",
   "settings.editorPreview": "Example:",
   "settings.linkUpdateHint": "What happens to links when a file is moved or renamed.",
@@ -1720,6 +1815,7 @@ const en = {
   "settings.problem.noPath": "The command needs {path}.",
   "settings.problem.notInitialized": "This folder has no PerMark settings yet.",
   "settings.problem.tomlOnly": "Use a file name ending in .toml.",
+  "settings.problem.notToml": "PerMark can't read .permark/config.toml, so nothing was changed.",
   "settings.problem.other": "This value was not accepted.",
   "welcome.newProject": "New project…",
   "welcome.newProjectHint": "Choose a folder; PerMark sets it up as a project.",
@@ -1774,6 +1870,7 @@ const en = {
   "plugin.graphviz.name": "Graphviz diagrams",
   "plugin.graphviz.about": "Draws Graphviz (DOT) graphs from code blocks.",
   "graphviz.tooLarge": "This graph is too large to draw here.",
+  "plantuml.tooLarge": "This diagram is too large to draw here.",
   "plugin.media.name": "Pictures, audio and video",
   "plugin.media.about": "Opens pictures, sound and video in place.",
   "plugin.json-view.name": "JSON",
@@ -1811,6 +1908,8 @@ const en = {
     "This copy of PerMark is not installed, so it can't become the default app. Choose the app for these files in your system settings.",
   "defaultApp.confined": "Choose the app for these files in your system settings.",
   "defaultApp.failed": "Couldn't change the default app: {message}",
+  "defaultApp.chooseInFinder":
+    "PerMark stays the default app for these files. To use another app, select one of them in Finder, choose File > Get Info, and pick the app under “Open with”.",
   "defaultApp.askTitle": "Open these files with PerMark?",
   "defaultApp.askBody":
     "PerMark opens the files you check when you double-click them. You can change this any time in Settings.",
@@ -1832,6 +1931,8 @@ const en = {
   "shell.newFile.row": "“New Markdown file”",
   "shell.newFile.hint": "In the right-click menu of folders: makes a file there and opens it.",
   "shell.failed": "Couldn't change the menu: {message}",
+  "shell.readFailed": "Couldn't read the menu entries. {message}",
+  "shell.retry": "Try again",
   "updates.section": "Updates",
   "updates.row": "New versions",
   "updates.notes": "What's new",
@@ -2063,7 +2164,7 @@ const en = {
     "Tokens of a document, a selection or a section by the tokenizer you choose; exact where the tokenizer is public, approximate (and marked) where it is not.",
   "plugin.local-ai.name": "Local AI",
   "plugin.local-ai.about":
-    "Small AI models that run on this computer, offline, to help PerMark correct, translate and find by meaning. Nothing is downloaded until you ask.",
+    "Small AI models that run on this computer to help PerMark correct, translate and find by meaning. Nothing is downloaded until you ask.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} row",
   "config.table.rows.other": "{n} rows",
@@ -2099,6 +2200,7 @@ const en = {
   "toon.notValid": "Not valid TOON 4.4",
   "convert.menu": "Convert…",
   "convert.table": "Convert…",
+  "convert.tableCommand": "Convert table…",
   "convert.title": "Convert {name}",
   "convert.fromPage": "text from the page",
   "convert.close": "Close",
@@ -2218,6 +2320,21 @@ const en = {
   "closeWindow.body.other": "These tabs have unsaved changes:",
   "closeWindow.saveAll": "Save all",
   "closeWindow.discard": "Discard",
+  "stuck.title": "PerMark isn't responding",
+  "stuck.detail":
+    "A page in this window isn't answering. If you close anyway, unsaved changes in this window's tabs may be lost.",
+  "stuck.closeAnyway": "Close anyway",
+  "stuck.wait": "Wait",
+  "stuck.engineStopped":
+    "The part of PerMark that shows its windows stopped working, so PerMark has to close. Unsaved changes are lost; your open tabs come back the next time you start PerMark.",
+  "stuck.reloaded": "This tab stopped working and was reloaded.",
+  "stuck.reloadedLost":
+    "This tab stopped working and was reloaded. Unsaved changes to {file} were lost.",
+  "stuck.reloadedPage": "This page stopped working and was reloaded.",
+  "stuck.windowFailed":
+    "A PerMark window couldn't open its page and was closed. Your other windows keep working.",
+  "stuck.viewFailedExit":
+    "PerMark couldn't open its window, so it has to close. Your open tabs come back the next time you start PerMark.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Projects inside",
@@ -2466,7 +2583,7 @@ const en = {
   // ---- Local AI settings page
   "localAi.section": "Local AI",
   "localAi.intro":
-    "Small AI models that run on this computer, offline. Nothing is downloaded until you ask.",
+    "Small AI models that run on this computer. Nothing is downloaded until you ask.",
   "localAi.command": "Open Local AI settings",
   "localAi.loadFailed": "Couldn't read the Local AI settings.",
   "localAi.retry": "Try again",
@@ -2537,8 +2654,8 @@ const en = {
   "localAi.models.details.size": "Download size",
   "localAi.models.details.restriction": "Who may use it",
   "localAi.models.comingSoon": "Coming soon",
-  "localAi.models.needs.newer": "Needs a newer version of the AI engine.",
-  "localAi.models.needs.missing": "Needs an AI engine that PerMark doesn't have yet.",
+  "localAi.models.needs.newer": "This model needs a later version of PerMark.",
+  "localAi.models.needs.missing": "PerMark can't run this kind of model yet.",
   "localAi.dl.waiting": "Waiting…",
   "localAi.dl.cancelLabel": "Cancel getting {name}",
   "localAi.dl.progress": "{done} of {total}",
@@ -3086,7 +3203,10 @@ const en = {
   "acp.fail.copyFailed": "PerMark could not prepare the copy of this folder for the agent.",
   "acp.fail.tooLarge": "This folder is too large to copy for the agent.",
   "acp.fail.projectsNotReady": "PerMark is still reading this folder. Try again in a moment.",
+  "acp.fail.rulesUnreadable":
+    "A file that sets what agents may see couldn't be read. The agent gets nothing until it's fixed.",
   "acp.fail.startFailed": "The agent's program could not be started.",
+  "acp.fail.notAllowed": "You didn't allow the agent's program to start.",
   "acp.fail.timedOut": "The agent did not answer in time.",
   "acp.fail.initFailed":
     "This program did not answer like an agent PerMark can talk to. Check the command and try again.",
@@ -3100,6 +3220,7 @@ const en = {
   "acp.fail.exited": "The agent's program closed unexpectedly.",
   "acp.fail.sendFailed": "The message could not be handed to the agent.",
   "acp.error.relativeProgram": "Write the program's full path, or only its name.",
+  "acp.error.commandTooLong": "The command is too long (at most 1000 characters).",
   "acp.error.networkProgram":
     "PerMark only starts programs on this computer, not from a network folder.",
   "acp.error.oneChoice": "Choose one agent or type one command.",

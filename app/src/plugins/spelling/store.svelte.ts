@@ -52,6 +52,7 @@ export type SpellingSession = Pick<
   | "apply"
   | "marks"
   | "markAt"
+  | "rangeAt"
   | "composing"
   | "setNativeSpellcheck"
   | "reveal"
@@ -277,15 +278,25 @@ export class SpellingStore {
     return this.#pass(false);
   }
 
-  /** Replaces marked word `index` with `text` (one undo step). `false`: nothing changed (composing, the text moved). */
+  /** Replaces marked word `index` with `text` (one undo step), the caret right after it and the keyboard in the
+   *  editor, whether the pick came from the keyboard or the pointer. `false`: nothing changed (composing, the text
+   *  moved). */
   replace(index: number, text: string): boolean {
     const word = this.misspelled[index];
     if (word === undefined) return false;
-    const done = this.#session.apply([
-      { from: word.from, to: word.to, insert: text, expect: word.word },
-    ]);
-    if (done) this.menuAt = null;
-    return done;
+    const session = this.#session;
+    const done = session.apply([{ from: word.from, to: word.to, insert: text, expect: word.word }]);
+    if (!done) return false;
+    this.menuAt = null;
+    // Edit remakes the word's whole block, which moves a caret inside it past the block; Source changes only the word
+    // and keeps its caret (revealing there would scroll the line to the middle)
+    const end = word.from + text.length;
+    if (session.mode === "edit") session.reveal({ from: end, to: end });
+    // the editor writes its own selection back into the page now: the page selection it left while the menu held the
+    // keyboard is stale after the edit, and an editor focused by a plain element focus takes that selection as the
+    // person's (a whole paragraph after a keyboard pick)
+    session.focus();
+    return true;
   }
 
   /** Accepts `word` in every document from now on (the person's own words, kept in the profile). */
@@ -630,17 +641,18 @@ export class SpellingStore {
 
   // ---- marks ---------------------------------------------------------------------------------------------------
 
-  /** Marks `list`; `typing`: the word at the caret is held back (`only`: just when it is still that word). */
+  /** Marks `list`; `typing`: the word at the caret is held back (`only`: just when it is still that word). One
+   *  drawing: the word at the caret is found before the marks are set. */
   #draw(list: readonly Word[], typing: boolean, only: Word | null = null): void {
     this.#found = list;
     this.#held = null;
-    this.#show(list);
-    if (!typing) return;
     // the word being typed is not done yet
-    const at = this.#session.markAt(LAYER);
+    const at = typing ? this.#session.rangeAt(list) : null;
     const word = at === null ? undefined : list[at];
-    if (word === undefined || (only !== null && (word.from !== only.from || word.to !== only.to)))
+    if (word === undefined || (only !== null && (word.from !== only.from || word.to !== only.to))) {
+      this.#show(list);
       return;
+    }
     this.#held = word;
     this.#show(list.filter((_, i) => i !== at));
   }

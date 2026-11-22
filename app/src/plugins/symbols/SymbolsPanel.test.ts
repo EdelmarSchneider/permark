@@ -436,3 +436,37 @@ describe("the header", () => {
     expect(close.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+describe("the search", () => {
+  it("says how many characters it found once the typing pauses, and when none answers", () => {
+    vi.useFakeTimers();
+    try {
+      editor("edit");
+      open();
+      const field = searchField();
+      const type = (text: string): void => {
+        field.value = text;
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+        flushSync();
+      };
+      type("a");
+      type("arrow");
+      expect(arrangement.say).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1000);
+      flushSync();
+      // one line for the pause, with the count of what is listed now
+      expect(arrangement.say).toHaveBeenCalledTimes(1);
+      expect(arrangement.say).toHaveBeenLastCalledWith("2 results");
+      type("zzzz");
+      vi.advanceTimersByTime(1000);
+      expect(arrangement.say).toHaveBeenLastCalledWith("No name matches that search");
+      // the search emptied: nothing to count, and the line no longer says what the last search found
+      type("");
+      vi.advanceTimersByTime(1000);
+      expect(arrangement.say).toHaveBeenCalledTimes(3);
+      expect(arrangement.say).toHaveBeenLastCalledWith("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

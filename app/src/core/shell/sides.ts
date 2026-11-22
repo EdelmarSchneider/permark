@@ -1,10 +1,11 @@
 // Showing | hiding the regions of this window (Mod+B, Mod+Alt+B, Mod+J, the status bar toggles, the outline toggle)
 // and showing | selecting | moving | closing a view in whatever region it sits: the stores' state read, the pure step
 // of `layout.ts` applied to the view's own region, the frame animated, the focus let go of a region that hides (its
-// controls go inert: keys reach the page). A view closed, by whatever way, is said with one notice that can undo it.
+// controls go inert: keys reach the page). A view closed, by whatever way, is said with a notice that can undo it.
 
 import { tick } from "svelte";
 import type { WindowView, WorkspaceView } from "../../api";
+import { sendToPane } from "../doc/paneFocus";
 import { reading } from "../doc/reading.svelte";
 import { t } from "../i18n";
 import { windowStore } from "../window.svelte";
@@ -21,8 +22,11 @@ import { moveTo, OUTLINE, SEARCH, select, type Arrangement, type Region } from "
 import { arrangement } from "./arrangement.svelte";
 import { ui } from "./ui.svelte";
 
-/** The one notice about a view closed (a newer close takes its place). */
-const CLOSED_NOTICE = "view-closed";
+/** The notice about the view `id` closed: one per view, so closing another view keeps this one's Undo (closing the
+ *  same view again takes its place). */
+function closedNotice(id: string): string {
+  return `view-closed:${id}`;
+}
 
 /** The name the frame gives each region (`data-region`). */
 const REGION_NAME: Readonly<Record<Region, string>> = {
@@ -169,10 +173,14 @@ export function documentPane(): HTMLElement | null {
  *  (no page: what holds it lets go). */
 export function focusPage(): void {
   const page = pageRegion();
-  const target =
-    page?.querySelector<HTMLElement>("[contenteditable='true'], .cm-content") ??
-    documentPane() ??
-    page;
+  const editor = page?.querySelector<HTMLElement>("[contenteditable='true'], .cm-content") ?? null;
+  const pane = documentPane();
+  if (editor === null && pane !== null) {
+    // sent there: the pane shows it holds the keyboard
+    sendToPane(pane);
+    return;
+  }
+  const target = editor ?? page;
   if (target) target.focus({ preventScroll: true });
   else if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 }
@@ -197,6 +205,12 @@ export function returnFocus(before: Element | null = null): void {
   focusPage();
 }
 
+/** `target` lies in the notices (`Notices.svelte`): a press there (Undo of what a popover did) is no press outside
+ *  that popover. */
+export function inNotices(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("[data-notices]") !== null;
+}
+
 /** The first control of the view `id` as drawn (`null`: none, or the view is not drawn). */
 function firstControl(id: string): HTMLElement | null {
   const controls = ':is(button:not([disabled]), [tabindex="0"], input, a[href])';
@@ -217,6 +231,22 @@ export function focusView(id: string): void {
   if (target === null || document.activeElement !== target) focusPage();
 }
 
+/**
+ * The keyboard goes to the view `id` just shown (`focusView`) once it is drawn: after what had the keyboard took it
+ * back (the palette that ran the command closes first), and after a plugin's panel loaded its component (its own
+ * header holds its options button).
+ */
+export async function focusShownView(id: string): Promise<void> {
+  await tick();
+  // the load the view's host waits for: a component loaded before answers at once
+  await arrangement
+    .viewOf(id)
+    ?.panel?.view()
+    .catch(() => undefined);
+  await tick();
+  focusView(id);
+}
+
 /** `id` becomes the view its group shows (its group: every view of its arrangement group). */
 export function selectView(id: string): void {
   const region = arrangement.regionOf(id);
@@ -228,13 +258,13 @@ export function selectView(id: string): void {
 }
 
 /**
- * The view `id` was closed: said, with the window's one notice about it, whose Undo shows it again (where it was:
+ * The view `id` was closed: said, with the window's notice about that view, whose Undo shows it again (where it was:
  * its place stays). Single views only: a change of the whole arrangement has its own notice.
  */
 function closed(id: string): void {
   const words = t("panel.closed", { name: arrangement.nameOf(id) });
   arrangement.say(words);
-  windowStore.notifyKeyed(CLOSED_NOTICE, words, {
+  windowStore.notifyKeyed(closedNotice(id), words, {
     label: t("fileOps.undo"),
     run: () => bringView(id),
   });

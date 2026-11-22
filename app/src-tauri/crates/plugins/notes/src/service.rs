@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 use std::time::{Duration, UNIX_EPOCH};
 
 use permark_core::error::{ErrorKind, IpcError};
-use permark_core::fsx;
+use permark_core::fsx::{self, now_ms};
 use permark_core::notes::{loose_key, parse_loose, NotesScope, ProjectKey, SharedNote};
 use permark_core::paths::{fold, Root};
 use permark_core::plugins::PluginId;
@@ -39,14 +39,6 @@ const UNDO_NOTE_BYTES: u64 = 5 * 1024 * 1024;
 
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// Milliseconds since the epoch on the system clock.
-#[must_use]
-pub fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 /// A title and snippet as they were when the file had a given stamp (a list is made without reading every file).
@@ -426,8 +418,18 @@ impl NotesService {
         if matches!(info.status, FolderStatus::Missing) {
             return (notes, names, false);
         }
-        let Ok(dir) = std::fs::read_dir(ctx.folder()) else {
-            return (notes, names, !ctx.folder().exists() && info.is_default);
+        // a folder that cannot be read lists nothing: the notes may all be there still (a drive back later, a file
+        // in the way), so nothing known about them is dropped and no version is pruned. Only the default folder
+        // truly gone (its parent a folder that is there) counts as listed empty: the app makes it again, its notes
+        // went with it. Windows reports a file in place of a parent as not found too.
+        let dir = match std::fs::read_dir(ctx.folder()) {
+            Ok(dir) => dir,
+            Err(e) => {
+                let gone = e.kind() == std::io::ErrorKind::NotFound
+                    && info.is_default
+                    && ctx.folder().parent().is_some_and(Path::is_dir);
+                return (notes, names, gone);
+            }
         };
         let (pins, shares, copied) =
             ctx.read(|s| (s.pins.clone(), s.shares.clone(), s.copied.clone()));
@@ -483,6 +485,7 @@ impl NotesService {
                 folder: None,
                 state: None,
                 pending: false,
+                hash: None,
             });
         }
         titles.retain(|name, _| names.contains(name));
@@ -515,10 +518,12 @@ impl NotesService {
     ) -> bool {
         let mut made = false;
         for (key, entry) in journal {
+            // an editor of this run still holds the text (its note was deleted under it): it is not lost yet
             if key.starts_with(permark_core::notes::LOOSE_PREFIX)
                 || names.contains(key)
                 || is_blank(&entry.text)
                 || !is_note_name(key)
+                || !self.left_by_a_crash(entry)
             {
                 continue;
             }
@@ -908,7 +913,7 @@ impl NotesService {
             .versions
             .read(&name, id)
             .map_err(|e| IpcError::io(id, &e))?;
-        Ok(String::from_utf8_lossy(&bytes).into_owned())
+        Ok(text_of_file(&bytes))
     }
 
     /// Puts an earlier version back as the note's text. The text the note has now becomes a version first, so the
@@ -1071,16 +1076,29 @@ fn set_modified(path: &Path, modified_ms: u64) {
     }
 }
 
-/// The text of the file the way the editor holds it (every line break `\n`, no byte order mark).
-pub(crate) fn editor_text(path: &Path) -> Option<String> {
-    let bytes = fsx::read_bytes(path, 6 * 1024 * 1024).ok()?;
-    let decoded = fsx::decode(&bytes)?;
+/// The most of a file read as text (the editor's own limit).
+pub(crate) const TEXT_LIMIT: u64 = 6 * 1024 * 1024;
+
+/// The text of file bytes the way the editor holds it (every line break `\n`, no byte order mark).
+fn editor_text_of(bytes: &[u8]) -> Option<String> {
+    let decoded = fsx::decode(bytes)?;
     Some(permark_core::edit::lines::normalized(&decoded.text))
+}
+
+/// The text of file bytes as they are written (line endings kept, no byte order mark, UTF-16 read as such); bytes that
+/// are not text are read as UTF-8 with invalid parts replaced.
+fn text_of_file(bytes: &[u8]) -> String {
+    fsx::decode(bytes).map_or_else(|| String::from_utf8_lossy(bytes).into_owned(), |d| d.text)
 }
 
 /// Whether the journal entry holds text the file does not: typed and never saved.
 pub(crate) fn differs_from_file(entry: &JournalEntry, path: &Path) -> bool {
-    match editor_text(path) {
+    differs_from_bytes(entry, fsx::read_bytes(path, TEXT_LIMIT).ok().as_deref())
+}
+
+/// Whether the journal entry holds text the file bytes `file` do not (`None`: unreadable | not there).
+pub(crate) fn differs_from_bytes(entry: &JournalEntry, file: Option<&[u8]>) -> bool {
+    match file.and_then(editor_text_of) {
         Some(text) => text != entry.text,
         None => !is_blank(&entry.text),
     }
@@ -1089,20 +1107,27 @@ pub(crate) fn differs_from_file(entry: &JournalEntry, path: &Path) -> bool {
 /// Writes `text` (editor form) over the file the way the file is written: its encoding and its line ending. A file that
 /// is not there is written as UTF-8 with `\n`.
 pub(crate) fn write_like(path: &Path, text: &str) -> std::io::Result<()> {
-    let (ending, encoding) = match fsx::read_text(path, 6 * 1024 * 1024) {
-        Ok(decoded) => (
+    let old = fsx::read_bytes(path, TEXT_LIMIT).ok();
+    fsx::write_atomic(path, &encoded_like(old.as_deref(), text))
+}
+
+/// `text` (editor form) as the bytes of a file whose bytes are `old` would hold it: its encoding and its line ending.
+/// No bytes | not text: UTF-8 with `\n`.
+pub(crate) fn encoded_like(old: Option<&[u8]>, text: &str) -> Vec<u8> {
+    let (ending, encoding) = match old.and_then(fsx::decode) {
+        Some(decoded) => (
             permark_core::edit::lines::majority(&permark_core::edit::lines::split(&decoded.text))
                 .to_owned(),
             decoded.encoding,
         ),
-        Err(_) => ("\n".to_owned(), fsx::Encoding::Utf8),
+        None => ("\n".to_owned(), fsx::Encoding::Utf8),
     };
     let body = if ending == "\n" {
         text.to_owned()
     } else {
         text.replace('\n', &ending)
     };
-    fsx::write_atomic(path, &permark_core::edit::lines::encode(&body, encoding))
+    permark_core::edit::lines::encode(&body, encoding)
 }
 
 impl NotesService {
@@ -1162,7 +1187,7 @@ impl NotesService {
         }
         let (_, abs) = Self::existing_note(&ctx, id)?;
         let bytes = fsx::read_bytes(&abs, 6 * 1024 * 1024).map_err(IpcError::from)?;
-        Ok(String::from_utf8_lossy(&bytes).into_owned())
+        Ok(text_of_file(&bytes))
     }
 
     /// Shares a note with `project`, the folder it is now. Only notes, one by one; a loose file never reaches an agent.

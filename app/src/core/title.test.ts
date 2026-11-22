@@ -5,7 +5,14 @@ import { windowTitle } from "./title";
 describe("window title", () => {
   const view: WindowView = {
     state: "showing",
-    workspace: { kind: "project", id: 1, name: "docs", root: "C:/docs", stateLocation: "profile" },
+    workspace: {
+      kind: "project",
+      id: 1,
+      name: "docs",
+      root: "C:/docs",
+      stateLocation: "profile",
+      dataOffer: "none",
+    },
     document: "notes/plan.md",
   };
 

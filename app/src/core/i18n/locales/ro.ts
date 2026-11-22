@@ -33,6 +33,7 @@ export default {
   "welcome.noRecents": "Încă nu există dosare recente.",
   "welcome.notFound": "(nu a fost găsit)",
   "welcome.remove": "Elimină",
+  "welcome.recentKeys": "Apasă Delete ca să elimini din listă dosarul selectat.",
   "welcome.dropHint": "Trage aici dosare sau fișiere pentru a le deschide.",
   "welcome.openFailed": "Nu se poate deschide {path}: {message}",
 
@@ -53,9 +54,14 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Unele date salvate de PerMark nu au putut fi citite și au fost puse deoparte: {file}",
+    "Unele date salvate de PerMark nu au putut fi citite și au fost puse deoparte: {file}. Copia veche se află aici: {backup}",
   "notice.stateUnreadable":
     "Unele date salvate de PerMark nu au putut fi citite. Au fost lăsate neatinse, iar PerMark nu le va modifica până nu le va putea citi din nou, de obicei după o repornire: {file}",
+  "crash.notice":
+    "Ultima dată, PerMark s-a închis neașteptat. Un raport a fost salvat pe acest computer și nu s-a trimis nimic. Dacă îl distribui, verifică-l mai întâi: poate conține nume de fișiere sau fragmente din textul tău. „Raportează pe GitHub” copiază și raportul, ca să îl poți lipi acolo.",
+  "crash.copy": "Copiază raportul",
+  "crash.report": "Raportează pe GitHub",
+  "crash.openFolder": "Deschide dosarul",
 
   // ---- settings
   "settings.title": "Setări",
@@ -78,6 +84,10 @@ export default {
   "error.invalidPath": "{subject} nu este o cale validă.",
   "error.denied": "Accesul la {subject} nu este permis.",
   "error.io": "Nu s-a putut accesa {subject}: {detail}",
+  "error.locked":
+    "{subject} este deschis în alt program care nu permite modificarea. Închide-l acolo, apoi încearcă din nou.",
+  "error.diskFull": "Discul este plin, așa că {subject} nu a putut fi scris.",
+  "error.readOnly": "{subject} este doar în citire, așa că nu poate fi modificat.",
   "error.exists": "{subject} există deja.",
   "error.binary": "{subject} este un fișier binar, așa că nu poate fi afișat ca text.",
   "error.tooLarge": "{subject} este prea mare.",
@@ -173,6 +183,7 @@ export default {
   "fileOps.summaryMoved": "Mutat: {what}",
   "fileOps.summaryRenamed": "Redenumit {from} în {to}",
   "fileOps.summaryDeleted": "Șters: {what}",
+  "fileOps.partlyDeleted": "Șters: {what}. {refused} nu a putut fi mutat în coșul de reciclare.",
   "fileOps.dropInto": "Mută în {folder}",
   "fileOps.projectRoot": "dosarul proiectului",
   "fileOps.dialogLabel": "Actualizează linkurile",
@@ -315,6 +326,7 @@ export default {
   "doc.deleted.title": "Acest fișier a fost șters la ora {time}.",
   "doc.diagramFailed": "Diagrama nu a putut fi desenată",
   "doc.diagramRendering": "Se desenează diagrama…",
+  "doc.diagramSource": "Sursa diagramei",
   "doc.error.title": "Acest fișier nu poate fi deschis",
   "doc.footnoteBackref": "Înapoi la referința {ref}",
   "doc.frontmatter": "Front matter",
@@ -420,7 +432,7 @@ export default {
   "role.copilot": "Instrucțiuni pentru Copilot",
   "role.model-card": "Fișa modelului",
   "role.dataset-card": "Fișa setului de date",
-  "structured.mode": "Vizualizare",
+  "structured.mode": "Afișare",
   "structured.tree": "Arbore",
   "structured.source": "Sursă",
   "structured.invalid": "Conținutul nu este valid, așa că este afișat ca text.",
@@ -968,6 +980,9 @@ export default {
   "review.offer.one": "Modificat de la ultima citire · {n} modificare",
   "review.offer.few": "Modificat de la ultima citire · {n} modificări",
   "review.offer.other": "Modificat de la ultima citire · {n} de modificări",
+  "review.offerCommit.one": "Modificat de la ultimul commit · {n} modificare",
+  "review.offerCommit.few": "Modificat de la ultimul commit · {n} modificări",
+  "review.offerCommit.other": "Modificat de la ultimul commit · {n} de modificări",
   "review.review": "Revizuiește",
   "review.reviewing.one": "Se revizuiește {n} modificare",
   "review.reviewing.few": "Se revizuiesc {n} modificări",
@@ -994,6 +1009,7 @@ export default {
   "review.change": "Modificarea {i} din {n}, {kind}",
   "review.keptAll": "Toate modificările au fost păstrate",
   "review.revertedAll": "Toate modificările din {name} au fost respinse",
+  "review.endedMixed": "Unele modificări din {name} au fost păstrate, altele respinse",
   "review.undo": "Anulează",
   "review.undoStale": "Nu se poate anula: {name} s-a modificat între timp.",
   "review.allDone": "Toate modificările au fost revizuite",
@@ -1054,6 +1070,15 @@ export default {
   "git.stateHint.busy": "Git este în mijlocul altei operațiuni, care nu este încă terminată.",
   "git.unavailableHint": "Git-ul ales nu este disponibil. Alege altul în setări.",
   "git.errorOwnership": "Git nu are încredere în proprietarul acestui dosar.",
+  "git.why.timeout": "Git nu a răspuns la timp.",
+  "git.why.tooLarge": "Răspunsul Git a fost prea lung pentru a fi citit.",
+  "git.why.spawn": "Git nu a putut fi pornit.",
+  "git.why.parse": "Răspunsul Git nu a putut fi înțeles.",
+  "git.why.notLocal":
+    "Dosarul git al acestui depozit duce în afara acestui computer sau printr-un link, așa că PerMark nu îl deschide.",
+  "git.why.noGit": "Acest dosar nu are un .git care să ducă la un depozit.",
+  "git.why.stopped": "Git a fost oprit înainte să răspundă.",
+  "git.why.failed": "Detalii: {detail}",
   "git.errorHint":
     "Deschide setările pentru a alege alt git (cel integrat nu are nevoie de încredere).",
   "git.folderChanged.one": "{n} fișier modificat în interior",
@@ -1149,6 +1174,9 @@ export default {
   "review.versions.list": "Versiuni",
   "review.versions.loading": "Se citește istoricul…",
   "review.versions.more": "Arată mai mult",
+  "review.versions.added.one": "Încă {n} versiune",
+  "review.versions.added.few": "Încă {n} versiuni",
+  "review.versions.added.other": "Încă {n} de versiuni",
   "review.versions.same": "Același text ca acum",
   "review.versions.authors": "{author} cu {others}",
   "review.versions.compare": "Compară",
@@ -1321,6 +1349,19 @@ export default {
   "comments.replyPlaceholder": "Scrie un răspuns…",
   "comments.deleteConfirm": "Ștergi comentariul?",
   "comments.copyFailed": "Nu s-a putut copia în clipboard.",
+  "comments.aside.line.one": "{n} comentariu a fost eliminat în afara PerMark.",
+  "comments.aside.line.few": "{n} comentarii au fost eliminate în afara PerMark.",
+  "comments.aside.line.other": "{n} de comentarii au fost eliminate în afara PerMark.",
+  "comments.aside.restore": "Restaurează",
+  "comments.aside.dismiss": "Renunță",
+  "comments.aside.dismissHint":
+    "Renunță la aceste comentarii. După aceea nu mai pot fi restaurate.",
+  "comments.aside.restored.one": "{n} comentariu restaurat.",
+  "comments.aside.restored.few": "{n} comentarii restaurate.",
+  "comments.aside.restored.other": "{n} de comentarii restaurate.",
+  "comments.aside.nothing": "Comentariile acelea au revenit deja.",
+  "comments.aside.restoreFailed": "Comentariile nu au putut fi restaurate: {message}",
+  "comments.aside.dismissFailed": "Nu s-a putut renunța la comentariile eliminate: {message}",
   "brokenLinks.title": "Linkuri nefuncționale",
   "brokenLinks.checking": "Se verifică documentele…",
   "brokenLinks.none": "Niciun link nefuncțional",
@@ -1516,7 +1557,7 @@ export default {
   "agent.title": "Conexiunea cu agenții",
   "agent.switch": "Partajează acest dosar cu agenții",
   "agent.switchHint":
-    "Un agent pe care îl conectezi (un instrument AI compatibil cu MCP, cum ar fi Claude Code sau Cursor) poate vedea ce ai pe ecran și ce s-a modificat, poate căuta și citi fișierele acestui dosar, îți poate citi comentariile și notele pe care le partajezi și îți poate arăta un loc. Doar pe acest computer. Fișierele listate în .aiignore rămân în afara accesului lor. Agenții conectați astfel doar citesc și nu editează niciodată fișiere prin PerMark; ca un agent să poată propune modificări, folosește Asistentul. Acest lucru acoperă doar ce primesc agenții de la PerMark: un agent poate deschide în continuare singur fișiere de pe computerul tău.",
+    "Un agent pe care îl conectezi (un instrument AI compatibil cu MCP, cum ar fi Claude Code sau Cursor) poate vedea ce ai pe ecran și ce s-a modificat, poate căuta și citi fișierele acestui dosar, îți poate citi comentariile și notele pe care le partajezi și îți poate arăta un loc. Doar pe acest computer. Fișierele listate în .aiignore rămân în afara accesului lor. Agenții conectați astfel nu editează niciodată fișiere prin PerMark: citesc și îți marchează comentariile ca rezolvate doar dacă le permiți. Ca un agent să poată propune modificări, folosește Asistentul. Acest lucru acoperă doar ce primesc agenții de la PerMark: un agent poate deschide în continuare singur fișiere de pe computerul tău.",
   "agent.folderReplaced":
     "Acest folder s-a schimbat de când l-ai conectat. Activează din nou conexiunea pentru a permite agenți aici.",
   "agent.groups": "Ce pot face agenții",
@@ -1619,6 +1660,20 @@ export default {
   "agent.outcome.off": "dezactivat",
   "agent.outcome.notOpen": "nedeschis",
   "agent.outcome.error": "eșuat",
+  "agentRules.lastGood":
+    "{file} nu a putut fi citit: {why}. PerMark folosește ultimele reguli din el care au funcționat până când îl corectezi.",
+  "agentRules.closed":
+    "{file} nu a putut fi citit: {why}. Agenții nu primesc nimic din ce acoperă până când îl corectezi.",
+  "agentRules.why.tooLarge": "este prea mare",
+  "agentRules.why.notText": "nu este text simplu",
+  "agentRules.why.notToml": "nu este TOML valid",
+  "agentRules.why.badValue": "una dintre setările sale are un tip de valoare greșit",
+  "agentRules.why.badPattern": "unul dintre tiparele sale nu este valid",
+  "agentRules.why.notAFile": "nu este un fișier obișnuit",
+  "agentRules.why.locked": "alt program îl folosește",
+  "agentRules.why.denied": "PerMark nu are permisiunea să-l citească",
+  "agentRules.why.failed": "citirea a eșuat",
+  "agent.outcome.rulesUnreadable": "reguli ilizibile",
   "agent.open.notice": "Un agent vrea să-ți arate {path}.",
   "agent.open.show": "Arată",
   "agent.ask.resolve":
@@ -1664,6 +1719,8 @@ export default {
   "agent.handoff.done.few": "S-au predat {n} acțiuni — copiate, gata de lipit în prompt.",
   "agent.handoff.done.other": "S-au predat {n} de acțiuni — copiate, gata de lipit în prompt.",
   "agent.handoff.failed": "Predarea nu a reușit. Încearcă din nou.",
+  "agent.handoff.withheld":
+    "PerMark nu predă agenților activitatea acestui dosar: depozitul său git urmărește dosarul privat al PerMark (.permark/local) sau PerMark nu a putut verifica acest lucru.",
   "agent.handoff.copyFailed": "Predat, dar copierea nu a reușit.",
   "config.sheet": "Setările din acest fișier",
   "config.root": "Nivelul de sus",
@@ -1688,6 +1745,8 @@ export default {
   "config.reason.noValue": "O cheie fără valoare. Se modifică în Sursă.",
   "config.reason.empty": "Un element gol. Se modifică în Sursă.",
   "config.reason.unterminated": "Ghilimele care nu se închid niciodată. Se modifică în Sursă.",
+  "config.reason.escape":
+    "O valoare cu secvențe de escape care nu pot fi păstrate exact aici. Se modifică în Sursă.",
   "config.reason.other": "Acest lucru nu poate fi editat exact aici. Folosește Sursă.",
   "config.refused.newline": "Aici o valoare nu poate conține un rând nou.",
   "config.refused.empty": "Tastează ceva.",
@@ -1754,6 +1813,8 @@ export default {
     "Alegerea ta pentru fiecare plugin din acest dosar. „Dezactivat pentru toți” se păstrează în .permark/config.toml și se aplică oricui deschide dosarul.",
   "plugins.removeConfirm": "Elimini datele pluginului {name}?",
   "plugins.removeConfirmBytes": "Elimini datele pluginului {name}? Se eliberează {size}.",
+  "plugins.removeScope":
+    "Dosarele care își păstrează datele în propriul dosar .permark sunt curățate doar cât timp sunt deschise.",
   "plugins.removeData": "Elimină datele",
   "plugins.removeYes": "Elimină",
   "plugins.turnOn": "Activează {name}",
@@ -1761,16 +1822,31 @@ export default {
   "project.ignoreHint":
     "Fișierele care se potrivesc nu sunt căutate și nu apar niciodată în fluxul în timp real. Lista de fișiere le arată estompate, ca pe fișierele ignorate de git.",
   "project.ignoreLabel": "Excluse din căutare și din fluxul în timp real",
+  "project.dataAsk":
+    "Acest dosar are acum un dosar .permark. Comentariile, marcajele de citire și celelalte date ale tale pentru el sunt păstrate în continuare pe acest computer.",
+  "project.dataMove": "Mută în dosar",
+  "project.dataKeep": "Păstrează pe acest computer",
+  "project.dataMissing":
+    "Dosarul .permark al acestui dosar lipsește sau nu poate fi folosit. PerMark folosește copia datelor tale păstrată pe acest computer, care poate fi mai veche.",
+  "project.dataKeepCopy": "Folosește în continuare această copie",
+  "project.dataPlace": "Datele tale pentru acest dosar",
+  "project.dataPlaceProfile": "Păstrate pe acest computer, în profilul tău de utilizator.",
+  "project.dataMoved": "Datele tale pentru acest dosar sunt acum în dosarul său .permark.",
+  "project.dataMoveHeld":
+    "Dosarul .permark al acestui dosar conține deja date PerMark din altă parte, așa că datele tale rămân pe acest computer.",
+  "project.dataMoveFailed": "Datele tale nu au putut fi mutate în dosar: {message}",
   "project.initButton": "Inițializează PerMark",
   "project.initConfig": "Setările pe care acest proiect le partajează cu echipa sa.",
   "project.initConfirm": "Inițializează PerMark",
   "project.initFailed": "PerMark nu a putut fi inițializat în {path}: {message}",
+  "project.initHeld":
+    "{path}/.permark/local conține deja date PerMark din altă parte; nu s-a schimbat nimic.",
   "project.initIgnore": "Ține dosarele private în afara git.",
   "project.initIntro": "PerMark creează aici un dosar .permark cu:",
   "project.initLocal":
-    "Datele tale private pentru acest proiect (comentarii, marcaje de citire) și memoria cache.",
+    "Datele tale private pentru acest proiect (comentarii, marcaje de citire, istoricul anulărilor) și o memorie cache pe care PerMark o poate reconstrui oricând.",
   "project.initNote":
-    "Fișierele tale nu sunt atinse. Etichetele, comentariile și marcajele de citire pe care le ai deja pentru acest proiect sunt copiate acolo.",
+    "Fișierele tale nu sunt atinse. Etichetele, comentariile și marcajele de citire pe care le ai deja pentru acest proiect sunt copiate acolo. Ce permiți pentru acest dosar, de exemplu accesul agenților, rămâne în propriile tale date PerMark de pe acest computer.",
   "project.initTitle": "Inițializezi PerMark în {name}?",
   "project.newTitle": "Faci din {name} un proiect?",
   "project.newWhy":
@@ -1795,8 +1871,30 @@ export default {
   "project.treeUnset": "Nesetat",
   "project.scopes":
     "Setările marcate cu Toată lumea sunt păstrate în .permark/config.toml al acestui dosar și partajate cu oricine îl deschide. Cele marcate cu Doar tu rămân pe acest computer.",
+  "project.shareGit": "Lasă git să vadă setările PerMark ale acestui dosar",
+  "project.shareGitCustom":
+    "Fișierul .permark/.gitignore al acestui dosar a fost scris de altcineva, așa că PerMark îl lasă așa cum este.",
+  "project.shareGitFailed": "Nu s-a putut schimba ce vede git în .permark: {message}",
+  "project.shareGitHint":
+    "Activat: git vede setările, etichetele, lista de proiecte și descrierile proiectelor din .permark, așa că le poți include într-un commit pentru echipa ta. Dezactivat: git ignoră tot dosarul .permark; fișierele care sunt deja într-un commit rămân acolo. Dacă .permark/.gitignore este într-un commit, echipa ta primește și ea această schimbare. Datele tale private și cache-urile rămân mereu în afara git.",
+  "project.shareGitOff": "Dezactivat",
+  "project.shareGitOn": "Activat",
   "project.shareInit": "Inițializează PerMark pentru a partaja asta cu toată lumea",
   "project.sharedFileHint": "Partajat cu oricine deschide acest dosar.",
+  "project.sharedFileUnreadable":
+    "PerMark nu poate citi acest fișier la linia {line}, așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
+  "project.sharedLocked":
+    "PerMark nu poate citi .permark/config.toml, așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
+  "project.sharedLocked.line":
+    "PerMark nu poate citi .permark/config.toml la linia {line}, așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
+  "project.sharedLocked.notText":
+    "PerMark nu poate citi .permark/config.toml (nu este text simplu), așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
+  "project.sharedLocked.tooLarge":
+    "PerMark nu poate citi .permark/config.toml (este prea mare), așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
+  "project.sharedLocked.locked":
+    "PerMark nu poate citi .permark/config.toml (un alt program îl folosește), așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
+  "project.privateTracked":
+    "Agenții nu primesc comentariile și nici activitatea acestui dosar: depozitul său git urmărește dosarul privat al PerMark (.permark/local) sau PerMark nu a putut verifica acest lucru.",
   "settings.all": "Toate setările",
   "settings.editorPreview": "Exemplu:",
   "settings.linkUpdateHint": "Ce se întâmplă cu linkurile când un fișier este mutat sau redenumit.",
@@ -1834,6 +1932,8 @@ export default {
   "settings.problem.noPath": "Comanda are nevoie de {path}.",
   "settings.problem.notInitialized": "Acest dosar nu are încă setări PerMark.",
   "settings.problem.tomlOnly": "Folosește un nume de fișier care se termină cu .toml.",
+  "settings.problem.notToml":
+    "PerMark nu poate citi .permark/config.toml, așa că nu s-a schimbat nimic.",
   "settings.problem.other": "Această valoare nu a fost acceptată.",
   "welcome.newProject": "Proiect nou…",
   "welcome.newProjectHint": "Alege un dosar; PerMark îl configurează ca proiect.",
@@ -1894,6 +1994,7 @@ export default {
   "plugin.graphviz.name": "Diagrame Graphviz",
   "plugin.graphviz.about": "Desenează grafuri Graphviz (DOT) din blocuri de cod.",
   "graphviz.tooLarge": "Acest graf este prea mare pentru a fi desenat aici.",
+  "plantuml.tooLarge": "Această diagramă este prea mare pentru a fi desenată aici.",
   "plugin.media.name": "Imagini, audio și video",
   "plugin.media.about": "Deschide pe loc imaginile, fișierele audio și video.",
   "plugin.json-view.name": "JSON",
@@ -1932,6 +2033,8 @@ export default {
     "Această copie a PerMark nu este instalată, așa că nu poate deveni aplicația implicită. Alege aplicația pentru aceste fișiere în setările sistemului.",
   "defaultApp.confined": "Alege aplicația pentru aceste fișiere în setările sistemului.",
   "defaultApp.failed": "Aplicația implicită nu a putut fi schimbată: {message}",
+  "defaultApp.chooseInFinder":
+    "PerMark rămâne aplicația implicită pentru aceste fișiere. Ca să folosești altă aplicație, selectează unul dintre ele în Finder, alege Fișier > Afișează informații și alege aplicația la „Deschide cu”.",
   "defaultApp.askTitle": "Deschizi aceste fișiere cu PerMark?",
   "defaultApp.askBody":
     "PerMark deschide fișierele pe care le bifezi când faci dublu clic pe ele. Poți schimba asta oricând în Setări.",
@@ -1954,6 +2057,8 @@ export default {
   "shell.newFile.hint":
     "În meniul de clic dreapta al dosarelor: creează acolo un fișier și îl deschide.",
   "shell.failed": "Meniul nu a putut fi modificat: {message}",
+  "shell.readFailed": "Intrările din meniu nu au putut fi citite. {message}",
+  "shell.retry": "Încearcă din nou",
   "updates.section": "Actualizări",
   "updates.row": "Versiuni noi",
   "updates.notes": "Ce este nou",
@@ -2215,7 +2320,7 @@ export default {
     "Tokenii unui document, ai unei selecții sau ai unei secțiuni, după tokenizerul ales; exact acolo unde tokenizerul este public, aproximativ (și marcat ca atare) unde nu este.",
   "plugin.local-ai.name": "AI local",
   "plugin.local-ai.about":
-    "Modele AI mici care rulează pe acest computer, offline, pentru a ajuta PerMark să corecteze, să traducă și să găsească după sens. Nu se descarcă nimic până nu ceri.",
+    "Modele AI mici care rulează pe acest computer pentru a ajuta PerMark să corecteze, să traducă și să găsească după sens. Nu se descarcă nimic până nu ceri.",
 
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} rând",
@@ -2253,6 +2358,7 @@ export default {
   "toon.notValid": "Nu este TOON 4.4 valid",
   "convert.menu": "Convertește…",
   "convert.table": "Convertește…",
+  "convert.tableCommand": "Convertește tabelul…",
   "convert.title": "Convertește {name}",
   "convert.fromPage": "textul din pagină",
   "convert.close": "Închide",
@@ -2378,6 +2484,21 @@ export default {
   "closeWindow.body.other": "Aceste file au modificări nesalvate:",
   "closeWindow.saveAll": "Salvează tot",
   "closeWindow.discard": "Renunță",
+  "stuck.title": "PerMark nu răspunde",
+  "stuck.detail":
+    "O pagină din această fereastră nu răspunde. Dacă închizi oricum, modificările nesalvate din filele acestei ferestre se pot pierde.",
+  "stuck.closeAnyway": "Închide oricum",
+  "stuck.wait": "Așteaptă",
+  "stuck.engineStopped":
+    "Partea din PerMark care afișează ferestrele a încetat să funcționeze, așa că PerMark trebuie să se închidă. Modificările nesalvate se pierd; filele deschise revin la următoarea pornire a PerMark.",
+  "stuck.reloaded": "Această filă a încetat să funcționeze și a fost reîncărcată.",
+  "stuck.reloadedLost":
+    "Această filă a încetat să funcționeze și a fost reîncărcată. Modificările nesalvate din {file} s-au pierdut.",
+  "stuck.reloadedPage": "Această pagină a încetat să funcționeze și a fost reîncărcată.",
+  "stuck.windowFailed":
+    "O fereastră PerMark nu și-a putut deschide pagina și a fost închisă. Celelalte ferestre funcționează în continuare.",
+  "stuck.viewFailedExit":
+    "PerMark nu și-a putut deschide fereastra, așa că trebuie să se închidă. Filele deschise revin la următoarea pornire a PerMark.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Proiecte din dosar",
@@ -2653,7 +2774,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "AI local",
   "localAi.intro":
-    "Modele AI mici care rulează pe acest computer, fără internet. Nu se descarcă nimic până nu ceri.",
+    "Modele AI mici care rulează pe acest computer. Nu se descarcă nimic până nu ceri.",
   "localAi.command": "Deschide setările AI local",
   "localAi.loadFailed": "Setările AI local nu au putut fi citite.",
   "localAi.retry": "Încearcă din nou",
@@ -2724,8 +2845,8 @@ export default {
   "localAi.models.details.size": "Mărimea descărcării",
   "localAi.models.details.restriction": "Cine îl poate folosi",
   "localAi.models.comingSoon": "În curând",
-  "localAi.models.needs.newer": "Are nevoie de o versiune mai nouă a motorului AI.",
-  "localAi.models.needs.missing": "Are nevoie de un motor AI pe care PerMark încă nu îl are.",
+  "localAi.models.needs.newer": "Acest model are nevoie de o versiune mai nouă a PerMark.",
+  "localAi.models.needs.missing": "PerMark nu poate rula încă acest tip de model.",
   "localAi.dl.waiting": "În așteptare…",
   "localAi.dl.cancelLabel": "Anulează descărcarea {name}",
   "localAi.dl.progress": "{done} din {total}",
@@ -3303,7 +3424,10 @@ export default {
   "acp.fail.tooLarge": "Acest dosar este prea mare pentru a fi copiat pentru agent.",
   "acp.fail.projectsNotReady":
     "PerMark încă citește acest dosar. Încearcă din nou peste câteva momente.",
+  "acp.fail.rulesUnreadable":
+    "Un fișier care stabilește ce pot vedea agenții nu a putut fi citit. Agentul nu primește nimic până când nu este corectat.",
   "acp.fail.startFailed": "Programul agentului nu a putut fi pornit.",
+  "acp.fail.notAllowed": "Nu ai permis pornirea programului agentului.",
   "acp.fail.timedOut": "Agentul nu a răspuns la timp.",
   "acp.fail.initFailed":
     "Acest program nu a răspuns ca un agent cu care PerMark poate comunica. Verifică comanda și încearcă din nou.",
@@ -3317,6 +3441,7 @@ export default {
   "acp.fail.exited": "Programul agentului s-a închis neașteptat.",
   "acp.fail.sendFailed": "Mesajul nu a putut fi transmis agentului.",
   "acp.error.relativeProgram": "Scrie calea completă a programului sau doar numele lui.",
+  "acp.error.commandTooLong": "Comanda este prea lungă (cel mult 1000 de caractere).",
   "acp.error.networkProgram":
     "PerMark pornește doar programe de pe acest computer, nu dintr-un folder din rețea.",
   "acp.error.oneChoice": "Alege un singur agent sau scrie o singură comandă.",

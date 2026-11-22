@@ -258,10 +258,14 @@ fn scan(body: &str, lines: &Lines) -> Vec<Dest> {
                 }
             }
             NodeValue::HtmlInline(html) => {
-                // placed again: kept only where the bytes are the parser's
-                if let Some(range) =
-                    range.filter(|r| !moved || body.get(r.clone()) == Some(html.as_str()))
-                {
+                // where the parser's bytes stand (a table cell's escaped pipes move it right of the reported place);
+                // else the reported place, kept only when it was not placed again
+                let exact = span.as_ref().and_then(|span| {
+                    shifted(body, span, |r| {
+                        (body.get(r.clone()) == Some(html.as_str())).then_some(r)
+                    })
+                });
+                if let Some(range) = exact.or_else(|| range.filter(|_| !moved)) {
                     html_dests(&body[range.clone()], range.start, &mut dests);
                 }
             }
@@ -287,7 +291,7 @@ fn scan(body: &str, lines: &Lines) -> Vec<Dest> {
             _ => {}
         }
     }
-    definitions(body, lines, &blocked, &mut dests);
+    definitions(body, lines, &mut blocked, &mut dests);
     dests.sort_by_key(|d| d.range.start);
     dests.dedup_by(|a, b| a.range == b.range);
     dests
@@ -400,12 +404,28 @@ fn with_kind(mut dest: Dest, kind: Kind) -> Dest {
 /// counts an escaped pipe `\|` as one character), the same text a few bytes to the right. Places inside a character
 /// are skipped: the shift that lands on the link is found even when an earlier one cut through a multibyte character.
 fn shifted_inline_dest(body: &str, range: &Range<usize>, url: &str) -> Option<Dest> {
-    // from bytes: `range.start` itself can be inside a character when the parser's columns are off
+    shifted(body, range, |r| inline_dest(&body[r.clone()], url, r.start))
+}
+
+/// The first of `range` moved 0 to [`SHIFT_LIMIT`] bytes right, on its line and on whole characters, for which
+/// `found` gives a value.
+fn shifted<T>(
+    body: &str,
+    range: &Range<usize>,
+    found: impl Fn(Range<usize>) -> Option<T>,
+) -> Option<T> {
+    // from bytes: `range.start` itself can be inside a character when the parser's columns are off. Only a line end
+    // before the last shifted end matters: the search stops there (a long line holds many links).
+    let reach = range
+        .end
+        .saturating_add(SHIFT_LIMIT)
+        .min(body.len())
+        .max(range.start);
     let line_end = body
         .as_bytes()
-        .get(range.start..)
+        .get(range.start..reach)
         .and_then(|rest| rest.iter().position(|b| matches!(b, b'\n' | b'\r')))
-        .map_or(body.len(), |at| range.start + at);
+        .map_or(reach, |at| range.start + at);
     for shift in 0..=SHIFT_LIMIT {
         let (start, end) = (range.start + shift, range.end + shift);
         if end > line_end {
@@ -414,8 +434,8 @@ fn shifted_inline_dest(body: &str, range: &Range<usize>, url: &str) -> Option<De
         if !body.is_char_boundary(start) || !body.is_char_boundary(end) {
             continue;
         }
-        if let Some(dest) = inline_dest(&body[start..end], url, start) {
-            return Some(dest);
+        if let Some(value) = found(start..end) {
+            return Some(value);
         }
     }
     None
@@ -896,23 +916,27 @@ fn definition_at(body: &str, lines: &Lines, first: usize, limit: usize) -> Optio
     })
 }
 
-fn definitions(body: &str, lines: &Lines, blocked: &[(usize, usize)], out: &mut Vec<Dest>) {
+fn definitions(body: &str, lines: &Lines, blocked: &mut [(usize, usize)], out: &mut Vec<Dest>) {
     let count = lines.starts.len();
     let mut spanning = Vec::new();
+    // the blocked ranges by first line, swept once: the lines only go forward
+    blocked.sort_unstable();
+    let (mut next, mut covered_to) = (0, 0);
     let mut line = 1;
     while line <= count {
-        let free = !blocked.iter().any(|(a, b)| (*a..=*b).contains(&line));
+        while let Some(&(_, end)) = blocked.get(next).filter(|(start, _)| *start <= line) {
+            covered_to = covered_to.max(end);
+            next += 1;
+        }
+        let free = covered_to < line;
         let found = lines
             .content_of(line, body)
             .filter(|content| free && body[content.clone()].contains("]:"))
             .and_then(|_| {
                 // a definition goes on up to the next line where none can be
                 let limit = blocked
-                    .iter()
-                    .map(|(a, _)| *a)
-                    .filter(|a| *a > line)
-                    .min()
-                    .map_or(count, |a| a - 1);
+                    .get(blocked.partition_point(|(a, _)| *a <= line))
+                    .map_or(count, |(a, _)| a - 1);
                 definition_at(body, lines, line, limit)
             });
         match found {
@@ -968,4 +992,36 @@ fn confirmed(body: &str, asked: &[Definition]) -> Vec<bool> {
         }
     }
     found
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fmt::Write as _;
+
+    use super::*;
+
+    #[test]
+    fn many_blocks_and_a_long_line_of_links_stay_linear() {
+        // 5 MB: many short paragraphs (each a range where no definition starts), definitions between and after them,
+        // and one line of 50k links
+        let mut text = "A paragraph.\n\n[def]: other.md\n\n".repeat(130_000);
+        let line = (0..50_000).fold(String::new(), |mut all, i| {
+            let _ = write!(all, "[link](target/{i}.md) ");
+            all
+        });
+        assert!(line.len() >= 1_000_000);
+        text.push_str(&line);
+        text.push_str("\n\n[last]: end.md\n");
+        let started = std::time::Instant::now();
+        let dests = parse(&text, &MarkdownFeatures::default());
+        let elapsed = started.elapsed();
+        let inline = dests.iter().filter(|d| d.kind == Kind::Inline).count();
+        let definitions = dests.iter().filter(|d| d.kind == Kind::Definition).count();
+        assert_eq!(inline, 50_000);
+        assert!(text.len() >= 5_000_000);
+        assert_eq!(definitions, 130_001);
+        assert_eq!(dests.last().map(|d| d.raw(&text)), Some("end.md"));
+        // a loose bound for debug builds: the searches to the line end and through every block took minutes
+        assert!(elapsed.as_secs() < 20, "{elapsed:?}");
+    }
 }

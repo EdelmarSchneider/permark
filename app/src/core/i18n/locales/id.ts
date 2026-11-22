@@ -40,6 +40,7 @@ export default {
   "welcome.noRecents": "Belum ada folder terbaru.",
   "welcome.notFound": "(tidak ditemukan)",
   "welcome.remove": "Hapus dari daftar",
+  "welcome.recentKeys": "Tekan Delete untuk menghapus folder yang dipilih dari daftar.",
   "welcome.dropHint": "Letakkan folder atau file di sini untuk membukanya.",
   "welcome.openFailed": "Tidak dapat membuka {path}: {message}",
 
@@ -60,9 +61,14 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Sebagian data PerMark yang tersimpan tidak dapat dibaca dan telah disisihkan: {file}",
+    "Sebagian data PerMark yang tersimpan tidak dapat dibaca dan telah disisihkan: {file}. Salinan lamanya ada di sini: {backup}",
   "notice.stateUnreadable":
     "Sebagian data PerMark yang tersimpan tidak dapat dibaca. Data itu dibiarkan apa adanya, dan PerMark tidak akan mengubahnya sampai dapat membacanya lagi, biasanya setelah dimulai ulang: {file}",
+  "crash.notice":
+    "PerMark tertutup secara tak terduga terakhir kali. Sebuah laporan disimpan di komputer ini dan tidak ada yang dikirim. Jika Anda membagikannya, periksa dulu: laporan itu bisa memuat nama file atau potongan teks Anda. “Laporkan di GitHub” juga menyalin laporan agar Anda dapat menempelkannya di sana.",
+  "crash.copy": "Salin laporan",
+  "crash.report": "Laporkan di GitHub",
+  "crash.openFolder": "Buka folder",
 
   // ---- settings
   "settings.title": "Pengaturan",
@@ -85,6 +91,10 @@ export default {
   "error.invalidPath": "{subject} bukan jalur yang valid.",
   "error.denied": "Tidak ada izin untuk menggunakan {subject}.",
   "error.io": "Tidak dapat mengakses {subject}: {detail}",
+  "error.locked":
+    "{subject} sedang dibuka di program lain yang mencegahnya diubah. Tutup di sana, lalu coba lagi.",
+  "error.diskFull": "Disk penuh, jadi {subject} tidak dapat ditulis.",
+  "error.readOnly": "{subject} hanya-baca, jadi tidak dapat diubah.",
   "error.exists": "{subject} sudah ada.",
   "error.binary": "{subject} adalah file biner, jadi tidak dapat ditampilkan sebagai teks.",
   "error.tooLarge": "{subject} terlalu besar.",
@@ -171,6 +181,7 @@ export default {
   "fileOps.summaryMoved": "{what} dipindahkan",
   "fileOps.summaryRenamed": "Nama {from} diganti menjadi {to}",
   "fileOps.summaryDeleted": "{what} dihapus",
+  "fileOps.partlyDeleted": "{what} dihapus. Tidak dapat memindahkan {refused} ke Keranjang Sampah.",
   "fileOps.dropInto": "Pindahkan ke {folder}",
   "fileOps.projectRoot": "folder proyek",
   "fileOps.dialogLabel": "Perbarui tautan",
@@ -307,6 +318,7 @@ export default {
   "doc.deleted.title": "File ini dihapus pada {time}.",
   "doc.diagramFailed": "Diagram tidak dapat digambar",
   "doc.diagramRendering": "Menggambar diagram…",
+  "doc.diagramSource": "Sumber diagram",
   "doc.error.title": "File ini tidak dapat dibuka",
   "doc.footnoteBackref": "Kembali ke rujukan {ref}",
   "doc.frontmatter": "Front matter",
@@ -936,6 +948,8 @@ export default {
   "since.nothing": "Tidak ada yang berubah sejak {when}.",
   "review.offer.one": "Berubah sejak terakhir Anda baca · {n} perubahan",
   "review.offer.other": "Berubah sejak terakhir Anda baca · {n} perubahan",
+  "review.offerCommit.one": "Berubah sejak commit terakhir · {n} perubahan",
+  "review.offerCommit.other": "Berubah sejak commit terakhir · {n} perubahan",
   "review.review": "Tinjau",
   "review.reviewing.one": "Meninjau {n} perubahan",
   "review.reviewing.other": "Meninjau {n} perubahan",
@@ -960,6 +974,7 @@ export default {
   "review.change": "Perubahan {i} dari {n}, {kind}",
   "review.keptAll": "Semua perubahan dipertahankan",
   "review.revertedAll": "Semua perubahan di {name} dikembalikan",
+  "review.endedMixed": "Sebagian perubahan di {name} dipertahankan, sebagian lagi dikembalikan",
   "review.undo": "Batalkan",
   "review.undoStale": "Tidak dapat dibatalkan: {name} telah berubah sejak itu.",
   "review.allDone": "Semua perubahan telah ditinjau",
@@ -1016,6 +1031,15 @@ export default {
   "git.stateHint.busy": "Git sedang mengerjakan tugas lain yang belum selesai.",
   "git.unavailableHint": "Git yang Anda pilih tidak tersedia. Pilih yang lain di pengaturan.",
   "git.errorOwnership": "Git tidak memercayai pemilik folder ini.",
+  "git.why.timeout": "Git tidak menjawab tepat waktu.",
+  "git.why.tooLarge": "Jawaban Git terlalu panjang untuk dibaca.",
+  "git.why.spawn": "Git tidak dapat dijalankan.",
+  "git.why.parse": "Jawaban Git tidak dapat dipahami.",
+  "git.why.notLocal":
+    "Folder git repositori ini mengarah ke luar komputer ini atau melewati tautan, jadi PerMark tidak membukanya.",
+  "git.why.noGit": "Folder ini tidak memiliki .git yang mengarah ke repositori.",
+  "git.why.stopped": "Git dihentikan sebelum menjawab.",
+  "git.why.failed": "Detail: {detail}",
   "git.errorHint":
     "Buka pengaturan untuk memilih git lain (git bawaan tidak memerlukan kepercayaan).",
   "git.folderChanged.one": "{n} file berubah di dalamnya",
@@ -1104,6 +1128,8 @@ export default {
   "review.versions.list": "Versi",
   "review.versions.loading": "Membaca riwayat…",
   "review.versions.more": "Tampilkan lebih banyak",
+  "review.versions.added.one": "{n} versi lagi",
+  "review.versions.added.other": "{n} versi lagi",
   "review.versions.same": "Teks sama dengan sekarang",
   "review.versions.authors": "{author} bersama {others}",
   "review.versions.compare": "Bandingkan",
@@ -1264,6 +1290,17 @@ export default {
   "comments.replyPlaceholder": "Tulis balasan…",
   "comments.deleteConfirm": "Hapus komentar?",
   "comments.copyFailed": "Tidak dapat menyalin ke papan klip.",
+  "comments.aside.line.one": "{n} komentar dihapus di luar PerMark.",
+  "comments.aside.line.other": "{n} komentar dihapus di luar PerMark.",
+  "comments.aside.restore": "Pulihkan",
+  "comments.aside.dismiss": "Buang",
+  "comments.aside.dismissHint":
+    "Membuang komentar ini. Setelah itu komentar tidak bisa dipulihkan lagi.",
+  "comments.aside.restored.one": "{n} komentar dipulihkan.",
+  "comments.aside.restored.other": "{n} komentar dipulihkan.",
+  "comments.aside.nothing": "Komentar itu sudah kembali.",
+  "comments.aside.restoreFailed": "Tidak dapat memulihkan komentar: {message}",
+  "comments.aside.dismissFailed": "Tidak dapat membuang komentar yang dihapus: {message}",
   "brokenLinks.title": "Tautan rusak",
   "brokenLinks.checking": "Memeriksa dokumen…",
   "brokenLinks.none": "Tidak ada tautan rusak",
@@ -1452,7 +1489,7 @@ export default {
   "agent.title": "Koneksi agen",
   "agent.switch": "Bagikan folder ini dengan agen",
   "agent.switchHint":
-    "Agen yang Anda hubungkan (alat AI yang mendukung MCP, seperti Claude Code atau Cursor) dapat melihat apa yang sedang Anda lihat dan apa yang berubah, mencari dan membaca file folder ini, membaca komentar Anda dan catatan yang Anda bagikan, serta menunjukkan suatu tempat kepada Anda. Hanya di komputer ini. File yang tercantum di .aiignore tetap di luar jangkauan agen. Agen yang terhubung dengan cara ini hanya membaca dan tidak pernah mengedit file melalui PerMark; agar agen dapat mengusulkan perubahan, gunakan Asisten. Ini hanya mencakup apa yang didapat agen dari PerMark: agen tetap dapat membuka file di komputer Anda secara langsung.",
+    "Agen yang Anda hubungkan (alat AI yang mendukung MCP, seperti Claude Code atau Cursor) dapat melihat apa yang sedang Anda lihat dan apa yang berubah, mencari dan membaca file folder ini, membaca komentar Anda dan catatan yang Anda bagikan, serta menunjukkan suatu tempat kepada Anda. Hanya di komputer ini. File yang tercantum di .aiignore tetap di luar jangkauan agen. Agen yang terhubung dengan cara ini tidak pernah mengedit file melalui PerMark: agen membaca, dan hanya menandai komentar Anda selesai jika Anda mengizinkannya. Agar agen dapat mengusulkan perubahan, gunakan Asisten. Ini hanya mencakup apa yang didapat agen dari PerMark: agen tetap dapat membuka file di komputer Anda secara langsung.",
   "agent.folderReplaced":
     "Folder ini berubah sejak Anda menghubungkannya. Aktifkan koneksi lagi untuk mengizinkan agen di sini.",
   "agent.groups": "Yang boleh dilakukan agen",
@@ -1552,6 +1589,20 @@ export default {
   "agent.outcome.off": "nonaktif",
   "agent.outcome.notOpen": "tidak terbuka",
   "agent.outcome.error": "gagal",
+  "agentRules.lastGood":
+    "Tidak dapat membaca {file}: {why}. PerMark memakai aturan terakhir dari file itu yang berfungsi sampai Anda memperbaikinya.",
+  "agentRules.closed":
+    "Tidak dapat membaca {file}: {why}. Agen tidak mendapat apa pun yang dicakupnya sampai Anda memperbaikinya.",
+  "agentRules.why.tooLarge": "file terlalu besar",
+  "agentRules.why.notText": "bukan teks biasa",
+  "agentRules.why.notToml": "bukan TOML yang valid",
+  "agentRules.why.badValue": "salah satu pengaturannya memiliki jenis nilai yang salah",
+  "agentRules.why.badPattern": "salah satu polanya tidak valid",
+  "agentRules.why.notAFile": "bukan file biasa",
+  "agentRules.why.locked": "sedang dipakai program lain",
+  "agentRules.why.denied": "PerMark tidak diizinkan membacanya",
+  "agentRules.why.failed": "gagal dibaca",
+  "agent.outcome.rulesUnreadable": "aturan tak terbaca",
   "agent.open.notice": "Agen ingin menunjukkan {path} kepada Anda.",
   "agent.open.show": "Tampilkan",
   "agent.ask.resolve":
@@ -1593,6 +1644,8 @@ export default {
   "agent.handoff.done.one": "{n} tindakan diserahkan — disalin, siap ditempel di prompt Anda.",
   "agent.handoff.done.other": "{n} tindakan diserahkan — disalin, siap ditempel di prompt Anda.",
   "agent.handoff.failed": "Serah terima gagal. Coba lagi.",
+  "agent.handoff.withheld":
+    "PerMark tidak menyerahkan aktivitas folder ini ke agen: repositori git-nya melacak folder pribadi PerMark (.permark/local), atau PerMark tidak dapat memeriksanya.",
   "agent.handoff.copyFailed": "Sudah diserahkan, tetapi penyalinan gagal.",
   "config.sheet": "Pengaturan di file ini",
   "config.root": "Tingkat teratas",
@@ -1617,6 +1670,8 @@ export default {
   "config.reason.noValue": "Kunci tanpa nilai. Ubah di mode Sumber.",
   "config.reason.empty": "Item kosong. Ubah di mode Sumber.",
   "config.reason.unterminated": "Tanda kutip yang tidak pernah ditutup. Ubah di mode Sumber.",
+  "config.reason.escape":
+    "Nilai berisi kode escape yang tidak dapat dipertahankan persis di sini. Ubah di mode Sumber.",
   "config.reason.other": "Ini tidak dapat diedit dengan tepat di sini. Gunakan mode Sumber.",
   "config.refused.newline": "Nilai tidak boleh berisi baris baru di sini.",
   "config.refused.empty": "Ketik sesuatu.",
@@ -1681,6 +1736,8 @@ export default {
     'Pilihan Anda untuk setiap plugin di folder ini. "Nonaktif untuk semua orang" disimpan di .permark/config.toml dan berlaku bagi siapa pun yang membuka folder ini.',
   "plugins.removeConfirm": "Hapus data {name}?",
   "plugins.removeConfirmBytes": "Hapus data {name}? Ini akan mengosongkan {size}.",
+  "plugins.removeScope":
+    "Folder yang menyimpan datanya di folder .permark miliknya sendiri hanya dibersihkan selagi folder itu terbuka.",
   "plugins.removeData": "Hapus data",
   "plugins.removeYes": "Hapus",
   "plugins.turnOn": "Aktifkan {name}",
@@ -1688,16 +1745,31 @@ export default {
   "project.ignoreHint":
     "File yang cocok tidak dicari dan tidak pernah muncul di umpan langsung. Daftar file menampilkannya redup, seperti file yang diabaikan git.",
   "project.ignoreLabel": "Dikecualikan dari pencarian dan umpan langsung",
+  "project.dataAsk":
+    "Folder ini sekarang punya folder .permark. Komentar, tanda sudah dibaca, dan data Anda lainnya untuk folder ini masih disimpan di komputer ini.",
+  "project.dataMove": "Pindahkan ke folder",
+  "project.dataKeep": "Simpan di komputer ini",
+  "project.dataMissing":
+    "Folder .permark milik folder ini hilang atau tidak dapat digunakan. PerMark memakai salinan data Anda yang disimpan di komputer ini, yang mungkin lebih lama.",
+  "project.dataKeepCopy": "Tetap pakai salinan ini",
+  "project.dataPlace": "Data Anda untuk folder ini",
+  "project.dataPlaceProfile": "Disimpan di komputer ini, di profil pengguna Anda.",
+  "project.dataMoved": "Data Anda untuk folder ini sekarang ada di folder .permark-nya.",
+  "project.dataMoveHeld":
+    "Folder .permark milik folder ini sudah berisi data PerMark dari tempat lain, jadi data Anda tetap di komputer ini.",
+  "project.dataMoveFailed": "Tidak dapat memindahkan data Anda ke folder: {message}",
   "project.initButton": "Inisialisasi PerMark",
   "project.initConfig": "Pengaturan yang dibagikan proyek ini dengan timnya.",
   "project.initConfirm": "Inisialisasi PerMark",
   "project.initFailed": "Tidak dapat menginisialisasi PerMark di {path}: {message}",
+  "project.initHeld":
+    "{path}/.permark/local sudah berisi data PerMark dari tempat lain; tidak ada yang diubah.",
   "project.initIgnore": "Menjaga folder pribadi tetap di luar git.",
   "project.initIntro": "PerMark membuat folder .permark di sini yang berisi:",
   "project.initLocal":
-    "Data pribadi Anda untuk proyek ini (komentar, tanda sudah dibaca) dan cache-nya.",
+    "Data pribadi Anda untuk proyek ini (komentar, tanda sudah dibaca, riwayat pembatalan) dan cache yang dapat dibangun ulang oleh PerMark kapan saja.",
   "project.initNote":
-    "File Anda tidak diubah. Tag, komentar, dan tanda sudah dibaca yang sudah Anda miliki untuk proyek ini akan disalin ke dalamnya.",
+    "File Anda tidak diubah. Tag, komentar, dan tanda sudah dibaca yang sudah Anda miliki untuk proyek ini akan disalin ke dalamnya. Hal yang Anda izinkan untuk folder ini, seperti akses agen, tetap berada di data PerMark Anda sendiri di komputer ini.",
   "project.initTitle": "Inisialisasi PerMark di {name}?",
   "project.newTitle": "Jadikan {name} sebuah proyek?",
   "project.newWhy":
@@ -1721,8 +1793,30 @@ export default {
   "project.treeUnset": "Belum diatur",
   "project.scopes":
     "Pengaturan bertanda Semua orang disimpan di .permark/config.toml folder ini dan dibagikan kepada siapa pun yang membukanya. Pengaturan bertanda Hanya Anda tetap di komputer ini.",
+  "project.shareGit": "Izinkan git melihat pengaturan PerMark folder ini",
+  "project.shareGitCustom":
+    "File .permark/.gitignore folder ini ditulis oleh orang lain, jadi PerMark membiarkannya apa adanya.",
+  "project.shareGitFailed": "Tidak dapat mengubah apa yang dilihat git di .permark: {message}",
+  "project.shareGitHint":
+    "Aktif: git melihat pengaturan, tag, daftar proyek, dan deskripsi proyek di .permark, sehingga Anda dapat meng-commit-nya untuk tim Anda. Nonaktif: git mengabaikan seluruh folder .permark; file yang sudah di-commit tetap ada di commit. Jika .permark/.gitignore sudah di-commit, tim Anda juga mendapat perubahan ini. Data pribadi dan cache Anda selalu tetap di luar git.",
+  "project.shareGitOff": "Nonaktif",
+  "project.shareGitOn": "Aktif",
   "project.shareInit": "Inisialisasi PerMark untuk membagikan ini kepada semua orang",
   "project.sharedFileHint": "Dibagikan dengan siapa pun yang membuka folder ini.",
+  "project.sharedFileUnreadable":
+    "PerMark tidak dapat membaca file ini di baris {line}, jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
+  "project.sharedLocked":
+    "PerMark tidak dapat membaca .permark/config.toml, jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
+  "project.sharedLocked.line":
+    "PerMark tidak dapat membaca .permark/config.toml di baris {line}, jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
+  "project.sharedLocked.notText":
+    "PerMark tidak dapat membaca .permark/config.toml (isinya bukan teks biasa), jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
+  "project.sharedLocked.tooLarge":
+    "PerMark tidak dapat membaca .permark/config.toml (ukurannya terlalu besar), jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
+  "project.sharedLocked.locked":
+    "PerMark tidak dapat membaca .permark/config.toml (sedang digunakan program lain), jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
+  "project.privateTracked":
+    "Agen tidak menerima komentar maupun aktivitas folder ini: repositori git-nya melacak folder pribadi PerMark (.permark/local), atau PerMark tidak dapat memeriksanya.",
   "settings.all": "Semua pengaturan",
   "settings.editorPreview": "Contoh:",
   "settings.linkUpdateHint":
@@ -1761,6 +1855,8 @@ export default {
   "settings.problem.noPath": "Perintah memerlukan {path}.",
   "settings.problem.notInitialized": "Folder ini belum memiliki pengaturan PerMark.",
   "settings.problem.tomlOnly": "Gunakan nama file yang diakhiri .toml.",
+  "settings.problem.notToml":
+    "PerMark tidak dapat membaca .permark/config.toml, jadi tidak ada yang diubah.",
   "settings.problem.other": "Nilai ini tidak diterima.",
   "welcome.newProject": "Proyek baru…",
   "welcome.newProjectHint": "Pilih folder; PerMark akan menyiapkannya sebagai proyek.",
@@ -1818,6 +1914,7 @@ export default {
   "plugin.graphviz.name": "Diagram Graphviz",
   "plugin.graphviz.about": "Menggambar grafik Graphviz (DOT) dari blok kode.",
   "graphviz.tooLarge": "Grafik ini terlalu besar untuk digambar di sini.",
+  "plantuml.tooLarge": "Diagram ini terlalu besar untuk digambar di sini.",
   "plugin.media.name": "Gambar, audio, dan video",
   "plugin.media.about": "Membuka gambar, suara, dan video langsung di tempat.",
   "plugin.json-view.name": "JSON",
@@ -1858,6 +1955,8 @@ export default {
     "Salinan PerMark ini tidak terinstal, jadi tidak dapat menjadi aplikasi bawaan. Pilih aplikasi untuk file ini di pengaturan sistem Anda.",
   "defaultApp.confined": "Pilih aplikasi untuk file ini di pengaturan sistem Anda.",
   "defaultApp.failed": "Tidak dapat mengubah aplikasi bawaan: {message}",
+  "defaultApp.chooseInFinder":
+    "PerMark tetap menjadi aplikasi bawaan untuk file ini. Untuk memakai aplikasi lain, pilih salah satu file di Finder, pilih File > Dapatkan Info, lalu pilih aplikasinya di bawah “Buka dengan”.",
   "defaultApp.askTitle": "Buka file ini dengan PerMark?",
   "defaultApp.askBody":
     "PerMark membuka file yang Anda centang saat Anda mengklik dua kali file tersebut. Anda dapat mengubahnya kapan saja di Pengaturan.",
@@ -1879,6 +1978,8 @@ export default {
   "shell.newFile.row": "“File Markdown baru”",
   "shell.newFile.hint": "Di menu klik kanan folder: membuat file di sana lalu membukanya.",
   "shell.failed": "Tidak dapat mengubah menu: {message}",
+  "shell.readFailed": "Tidak dapat membaca entri menu. {message}",
+  "shell.retry": "Coba lagi",
   "updates.section": "Pembaruan",
   "updates.row": "Versi baru",
   "updates.notes": "Yang baru",
@@ -2112,7 +2213,7 @@ export default {
     "Token dokumen, pilihan, atau bagian menurut tokenizer pilihan Anda; tepat jika tokenizer-nya publik, perkiraan (dan ditandai) jika tidak.",
   "plugin.local-ai.name": "AI lokal",
   "plugin.local-ai.about":
-    "Model AI kecil yang berjalan di komputer ini, secara offline, untuk membantu PerMark mengoreksi, menerjemahkan, dan mencari berdasarkan makna. Tidak ada yang diunduh sampai Anda memintanya.",
+    "Model AI kecil yang berjalan di komputer ini untuk membantu PerMark mengoreksi, menerjemahkan, dan mencari berdasarkan makna. Tidak ada yang diunduh sampai Anda memintanya.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} baris",
   "config.table.rows.other": "{n} baris",
@@ -2148,6 +2249,7 @@ export default {
   "toon.notValid": "Bukan TOON 4.4 yang valid",
   "convert.menu": "Konversi…",
   "convert.table": "Konversi…",
+  "convert.tableCommand": "Konversi tabel…",
   "convert.title": "Konversi {name}",
   "convert.fromPage": "teks dari halaman",
   "convert.close": "Tutup",
@@ -2268,6 +2370,21 @@ export default {
   "closeWindow.body.other": "Tab berikut memiliki perubahan yang belum disimpan:",
   "closeWindow.saveAll": "Simpan semua",
   "closeWindow.discard": "Buang",
+  "stuck.title": "PerMark tidak merespons",
+  "stuck.detail":
+    "Sebuah halaman di jendela ini tidak merespons. Jika Anda tetap menutup, perubahan yang belum disimpan di tab jendela ini bisa hilang.",
+  "stuck.closeAnyway": "Tetap tutup",
+  "stuck.wait": "Tunggu",
+  "stuck.engineStopped":
+    "Bagian PerMark yang menampilkan jendelanya berhenti bekerja, jadi PerMark harus ditutup. Perubahan yang belum disimpan hilang; tab yang terbuka akan kembali saat PerMark dijalankan lagi.",
+  "stuck.reloaded": "Tab ini berhenti bekerja dan dimuat ulang.",
+  "stuck.reloadedLost":
+    "Tab ini berhenti bekerja dan dimuat ulang. Perubahan yang belum disimpan pada {file} hilang.",
+  "stuck.reloadedPage": "Halaman ini berhenti bekerja dan dimuat ulang.",
+  "stuck.windowFailed":
+    "Sebuah jendela PerMark tidak dapat membuka halamannya dan telah ditutup. Jendela Anda yang lain tetap berfungsi.",
+  "stuck.viewFailedExit":
+    "PerMark tidak dapat membuka jendelanya, jadi PerMark harus ditutup. Tab yang terbuka akan kembali saat PerMark dijalankan lagi.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Proyek di dalamnya",
@@ -2516,7 +2633,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "AI lokal",
   "localAi.intro":
-    "Model AI kecil yang berjalan di komputer ini, secara offline. Tidak ada yang diunduh sampai Anda memintanya.",
+    "Model AI kecil yang berjalan di komputer ini. Tidak ada yang diunduh sampai Anda memintanya.",
   "localAi.command": "Buka pengaturan AI lokal",
   "localAi.loadFailed": "Tidak dapat membaca pengaturan AI lokal.",
   "localAi.retry": "Coba lagi",
@@ -2588,8 +2705,8 @@ export default {
   "localAi.models.details.size": "Ukuran unduhan",
   "localAi.models.details.restriction": "Siapa yang boleh menggunakannya",
   "localAi.models.comingSoon": "Segera hadir",
-  "localAi.models.needs.newer": "Memerlukan versi mesin AI yang lebih baru.",
-  "localAi.models.needs.missing": "Memerlukan mesin AI yang belum dimiliki PerMark.",
+  "localAi.models.needs.newer": "Model ini memerlukan versi PerMark yang lebih baru.",
+  "localAi.models.needs.missing": "PerMark belum dapat menjalankan jenis model ini.",
   "localAi.dl.waiting": "Menunggu…",
   "localAi.dl.cancelLabel": "Batalkan pengunduhan {name}",
   "localAi.dl.progress": "{done} dari {total}",
@@ -3142,7 +3259,10 @@ export default {
   "acp.fail.copyFailed": "PerMark tidak dapat menyiapkan salinan folder ini untuk agen.",
   "acp.fail.tooLarge": "Folder ini terlalu besar untuk disalin bagi agen.",
   "acp.fail.projectsNotReady": "PerMark masih membaca folder ini. Coba lagi sebentar lagi.",
+  "acp.fail.rulesUnreadable":
+    "File yang mengatur apa yang boleh dilihat agen tidak dapat dibaca. Agen tidak mendapat apa pun sampai file itu diperbaiki.",
   "acp.fail.startFailed": "Program agen tidak dapat dimulai.",
+  "acp.fail.notAllowed": "Anda tidak mengizinkan program agen dijalankan.",
   "acp.fail.timedOut": "Agen tidak menjawab tepat waktu.",
   "acp.fail.initFailed":
     "Program ini tidak menjawab seperti agen yang dapat diajak berkomunikasi oleh PerMark. Periksa perintah, lalu coba lagi.",
@@ -3155,6 +3275,7 @@ export default {
   "acp.fail.exited": "Program agen tertutup secara tidak terduga.",
   "acp.fail.sendFailed": "Pesan tidak dapat diserahkan kepada agen.",
   "acp.error.relativeProgram": "Tulis jalur lengkap program, atau hanya namanya.",
+  "acp.error.commandTooLong": "Perintahnya terlalu panjang (paling banyak 1000 karakter).",
   "acp.error.networkProgram":
     "PerMark hanya menjalankan program di komputer ini, bukan dari folder jaringan.",
   "acp.error.oneChoice": "Pilih satu agen atau ketik satu perintah.",

@@ -25,7 +25,9 @@ describe("calls for agents", () => {
         false,
       );
     }
-    expect(callsForAgents(context({ git: { status: "error", reason: "x" } }))).toBe(false);
+    expect(callsForAgents(context({ git: { status: "error", code: "failed", reason: "x" } }))).toBe(
+      false,
+    );
   });
 
   it("reads only names from the fact", () => {

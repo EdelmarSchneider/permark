@@ -6,10 +6,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime};
 
 use permark_core::document::DocScope;
-use permark_core::fsx;
+use permark_core::fsx::{self, now_ms};
 use permark_core::plugins::PluginId;
 use permark_core::projects::{Owners, OwnersChange};
 use permark_core::state::{merge3, Loaded, StateData, StateFile};
@@ -31,8 +31,12 @@ pub struct ReadFile {
     pub docs: BTreeMap<String, String>,
 }
 
+/// Most bytes `read.json` | `visit.json` are read with: no writer limit (one entry per tracked document).
+const FILE_MAX_BYTES: u64 = 32 * 1024 * 1024;
+
 impl StateData for ReadFile {
     const VERSION: u32 = 1;
+    const MAX_BYTES: u64 = FILE_MAX_BYTES;
 }
 
 /// `visit.json`: what every document held when the project was last closed.
@@ -44,6 +48,7 @@ pub struct VisitFile {
 
 impl StateData for VisitFile {
     const VERSION: u32 = 1;
+    const MAX_BYTES: u64 = FILE_MAX_BYTES;
 }
 
 fn hex_of(hash: u64) -> String {
@@ -58,17 +63,12 @@ pub fn hash_from_hex(text: &str) -> Option<u64> {
         .flatten()
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-}
-
 /// Whoever follows the read state (the review of changes).
 pub trait ReadObserver: Send + Sync {
     /// A document whose bytes are the version last read (found by the first look, changed back, or just read).
     fn at_rest(&self, path: &str, hash: u64, bytes: &[u8]);
-    /// The person read the document: it went from `before` (never: `None`) to `now`.
+    /// The person read the document: it went from `before` (never: `None`) to `now`. Told before the `at_rest` of
+    /// `now`.
     fn read(&self, path: &str, before: Option<u64>, now: u64);
     /// A document moved.
     fn moved(&self, from: &str, to: &str);
@@ -106,6 +106,9 @@ impl UnreadHub {
     pub fn mark_read(&self, path: &str, hash: u64) {
         let (before, wrote) = lock(&self.tracker).mark_read(path, hash);
         if wrote {
+            // what was read before is told first: an observer keeps what it needs of it before it hears the new
+            // version at rest (and lets go of the old one)
+            self.each(|o| o.read(path, before, hash));
             if self.has_observers() {
                 // the bytes are at hand only while the disk still holds that version
                 if let Some((disk_hash, bytes)) = read_document(&self.scope, path) {
@@ -114,7 +117,6 @@ impl UnreadHub {
                     }
                 }
             }
-            self.each(|o| o.read(path, before, hash));
         }
         let _ = self.tx.send(Msg::Touched { wrote });
     }
@@ -556,7 +558,8 @@ impl UnreadService {
 
     #[must_use]
     pub fn list(&self) -> UnreadList {
-        list_of(&self.hub.tracker, &self.hub.scope)
+        let scope = &self.hub.scope;
+        list_of(&self.hub.tracker, &|path| modified_of(scope, path))
     }
 
     #[must_use]
@@ -664,17 +667,26 @@ impl permark_core::organizing::UnreadLookup for UnreadHub {
     }
 }
 
-/// The unread list for the windows: newest change first (the time the file was last written).
-fn list_of(tracker: &Mutex<Tracker>, scope: &DocScope) -> UnreadList {
-    let (ready, paths) = {
+/// When a document was last written (`None`: gone | unreadable), asked of the disk.
+type Stat<'a> = &'a dyn Fn(&str) -> Option<SystemTime>;
+
+/// The unread list for the windows: newest change first (the time the file was last written, `stat`).
+fn list_of(tracker: &Mutex<Tracker>, stat: Stat<'_>) -> UnreadList {
+    let (ready, listed) = {
         let tracker = lock(tracker);
-        (tracker.looked(), tracker.unread())
+        (tracker.looked(), tracker.unread_times())
     };
-    // the disk is asked with the lock released
-    let timed = paths
+    // only files written since the last list are asked, with the lock released
+    let found: Vec<(Option<SystemTime>, String)> = listed
+        .unknown
         .into_iter()
-        .map(|path| (modified_of(scope, &path), path))
+        .map(|path| (stat(&path), path))
         .collect();
+    if !found.is_empty() {
+        lock(tracker).keep_times(listed.epoch, &found);
+    }
+    let mut timed = listed.known;
+    timed.extend(found);
     UnreadList {
         ready,
         unread: newest_first(timed),
@@ -767,7 +779,8 @@ impl Worker {
     }
 
     fn announce(&mut self) {
-        let list = list_of(&self.tracker, &self.args.scope);
+        let scope = &self.args.scope;
+        let list = list_of(&self.tracker, &|path| modified_of(scope, path));
         if self.announced.as_ref() != Some(&list) {
             (self.args.announce)(&list);
             self.announced = Some(list);
@@ -980,5 +993,73 @@ impl Worker {
             }
         }
         self.hub.each(|o| o.settled(paths));
+    }
+}
+
+#[cfg(test)]
+mod list_tests {
+    use std::sync::atomic::AtomicUsize;
+
+    use super::*;
+
+    /// A stat that counts its calls; the time of `d/<n>.md` is `n` seconds.
+    struct Disk(AtomicUsize);
+
+    impl Disk {
+        fn stat(&self, path: &str) -> Option<SystemTime> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            let n: u64 = path
+                .trim_end_matches(".md")
+                .rsplit('/')
+                .next()?
+                .parse()
+                .ok()?;
+            Some(SystemTime::UNIX_EPOCH + Duration::from_secs(n))
+        }
+
+        fn asked(&self) -> usize {
+            self.0.swap(0, Ordering::SeqCst)
+        }
+    }
+
+    #[test]
+    fn only_documents_written_since_the_last_list_are_asked_for_their_time() {
+        let tracker = Mutex::new(Tracker::new(Some(BTreeMap::new())));
+        {
+            let mut t = lock(&tracker);
+            t.begin_scan();
+            t.scanned((0..5000).map(|n| (format!("d/{n}.md"), n)).collect());
+        }
+        let disk = Disk(AtomicUsize::new(0));
+        let list = |disk: &Disk| list_of(&tracker, &|path| disk.stat(path));
+        let first = list(&disk);
+        assert_eq!(disk.asked(), 5000);
+        assert_eq!(first.unread.len(), 5000);
+        assert_eq!(first.unread[0], "d/4999.md", "newest first");
+        // nothing written since: the disk is not asked again, and the list comes quickly
+        let started = Instant::now();
+        assert_eq!(list(&disk), first);
+        assert_eq!(disk.asked(), 0);
+        assert!(started.elapsed() < Duration::from_millis(500));
+        // one document written: only it is asked
+        lock(&tracker).changed("d/7.md", 70_000, false);
+        let after = list(&disk);
+        assert_eq!(disk.asked(), 1);
+        assert_eq!(after.unread.len(), 5000);
+        // a moved one is asked under its new name; a gone one is forgotten
+        lock(&tracker).renamed("d/8.md", "e/8.md");
+        lock(&tracker).removed("d/9.md");
+        let after = list(&disk);
+        assert_eq!(disk.asked(), 1);
+        assert!(after.unread.contains(&"e/8.md".to_owned()));
+        assert!(!after.unread.contains(&"d/9.md".to_owned()));
+        // a new walk of the disk asks every document again
+        {
+            let mut t = lock(&tracker);
+            t.begin_scan();
+            t.scanned((0..10).map(|n| (format!("d/{n}.md"), n)).collect());
+        }
+        assert_eq!(list(&disk).unread.len(), 10);
+        assert_eq!(disk.asked(), 10);
     }
 }

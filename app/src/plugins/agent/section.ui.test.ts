@@ -21,6 +21,7 @@ const { conditions } = await import("../../core/conditions/context.svelte");
 const { agent } = await import("./store.svelte");
 const { AGENT_PAGE } = await import("./offer.svelte");
 const { default: AgentStatus } = await import("./AgentStatus.svelte");
+const { default: Notices } = await import("../../core/shell/Notices.svelte");
 const { t } = await import("../../core/i18n");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
@@ -97,6 +98,7 @@ afterEach(async () => {
   mock.probe.plugins.agent.fail(null);
   mock.probe.plugins.agent.connect(null);
   mock.probe.plugins.agent.refused.clear();
+  mock.probe.plugins.agent.rules(null);
   await store.changeSetting({ key: "pluginEnabled", value: { plugin: "agent", enabled: null } });
 });
 
@@ -135,7 +137,7 @@ describe("Settings > AI agents", () => {
     await until(() => text(target).includes("Off for this folder"), "state card");
     expect(text(target.querySelector(".title"))).toBe("AI agents");
     expect(text(target)).toContain(
-      "Agents connected this way only read and never edit files through PerMark",
+      "Agents connected this way never edit files through PerMark: they read, and mark your comments done only if you allow it.",
     );
     expect(text(target)).toContain("an agent can still open files on your computer by itself.");
     expect(text(target)).toContain("search and read this folder's files");
@@ -196,6 +198,31 @@ describe("Settings > AI agents", () => {
     shareSwitch().click();
     await until(() => text(target).includes("On · waiting for an agent"), "on");
     expect(text(target)).not.toContain("This folder changed since you connected it.");
+  });
+
+  it("names a rule file it could not read, why, and what stands in for it", async () => {
+    await open();
+    mock.probe.plugins.agent.rules({ file: ".aiignore", why: "locked", fallback: "lastGood" });
+    mountPage(AGENT_PAGE);
+    await until(() => target.querySelector(".rules") !== null, "the rules line");
+    const line = target.querySelector(".rules");
+    expect(text(line)).toBe(
+      "Couldn't read .aiignore: another program is using it. PerMark uses the last rules from it that worked until you fix it.",
+    );
+    expect(line?.classList.contains("lastGood")).toBe(true);
+    expect(line?.querySelector("svg")).not.toBeNull();
+    mock.probe.plugins.agent.rules({
+      file: ".permark/config.toml",
+      why: "notToml",
+      fallback: "closed",
+    });
+    await until(() => text(target).includes(".permark/config.toml"), "the closed line");
+    expect(text(target.querySelector(".rules"))).toBe(
+      "Couldn't read .permark/config.toml: it isn't valid TOML. Agents get nothing it covers until you fix it.",
+    );
+    expect(target.querySelector(".rules")?.classList.contains("closed")).toBe(true);
+    mock.probe.plugins.agent.rules(null);
+    await until(() => target.querySelector(".rules") === null, "the line gone");
   });
 
   it("names the connected client, and a server error with its reason and a mark (not color only)", async () => {
@@ -305,6 +332,31 @@ describe("Settings > AI agents", () => {
     expect(
       Array.from(target.querySelectorAll("button")).some((b) => text(b) === "Agent limits"),
     ).toBe(false);
+    mock.probe.shell.forgetInit();
+  });
+
+  it("the limits can't be changed while the folder's file does not read", async () => {
+    await open();
+    mock.probe.shell.teamFileBroken(MOCK_FOLDER, 3);
+    // the window hears of the folder being set up (its file stays broken)
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "set up");
+    mountPage(AGENT_PAGE);
+    await until(() => text(target).includes("Agent limits"), "the limits");
+    // the fold stays as the person left it last time
+    const fold = button("Agent limits");
+    if (fold.getAttribute("aria-expanded") === "false") fold.click();
+    flushSync();
+    await until(() => target.querySelector(".limits-rows") !== null, "unfolded");
+    const boxes = Array.from(
+      target.querySelectorAll<HTMLInputElement>(".limits-rows label.group input"),
+    );
+    expect(boxes.length).toBeGreaterThan(0);
+    expect(boxes.every((box) => box.disabled)).toBe(true);
+    expect(target.querySelector<HTMLInputElement>(".limits-rows .list input")?.disabled).toBe(true);
+    expect(target.querySelector(".limits-rows.off")).not.toBeNull();
+    expect(text(target)).not.toContain("Initialize PerMark to share this with everyone");
+    expect(text(target)).toContain("PerMark can't read .permark/config.toml");
     mock.probe.shell.forgetInit();
   });
 
@@ -472,5 +524,49 @@ describe("the connected agents", () => {
     flushSync();
     expect(target.querySelector(".popover")).toBeNull();
     expect(document.activeElement).toBe(chip());
+  });
+
+  it("Undo in the notice of a Disconnect keeps the popover open: the agent comes back into it", async () => {
+    await open();
+    await agent.setEnabled(true);
+    component = mount(AgentStatus, { target });
+    const notices = mount(Notices, { target, props: { store } });
+    try {
+      const probe = mock.probe.plugins.agent;
+      probe.connect("Zed", "sessionzzzz");
+      await until(() => target.querySelector(".chip") !== null, "the chip");
+      target.querySelector<HTMLButtonElement>(".chip")?.click();
+      flushSync();
+      await until(() => target.querySelector(".popover button[data-disconnect]") !== null, "row");
+      target.querySelector<HTMLButtonElement>(".popover button[data-disconnect]")?.click();
+      await until(() => agent.sessions.length === 0, "disconnected");
+      // the notices of earlier tests may still be up: this disconnect's own
+      const undo = await vi.waitFor(() => {
+        const notice = Array.from(target.querySelectorAll(".notice")).find((n) =>
+          text(n).includes("Zed disconnected."),
+        );
+        const found = Array.from(notice?.querySelectorAll("button") ?? []).find(
+          (b) => text(b) === t("fileOps.undo"),
+        );
+        if (!found) throw new Error("no Undo");
+        return found;
+      });
+      undo.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      undo.click();
+      flushSync();
+      expect(target.querySelector(".popover")).not.toBeNull();
+      await until(() => !probe.refused.has("sessionzzzz"), "the refusal lifted");
+      probe.connect("Zed", "sessionzzzz");
+      await until(
+        () => target.querySelector(".popover button[data-disconnect]") !== null,
+        "back in the popover",
+      );
+      // a press anywhere else still closes it
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      flushSync();
+      expect(target.querySelector(".popover")).toBeNull();
+    } finally {
+      await unmount(notices);
+    }
   });
 });

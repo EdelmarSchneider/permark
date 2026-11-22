@@ -1,8 +1,9 @@
-// The hand-off as the window runs it: ask the backend what would go (nothing new -> a quiet note, no dialog), let the
-// person pick sessions (each change asks again: sizes and what fits), confirm -> the backend freezes the package and
-// sets the checkpoint, the window copies one line (or the full list) and says how many actions went.
+// The hand-off as the window runs it: ask the backend what would go (nothing new -> a quiet note, no dialog; activity
+// withheld -> the dialog says why, nothing to confirm), let the person pick sessions (each change asks again: sizes
+// and what fits), confirm -> the backend freezes the package and sets the checkpoint, the window copies one line (or
+// the full list) and says how many actions went.
 
-import type { Result } from "../../api";
+import type { HandOffPreview, Result } from "../../api";
 import { t, tn } from "../../core/i18n";
 import { PluginClient, pluginClient } from "../../core/plugins/client";
 import { windowStore } from "../../core/window.svelte";
@@ -12,6 +13,8 @@ import { agent } from "./store.svelte";
 export type HandOffState =
   | { status: "closed" }
   | { status: "loading" }
+  // git tracks the private folder the journal lives in, or that could not be checked: nothing goes to agents
+  | { status: "withheld" }
   | { status: "open"; preview: Ready; full: boolean; phase: "idle" | "busy" | "failed" };
 
 export type Copy = (text: string) => Promise<void>;
@@ -52,6 +55,10 @@ export class HandOffStore {
       this.#note(t("agent.handoff.nothing"));
       return;
     }
+    if (result.value.state === "withheld") {
+      this.state = { status: "withheld" };
+      return;
+    }
     // without the connection the agent cannot ask PerMark: the full list is what helps
     this.state = {
       status: "open",
@@ -67,14 +74,15 @@ export class HandOffStore {
     if (s.status !== "open" || s.phase === "busy") return;
     const checked = toggled(s.preview, id);
     this.state = { ...s, phase: "busy" };
-    const result: Result<Ready | { state: "nothing" }> = await this.#client.call(
-      "agent.handOffPreview",
-      { checked },
-    );
+    const result: Result<HandOffPreview> = await this.#client.call("agent.handOffPreview", {
+      checked,
+    });
     const now = this.state;
     if (now.status !== "open") return;
     if (result.ok && result.value.state === "ready") {
       this.state = { ...now, preview: result.value, phase: "idle" };
+    } else if (result.ok && result.value.state === "withheld") {
+      this.state = { status: "withheld" };
     } else {
       this.state = { ...now, phase: "failed" };
     }
@@ -96,8 +104,13 @@ export class HandOffStore {
       checked,
     });
     if (!result.ok) {
+      // the refusal may be the activity turning withheld while the dialog was open: ask again, so the dialog says
+      // why instead of a bare failure
+      const again = await this.#client.call("agent.handOffPreview", { checked });
       const now = this.state;
-      if (now.status === "open") this.state = { ...now, phase: "failed" };
+      if (now.status !== "open") return;
+      if (again.ok && again.value.state === "withheld") this.state = { status: "withheld" };
+      else this.state = { ...now, phase: "failed" };
       return;
     }
     this.state = { status: "closed" };

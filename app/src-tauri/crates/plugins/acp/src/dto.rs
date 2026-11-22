@@ -1,17 +1,18 @@
 //! What the window and the plugin exchange: the agent's state and news, prompts, answers, the copy's changes.
 
 use permark_core::format::Block;
+use permark_core::projects::agent_view::RulesProblem;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-/// The copy's changes as last computed (at each turn's end | on `refresh`; a choice updates its own file): at most
-/// 500 files, by path.
+/// The copy's changes as last computed (at each turn's end | on `refresh`; a choice updates its own file): the first
+/// files by path, at most 500 and 8 MiB of lines.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct ChangeList {
     pub files: Vec<FileChange>,
-    /// Changed files past the first 500, not listed.
+    /// Changed files past the listed ones (500 files | 8 MiB of lines), not listed.
     pub more: u32,
 }
 
@@ -150,8 +151,13 @@ pub enum AcpErrorCode {
     TooLarge,
     /// The projects inside the folder (their rules on what agents may see) are not known yet: try again soon.
     ProjectsNotReady,
+    /// A rule file on what agents may see (`.aiignore`, `.permark/config.toml`) cannot be read and no last good rules
+    /// of it stand in: the agent gets nothing until the person fixes it ([`AcpStatus::rules`] names it).
+    RulesUnreadable,
     /// The agent's program could not be started.
     StartFailed,
+    /// The person did not allow the program of their own command to start (asked before its first start).
+    NotAllowed,
     /// The agent did not answer a step of its start | sign-in in time.
     TimedOut,
     /// The agent refused | garbled `initialize`.
@@ -237,6 +243,11 @@ pub struct AcpStatus {
     /// The running agent's settings the person may change (`acp.setOption`), as last told (`options` news); empty
     /// while no session is open.
     pub options: Vec<AcpConfigOption>,
+    /// A rule file on what agents may see that cannot be read now (absent: every one reads well): it stands on its
+    /// last good rules, or keeps the agent out of what it governs until the person fixes it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub rules: Option<RulesProblem>,
 }
 
 /// What an agent setting the window shows is about (the protocol's categories; any other is never shown).

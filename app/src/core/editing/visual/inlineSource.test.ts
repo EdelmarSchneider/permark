@@ -420,6 +420,20 @@ describe("an inline formula opened", () => {
     expect(core.view.state.selection.from).toBe(atomAt() + 1);
   });
 
+  it("Tab | Shift+Tab puts the caret after | before it, not on a link elsewhere in the page", async () => {
+    await load(TEXT);
+    let field = openAtom();
+    expect(key(field, "Tab", { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(atoms()[0]?.querySelector("input")).toBeNull();
+    expect(core.view.state.selection.from).toBe(atomAt());
+    field = openAtom();
+    expect(key(field, "Tab").defaultPrevented).toBe(true);
+    expect(core.view.state.selection.from).toBe(atomAt() + 1);
+    field = openAtom();
+    expect(key(field, "Tab", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(atoms()[0]?.querySelector("input")).toBe(field);
+  });
+
   it("display and code math keep their own delimiters", async () => {
     const text = "A $$x^2$$ and $`y`$ b.\n";
     const built = await load(text);

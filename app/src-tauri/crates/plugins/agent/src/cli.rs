@@ -40,12 +40,13 @@ pub fn discover(dirs: &AppDirs, start: &Path) -> Option<Root> {
     (!perms::load(&store).replaced(root.path())).then_some(root)
 }
 
-/// The nearest folder at or above `start` the person made a choice for (on, off or replaced since).
+/// The nearest folder at or above `start` the person made a choice for (on, off or replaced since). Profile files
+/// only: nothing is read in or recorded for the folders it passes.
 fn nearest_known(dirs: &AppDirs, start: &Path) -> Option<(Root, StateStore)> {
     let start = dunce_canonical(start)?;
     start.ancestors().find_map(|folder| {
         let root = Root::open(folder).ok()?;
-        let store = StateStore::for_project(dirs, &root);
+        let store = StateStore::profile_only(dirs, &root);
         perms::known(&store).then_some((root, store))
     })
 }
@@ -64,7 +65,7 @@ fn connected_below(dirs: &AppDirs, start: &Path) -> Vec<String> {
         .filter_map(|recent| Root::open(Path::new(&recent.path)).ok())
         .filter_map(|root| {
             let rel = folder_in(&start, root.path()).filter(|rel| !rel.is_empty())?;
-            perms::load(&StateStore::for_project(dirs, &root))
+            perms::load(&StateStore::profile_only(dirs, &root))
                 .is_on(root.path())
                 .then(|| format!("{rel}/"))
         })
@@ -96,6 +97,8 @@ pub struct Agent {
     outside: Option<Vec<String>>,
     launcher: Launcher,
     launch_wait: Duration,
+    /// How long a tool call waits for the app's answer.
+    call_timeout: Duration,
     repair_every: Duration,
     /// The held connection that shows the app an agent is here (dropping it ends the session).
     session: Mutex<Option<Stream>>,
@@ -146,6 +149,7 @@ impl Agent {
             outside,
             launcher,
             launch_wait: LAUNCH_WAIT,
+            call_timeout: crate::tools::CALL_TIMEOUT,
             repair_every: REPAIR_EVERY,
             session: Mutex::new(None),
             opening: Mutex::new(()),
@@ -183,6 +187,13 @@ impl Agent {
     #[must_use]
     pub fn with_launch_wait(mut self, wait: Duration) -> Self {
         self.launch_wait = wait;
+        self
+    }
+
+    /// How long a tool call waits for the app's answer (tests: shorter).
+    #[must_use]
+    pub fn with_call_timeout(mut self, timeout: Duration) -> Self {
+        self.call_timeout = timeout;
         self
     }
 
@@ -278,18 +289,20 @@ impl Agent {
         }
     }
 
+    /// One call to the app, waiting up to `timeout` for its answer.
     fn proxy(
         &self,
         endpoint: &Endpoint,
         tool: &str,
         args: &Value,
+        timeout: Duration,
     ) -> Result<Result<Value, ToolError>, IpcLocalError> {
         let request = Request::Call {
             tool: tool.to_owned(),
             args: args.clone(),
             session: Some(self.id.clone()),
         };
-        match ipc_local::request::<_, Response>(endpoint, &request)? {
+        match ipc_local::request_within::<_, Response>(endpoint, &request, timeout)? {
             Response::Ok { value } => {
                 self.note(Ok(()));
                 Ok(Ok(value))
@@ -321,7 +334,7 @@ impl Agent {
             .endpoint
             .as_ref()
             .map_err(|why| ToolError::Failed(why.clone()))?;
-        match self.proxy(endpoint, tool, args) {
+        match self.proxy(endpoint, tool, args, self.call_timeout) {
             Ok(answer) => {
                 if self.is_disconnected() {
                     // the app already closed its end
@@ -344,6 +357,8 @@ impl Agent {
             Err(IpcLocalError::Untrusted(why)) => Err(ToolError::Failed(format!(
                 "the program listening for this project is not this user's PerMark ({why})"
             ))),
+            // the app took longer than every wait of a call: busy (starting up, a slow disk), worth a retry
+            Err(IpcLocalError::NoAnswer(_)) => Err(ToolError::Busy),
             Err(other) => Err(ToolError::Failed(other.to_string())),
         }
     }
@@ -361,7 +376,9 @@ impl Agent {
             .map_err(|e| ToolError::Failed(format!("PerMark could not be started: {e}")))?;
         let deadline = Instant::now() + self.launch_wait;
         loop {
-            match self.proxy(endpoint, "open", args) {
+            // each try fits what is left of the launch wait: an app slow to answer never stretches it by a whole call
+            let left = deadline.saturating_duration_since(Instant::now());
+            match self.proxy(endpoint, "open", args, self.call_timeout.min(left)) {
                 Ok(Ok(mut value)) => {
                     if let Some(map) = value.as_object_mut() {
                         map.insert("started".to_owned(), json!(true));
@@ -434,5 +451,7 @@ pub fn launch_app(project: &Path) -> io::Result<()> {
     permark_core::process::spawn_detached(
         &program,
         &[std::ffi::OsStr::new("--"), project.as_os_str()],
+        None,
+        permark_core::process::Console::Without,
     )
 }

@@ -5,12 +5,14 @@ import type { DocumentView } from "../../api";
 import { ui } from "../shell/ui.svelte";
 import { editing, type EditKind, type EditMode } from "./session.svelte";
 
-/** Why the open document cannot be edited (`null`: it can; no document on screen yet: `noViewer`). */
+/** Why the open document cannot be edited (`null`: it can; no document on screen yet: `noViewer`; a hold of a
+ *  plugin: its reason). */
 export function editBlockedReason(): string | null {
   // not the previous file's view while the next one loads: an editor chosen from it would be the wrong kind
   const view = documents.current;
   if (view === null) return "noViewer";
-  return view.editable.editable === "readOnly" ? view.editable.reason : null;
+  if (view.editable.editable === "readOnly") return view.editable.reason;
+  return editing.blockedBy(view.path);
 }
 
 /** What Edit is for a document: the visual editor, the sheet, or nothing (Source only). */
@@ -50,7 +52,11 @@ export function openRemembered(): void {
   // the editor is already on this document
   if (editing.path === shown) return;
   if (editBlockedReason() !== null) return;
-  void editing.enter(mode, shown, editKindOf(view), documents.savePolicy, undefined, !inTree());
+  // a place asked for the document (a code reference, a search hit): the editor starts there, not at the page's top,
+  // and shows it tinted as the page would
+  const at = documents.askedLine() ?? undefined;
+  const located = at !== undefined;
+  void editing.enter(mode, shown, editKindOf(view), documents.savePolicy, at, !inTree(), located);
 }
 
 /** The keyboard is in the Explorer's tree (a click | Enter on a row opened the document): it stays there, as it does

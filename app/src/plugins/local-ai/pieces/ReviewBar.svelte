@@ -58,7 +58,8 @@
   // "all reviewed". Nothing sent because the editor cannot change any part of the scope: that note, not the plugin's
   // "nothing here".
   // The excerpt = a button: click | Enter -> the suggestion selected in the text (an excerpt with controls of its
-  // own stands without it: `excerptAs`). One polite live region: the phase, then the count + the current
+  // own stands without it: `excerptAs`); it reads the text as the editor on screen shows it (`PieceReview.shown`) and
+  // always takes the height of its three lines. One polite live region: the phase, then the count + the current
   // suggestion. A focused button turned off -> the keyboard to Cancel (running) | Done.
   // Keys inside the bar: A | R, Shift+A | Shift+R, Esc (Done, back to the editor). The bar carries its plugin's name
   // (`data-<plugin>`: correction's = `data-correction`).
@@ -90,6 +91,8 @@
   const busy = $derived(review !== null && running(review.status));
   const count = $derived(review?.suggestions.length ?? 0);
   const current = $derived(review?.suggestions[review.at] ?? null);
+  /** The current suggestion with its excerpt as the editor on screen shows the text. */
+  const excerptOf = $derived(current === null ? null : store.shown(current));
   /** What the live region says: the phase (not each part checked; a failure speaks as an alert), the current step. */
   const announced = $derived.by(() => {
     if (review === null) return "";
@@ -247,9 +250,9 @@
           >
         {/if}
       </div>
-      {#if current !== null && excerptAs === "own"}
-        {@render excerpt(current)}
-      {:else if current !== null}
+      {#if excerptOf !== null && excerptAs === "own"}
+        {@render excerpt(excerptOf)}
+      {:else if excerptOf !== null}
         <button
           type="button"
           class="excerpt"
@@ -258,7 +261,7 @@
           aria-label={t(labels.show)}
           onclick={() => store.show()}
         >
-          <span aria-hidden="true">{@render excerpt(current)}</span>
+          <span aria-hidden="true">{@render excerpt(excerptOf)}</span>
         </button>
       {/if}
       {#if review.locked > 0}
@@ -384,7 +387,6 @@
     color: var(--text);
   }
   .excerpt {
-    display: -webkit-box;
     margin: 0 calc(-1 * var(--sp-1));
     padding: 0 var(--sp-1);
     border: 0;
@@ -393,14 +395,22 @@
     font: inherit;
     text-align: start;
     cursor: pointer;
-    overflow: hidden;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
     color: var(--text);
     font-size: var(--fs-ui);
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+  }
+  /* cut to three lines and as tall as three whatever the current suggestion needs: the bar keeps its height when
+     another one becomes current, so the text under it stays under the pointer (on the button's content: a button
+     centers what is shorter than itself) */
+  .excerpt > span {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    line-height: 1.45;
+    min-height: calc(3 * 1.45em);
   }
   .excerpt:hover {
     background: var(--hover);

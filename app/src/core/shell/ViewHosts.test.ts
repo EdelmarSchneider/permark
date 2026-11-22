@@ -403,7 +403,9 @@ describe("a region", () => {
   it("at the bottom its divider moves the widths: the shares are saved", async () => {
     await show();
     arrange([[FILES, SEARCH]], [], [[PROBE], [OTHER]]);
-    const bar = document.querySelector<HTMLElement>('[data-region="bottom"] [role="separator"]');
+    const bar = document.querySelector<HTMLElement>(
+      '[data-region="bottom"] [role="separator"]:not([data-side])',
+    );
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
       width: 400,
       height: 240,
@@ -419,7 +421,8 @@ describe("a region", () => {
     arrange([[FILES]], [], [[SEARCH], [PROBE], [OTHER]]);
     const need = 3 * MIN_GROUP_PX + 2 * DIVIDER_PX;
     const separators = (): number =>
-      document.querySelectorAll('[data-region="bottom"] [role="separator"]').length;
+      document.querySelectorAll('[data-region="bottom"] [role="separator"]:not([data-side])')
+        .length;
     expect(separators()).toBe(2);
     arrangement.setSize("bottom", need - 1);
     flushSync();
@@ -476,6 +479,33 @@ describe("a region", () => {
     await tick();
     await tick();
     expect(said()[0]?.textContent).toBe("Outline moved down");
+  });
+});
+
+describe("a view shown from the palette", () => {
+  it("takes the keyboard once it is drawn again, after the palette gave it back (its options, in its own header)", async () => {
+    await show();
+    const { closeView } = await import("./sides");
+    const { ContributionRegistry } = await import("../plugins/registry.svelte");
+    const { registerViewCommands } = await import("./viewsMenu.svelte");
+    const registry = new ContributionRegistry();
+    const off = registerViewCommands(registry);
+    flushSync();
+    closeView(PROBE);
+    flushSync();
+    expect(slot(PROBE)).toBeNull();
+    // what the palette gives the keyboard back to as it closes
+    const before = document.createElement("button");
+    document.body.append(before);
+    before.focus();
+    await registry
+      .of("command")
+      .find((c) => c.id === `view.show.${PROBE}`)
+      ?.run();
+    const options = slot(PROBE)?.querySelector<HTMLElement>(`[data-view-menu="${PROBE}"]`);
+    expect(options).toBeTruthy();
+    expect(document.activeElement).toBe(options);
+    off();
   });
 });
 

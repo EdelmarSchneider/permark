@@ -18,6 +18,7 @@ const { ContributionRegistry, PluginHost, pluginLoaders, CORE_OWNER } =
   await import("../../core/plugins/registry.svelte");
 const { contributions } = await import("../../core/plugins/instance.svelte");
 const { ConvertStore, converter } = await import("./store.svelte");
+const { documents } = await import("../../core/doc/document.svelte");
 const model = await import("./model");
 const { default: ConvertDialog } = await import("./ConvertDialog.svelte");
 const { default: CodeBlock } = await import("../highlight/CodeBlock.svelte");
@@ -65,6 +66,121 @@ describe("what the plugin adds", () => {
     expect(menu?.applies("data", true)).toBe(false);
     expect(host.disable("convert"), "contributions left after deactivate").toBe(0);
     expect(registry.items).toHaveLength(0);
+  });
+});
+
+describe("the palette command", () => {
+  function select(node: Node): void {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const selection = document.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }
+
+  it("converts the selection of the page; text selected anywhere else leaves the file as the source", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    await host.enable("convert");
+    const command = registry.of("command").find((c) => c.id === "convert.open");
+    if (command === undefined) throw new Error("no command");
+    const shown = vi.spyOn(documents, "path", "get").mockReturnValue("data/users.json");
+    const open = vi.spyOn(converter, "open").mockImplementation(() => {});
+    try {
+      const panel = document.createElement("div");
+      panel.textContent = '{"in":"a panel"}';
+      const block = document.createElement("p");
+      block.setAttribute("data-b", "b1");
+      block.textContent = '{"in":"the page"}';
+      document.body.append(panel, block);
+
+      select(panel);
+      void command.run();
+      expect(open).toHaveBeenLastCalledWith({ kind: "file", path: "data/users.json" });
+
+      select(block);
+      void command.run();
+      expect(open).toHaveBeenLastCalledWith({
+        kind: "text",
+        text: '{"in":"the page"}',
+        language: null,
+        beside: "data/users.json",
+      });
+
+      // a document that is not data and a selection outside the page: nothing to convert
+      shown.mockReturnValue("notes/today.md");
+      select(panel);
+      expect(command.when?.()).toBe(false);
+    } finally {
+      document.getSelection()?.removeAllRanges();
+      shown.mockRestore();
+      open.mockRestore();
+      host.disable("convert");
+    }
+  });
+
+  it("is offered in the palette for the page selection its field took the focus from, and runs on it", async () => {
+    const { ui } = await import("../../core/shell/ui.svelte");
+    const { host: plugins } = await import("../../core/plugins/instance.svelte");
+    const { default: Finder } = await import("../../core/search/Finder.svelte");
+    const { selectionForCommand } = await import("../../core/doc/selection");
+    Element.prototype.scrollIntoView = () => {};
+    await plugins.enable("convert");
+    const shown = vi.spyOn(documents, "path", "get").mockReturnValue("notes/today.md");
+    const open = vi.spyOn(converter, "open").mockImplementation(() => {});
+    const text = '{"in":"the page"}';
+    try {
+      const block = document.createElement("p");
+      block.setAttribute("data-b", "b1");
+      block.textContent = text;
+      const target = document.createElement("div");
+      document.body.append(block, target);
+      // the webview moves the selection into the box's field when it takes the focus: the page has none left
+      const typeIn = (): void => document.getSelection()?.removeAllRanges();
+
+      select(block);
+      ui.openFinder("commands");
+      component = mount(Finder, { target, props: { preset: "commands" } });
+      flushSync();
+      typeIn();
+      const input = target.querySelector<HTMLInputElement>("input.field");
+      if (!input) throw new Error("no field");
+      input.value = "convert";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      flushSync();
+      await tick();
+      const rows = Array.from(target.querySelectorAll(".row"), (r) => r.textContent ?? "");
+      expect(rows[0], rows.join(" | ")).toContain("Convert…");
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+      expect(ui.finder.status).toBe("closed");
+      expect(open).toHaveBeenLastCalledWith({
+        kind: "text",
+        text,
+        language: null,
+        beside: "notes/today.md",
+      });
+      // the box is gone and its command ran: nothing of the kept selection is left
+      await tick();
+      expect(selectionForCommand()).toBeNull();
+
+      // another face of the box keeps it; closed without a command, it is let go
+      select(block);
+      ui.openFinder("commands");
+      typeIn();
+      ui.openFinder("everywhere");
+      expect(selectionForCommand()?.text).toBe(text);
+      ui.closeFinder();
+      await tick();
+      expect(selectionForCommand()).toBeNull();
+    } finally {
+      ui.closeFinder();
+      document.getSelection()?.removeAllRanges();
+      shown.mockRestore();
+      open.mockRestore();
+      plugins.disable("convert");
+    }
   });
 });
 
@@ -327,6 +443,86 @@ describe("the table button", () => {
     expect(opened).toEqual(['a,b\n1,"x, y"\n']);
     stop();
     expect(document.querySelector(".pm-convert-table")).toBeNull();
+  });
+
+  it("shows for the keyboard too: focus inside a table brings it, focus leaving the table takes it away", async () => {
+    const { decorateTables } = await import("./tables");
+    const root = document.createElement("div");
+    root.innerHTML =
+      '<p><a href="#a" id="out">out</a></p><table><tr><th>a</th></tr><tr><td><a href="#b" id="in">1</a></td></tr></table>';
+    document.body.append(root);
+    const stop = decorateTables(root, () => {});
+    const button = document.querySelector<HTMLButtonElement>(".pm-convert-table");
+    const inside = root.querySelector<HTMLElement>("#in");
+    const outside = root.querySelector<HTMLElement>("#out");
+    expect(button?.hidden).toBe(true);
+    inside?.focus();
+    expect(button?.hidden).toBe(false);
+    outside?.focus();
+    expect(button?.hidden).toBe(true);
+    // a table a plugin draws inside the page (a TOON block's sheet) is not offered
+    root.innerHTML =
+      '<div class="sheet"><table><tr><td><a href="#c" id="sheet">c</a></td></tr></table></div>';
+    root.querySelector<HTMLElement>("#sheet")?.focus();
+    expect(button?.hidden).toBe(true);
+    stop();
+  });
+
+  it("the palette's Convert table takes the table holding the selection, and is not offered without one", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    await host.enable("convert");
+    try {
+      const command = registry.of("command").find((c) => c.id === "convert.table");
+      const decoration = registry.of("docDecoration").find((c) => c.id === "convert.tables");
+      if (!command || !decoration) throw new Error("no table command | decoration");
+      expect(command.label).toBe("convert.tableCommand");
+      const page = document.createElement("div");
+      page.innerHTML =
+        "<p id='p'>text</p><table><tr><th>a</th><th>b</th></tr><tr><td id='cell'>1</td><td>2</td></tr></table>";
+      document.body.append(page);
+      const field = document.createElement("input");
+      document.body.append(field);
+      const stop = decoration.decorate(page);
+      const select = (node: Node): void => {
+        document.getSelection()?.collapse(node, 0);
+        document.dispatchEvent(new Event("selectionchange"));
+      };
+      expect(command.when?.()).toBe(false);
+      const cell = page.querySelector("#cell")?.firstChild;
+      if (!cell) throw new Error("no cell");
+      select(cell);
+      expect(command.when?.()).toBe(true);
+      // the palette's field takes the selection: the table it was in stays the one meant
+      select(field);
+      expect(command.when?.()).toBe(true);
+      await command.run();
+      const state = converter.state;
+      expect(state.status === "closed" ? null : state.origin).toEqual({
+        kind: "text",
+        text: "a,b\n1,2\n",
+        language: "csv",
+        beside: null,
+      });
+      // a selection elsewhere in the page: no table, nothing offered
+      const para = page.querySelector("#p")?.firstChild;
+      if (!para) throw new Error("no paragraph");
+      select(para);
+      expect(command.when?.()).toBe(false);
+      // a click in a cell counts at once, before its selectionchange (a shortcut pressed right after it)
+      cell.parentElement?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+      expect(command.when?.()).toBe(true);
+      select(para);
+      // a page hidden behind the editor offers none of its tables
+      select(cell);
+      page.hidden = true;
+      expect(command.when?.()).toBe(false);
+      page.hidden = false;
+      stop();
+      expect(command.when?.()).toBe(false);
+    } finally {
+      host.disable("convert");
+    }
   });
 });
 

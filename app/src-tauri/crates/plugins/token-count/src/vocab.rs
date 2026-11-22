@@ -340,7 +340,9 @@ impl VocabStore {
             return;
         }
         match self.engine(encoding) {
-            Some((downloads, unit)) => downloads.enqueue(unit.clone()),
+            Some((downloads, unit)) => {
+                downloads.enqueue(unit.clone());
+            }
             None => {
                 self.apply(encoding, Event::Failed(VocabFailure::Offline));
             }

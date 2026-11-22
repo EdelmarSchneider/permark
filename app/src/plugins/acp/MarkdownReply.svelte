@@ -3,7 +3,8 @@
   // line follows it, or the turn ended): the plugin's backend renders it once through the documents' Markdown pipeline,
   // and its sanitized blocks are drawn as the export builder draws blocks off the page (template, enhance, embeds near
   // each block) under the reading view's classes, in the panel's size. An answer for text no longer shown is dropped; a
-  // render that fails leaves the text. The last message never shrinks under the reader at the swap (that floor goes once
+  // render that fails leaves the text. A message that came whole (a continued conversation replayed) shows an empty
+  // line until its blocks, never its raw markup first (its text only if the render fails). The last message never shrinks under the reader at the swap (that floor goes once
   // another line follows it). A click never navigates the window: web links open in the person's browser, project links
   // and code references open the file at the line, a link to a note of the message scrolls to it; a picture on the web
   // stays an inert chip (a reply never fetches it). Its headings sit below the panel's own (h4 and deeper), each keeping
@@ -31,15 +32,22 @@
     final: boolean;
     /** The message is the conversation's last line: only then does it keep the plain text's height. */
     last?: boolean;
+    /** The message came whole (replayed): no plain text before its blocks, only if the render fails. */
+    quiet?: boolean;
   };
-  let { text, final, last = false }: Props = $props();
+  let { text, final, last = false, quiet = false }: Props = $props();
 
   /** The document the backend renders a message as: links and code references resolve from the project root. */
   const DOC = "assistant.md";
 
+  /** What the backend answered for the text it was asked for: its blocks, or none (the render failed). */
+  type Answer =
+    | { status: "drawn"; text: string; blocks: readonly Block[] }
+    | { status: "failed"; text: string };
+
   let plain = $state<HTMLElement>();
-  /** The last answer, for the text it was asked for. */
-  let answer = $state.raw<{ text: string; blocks: readonly Block[] } | null>(null);
+  /** The last answer. */
+  let answer = $state.raw<Answer | null>(null);
   /** Height of the plain text at the swap (px): the rendered message is at least as tall. */
   let floor = $state(0);
   /** Counts the asks: an answer to an earlier one is dropped. */
@@ -47,7 +55,10 @@
   /** The decorator of the blocks on screen (`null`: none drawn). */
   let decorator: Decorator | null = null;
 
-  const shown = $derived(final && answer?.text === text ? answer.blocks : null);
+  const shown = $derived(
+    final && answer?.status === "drawn" && answer.text === text ? answer.blocks : null,
+  );
+  const failed = $derived(answer?.status === "failed" && answer.text === text);
   const embeds = $derived(contributions.visible("embed", conditions.current));
   const lookup: EmbedLookup = $derived(
     (language) => embeds.find((e) => e.language === language)?.view,
@@ -57,18 +68,22 @@
   $effect(() => {
     if (!final) return;
     const asked = text;
-    if (untrack(() => answer?.text) === asked) return;
+    const before = untrack(() => answer);
+    if (before?.status === "drawn" && before.text === asked) return;
     const turn = generation;
-    acp.render(asked).then(
-      (blocks) => {
-        if (turn !== generation || blocks === null) return;
-        floor = plain?.offsetHeight ?? 0;
-        answer = { text: asked, blocks };
-      },
-      () => {
-        // the plain text stays
-      },
-    );
+    // a failed render leaves the plain text (a quiet message shows it from then on)
+    const fail = (): void => {
+      if (turn === generation) answer = { status: "failed", text: asked };
+    };
+    acp.render(asked).then((blocks) => {
+      if (turn !== generation) return;
+      if (blocks === null) {
+        fail();
+        return;
+      }
+      floor = plain?.offsetHeight ?? 0;
+      answer = { status: "drawn", text: asked, blocks };
+    }, fail);
     return () => {
       generation += 1;
     };
@@ -212,6 +227,8 @@
     {onkeydown}
     {@attach draw(shown)}
   ></div>
+{:else if quiet && !failed}
+  <div class="pending" aria-busy="true"></div>
 {:else}
   <p class="text" bind:this={plain}>{text}</p>
 {/if}
@@ -223,6 +240,10 @@
     line-height: 1.5;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+  /* one line of the plain text held while the blocks come */
+  .pending {
+    min-height: calc(var(--fs-ui-sm) * 1.5);
   }
   /* the reading view's look in the panel's size: no column width, no page margins, tighter steps */
   .reply {

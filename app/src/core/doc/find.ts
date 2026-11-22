@@ -39,7 +39,43 @@ export function* offsetsOf(text: string, needle: string): Generator<number> {
   }
 }
 
-/** Every match of `query` (case-insensitive) in the text nodes under `root`, in document order. */
+/**
+ * Elements whose text never runs into the text around them: a match stays inside one, like the editor's text blocks.
+ * Lowercase `text` = a drawing's label (SVG keeps the case of its tag names), so two labels never join.
+ */
+const BLOCKS = new Set([
+  "P",
+  "LI",
+  "TD",
+  "TH",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "DT",
+  "DD",
+  "FIGCAPTION",
+  "BLOCKQUOTE",
+  "PRE",
+  "DIV",
+  "text",
+]);
+
+/** The nearest element above `node` whose text stands apart (`root` when none is). */
+function blockOf(node: Node, root: HTMLElement): Element {
+  for (let el = node.parentElement; el !== null && el !== root; el = el.parentElement) {
+    if (BLOCKS.has(el.tagName)) return el;
+  }
+  return root;
+}
+
+/**
+ * Every match of `query` (case-insensitive) in the text under `root`, in document order. The text nodes of one block
+ * are searched as one string (bold, a link, a highlighted code token split a phrase into nodes, not into pieces), so a
+ * range may start and end in different nodes; a line break, another block or the block's end ends the run.
+ */
 export function findIn(root: HTMLElement, query: string, limit = FIND_LIMIT): Found {
   const needle = foldCase(query);
   const ranges: Range[] = [];
@@ -50,20 +86,61 @@ export function findIn(root: HTMLElement, query: string, limit = FIND_LIMIT): Fo
       if (node instanceof Element && (SKIPPED.has(node.tagName) || node.hasAttribute("hidden"))) {
         return NodeFilter.FILTER_REJECT;
       }
-      return NodeFilter.FILTER_SKIP;
+      return node instanceof Element && node.tagName === "BR"
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_SKIP;
     },
   });
-  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-    const text = node.textContent ?? "";
-    for (const at of offsetsOf(text, needle)) {
-      if (ranges.length >= limit) return { ranges, capped: true };
+  // the run: its text nodes, where each starts in the joined text, the joined text
+  let nodes: Text[] = [];
+  let starts: number[] = [];
+  let joined = "";
+  let block: Element | null = null;
+  // text nodes next to each other mostly share a parent: its block is looked up once
+  let parent: Node | null = null;
+  const flush = (): boolean => {
+    let at = 0;
+    for (const start of offsetsOf(joined, needle)) {
+      if (ranges.length >= limit) return false;
+      const end = start + needle.length;
+      // matches come in order: the node holding the start only moves forward
+      while (at + 1 < nodes.length && (starts[at + 1] ?? Infinity) <= start) at += 1;
+      let last = at;
+      while (last + 1 < nodes.length && (starts[last + 1] ?? Infinity) < end) last += 1;
+      const first = nodes[at];
+      const final = nodes[last];
+      if (first === undefined || final === undefined) break;
       const range = document.createRange();
-      range.setStart(node, at);
-      range.setEnd(node, at + needle.length);
+      range.setStart(first, start - (starts[at] ?? 0));
+      range.setEnd(final, end - (starts[last] ?? 0));
       ranges.push(range);
     }
+    nodes = [];
+    starts = [];
+    joined = "";
+    return true;
+  };
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    if (!(node instanceof Text)) {
+      if (!flush()) return { ranges, capped: true };
+      block = null;
+      parent = null;
+      continue;
+    }
+    if (node.data === "") continue;
+    if (node.parentNode !== parent) {
+      parent = node.parentNode;
+      const around = blockOf(node, root);
+      if (around !== block) {
+        if (!flush()) return { ranges, capped: true };
+        block = around;
+      }
+    }
+    nodes.push(node);
+    starts.push(joined.length);
+    joined += node.data;
   }
-  return { ranges, capped: false };
+  return flush() ? { ranges, capped: false } : { ranges, capped: true };
 }
 
 /** Scrolls `pane` so a match (`box`, in viewport pixels) near or past its edges stands a third down. */

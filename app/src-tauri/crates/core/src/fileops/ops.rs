@@ -6,6 +6,7 @@
 //! would follow a link to its target (moving the target instead of the link) and, for a case-only rename on Windows,
 //! hand back the old spelling of the name.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -67,12 +68,68 @@ pub(crate) fn is_protected(path: &VaultPath) -> bool {
         || rel.split('/').any(|part| fold(part) == ".git")
 }
 
+/// An undo may change this path: not a root, not protected, nothing inside a `.permark` folder at any depth (a
+/// member project's state too). The forward operations keep [`is_protected`]: a person may still move a member's
+/// `.permark` contents, only an undo never does.
+pub(crate) fn undoable(path: &VaultPath) -> bool {
+    !is_root_path(path)
+        && !is_protected(path)
+        && !below_root(path.as_str())
+            .split('/')
+            .any(|part| fold(part) == ".permark")
+}
+
 /// Absolute place of a project path: its parent folder is resolved (links followed, escape refused), the name joined.
 pub(crate) fn locate(vault: &Vault, path: &VaultPath) -> Result<PathBuf, FileOpError> {
+    locate_by(path, |parent| Ok(vault.resolve(parent)?))
+}
+
+/// [`locate`] with the parent folder resolved by `resolve`.
+fn locate_by(
+    path: &VaultPath,
+    resolve: impl FnOnce(&VaultPath) -> Result<PathBuf, FileOpError>,
+) -> Result<PathBuf, FileOpError> {
     let (Some(parent), Some(name)) = (path.parent(), path.name()) else {
         return Err(FileOpError::Protected(path.to_string()));
     };
-    Ok(vault.resolve(&parent)?.join(name))
+    Ok(resolve(&parent)?.join(name))
+}
+
+/// [`locate`] for an undo: the path as written and the place it leads to both pass [`undoable`]. A folder on the way
+/// swapped for a link into `.git` or a state folder of the project would otherwise turn a sealed entry into a change
+/// there; a place no root holds is refused too.
+pub(crate) fn locate_undoable(vault: &Vault, path: &VaultPath) -> Option<PathBuf> {
+    if !undoable(path) {
+        return None;
+    }
+    let abs = locate(vault, path).ok()?;
+    vault
+        .relativize(&abs)
+        .is_some_and(|real| undoable(&real))
+        .then_some(abs)
+}
+
+/// Folders looked up during one check of many paths: thousands of items dragged out of | into one folder resolve it
+/// once, not once per item. Keyed by the path as written: two spellings may be two folders where names keep their
+/// case. Lives for one check only; the disk is not changed while it runs.
+#[derive(Default)]
+struct Folders(HashMap<String, PathBuf>);
+
+impl Folders {
+    /// [`Vault::resolve`] of `folder`; an error is not kept (a check ends at its first error).
+    fn resolve(&mut self, vault: &Vault, folder: &VaultPath) -> Result<PathBuf, FileOpError> {
+        if let Some(abs) = self.0.get(folder.as_str()) {
+            return Ok(abs.clone());
+        }
+        let abs = vault.resolve(folder)?;
+        self.0.insert(folder.as_str().to_owned(), abs.clone());
+        Ok(abs)
+    }
+
+    /// [`locate`] through the folders already looked up.
+    fn locate(&mut self, vault: &Vault, path: &VaultPath) -> Result<PathBuf, FileOpError> {
+        locate_by(path, |parent| self.resolve(vault, parent))
+    }
 }
 
 /// Last look before the disk is touched: `abs` is a place strictly inside the root `root` is the index of.
@@ -110,6 +167,7 @@ pub(crate) fn check_moves(
         return Err(FileOpError::Nothing);
     }
     let mut valid = Vec::with_capacity(moves.len());
+    let mut folders = Folders::default();
     for (from, to) in moves {
         for path in [from, to] {
             if is_root_path(path) || is_protected(path) {
@@ -127,8 +185,8 @@ pub(crate) fn check_moves(
         }
         let name = to.name().unwrap_or("");
         check_name(name).map_err(FileOpError::InvalidName)?;
-        let abs_from = locate(vault, from)?;
-        let abs_to = locate(vault, to)?;
+        let abs_from = folders.locate(vault, from)?;
+        let abs_to = folders.locate(vault, to)?;
         confine(vault, from_root, &abs_from)?;
         confine(vault, to_root, &abs_to)?;
         let meta = fs::symlink_metadata(&abs_from).map_err(|e| io_error(from, e))?;
@@ -152,7 +210,7 @@ pub(crate) fn check_moves(
         }
         let parent_ok = to
             .parent()
-            .and_then(|p| vault.resolve(&p).ok())
+            .and_then(|p| folders.resolve(vault, &p).ok())
             .is_some_and(|p| fs::metadata(p).is_ok_and(|m| m.is_dir()));
         if !parent_ok {
             return Err(FileOpError::Vault(crate::paths::VaultError::NotFound(
@@ -176,19 +234,67 @@ pub(crate) fn check_moves(
 /// The moves of one operation must not step on each other. Destinations are compared without regard to case on
 /// every system: on a case-insensitive volume `Plan.md` and `plan.md` are one file, and which kind of volume a
 /// folder is on is not known from here.
-fn check_together(moves: &[ValidMove]) -> Result<(), FileOpError> {
-    for (at, a) in moves.iter().enumerate() {
-        for b in &moves[at + 1..] {
-            if a.from.is_within(&b.from) || b.from.is_within(&a.from) {
-                return Err(FileOpError::Overlap(a.from.to_string()));
-            }
-            let (ta, tb) = (a.to.key().to_lowercase(), b.to.key().to_lowercase());
-            if ta == tb || ta.starts_with(&format!("{tb}/")) || tb.starts_with(&format!("{ta}/")) {
-                return Err(FileOpError::Overlap(a.to.to_string()));
-            }
+///
+/// The refusal names what a look at every pair in order would: the first move that clashes with a later one, by its
+/// source when the sources clash, else by its destination. Keys are made once per move and each move looks up only
+/// its own folders, so thousands of items cost about their count, not its square.
+pub(super) fn check_together(moves: &[ValidMove]) -> Result<(), FileOpError> {
+    let froms: Vec<String> = moves.iter().map(|m| m.from.key()).collect();
+    let tos: Vec<String> = moves.iter().map(|m| m.to.key().to_lowercase()).collect();
+    let Some(first) = first_clash(&froms)
+        .into_iter()
+        .chain(first_clash(&tos))
+        .min()
+    else {
+        return Ok(());
+    };
+    let clashes = |keys: &[String], later: usize| same_or_nested(&keys[first], &keys[later]);
+    let later =
+        (first + 1..moves.len()).find(|&later| clashes(&froms, later) || clashes(&tos, later));
+    let m = &moves[first];
+    Err(FileOpError::Overlap(
+        if later.is_some_and(|later| clashes(&froms, later)) {
+            m.from.to_string()
+        } else {
+            m.to.to_string()
+        },
+    ))
+}
+
+/// One path, or one inside the other (whole segments).
+fn same_or_nested(a: &str, b: &str) -> bool {
+    a == b || is_below(a, b) || is_below(b, a)
+}
+
+fn is_below(path: &str, folder: &str) -> bool {
+    path.strip_prefix(folder)
+        .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// The folders a key passes through, nearest first: each part that ends right before a `/`.
+fn folders_of(key: &str) -> impl Iterator<Item = &str> {
+    key.rmatch_indices('/').map(move |(at, _)| &key[..at])
+}
+
+/// The first position whose key is the same as, inside or around the key at a later position.
+fn first_clash(keys: &[String]) -> Option<usize> {
+    // key -> first position holding it; folder key -> first position inside it
+    let mut holding: HashMap<&str, usize> = HashMap::with_capacity(keys.len());
+    let mut inside: HashMap<&str, usize> = HashMap::new();
+    let mut first: Option<usize> = None;
+    for (at, key) in keys.iter().enumerate() {
+        let earlier = std::iter::once(key.as_str())
+            .chain(folders_of(key))
+            .filter_map(|k| holding.get(k).copied())
+            .chain(inside.get(key.as_str()).copied())
+            .min();
+        first = first.into_iter().chain(earlier).min();
+        holding.entry(key.as_str()).or_insert(at);
+        for folder in folders_of(key) {
+            inside.entry(folder).or_insert(at);
         }
     }
-    Ok(())
+    first
 }
 
 /// Refuses `to` when something other than the source may be at `abs_to`. A name that only compares equal (case,
@@ -336,18 +442,27 @@ pub(crate) fn check_deletes(
         }
         checked.push((path.clone(), abs));
     }
-    // a path inside another listed path goes with it; duplicates collapse
+    Ok(outermost(checked))
+}
+
+/// A path inside another listed path goes with it; duplicates collapse into the first. The order stays.
+pub(super) fn outermost(checked: Vec<(VaultPath, PathBuf)>) -> Vec<(VaultPath, PathBuf)> {
     let keys: Vec<String> = checked.iter().map(|(p, _)| p.key()).collect();
-    let mut kept: Vec<(VaultPath, PathBuf)> = Vec::new();
-    for (at, (path, abs)) in checked.iter().enumerate() {
-        let covered = keys.iter().enumerate().any(|(other, key)| {
-            other != at
-                && (path.key().starts_with(&format!("{key}/"))
-                    || (path.key() == *key && other < at))
-        });
-        if !covered {
-            kept.push((path.clone(), abs.clone()));
-        }
+    let mut first: HashMap<&str, usize> = HashMap::with_capacity(keys.len());
+    for (at, key) in keys.iter().enumerate() {
+        first.entry(key.as_str()).or_insert(at);
     }
-    Ok(kept)
+    let kept: Vec<bool> = keys
+        .iter()
+        .enumerate()
+        .map(|(at, key)| {
+            first.get(key.as_str()) == Some(&at)
+                && !folders_of(key).any(|folder| first.contains_key(folder))
+        })
+        .collect();
+    checked
+        .into_iter()
+        .zip(kept)
+        .filter_map(|(item, keep)| keep.then_some(item))
+        .collect()
 }

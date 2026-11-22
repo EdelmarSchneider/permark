@@ -13,6 +13,7 @@ use crate::format::{
     PromptBlocks, RoleMatch, RoleRule, TextViewer,
 };
 use crate::paths::{FileScope, Root};
+use crate::tree::tests::link_out;
 use crate::watch::Change;
 
 fn formats() -> FormatRegistry {
@@ -160,6 +161,18 @@ fn other_formats_and_notices() {
     );
     let empty = p.open("w", "empty.md").unwrap();
     assert!(matches!(&empty.body, Body::Markdown { blocks, .. } if blocks.is_empty()));
+    // the view tells whether the default app may open the file: never for scripts | programs | macro carriers
+    assert!(json.opens_outside && pic.opens_outside);
+    for (name, bytes) in [
+        ("tool.py", b"print(1)".as_slice()),
+        ("run.exe", b"MZ"),
+        ("old.doc", b"x"),
+        ("a.rtf", b"{\\rtf1}"),
+        ("report.docm", b"x"),
+    ] {
+        p.write(name, bytes);
+        assert!(!p.open("w", name).unwrap().opens_outside, "{name}");
+    }
     // no viewer on (only Markdown): text files get the notice
     let bare = FormatRegistry::core();
     let none = p.docs.open("w", "notes.txt", &[], &bare).unwrap();
@@ -770,24 +783,6 @@ fn a_single_file_workspace_reads_the_files_of_its_folder_and_nothing_outside() {
     );
 }
 
-/// A link (Unix: symlink; Windows: junction, no admin needed) at `link` leading to `target`.
-fn link_out(link: &std::path::Path, target: &std::path::Path) -> bool {
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(target, link).is_ok()
-    }
-    #[cfg(windows)]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
-            .stdout(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
-    }
-}
-
 #[test]
 fn a_single_file_is_polled_and_the_poller_stops_on_drop() {
     let dir = tempfile::tempdir().unwrap();
@@ -971,6 +966,55 @@ fn a_single_file_root_path_is_its_folder_never_a_document() {
     // the scope itself answers the folder for "" (a caller that does not check `is_file` gets a folder)
     let (_, abs) = docs.scope().resolve("").unwrap();
     assert!(abs.is_dir());
+}
+
+#[test]
+fn a_poll_reads_a_shown_file_only_when_its_size_or_time_changed_and_every_tenth_time() {
+    let p = project();
+    let path = p.dir.path().join("a.md");
+    // written well before it is read: its size and time are proof (a fresh file is read until it is older)
+    let past = std::time::SystemTime::now() - Duration::from_secs(3600);
+    let write_at = |bytes: &[u8], at: std::time::SystemTime| {
+        p.write("a.md", bytes);
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(at)
+            .unwrap();
+    };
+    write_at(b"version one", past);
+    p.open("w", "a.md").unwrap();
+    let before = read_count();
+    for _ in 0..3 {
+        p.docs.poll_now();
+    }
+    assert_eq!(read_count() - before, 0, "unchanged files are not read");
+    assert!(p.changes().is_empty());
+    // a write that changes the size: told at the next poll (one second at most)
+    let later = past + Duration::from_secs(60);
+    write_at(b"version two!", later);
+    p.docs.poll_now();
+    assert_eq!(p.changes().len(), 1);
+    // a write that keeps size and time (a coarse clock): caught by the tenth poll
+    write_at(b"version 3rd!", later);
+    for _ in 5..10 {
+        p.docs.poll_now();
+    }
+    assert!(p.changes().is_empty());
+    p.docs.poll_now();
+    let got = p.changes();
+    assert!(
+        matches!(got.as_slice(), [c] if c.change == DocChange::Changed { version: fsx::hash(b"version 3rd!").hex() }),
+        "{got:?}"
+    );
+    // a file written just before it was read is read at every poll until it is older
+    write_at(b"version 4th!", std::time::SystemTime::now());
+    p.docs.poll_now();
+    assert_eq!(p.changes().len(), 1);
+    let before = read_count();
+    p.docs.poll_now();
+    assert_eq!(read_count() - before, 1);
 }
 
 #[test]

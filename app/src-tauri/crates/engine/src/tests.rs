@@ -3,7 +3,9 @@
 use std::io::{self, BufRead, BufReader, Cursor, Read};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 use serde_json::json;
 
@@ -153,7 +155,7 @@ fn requests_and_responses_round_trip_as_json_lines() {
     }
 }
 
-/// AC-2: other protocol -> `EngineTooOld`, worker killed; caps stay unknown.
+/// Other protocol -> `EngineTooOld`, worker killed; caps stay unknown.
 #[test]
 fn a_hello_with_another_protocol_is_an_engine_too_old() {
     let (engine, kills) = scripted(hello(PROTO + 1));
@@ -207,7 +209,7 @@ fn an_over_long_worker_line_is_a_crash() {
     assert_eq!(kills.load(Ordering::Relaxed), 1);
 }
 
-/// AC-3: stdout ends mid-call -> `EngineCrashed`, worker killed.
+/// Stdout ends mid-call -> `EngineCrashed`, worker killed.
 #[test]
 fn a_worker_ending_mid_load_is_a_crash() {
     let (engine, kills) = scripted(hello(PROTO) + r#"{"re":"progress","value":0.0}"# + "\n");
@@ -239,7 +241,7 @@ fn caps_come_from_a_hello_and_a_failed_launch_is_io() {
     let failing = WorkerEngine::new(Box::new(|| Err(io::Error::other("no worker"))));
     assert_eq!(load(&failing), Err(EngineError::Io("no worker".into())));
     assert_eq!(failing.caps(), EngineCaps::default());
-    // D-14: the system refusing to start the worker = blocked (security software)
+    // The system refusing to start the worker = blocked (security software)
     let refused = WorkerEngine::new(Box::new(|| {
         Err(io::Error::from(io::ErrorKind::PermissionDenied))
     }));
@@ -261,6 +263,171 @@ fn calls_on_unknown_sessions_are_not_loaded() {
         engine.estimate_memory(&no_weights, &opts()),
         Err(EngineError::Corrupt)
     );
+}
+
+/// Worker stdout: `script`, then silent (a wedged worker: never answers) until its kill drops the sender.
+struct Wedged {
+    script: Cursor<Vec<u8>>,
+    killed: mpsc::Receiver<()>,
+}
+
+impl Read for Wedged {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.script.read(buf)?;
+        if n == 0 {
+            // `Err` = the kill dropped the sender: EOF
+            let _ = self.killed.recv();
+        }
+        Ok(n)
+    }
+}
+
+/// Worker stdin that tells each write.
+struct Told(mpsc::Sender<Vec<u8>>);
+
+impl io::Write for Told {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let _ = self.0.send(buf.to_vec());
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// A call waiting on a wedged worker (no cancel token: token counts) holds the worker's lock forever: unload waits
+/// for it a bounded time only. The worker is killed under the call, which ends as a crash; the session is gone.
+#[test]
+fn unload_waits_for_a_wedged_call_a_bounded_time() {
+    let (to_kill, killed) = mpsc::channel::<()>();
+    let (told, writes) = mpsc::channel::<Vec<u8>>();
+    let wedged = Wedged {
+        script: Cursor::new((hello(PROTO) + r#"{"re":"loaded","session":1}"# + "\n").into_bytes()),
+        killed,
+    };
+    let parts = Mutex::new(Some((to_kill, told, wedged)));
+    let kills = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&kills);
+    let engine = Arc::new(WorkerEngine::new(Box::new(move || {
+        let (to_kill, told, wedged) = parts
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or_else(|| io::Error::other("one worker only"))?;
+        let counted = Arc::clone(&counted);
+        let mut to_kill = Some(to_kill);
+        Ok(WorkerPipes {
+            to_worker: Box::new(Told(told)),
+            from_worker: Box::new(BufReader::new(wedged)),
+            kill: Box::new(move || {
+                to_kill.take();
+                counted.fetch_add(1, Ordering::Relaxed);
+            }),
+        })
+    })));
+    let session = load(&engine).unwrap();
+    // the load request
+    writes.recv().unwrap();
+    let busy = {
+        let engine = Arc::clone(&engine);
+        thread::spawn(move || engine.count_tokens(session, "a"))
+    };
+    // the call's request written = the call holds the worker
+    writes.recv().unwrap();
+    let (done, unloaded) = mpsc::channel();
+    {
+        let engine = Arc::clone(&engine);
+        thread::spawn(move || {
+            engine.unload(session);
+            let _ = done.send(());
+        });
+    }
+    assert!(
+        unloaded.recv_timeout(Duration::from_secs(10)).is_ok(),
+        "unload waited for the wedged call"
+    );
+    assert_eq!(kills.load(Ordering::Relaxed), 1, "worker killed by unload");
+    assert_eq!(busy.join().unwrap(), Err(EngineError::EngineCrashed));
+    assert_eq!(kills.load(Ordering::Relaxed), 1, "killed once");
+    assert_eq!(
+        engine.count_tokens(session, "a"),
+        Err(EngineError::NotLoaded)
+    );
+}
+
+/// A worker that ignores a forwarded `Cancel` (wedged mid-generate) holds the call a bounded time only: killed once,
+/// the call ends cancelled (generate: `Done` + `Cancelled`), the session is forgotten.
+#[test]
+fn a_forwarded_cancel_the_worker_ignores_ends_the_call_in_bound() {
+    let (to_kill, killed) = mpsc::channel::<()>();
+    let (told, writes) = mpsc::channel::<Vec<u8>>();
+    let wedged = Wedged {
+        script: Cursor::new((hello(PROTO) + r#"{"re":"loaded","session":1}"# + "\n").into_bytes()),
+        killed,
+    };
+    let parts = Mutex::new(Some((to_kill, told, wedged)));
+    let kills = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&kills);
+    let engine = Arc::new(WorkerEngine::new(Box::new(move || {
+        let (to_kill, told, wedged) = parts
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or_else(|| io::Error::other("one worker only"))?;
+        let counted = Arc::clone(&counted);
+        let mut to_kill = Some(to_kill);
+        Ok(WorkerPipes {
+            to_worker: Box::new(Told(told)),
+            from_worker: Box::new(BufReader::new(wedged)),
+            kill: Box::new(move || {
+                to_kill.take();
+                counted.fetch_add(1, Ordering::Relaxed);
+            }),
+        })
+    })));
+    let session = load(&engine).unwrap();
+    // the load request
+    writes.recv().unwrap();
+    let cancel = CancelToken::new();
+    let (done, ended) = mpsc::channel();
+    {
+        let (engine, cancel) = (Arc::clone(&engine), cancel.clone());
+        thread::spawn(move || {
+            let mut events = Vec::new();
+            let result = engine.generate(
+                session,
+                &ChatRequest::default(),
+                &mut |e| events.push(e),
+                &cancel,
+            );
+            let _ = done.send((result, events));
+        });
+    }
+    // the generate request written = the call holds the worker
+    writes.recv().unwrap();
+    cancel.cancel();
+    let cancel_line = writes.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(cancel_line, b"{\"op\":\"cancel\"}\n");
+    let (result, events) = ended
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the call ends without the worker's answer");
+    assert_eq!(result, Ok(()));
+    assert_eq!(
+        events,
+        [GenEvent::Done {
+            usage: Usage::default(),
+            finish: Finish::Cancelled,
+        }]
+    );
+    assert_eq!(kills.load(Ordering::Relaxed), 1, "worker killed");
+    assert_eq!(
+        engine.count_tokens(session, "a"),
+        Err(EngineError::NotLoaded),
+        "session forgotten"
+    );
+    drop(engine);
+    assert_eq!(kills.load(Ordering::Relaxed), 1, "killed once");
 }
 
 #[test]

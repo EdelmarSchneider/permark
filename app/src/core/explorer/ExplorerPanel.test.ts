@@ -10,8 +10,10 @@ import { NO_REQUIREMENT } from "../conditions/available";
 import { neutralContext } from "../conditions/context.svelte";
 import { conditions } from "../conditions/context.svelte";
 import { ContributionRegistry } from "../plugins/registry.svelte";
+import Notices from "../shell/Notices.svelte";
+import { WindowStore } from "../window.svelte";
 import ExplorerPanel from "./ExplorerPanel.svelte";
-import { ExplorerStore } from "./store.svelte";
+import { ExplorerStore, type ExplorerHost } from "./store.svelte";
 
 type Fx = {
   api: ReturnType<typeof createMockApi>;
@@ -26,16 +28,23 @@ type Fx = {
 
 let mounted: (() => void)[] = [];
 
-async function render(link: LinkUpdate = "never", more: string[] = []): Promise<Fx> {
+async function render(
+  link: LinkUpdate = "never",
+  more: string[] = [],
+  told: ExplorerHost["note"] = () => {},
+): Promise<Fx> {
   const api = createMockApi();
   await api.openPath(MOCK_FOLDER, "thisTab");
   for (const path of more) api.probe.project.add(path, "x");
   const failures: unknown[] = [];
   const notes: string[] = [];
   const inits: { path: string; name: string }[] = [];
-  const store = new ExplorerStore(api, {
+  const store = new ExplorerStore(api, 1, {
     fail: (e) => failures.push(e),
-    note: (t) => notes.push(t),
+    note: (t, ...actions) => {
+      notes.push(t);
+      told(t, ...actions);
+    },
     view: () => "main",
     linkUpdate: () => link,
     openProject: () => {},
@@ -140,7 +149,7 @@ describe("the list", () => {
     for (let n = 0; n < 3000; n++)
       api.probe.project.add(`bulk/f${String(n).padStart(4, "0")}.md`, "x");
     await api.openPath(MOCK_FOLDER, "thisTab");
-    const store = new ExplorerStore(api, {
+    const store = new ExplorerStore(api, 1, {
       fail: () => {},
       note: () => {},
       view: () => "main",
@@ -339,6 +348,188 @@ describe("the list", () => {
   });
 });
 
+describe("what a screen reader hears", () => {
+  function tree(root: HTMLElement): HTMLElement {
+    const found = root.querySelector<HTMLElement>('[role="tree"]');
+    if (!found) throw new Error("no tree");
+    return found;
+  }
+
+  /** The element the tree names as the row the keyboard is on (`null`: none named | no such element). */
+  function current(root: HTMLElement): HTMLElement | null {
+    const id = tree(root).getAttribute("aria-activedescendant");
+    return id === null ? null : document.getElementById(id);
+  }
+
+  it("the tree names the row the keyboard is on, by an id that is never the path", async () => {
+    const { root, store } = await render("never", ["docs/my notes.md"]);
+    expect(tree(root).getAttribute("aria-activedescendant")).toBeNull();
+    key(root, "ArrowDown");
+    const first = current(root);
+    expect(first?.getAttribute("role")).toBe("treeitem");
+    expect(first?.dataset["path"]).toBe(store.focus);
+    key(root, "ArrowDown");
+    const second = current(root);
+    expect(second?.dataset["path"]).toBe(store.focus);
+    expect(second).not.toBe(first);
+    for (const id of [first?.id ?? "", second?.id ?? ""]) {
+      expect(id).toMatch(/^tree-[\w-]+-\d+$/);
+      expect(id).not.toContain(store.focus ?? "?");
+    }
+    // a path with a space is no problem for the id either
+    await store.toggle("docs");
+    store.select("docs/my notes.md", "single");
+    flushSync();
+    expect(current(root)?.dataset["path"]).toBe("docs/my notes.md");
+    expect(current(root)?.id).not.toMatch(/\s/);
+  });
+
+  it("names a row as soon as the keyboard reaches the tree: the selected one, else the first", async () => {
+    const { root, store } = await render();
+    expect(current(root)).toBeNull();
+    tree(root).focus();
+    flushSync();
+    expect(current(root)).toBe(rows(root)[0]);
+    // the row is named, not chosen: nothing is selected by the keyboard arriving
+    expect(store.selection.size).toBe(0);
+    // a selection without a keyboard row (as after the row it was on went away): the selected row is named
+    tree(root).blur();
+    store.select("README.md", "single");
+    store.focus = null;
+    flushSync();
+    tree(root).focus();
+    flushSync();
+    expect(current(root)?.dataset["path"]).toBe("README.md");
+    // a row the keyboard is already on stays
+    tree(root).blur();
+    key(root, "End");
+    const end = store.focus;
+    tree(root).focus();
+    flushSync();
+    expect(current(root)?.dataset["path"]).toBe(end);
+  });
+
+  it("a click on the tree's empty part names no row (none chosen, none drawn)", async () => {
+    const { root, store } = await render();
+    const list = tree(root);
+    pointer(list, "pointerdown", 10, 390);
+    list.focus();
+    flushSync();
+    expect(store.focus).toBeNull();
+    expect(current(root)).toBeNull();
+  });
+
+  it("rows are not focused one by one: a click leaves the keyboard on the tree", async () => {
+    const { root } = await render();
+    for (const drawn of rows(root)) expect(drawn.hasAttribute("tabindex")).toBe(false);
+  });
+
+  it("the row the keyboard is on stays drawn when the list scrolls away from it", async () => {
+    const api = createMockApi();
+    for (let n = 0; n < 3000; n++)
+      api.probe.project.add(`bulk/f${String(n).padStart(4, "0")}.md`, "x");
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    const store = new ExplorerStore(api, 1, {
+      fail: () => {},
+      note: () => {},
+      view: () => "main",
+      linkUpdate: () => "never",
+      openProject: () => {},
+    });
+    const stop = await store.start();
+    await store.toggle("bulk");
+    const root = document.createElement("div");
+    document.body.append(root);
+    const app = mount(ExplorerPanel, {
+      target: root,
+      props: { store, registry: new ContributionRegistry() },
+    });
+    mounted.push(() => {
+      void unmount(app);
+      stop();
+    });
+    await tick();
+    store.select("bulk/f0002.md", "single");
+    flushSync();
+    const list = tree(root);
+    list.scrollTop = 26 * 1500;
+    list.dispatchEvent(new Event("scroll"));
+    await tick();
+    expect(rows(root).some((r) => r.dataset["path"] === "bulk/f1500.md")).toBe(true);
+    const named = current(root);
+    expect(named?.dataset["path"]).toBe("bulk/f0002.md");
+    // drawn where it belongs in the list
+    const at = store.rows.findIndex((r) => r.type === "node" && r.node.path === "bulk/f0002.md");
+    expect(named?.style.top).toBe(`${at * 26}px`);
+  });
+
+  it("each row says its place among the rows of its folder", async () => {
+    const { root, store } = await render();
+    await store.toggle("docs");
+    flushSync();
+    const top = rows(root).filter((r) => r.getAttribute("aria-level") === "1");
+    expect(top.length).toBeGreaterThan(2);
+    top.forEach((r, n) => {
+      expect(r.getAttribute("aria-posinset"), r.dataset["path"]).toBe(String(n + 1));
+      expect(r.getAttribute("aria-setsize"), r.dataset["path"]).toBe(String(top.length));
+    });
+    const inside = rows(root).filter((r) => (r.dataset["path"] ?? "").startsWith("docs/"));
+    expect(inside.length).toBeGreaterThan(0);
+    const direct = inside.filter((r) => r.getAttribute("aria-level") === "2");
+    direct.forEach((r, n) => {
+      expect(r.getAttribute("aria-posinset"), r.dataset["path"]).toBe(String(n + 1));
+      expect(r.getAttribute("aria-setsize"), r.dataset["path"]).toBe(String(direct.length));
+    });
+  });
+
+  it("a worktree's header is a tree item of the top level that opens and closes, by keyboard too", async () => {
+    const { root, store } = await render();
+    store.roots = [
+      { name: "demo", kind: "main", path: "" },
+      { name: "feature", kind: "worktree", path: "@wt/feature" },
+    ];
+    store.nodes = [
+      ...store.nodes,
+      {
+        path: "@wt/feature/plan.md",
+        name: "plan.md",
+        kind: { type: "file", category: "markdown" },
+        hidden: false,
+        ignored: false,
+        forced: false,
+        opensOutside: true,
+      },
+    ];
+    flushSync();
+    const header = root.querySelector<HTMLElement>('[role="treeitem"][data-root="@wt/feature"]');
+    if (!header) throw new Error("no worktree header");
+    expect(header.getAttribute("aria-level")).toBe("1");
+    expect(header.getAttribute("aria-expanded")).toBe("true");
+    const top = rows(root).filter((r) => r.getAttribute("aria-level") === "1");
+    expect(header.getAttribute("aria-posinset")).toBe(String(top.indexOf(header) + 1));
+    expect(header.getAttribute("aria-setsize")).toBe(String(top.length));
+    // the worktree's own rows sit one level below its header
+    expect(row(root, "@wt/feature/plan.md").getAttribute("aria-level")).toBe("2");
+    header.focus();
+    header.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }),
+    );
+    flushSync();
+    expect(store.collapsedRoots.has("@wt/feature")).toBe(true);
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    header.dispatchEvent(enter);
+    flushSync();
+    // Enter is the header's own (its button press), not the Explorer's "open the focused row"
+    expect(enter.defaultPrevented).toBe(false);
+    header.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+    );
+    flushSync();
+    expect(store.collapsedRoots.has("@wt/feature")).toBe(false);
+  });
+});
+
 describe("keyboard", () => {
   it("arrows move, Enter opens, F2 renames, Delete deletes, Ctrl+Z undoes", async () => {
     const { root, store, api, notes } = await render();
@@ -375,7 +566,86 @@ describe("keyboard", () => {
     expect(api.probe.project.files.has("pkg.json")).toBe(true);
   });
 
-  it("Cmd+Z works as well, and plain z does not undo", async () => {
+  it("PageDown | PageUp move a page of rows (the row left stays in sight), Shift extends; with Ctrl | Alt | Cmd the key is the window's", async () => {
+    const more = Array.from({ length: 40 }, (_, n) => `page${String(n).padStart(2, "0")}.md`);
+    const { root, store } = await render("never", more);
+    const keys = (): string[] =>
+      store.rows.flatMap((r) => (r.type === "node" ? [r.node.path] : []));
+    expect(keys().length).toBeGreaterThan(40);
+    // a 400 px list of 26 px rows shows 15: a page is 14, so the row the keyboard left is still in sight
+    store.moveTo("first", false);
+    flushSync();
+    expect(key(root, "PageDown").defaultPrevented).toBe(true);
+    expect(store.focus).toBe(keys()[14]);
+    expect([...store.selection]).toEqual([keys()[14]]);
+    key(root, "PageDown", { shiftKey: true });
+    expect(store.focus).toBe(keys()[28]);
+    expect(new Set(store.selection)).toEqual(new Set(keys().slice(14, 29)));
+    expect(key(root, "PageUp").defaultPrevented).toBe(true);
+    expect(store.focus).toBe(keys()[14]);
+    expect([...store.selection]).toEqual([keys()[14]]);
+    key(root, "PageUp", { shiftKey: true });
+    expect(new Set(store.selection)).toEqual(new Set(keys().slice(0, 15)));
+    // the ends hold
+    key(root, "PageUp");
+    expect(store.focus).toBe(keys()[0]);
+    store.moveTo("last", false);
+    flushSync();
+    key(root, "PageDown");
+    expect(store.focus).toBe(keys().at(-1));
+    // Ctrl | Cmd + PageDown switch tabs, Alt + PageDown walks notes: never the tree's
+    store.moveTo("first", false);
+    flushSync();
+    for (const init of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+      expect(key(root, "PageDown", init).defaultPrevented).toBe(false);
+      expect(key(root, "PageUp", init).defaultPrevented).toBe(false);
+      expect(store.focus).toBe(keys()[0]);
+    }
+  });
+
+  it("Undo in the notice of a delete gives the keyboard back to the tree, on a row", async () => {
+    const shell = new WindowStore(createMockApi());
+    const { root, store } = await render("never", [], (text, ...actions) =>
+      shell.notifyKeyed("fileOp", text, ...actions),
+    );
+    const place = document.createElement("div");
+    document.body.append(place);
+    const notices = mount(Notices, { target: place, props: { store: shell } });
+    mounted.push(() => void unmount(notices));
+    const tree = root.querySelector<HTMLElement>('[role="tree"]');
+    if (!tree) throw new Error("no tree");
+    tree.focus();
+    store.select("README.md", "single");
+    key(root, "Delete");
+    const undoButton = (): HTMLButtonElement | undefined =>
+      Array.from(place.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Undo");
+    await vi.waitFor(() => {
+      flushSync();
+      expect(undoButton()).toBeDefined();
+    });
+    expect(store.nodes.map((n) => n.path)).not.toContain("README.md");
+    const undo = undoButton();
+    if (!undo) throw new Error("no Undo");
+    // the Tab order reaches the notices last: what had the keyboard just before is some other control of the window
+    const before = document.createElement("button");
+    document.body.append(before);
+    before.focus();
+    undo.focus();
+    undo.click();
+    await vi.waitFor(() => expect(store.nodes.map((n) => n.path)).toContain("README.md"));
+    await vi.waitFor(() => expect(document.activeElement).toBe(tree));
+    // the notices, done with their own steps after the action, leave it there
+    await new Promise((done) => setTimeout(done, 0));
+    flushSync();
+    expect(document.activeElement).toBe(tree);
+    const named = tree.getAttribute("aria-activedescendant");
+    expect(named === null ? null : document.getElementById(named)?.getAttribute("role")).toBe(
+      "treeitem",
+    );
+  });
+
+  it("Cmd+Z works on macOS as well, and plain z does not undo", async () => {
+    conditions.set({ ...neutralContext(), platform: "mac" });
     const { root, store, api } = await render();
     await api.newEntry("", "scratch", "file");
     await tick();
@@ -423,11 +693,13 @@ describe("keyboard", () => {
       expect(drawn.getAttribute("aria-selected"), drawn.dataset["path"]).toBe("true");
     }
     expect(store.focus).toBe("docs/guide.md");
-    // Cmd+A too (Caps Lock on)
+    // Cmd+A too on macOS (Caps Lock on)
+    conditions.set({ ...neutralContext(), platform: "mac" });
     store.select("README.md", "single");
     expect(key(root, "A", { metaKey: true }).defaultPrevented).toBe(true);
     expect([...store.selection]).toEqual(listed());
     // other chords with A, and the plain letter, are not select-all
+    conditions.set(neutralContext());
     store.select("README.md", "single");
     for (const init of [{ ctrlKey: true, shiftKey: true }, { ctrlKey: true, altKey: true }, {}]) {
       expect(key(root, "a", init).defaultPrevented).toBe(false);
@@ -457,6 +729,34 @@ describe("keyboard", () => {
     expect(key(root, "a", { ctrlKey: true }).defaultPrevented).toBe(true);
     expect(store.selection.size).toBe(0);
     expect(pageSelectAll).not.toHaveBeenCalled();
+  });
+
+  it("Ctrl+A and Ctrl+Z work on a layout whose letters are not Latin (the physical key counts)", async () => {
+    const { root, store, api } = await render();
+    const listed = (): string[] =>
+      store.rows.flatMap((r) => (r.type === "node" ? [r.node.path] : []));
+    store.select("README.md", "single");
+    // Russian layout: the A key types "ф", the Z key "я"
+    expect(key(root, "ф", { ctrlKey: true, code: "KeyA" }).defaultPrevented).toBe(true);
+    expect([...store.selection]).toEqual(listed());
+    expect(key(root, "ф", { code: "KeyA" }).defaultPrevented).toBe(false);
+    await api.newEntry("", "scratch", "file");
+    await tick();
+    expect(store.nodes.map((n) => n.path)).toContain("scratch.md");
+    key(root, "я", { ctrlKey: true, code: "KeyZ" });
+    await vi.waitFor(() => expect(store.nodes.map((n) => n.path)).not.toContain("scratch.md"));
+  });
+
+  it("Cmd+A and Cmd+Z on macOS", async () => {
+    conditions.set({ ...neutralContext(), platform: "mac" });
+    const { root, store, api } = await render();
+    store.select("README.md", "single");
+    expect(key(root, "a", { metaKey: true, code: "KeyA" }).defaultPrevented).toBe(true);
+    expect(store.selection.size).toBeGreaterThan(1);
+    await api.newEntry("", "scratch", "file");
+    await tick();
+    key(root, "z", { metaKey: true, code: "KeyZ" });
+    await vi.waitFor(() => expect(store.nodes.map((n) => n.path)).not.toContain("scratch.md"));
   });
 
   it("shortcuts do not fire while composing or typing in the field", async () => {
@@ -583,6 +883,35 @@ describe("context menu", () => {
     expect(document.querySelector('[role="menu"]')?.textContent).not.toContain(
       "Open with default app",
     );
+  });
+
+  it("offers the system program only for files the backend would open with it (an old Word file never)", async () => {
+    const { root, store } = await render("never", ["old.doc", "a.pdf"]);
+    await store.setFilter({ ...store.filter, show: "everything" });
+    await tick();
+    // the backend's answer for an old binary Office file: an office document it never hands to Office from a click
+    store.nodes = store.nodes.map((n) =>
+      n.path === "old.doc"
+        ? { ...n, kind: { type: "file", category: "office" }, opensOutside: false }
+        : n,
+    );
+    await tick();
+    const menuOf = async (path: string): Promise<string> => {
+      row(root, path).dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+      );
+      await tick();
+      const text = document.querySelector('[role="menu"]')?.textContent ?? "";
+      document
+        .querySelector('[role="menu"]')
+        ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await tick();
+      return text;
+    };
+    const old = await menuOf("old.doc");
+    expect(old).not.toContain("Open with default app");
+    expect(old).toContain("Show in file manager");
+    expect(await menuOf("a.pdf")).toContain("Open with default app");
   });
 
   it("a multi-selection offers delete for all and nothing about one file", async () => {
@@ -922,6 +1251,7 @@ describe("states", () => {
             error: { kind: "command", command: "tree_open", message: "x" },
           }),
       },
+      1,
       {
         fail: () => {},
         note: () => {},

@@ -2,36 +2,40 @@
 //! down its plugins in reverse dependency order.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, RwLock};
 
 use serde::{Deserialize, Serialize};
 
 use crate::activity::{system_clock, ActivityLog};
 use crate::conditions::{Context, Distribution};
 use crate::document::{DocScope, Documents};
-use crate::events::{CoreEvent, EventSink, PluginFailed};
-use crate::fileops::FileOps;
+use crate::events::{CoreEvent, EventSink, PluginFailed, ProjectConfigChanged};
+use crate::fileops::{FileOps, JournalHold};
 use crate::format::FormatRegistry;
 use crate::notes::{NotesCore, NotesScope};
 use crate::organizing::{SilenceApi, TagsApi};
 use crate::paths::{Root, Vault};
 use crate::plugins::{
     resolve_enabled, AppServices, CxWorkspace, EnableInputs, Enablement, PluginCx, PluginId,
-    PluginRegistry, PluginScope, PluginSet, ProjectFacts, ProjectServices, RpcTable, ServiceLease,
-    Services,
+    PluginRegistry, PluginScope, PluginSet, ProjectFacts, ProjectServices, RepoHandle, RpcTable,
+    ServiceLease, Services,
 };
 use crate::projects::{
-    CardChange, CardDto, CardTarget, IncludeOutcome, LocateRefusal, OwnersChange, ProjectPick,
-    Projects, ProjectsSubscription, ProjectsUndone, ProjectsView,
+    CardChange, CardDto, CardTarget, IncludeOutcome, LocateRefusal, Owners, OwnersChange,
+    ProjectPick, Projects, ProjectsSubscription, ProjectsUndone, ProjectsView,
 };
 use crate::search::{SearchFilter, SearchIndex, SearchOptions};
 use crate::settings::{
-    AppSettings, ProjectConfig, ProjectConfigFile, ProjectSettingChange, SettingsError,
+    AppSettings, ConfigRead, ConfigUnreadable, ProjectConfig, ProjectConfigFile,
+    ProjectSettingChange, SettingsError,
 };
-use crate::state::{AppDirs, ProjectId, StateData, StateLocation, StateStore};
+use crate::state::location::DataOffer;
+use crate::state::{AppDirs, ProjectId, Sharing, StateData, StateLocation, StateStore};
 use crate::tree::Explorer;
 use crate::watch::{
-    FsBatch, LiveStatus, OwnWrites, PathHold, StatusHook, Subscription, WatchHub, Watcher,
+    ChangeKind, FsBatch, LiveStatus, OwnWrites, PathHold, StatusHook, Subscription, WatchHub,
+    Watcher,
 };
 
 /// Process-wide services every workspace uses.
@@ -253,6 +257,8 @@ pub struct ProjectCore {
     _documents_sub: Subscription,
     _search_sub: Subscription,
     _activity_sub: Subscription,
+    /// Follows `.permark/config.toml` on disk ([`ProjectCore::follow_config`]).
+    config_sub: Mutex<Option<Subscription>>,
     /// The journal follows where each included project keeps its state (`projects.md` §9.2).
     _activity_owners: ProjectsSubscription,
     search: Arc<SearchIndex>,
@@ -272,7 +278,19 @@ pub struct ProjectCore {
     vault: Vault,
     /// Where the project's state lives; moves when PerMark is initialized in the folder (`reload_state`).
     store: RwLock<StateStore>,
+    /// What the window offers about the place of the person's data, worked out with `store` (and again on Keep): views
+    /// read it, never the disk.
+    data_offer: RwLock<DataOffer>,
     config: RwLock<ProjectConfig>,
+    /// One change of `config` at a time (a setting written here, the file changed on disk, Initialize): each reads the
+    /// file and applies what it read in one turn, so an older read never lands over a newer one.
+    config_turn: Mutex<()>,
+    /// A read of the team file is waiting for its turn ([`ProjectCore::follow_config`]): it reads after every report
+    /// so far, so reports meanwhile start no other.
+    config_pending: Arc<AtomicBool>,
+    /// Tests: reads of the team file done ([`ProjectCore::reread_config`]).
+    #[cfg(test)]
+    config_reads: std::sync::atomic::AtomicUsize,
     enablement: Mutex<BTreeMap<PluginId, Enablement>>,
     plugins: Mutex<PluginSet>,
     // what the plugins share; they outlive the plugins (stopped first in Drop)
@@ -293,10 +311,15 @@ impl std::fmt::Debug for ProjectCore {
     }
 }
 
+/// Longest wait for the projects map before the temps a crash left are swept: past it (no map) they wait for a later
+/// open. A project that closes meanwhile ends the wait at once, without a sweep.
+const SWEEP_AFTER_MAP: std::time::Duration = std::time::Duration::from_mins(5);
+
 /// The project's watch, told what the tree holds; the tree is built at once in the background.
 fn start_watcher(
     vault: &Vault,
     explorer: &Arc<Explorer>,
+    projects: &Arc<Projects>,
     hub: &Arc<WatchHub>,
     own: &Arc<OwnWrites>,
     env: &CoreEnv,
@@ -324,12 +347,21 @@ fn start_watcher(
             })
         }
     }));
-    // the tree is known before anything goes away (a window would list it now anyway; a core without one too)
+    // the tree is known before anything goes away (a window would list it now anyway; a core without one too); then,
+    // once the projects map is ready (low priority: never slows the first map), the temps a crash left go to the
+    // recycle bin, looked for only in the folders whose listing held a temp's name
     let explorer = Arc::clone(explorer);
+    let projects = Arc::downgrade(projects);
     let _ = std::thread::Builder::new()
         .name("permark-tree".to_owned())
         .spawn(move || {
             let _ = explorer.listed("");
+            let mapped = projects
+                .upgrade()
+                .is_some_and(|projects| projects.wait_ready(SWEEP_AFTER_MAP));
+            if mapped {
+                let _ = crate::fsx::sweep_stale_temps(&explorer.temp_folders());
+            }
         });
     watcher
 }
@@ -340,9 +372,15 @@ impl ProjectCore {
     #[allow(clippy::too_many_lines)] // the composition root: every service built and wired in one place
     pub fn open(root: Root, env: &CoreEnv) -> Arc<Self> {
         let id = ProjectId::of(&root);
-        let store = StateStore::for_project(&env.dirs, &root);
+        // where the person's data sits is settled before anything reads or writes it: a first open records it, so a
+        // `.permark/` that arrives later never moves it
+        let store = crate::state::location::settle(&env.dirs, &root);
         // the person's data 0.5 kept in its own profile folder, taken over once
         crate::state::older::take_over_project(&env.dirs, &root, &store);
+        // a context file for scripts that came with the folder goes before a plugin starts, whatever the agent
+        // connection's state: scripts would take it for the person's live context
+        crate::state::context::remove_foreign(&store);
+        let data_offer = crate::state::location::offer(&store);
         let config = ProjectConfig::load(&root);
         // plugins that are on may offer extra roots (linked worktrees) before the project is built
         let (enablement, on) = project_enablement(env, &config, &store);
@@ -408,7 +446,7 @@ impl ProjectCore {
             })));
         }
         let search_sub = hub.subscribe(search.feeder());
-        let watcher = start_watcher(&vault, &explorer, &hub, &own, env);
+        let watcher = start_watcher(&vault, &explorer, &projects, &hub, &own, env);
         projects.start();
         let activity = Arc::new(ActivityLog::open(&store, system_clock()));
         let activity_sub = hub.subscribe({
@@ -442,6 +480,7 @@ impl ProjectCore {
             _documents_sub: documents_sub,
             _search_sub: search_sub,
             _activity_sub: activity_sub,
+            config_sub: Mutex::new(None),
             _activity_owners: activity_owners,
             search,
             watcher,
@@ -455,7 +494,12 @@ impl ProjectCore {
             hub,
             id,
             store: RwLock::new(store),
+            data_offer: RwLock::new(data_offer),
             config: RwLock::new(config),
+            config_turn: Mutex::new(()),
+            config_pending: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            config_reads: std::sync::atomic::AtomicUsize::new(0),
             vault,
             enablement: Mutex::new(BTreeMap::new()),
             plugins: Mutex::new(PluginSet::new(PluginScope::Project)),
@@ -466,7 +510,10 @@ impl ProjectCore {
             app_services: Arc::clone(env.services()),
             agent_files,
         });
-        core.start_plugins(env, enablement, &on);
+        {
+            let mut plugins = core.plugins.lock().unwrap_or_else(PoisonError::into_inner);
+            core.start_plugins(env, &mut plugins, enablement, &on);
+        }
         core
     }
 
@@ -480,6 +527,25 @@ impl ProjectCore {
     #[cfg(test)]
     pub(crate) fn hub(&self) -> &Arc<WatchHub> {
         &self.hub
+    }
+
+    /// Tests: how many reads of the team file are done.
+    #[cfg(test)]
+    pub(crate) fn config_reads(&self) -> usize {
+        self.config_reads.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Tests (also the app's): the config turn, held until the guard goes (a read of the team file, a plugin change
+    /// wait meanwhile, as during an Initialize).
+    #[doc(hidden)]
+    pub fn hold_config_turn(&self) -> MutexGuard<'_, ()> {
+        self.config_turn()
+    }
+
+    /// Tests: the plugin set, held until the guard goes (starting | stopping plugins waits meanwhile).
+    #[cfg(test)]
+    pub(crate) fn hold_plugins(&self) -> MutexGuard<'_, PluginSet> {
+        self.plugins.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// What plugins publish about the project (the git condition windows read).
@@ -604,21 +670,46 @@ impl ProjectCore {
         self.projects.view()
     }
 
-    /// Includes projects; a folder without `.permark/` is initialized first (`projects.md` §2.4: `.permark/` alone
-    /// would move the state). Returns whether PerMark was initialized (the caller tells the windows).
+    /// Includes projects; a folder without `.permark/` is initialized first by `init` (`projects.md` §2.4: `.permark/`
+    /// alone would move the state). `init` is the caller's Initialize of this folder, which also holds the writes of
+    /// every other open folder that includes this one ([`super::WorkspaceRegistry::init_project`]). Returns whether
+    /// PerMark was initialized (the caller tells the windows).
     ///
     /// # Errors
     /// `Unavailable` (record unreadable | newer), init failure, `Conflict`, IO.
     pub fn projects_include(
         &self,
-        env: &CoreEnv,
         pick: &ProjectPick,
+        init: &dyn Fn() -> Result<(), crate::IpcError>,
     ) -> Result<(IncludeOutcome, bool), crate::IpcError> {
-        self.projects.include(pick, &|| {
-            crate::state::init_project(&env.dirs, self.vault.main())?;
-            self.reload_state(env);
-            Ok(())
-        })
+        self.projects.include(pick, init)
+    }
+
+    /// Initializes PerMark in this folder ([`crate::state::init_project`]): the plugins stop first, so what they write
+    /// last lands in the place the person's data is copied from; then everything reads the state again from the new
+    /// place ([`ProjectCore::reload_state`]). A refusal starts the plugins again on the place they had. The caller
+    /// tells the windows.
+    ///
+    /// # Errors
+    /// What `init_project` refuses: both places hold data (`Conflict`), a link or a file in the way, IO.
+    pub fn initialize(&self, env: &CoreEnv) -> Result<(), crate::IpcError> {
+        // one config turn from the stop to the reload: a read of the team file meanwhile would start the plugins again
+        // on the place being copied from
+        let turn = self.config_turn();
+        self.plugins
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .stop_all();
+        // a file operation ending during the copy is journaled after it, in the new place (taken after the plugins
+        // stopped: never held while a plugin runs)
+        let journal = self.fileops.hold_journal();
+        if let Err(error) = crate::state::init_project(&env.dirs, self.vault.main()) {
+            drop(journal);
+            self.apply_plugins_in(&turn, env);
+            return Err(error.into());
+        }
+        self.reload_state_in(&turn, journal, env);
+        Ok(())
     }
 
     /// Takes back the last include (`token`); a `.permark/` it made goes when untouched (the state goes back to the
@@ -641,17 +732,22 @@ impl ProjectCore {
                 false,
             ));
         }
-        // plugins flush their files into `.permark/local/` first; the state then goes back to the profile
+        // plugins flush their files into `.permark/local/` first; the state then goes back to the profile (one config
+        // turn throughout: a read of the team file meanwhile would start them again on the place being removed)
+        let turn = self.config_turn();
         self.plugins
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .stop_all();
+        let journal = self.fileops.hold_journal();
         let removed = crate::state::uninit_project(&env.dirs, self.vault.main()).unwrap_or(false);
         if removed {
-            self.reload_state(env);
+            self.reload_state_in(&turn, journal, env);
         } else {
-            self.apply_plugins(env);
+            drop(journal);
+            self.apply_plugins_in(&turn, env);
         }
+        drop(turn);
         Ok((
             ProjectsUndone {
                 undone: true,
@@ -738,25 +834,98 @@ impl ProjectCore {
 
     #[must_use]
     pub fn state_location(&self) -> StateLocation {
-        self.store().location()
+        self.store
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .location()
+    }
+
+    /// Whether the folder had a team folder when its state was last read (open, Initialize, a reload, a read of the team
+    /// file that found one came or went): a `.permark/` that arrives meanwhile counts from the next read.
+    #[must_use]
+    pub fn has_team_folder(&self) -> bool {
+        self.store
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .has_team_folder()
+    }
+
+    /// Whether git counts the folder's private state folder (`.permark/local`) as tracked now, asked of the repository
+    /// reader the git plugin offers ([`crate::projects::OwnerSlot::private_tracked`]): what it keeps (comments, reading
+    /// activity) then never reaches agents. Asks git: never on the open path.
+    #[must_use]
+    pub fn private_tracked(&self) -> bool {
+        let repo = self.services.get::<RepoHandle>();
+        Owners::root_only(self.store())
+            .root()
+            .private_tracked(repo.as_deref())
+    }
+
+    /// What the window offers about the place of the person's data ([`crate::state::location::offer`]), as worked out
+    /// when the state was last read | the data was kept.
+    #[must_use]
+    pub fn data_offer(&self) -> DataOffer {
+        *self
+            .data_offer
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The person keeps the folder's data on this computer ([`crate::state::location::keep`]): the place and the plugins
+    /// stay as they are (the store already reads the profile), only the offer is worked out again. The caller tells
+    /// the windows.
+    ///
+    /// # Errors
+    /// The store reads the folder's own `.permark/local/` (a conflict, nothing written); the profile's row file cannot
+    /// be written.
+    pub fn keep_data(&self) -> Result<(), crate::IpcError> {
+        let store = self.store();
+        crate::state::location::keep(&store)?;
+        *self
+            .data_offer
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = crate::state::location::offer(&store);
+        Ok(())
     }
 
     /// PerMark was initialized in this folder: the state folder and the config are read again, the file operations'
     /// journal moves, the project plugins start over on the new state, the tree is walked again. The caller tells the
     /// windows (`WorkspaceRegistry::refresh`).
     pub fn reload_state(&self, env: &CoreEnv) {
+        let turn = self.config_turn();
+        let journal = self.fileops.hold_journal();
+        self.reload_state_in(&turn, journal, env);
+    }
+
+    /// The config turn, held until the guard goes: one change of the config at a time. Lock order: the turn, then the
+    /// file operations' journal | the plugin set (never the turn while holding one of them).
+    fn config_turn(&self) -> MutexGuard<'_, ()> {
+        self.config_turn
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// [`ProjectCore::reload_state`] inside the config turn the caller holds (`turn`: proof of it); `journal` (held
+    /// since before the state moved) goes on in the new place and is let go before any plugin starts.
+    fn reload_state_in(&self, turn: &MutexGuard<'_, ()>, journal: JournalHold<'_>, env: &CoreEnv) {
         let store = StateStore::for_project(&env.dirs, self.vault.main());
         let config = ProjectConfig::load(self.vault.main());
+        *self
+            .data_offer
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = crate::state::location::offer(&store);
         *self.store.write().unwrap_or_else(PoisonError::into_inner) = store.clone();
         *self.config.write().unwrap_or_else(PoisonError::into_inner) = config.clone();
-        self.fileops.use_store(&store);
+        journal.use_store(&store);
         self.activity.use_store(&store);
         self.explorer.reconfigure(&config);
         self.plugins
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .stop_all();
-        self.apply_plugins(env);
+        // plugins keeping state per owner start on the folder's new place, not the one the owners had
+        self.projects.reload_owners();
+        self.apply_plugins_in(turn, env);
         self.rescan();
     }
 
@@ -764,20 +933,178 @@ impl ProjectCore {
     /// ignore rules, the plugins turned off for everyone; the agent reads the file at each call).
     ///
     /// # Errors
-    /// `NotInitialized`, an invalid value, an IO failure.
+    /// `NotInitialized`, an invalid value, the file is not TOML (refused, untouched), an IO failure.
     pub fn change_config(
         &self,
         env: &CoreEnv,
         change: &ProjectSettingChange,
     ) -> Result<ProjectConfig, SettingsError> {
+        let turn = self.config_turn();
+        let before = self.config();
         let config = ProjectConfigFile::of(self.vault.main()).apply(change)?;
-        *self.config.write().unwrap_or_else(PoisonError::into_inner) = config.clone();
-        if matches!(change, ProjectSettingChange::PluginOff { .. }) {
-            self.apply_plugins(env);
-        }
-        self.explorer.reconfigure(&config);
-        self.rescan();
+        self.use_config(&turn, env, &before, &config);
         Ok(config)
+    }
+
+    /// Follows `.permark/config.toml` on disk while the folder is open: a change made outside (a git pull, a hand edit,
+    /// the config sheet) applies as a setting written here does. A batch that names the file or its folder, or asks to
+    /// rebuild (lost reports, Refresh), has it read on a thread of its own: starting | stopping plugins is no work for
+    /// the watch thread, and a read never waits there on a write of this core in progress. One read waiting for its
+    /// turn serves every report until it starts. Once listening, the file is read again: a change between the open's
+    /// read and the subscription applies now, not at the next report.
+    pub fn follow_config(self: &Arc<Self>, env: &Arc<CoreEnv>) {
+        let core = Arc::downgrade(self);
+        let weak_env = Arc::downgrade(env);
+        let pending = Arc::clone(&self.config_pending);
+        let keys = [
+            crate::paths::key_of(&format!("{}/config.toml", crate::state::PERMARK_DIR)),
+            crate::paths::key_of(crate::state::PERMARK_DIR),
+        ];
+        let team_file = move |path: &str| keys.contains(&crate::paths::key_of(path));
+        let subscription = self.hub.subscribe(move |batch| {
+            let touched = batch.rescan
+                || batch.changes.iter().any(|change| {
+                    team_file(&change.path)
+                        || matches!(&change.kind, ChangeKind::Renamed { from } if team_file(from))
+                });
+            if !touched || pending.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            let (core, env) = (core.clone(), weak_env.clone());
+            let spawned = std::thread::Builder::new()
+                .name("permark-config".to_owned())
+                .spawn(move || {
+                    if let (Some(core), Some(env)) = (core.upgrade(), env.upgrade()) {
+                        core.reread_config(&env);
+                    }
+                });
+            if spawned.is_err() {
+                pending.store(false, Ordering::SeqCst);
+            }
+        });
+        *self
+            .config_sub
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(subscription);
+        self.reread_config(env);
+    }
+
+    /// Reads `.permark/config.toml` again and applies what differs from what applied so far, by the rules of an open
+    /// (the app's own write and the same bytes again differ in nothing: no work). A file that is not TOML | cannot be
+    /// read as text now (locked, too large, not text) keeps what applied, so a broken file never lifts what the team
+    /// narrowed, and says where it stops being TOML | why it cannot be read; a linked `.permark` or any other failure
+    /// changes nothing. A team folder that came or went since the state was last read (a checkout, a copy, a delete)
+    /// has the whole state read again, as at an open: the place of the data stays as the folder's row says, the offer
+    /// is worked out again.
+    pub(crate) fn reread_config(&self, env: &CoreEnv) {
+        let turn = self.config_turn();
+        // a report from now on needs a read after this one: what changes during it may be missed by it
+        self.config_pending.store(false, Ordering::SeqCst);
+        #[cfg(test)]
+        self.config_reads
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if self.team_folder_moved() {
+            let journal = self.fileops.hold_journal();
+            self.reload_state_in(&turn, journal, env);
+            env.sink
+                .emit(CoreEvent::ProjectConfigChanged(ProjectConfigChanged {
+                    root: self.root().path().display().to_string(),
+                }));
+            // the windows' contexts | views say whether the folder has a team folder and where its data is
+            if let Some(hook) = env.status_hook() {
+                hook();
+            }
+            return;
+        }
+        let before = self.config();
+        let after = match ProjectConfig::load_checked(self.vault.main()) {
+            ConfigRead::Read(_, config) => config,
+            ConfigRead::Absent => ProjectConfig::default(),
+            ConfigRead::Unreadable(ConfigUnreadable::NotToml { line }) => ProjectConfig {
+                unreadable_line: Some(line),
+                unreadable_why: None,
+                ..before.clone()
+            },
+            ConfigRead::Unreadable(unreadable) => match unreadable.why() {
+                Some(why) => ProjectConfig {
+                    unreadable_line: None,
+                    unreadable_why: Some(why),
+                    ..before.clone()
+                },
+                None => return,
+            },
+        };
+        self.use_config(&turn, env, &before, &after);
+    }
+
+    /// Whether a team folder came (a real `.permark/` now, none when the state was last read) or went (nothing, or a
+    /// plain file, at the name now). A link in its place, or a name that cannot be looked at, is neither: like the
+    /// team file read, it changes nothing.
+    fn team_folder_moved(&self) -> bool {
+        let root = self.vault.main();
+        if !self.has_team_folder() {
+            return crate::state::has_team_folder(root);
+        }
+        match std::fs::symlink_metadata(root.path().join(crate::state::PERMARK_DIR)) {
+            Ok(meta) => !crate::fsx::is_link(&meta) && !meta.is_dir(),
+            Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        }
+    }
+
+    /// `after` becomes the config (`before`: the one that applied until now) and what follows it is brought along: the
+    /// plugins turned off for everyone, the Explorer's default filter + ignore rules (the folder read again); windows
+    /// are told. Called inside the config turn (`turn`: proof of it).
+    fn use_config(
+        &self,
+        turn: &MutexGuard<'_, ()>,
+        env: &CoreEnv,
+        before: &ProjectConfig,
+        after: &ProjectConfig,
+    ) {
+        if before == after {
+            return;
+        }
+        *self.config.write().unwrap_or_else(PoisonError::into_inner) = after.clone();
+        if before.plugins_off != after.plugins_off {
+            self.apply_plugins_in(turn, env);
+            env.sink.emit(CoreEvent::PluginsChanged);
+            // the windows' contexts name the plugins that are on
+            if let Some(hook) = env.status_hook() {
+                hook();
+            }
+        }
+        if before.tree != after.tree || before.ignore != after.ignore {
+            self.explorer.reconfigure(after);
+            self.rescan();
+        }
+        env.sink
+            .emit(CoreEvent::ProjectConfigChanged(ProjectConfigChanged {
+                root: self.root().path().display().to_string(),
+            }));
+    }
+
+    /// What git may see of the folder's `.permark/` ([`crate::state::set_sharing`]): a rewritten ignore file reaches the
+    /// tree at once (its rules decide what is listed as ignored), not only when the watcher reports it.
+    ///
+    /// # Errors
+    /// What `set_sharing` refuses: no real team folder, someone else's ignore file, IO.
+    pub fn set_sharing(&self, to: Sharing) -> Result<Sharing, crate::state::StateError> {
+        let before = crate::state::sharing(self.vault.main());
+        let now = crate::state::set_sharing(self.vault.main(), to)?;
+        if now != before {
+            self.explorer
+                .sync_paths(&[format!("{}/.gitignore", crate::state::PERMARK_DIR)], &[]);
+        }
+        Ok(now)
+    }
+
+    /// The app wrote the file `abs` without the project's editor (an export saved where the person chose): inside the
+    /// project, the tree lists it now instead of when the watch reports it (a report can be late or lost); anywhere
+    /// else, nothing happens.
+    pub fn announce_written(&self, abs: &std::path::Path) {
+        if let Some(path) = self.vault.relativize(abs).filter(|p| !p.is_root()) {
+            self.explorer.sync_paths(&[path.as_str().to_owned()], &[]);
+        }
     }
 
     /// The person asked to read the folder again: the tree is walked, and the index, git and every plugin that keeps a
@@ -797,7 +1124,7 @@ impl ProjectCore {
     }
 
     /// The person's own choice for plugin `id` in this project (`None`: follow the app), kept in the profile; the
-    /// project's plugins are brought to it.
+    /// project's plugins are brought to it. Waits for a config turn in progress (an Initialize copying the data).
     ///
     /// # Errors
     /// The choices file cannot be written.
@@ -807,6 +1134,7 @@ impl ProjectCore {
         id: &PluginId,
         choice: Option<bool>,
     ) -> Result<(), crate::state::StateError> {
+        let turn = self.config_turn();
         let file = self
             .store()
             .profile_file::<ProjectPluginChoices>(PLUGIN_CHOICES_FILE);
@@ -820,7 +1148,7 @@ impl ProjectCore {
             }
         }
         file.save(&choices)?;
-        self.apply_plugins(env);
+        self.apply_plugins_in(&turn, env);
         Ok(())
     }
 
@@ -857,24 +1185,39 @@ impl ProjectCore {
             .running_ids()
     }
 
-    /// Re-resolves enablement (settings | choices changed) and starts | stops project plugins to match.
+    /// Re-resolves enablement (settings | choices changed) and starts | stops project plugins to match. Waits for a
+    /// config turn in progress: a plugin started during an Initialize would write into the place being left.
     pub fn apply_plugins(&self, env: &CoreEnv) {
-        let (enablement, on) = project_enablement(env, &self.config(), &self.store());
-        self.start_plugins(env, enablement, &on);
+        let turn = self.config_turn();
+        self.apply_plugins_in(&turn, env);
     }
 
-    /// Stops plugin `id` and its dependents, then starts them again (a setting of `id` changed).
+    /// [`ProjectCore::apply_plugins`] inside the config turn the caller holds (`_turn`: proof of it).
+    fn apply_plugins_in(&self, _turn: &MutexGuard<'_, ()>, env: &CoreEnv) {
+        let mut plugins = self.plugins.lock().unwrap_or_else(PoisonError::into_inner);
+        self.apply_plugins_to(env, &mut plugins);
+    }
+
+    /// Stops plugin `id` and its dependents, then starts them again (a setting of `id` changed). Waits for a config
+    /// turn in progress, as [`ProjectCore::apply_plugins`].
     pub fn restart_plugin(&self, env: &CoreEnv, id: &PluginId) {
-        self.plugins
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .stop_with_dependents(&env.registry, id);
-        self.apply_plugins(env);
+        let _turn = self.config_turn();
+        let mut plugins = self.plugins.lock().unwrap_or_else(PoisonError::into_inner);
+        plugins.stop_with_dependents(&env.registry, id);
+        self.apply_plugins_to(env, &mut plugins);
+    }
+
+    /// Enablement worked out and applied in one hold of the plugin set: an apply that read older settings | config
+    /// never lands after one that read newer ones (a plugin the person just turned off never starts again).
+    fn apply_plugins_to(&self, env: &CoreEnv, plugins: &mut PluginSet) {
+        let (enablement, on) = project_enablement(env, &self.config(), &self.store());
+        self.start_plugins(env, plugins, enablement, &on);
     }
 
     fn start_plugins(
         &self,
         env: &CoreEnv,
+        plugins: &mut PluginSet,
         enablement: BTreeMap<PluginId, Enablement>,
         on: &BTreeSet<PluginId>,
     ) {
@@ -902,30 +1245,23 @@ impl ProjectCore {
         let mut context = Context::welcome(env.distribution);
         context.workspace = crate::conditions::WorkspaceKind::Project;
         context.plugins.clone_from(on);
-        let failures = self
-            .plugins
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .apply(&env.registry, on, |id| {
-                // the person's own settings only: a shared project file never sets a plugin's keys for everyone
-                PluginCx::new(
-                    id.clone(),
-                    CxWorkspace::Project(self.vault.clone()),
-                    store.plugin_dir(id),
-                    settings.plugin_tables.get(id).map(|t| t.0.clone()),
-                    context.clone(),
-                    Arc::clone(&env.sink),
-                )
-                .with_watch(Arc::clone(&self.hub))
-                .with_project(self.project_services())
-                .with_store(store.clone())
-            });
+        let failures = plugins.apply(&env.registry, on, |id| {
+            // the person's own settings only: a shared project file never sets a plugin's keys for everyone
+            PluginCx::new(
+                id.clone(),
+                CxWorkspace::Project(self.vault.clone()),
+                store.plugin_dir(id),
+                settings.plugin_tables.get(id).map(|t| t.0.clone()),
+                context.clone(),
+                Arc::clone(&env.sink),
+            )
+            .with_watch(Arc::clone(&self.hub))
+            .with_project(self.project_services())
+            .with_store(store.clone())
+        });
         // plugins that kept running are told, so what they read with the old formats (links of documents) is read again
         if formats_changed {
-            self.plugins
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .formats_changed();
+            plugins.formats_changed();
         }
         // named as the project's views name it (`WorkspaceView::Project.root`)
         let root = self.root().path().display().to_string();

@@ -24,6 +24,14 @@
     const timer = setTimeout(() => (shown = next), 300);
     return () => clearTimeout(timer);
   });
+
+  // The web view would load a link of the drawing in place of the app page (the unsaved Source text gone with it), or
+  // open it in a window of its own on a middle click. `inert` already stops that, but not every web view honors it.
+  // Every click is held, not only one on a link: a `<use>` copy of a link takes the click as itself, outside any link,
+  // and the picture has no click behavior of its own to keep.
+  function holdClick(event: MouseEvent): void {
+    event.preventDefault();
+  }
 </script>
 
 {#if embed}
@@ -31,7 +39,12 @@
     {#key shown}
       {#await embed.view() then loaded}
         {@const View = loaded.default}
-        <View source={shown} info={language} display={false} />
+        <!-- A picture of the block being typed, like Edit's opened block: inert keeps its links out of the tab order
+             (a Tab stop that does nothing) in every redraw, since it sits on this wrapper and not on the drawn links.
+             The panel around it still scrolls. -->
+        <div inert onclickcapture={holdClick} onauxclickcapture={holdClick}>
+          <View source={shown} info={language} display={false} />
+        </div>
       {:catch}
         <p class="note">{t("edit.diagramFailed")}</p>
       {/await}

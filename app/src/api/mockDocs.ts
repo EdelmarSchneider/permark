@@ -5,6 +5,7 @@
 
 import editSources from "./generated/mock-edit-sources.json";
 import mockDocuments from "./generated/mock-documents.json";
+import { opensOutsideOf } from "./mockFs";
 import type { Block, DocumentView, EditSource, LinkTarget, OutlineItem } from "./types";
 
 function isView(value: unknown): value is DocumentView {
@@ -69,6 +70,7 @@ function base(path: string): Omit<DocumentView, "body" | "format" | "editable"> 
     size: 1024,
     mtimeMs: Date.now() - 180_000,
     notes: [],
+    opensOutside: opensOutsideOf(nameOf(path)),
   };
 }
 

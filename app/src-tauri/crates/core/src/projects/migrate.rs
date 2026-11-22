@@ -32,8 +32,12 @@ const READ_FILE: &str = "read.json";
 const VISIT_FILE: &str = "visit.json";
 const COMMENTS_FILE: &str = "comments.json";
 const QUIET_FILE: &str = "quiet.json";
+/// Most bytes the unread files are read with (the unread plugin's own cap).
+const UNREAD_MAX_BYTES: u64 = 32 * 1024 * 1024;
+/// Most bytes `comments.json` is read with (the comments plugin's own cap).
+const COMMENTS_MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// The ledger of copied entries (profile of the opened folder).
-pub const LEDGER_FILE: &str = "projects-copied.json";
+pub use crate::state::LEDGER_FILE;
 
 /// What a copy did (tests, the report).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -262,14 +266,19 @@ fn unread(
             })
             .unwrap_or_default()
     };
-    let read_src = source_json(&root.plugin_raw_file(&UNREAD, READ_FILE))?;
-    let visit_src = source_json(&root.plugin_raw_file(&UNREAD, VISIT_FILE))?;
+    let unread = |store: &StateStore, name| {
+        store
+            .plugin_raw_file(&UNREAD, name)
+            .capped(UNREAD_MAX_BYTES)
+    };
+    let read_src = source_json(&unread(root, READ_FILE))?;
+    let visit_src = source_json(&unread(root, VISIT_FILE))?;
     let read_sel = selected(&read_src);
     let visit_sel = selected(&visit_src);
     // the member was seen from the opened folder (its documents are in the last-visit picture): its read state is
     // carried even when empty, so documents unread there stay unread (no fresh baseline)
     if !read_sel.is_empty() || (read_src.is_some() && !visit_sel.is_empty()) {
-        let file = target.plugin_raw_file(&UNREAD, READ_FILE);
+        let file = unread(target, READ_FILE);
         let mut added = BTreeSet::new();
         let wrote = update_json(&file, |now| {
             added.clear();
@@ -286,7 +295,7 @@ fn unread(
         }
     }
     if !visit_sel.is_empty() {
-        let file = target.plugin_raw_file(&UNREAD, VISIT_FILE);
+        let file = unread(target, VISIT_FILE);
         let at_ms = visit_src
             .as_ref()
             .and_then(|v| v.get("data")?.get("at_ms")?.as_u64())
@@ -334,7 +343,8 @@ fn comments(
     seen: &mut Ledger,
     copied: &mut Copied,
 ) -> Result<(), String> {
-    let Some(source) = source_json(&root.raw_file(COMMENTS_FILE))? else {
+    let Some(source) = source_json(&root.raw_file(COMMENTS_FILE).capped(COMMENTS_MAX_BYTES))?
+    else {
         return Ok(());
     };
     let picked: Vec<(String, Value)> = source
@@ -357,7 +367,7 @@ fn comments(
     if picked.is_empty() {
         return Ok(());
     }
-    let file = target.raw_file(COMMENTS_FILE);
+    let file = target.raw_file(COMMENTS_FILE).capped(COMMENTS_MAX_BYTES);
     let wrote = update_json(&file, |now| {
         let mut book = now.unwrap_or_else(|| serde_json::json!({ "version": 1, "comments": [] }));
         let newer = book

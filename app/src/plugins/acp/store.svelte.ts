@@ -37,6 +37,7 @@ import type {
   PromptSelection,
   ResolvedCommand,
 } from "../../api";
+import { untrack } from "svelte";
 import { anchorLine } from "../../core/doc/codeRefs";
 import { documents } from "../../core/doc/document.svelte";
 import { pageSelection } from "../../core/doc/selection";
@@ -84,7 +85,8 @@ export type ToolState = AcpToolStatus | "stopped";
 export type Entry =
   /** The person's message (`passage`: attached; `null` also for a message replayed from a continued conversation). */
   | { kind: "you"; id: number; text: string; passage: PromptSelection | null }
-  | { kind: "agent"; id: number; text: string }
+  /** The agent's message (`replayed`: sent again by a continued conversation, already whole when it comes). */
+  | { kind: "agent"; id: number; text: string; replayed: boolean }
   | { kind: "tool"; id: number; tool: string; title: string; status: ToolState }
   | {
       kind: "question";
@@ -124,6 +126,8 @@ export type AcpDeps = {
   /** Says a line on the window's polite status line. */
   say: (text: string) => void;
   notices: { notifyKeyed(key: string, text: string, ...actions: NoticeAction[]): void };
+  /** The panel is on screen now. */
+  onScreen: () => boolean;
 };
 
 export class AcpStore {
@@ -188,6 +192,7 @@ export class AcpStore {
     this.#deps = {
       say: deps.say ?? ((text) => arrangement.say(text)),
       notices: deps.notices ?? windowStore,
+      onScreen: deps.onScreen ?? (() => arrangement.onScreen(PANEL)),
     };
   }
 
@@ -242,6 +247,17 @@ export class AcpStore {
           this.clear();
         };
       });
+      // the panel comes back on screen: the status is read again, so the rules line follows a rule file the person
+      // fixed (or broke) meanwhile, not only the next start | refusal
+      let wasShown = untrack(() => this.#deps.onScreen());
+      $effect(() => {
+        const shown = this.#deps.onScreen();
+        if (shown && !wasShown)
+          untrack(() => {
+            if (this.#root() !== null) void this.#readStatus();
+          });
+        wasShown = shown;
+      });
       $effect(() => {
         // the editors take the selection from the same event: read once they have, then at most once per moment
         let timer: ReturnType<typeof setTimeout> | null = null;
@@ -292,6 +308,7 @@ export class AcpStore {
           // no agent, no settings: the next one tells its own
           options:
             update.state === "idle" || update.state === "error" ? [] : (this.status?.options ?? []),
+          rules: this.status?.rules,
         };
         if (update.state !== "starting" && update.state !== "working") {
           this.thinking = false;
@@ -305,19 +322,30 @@ export class AcpStore {
           });
         if (update.state !== before || update.error !== null)
           this.#sayState(update.state, update.error);
-        // the agent stopped (a choice in any window of the app among the causes): its name is read again
-        if (update.state === "idle") void this.#readStatus();
+        // the agent stopped (a choice in any window of the app among the causes): its name is read again; a start
+        // reads the rules on what agents may see anew, and a refusal for them names the file: the rules line follows
+        if (
+          update.state === "idle" ||
+          update.state === "starting" ||
+          update.error?.code === "rulesUnreadable"
+        )
+          void this.#readStatus();
         return;
       }
       case "text": {
         this.thinking = false;
+        // the backend replays a continued conversation while the agent starts (ready once restored) and moves to
+        // working before any turn's reply: the state tells a replay apart, whichever window asked for it and after a
+        // sign-in in between too
+        const replayed = this.status?.state === "starting";
         const last = this.transcript.at(-1);
-        if (last?.kind === "agent")
+        // a live reply never joins a replayed one: each keeps how it is drawn
+        if (last?.kind === "agent" && last.replayed === replayed)
           this.transcript = [
             ...this.transcript.slice(0, -1),
             { ...last, text: last.text + update.text },
           ];
-        else this.#push({ kind: "agent", text: update.text });
+        else this.#push({ kind: "agent", text: update.text, replayed });
         return;
       }
       case "you": {
@@ -418,8 +446,9 @@ export class AcpStore {
       if (result.ok || this.#root() !== root) return;
       this.#notice(t("acp.notSent", { reason: errorText(result.error) }));
       const detail = result.error.kind === "backend" ? result.error.error.detail : null;
-      // another window may have changed the choice: the picker | the name follows what the backend holds
-      if (detail === "noAgent") void this.#readStatus();
+      // another window may have changed the choice: the picker | the name follows what the backend holds; a refusal
+      // for the rules on what agents may see: the rules line names the file
+      if (detail === "noAgent" || detail === "rulesUnreadable") void this.#readStatus();
       // nothing was sent: the message comes back unless the person wrote anew; the passage too, unless agents may
       // not see its file (attached again, every later message would be refused for it)
       if (this.draft === "") this.draft = text;
@@ -756,6 +785,7 @@ export class AcpStore {
             needs: answer.needs,
             skippedFiles: answer.skippedFiles,
             last: answer.last,
+            rules: answer.rules,
           };
   }
 
@@ -1134,8 +1164,12 @@ function failKey(code: AcpErrorCode): MessageKey {
       return "acp.fail.tooLarge";
     case "projectsNotReady":
       return "acp.fail.projectsNotReady";
+    case "rulesUnreadable":
+      return "acp.fail.rulesUnreadable";
     case "startFailed":
       return "acp.fail.startFailed";
+    case "notAllowed":
+      return "acp.fail.notAllowed";
     case "timedOut":
       return "acp.fail.timedOut";
     case "initFailed":
@@ -1244,6 +1278,8 @@ function detailKey(detail: string | null): MessageKey | null {
       return "acp.error.networkProgram";
     case "relativeProgram":
       return "acp.error.relativeProgram";
+    case "tooLong":
+      return "acp.error.commandTooLong";
     case "oneChoice":
       return "acp.error.oneChoice";
     case "noProfile":
@@ -1272,6 +1308,8 @@ function detailKey(detail: string | null): MessageKey | null {
       return "acp.fail.tooLarge";
     case "projectsNotReady":
       return "acp.fail.projectsNotReady";
+    case "rulesUnreadable":
+      return "acp.fail.rulesUnreadable";
     case "noText":
     case "edits":
       return "acp.error.notApplied";

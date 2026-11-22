@@ -7,7 +7,7 @@ import { t, type MessageKey } from "../i18n";
 import { fuzzyMatch } from "../search/fuzzy";
 import type { Contribution, ContributionOf } from "../plugins/registry.svelte";
 import { comboLabel } from "./combo";
-import { comboOf, type Keymap } from "./keymap";
+import type { Keymap } from "./keymap";
 
 export type CommandItem = ContributionOf<"command">;
 
@@ -45,9 +45,14 @@ export function listCommands(
   return out;
 }
 
+/** The key of what a command is called now: the label that follows its state, else its label. */
+function labelKey(command: CommandItem): MessageKey {
+  return command.labelNow?.() ?? command.label;
+}
+
 /** What a command is called on screen: its label in the interface language, its placeholders filled. */
 export function commandLabel(command: CommandItem): string {
-  return t(command.label, command.labelParams?.());
+  return t(labelKey(command), command.labelParams?.());
 }
 
 /** A combo as typed into the palette: lower case, no spaces. */
@@ -86,16 +91,11 @@ export function matchCommands(
       ranked.push({ entry, score: Number.MAX_SAFE_INTEGER - 2 + onKeys, positions: [], at });
       return;
     }
-    const found = fuzzyMatch(query, label(entry.command.label, entry.command.labelParams?.()));
+    const found = fuzzyMatch(query, label(labelKey(entry.command), entry.command.labelParams?.()));
     if (found) ranked.push({ entry, score: found.score, positions: found.positions, at });
   });
   ranked.sort((a, b) => b.score - a.score || a.at - b.at);
   return ranked.map(({ entry, positions }) => ({ entry, positions }));
-}
-
-/** The first combo of a command in the map (what a row shows). */
-export function shortcutOf(keymap: Keymap, command: string): string | null {
-  return comboOf(keymap, command);
 }
 
 /** Whether a command may run now: `when` true and `available` not `unavailable`. */

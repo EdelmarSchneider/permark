@@ -104,10 +104,33 @@ impl Node {
     }
 }
 
+/// What a listing of a folder reads besides names and kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Listing {
+    /// Nothing more (the tree, a walk for the names of documents).
+    Names,
+    /// Size and modified time of the files whose content the index reads (on Windows the listing carries them; the
+    /// index compares them with what it read instead of asking each file).
+    Index,
+    /// Size and modified time of every file, links to files left out (a folder scan reads every file it lists).
+    Files,
+}
+
+/// Whether the search index reads the content of files of this category.
+fn content_read(category: super::Category) -> bool {
+    matches!(
+        category,
+        super::Category::Markdown | super::Category::Text | super::Category::Config
+    )
+}
+
 /// Entry found on disk.
 struct Found {
     name: String,
     is_dir: bool,
+    /// A symlink | junction: listed, its target never read. std's tag-based test, so a cloud placeholder file (another
+    /// reparse point) stays a plain file.
+    link: bool,
     /// Size and modified time (ms since the epoch) of a file, when the caller asked for them.
     stat: Option<(u64, i64)>,
 }
@@ -170,7 +193,7 @@ pub(crate) fn path_always_out(path: &str) -> bool {
 fn read_entries(
     abs: &Path,
     parent_path: &str,
-    want_stat: bool,
+    listing: Listing,
 ) -> Option<(Vec<Found>, super::ignore::DirHints)> {
     let mut found = Vec::new();
     let mut hints = super::ignore::DirHints::default();
@@ -186,24 +209,40 @@ fn read_entries(
             hints.git = true;
         }
         if always_out(parent_path, &name) {
+            hints.temps |= crate::fsx::temp_pid(&name).is_some();
             continue;
         }
         let Ok(file_type) = entry.file_type() else {
             continue;
         };
         let link = file_type.is_symlink() || is_reparse_point(&entry);
+        if !(file_type.is_file() || file_type.is_dir() || link) {
+            // a FIFO, socket or device: nothing a person reads, and a read of one can wait forever
+            continue;
+        }
         let is_dir = file_type.is_dir() && !link;
         if is_dir && named(&name, PERMARK) {
             hints.permark = true;
         }
-        if want_stat && link && !is_dir {
+        if listing == Listing::Files && link && !is_dir {
             // a folder scan reads files: through a link (or a cloud placeholder) it would leave the folder
             continue;
         }
-        let stat = (want_stat && !is_dir)
+        let want_stat = !is_dir
+            && match listing {
+                Listing::Names => false,
+                Listing::Index => !link && content_read(category_of(&name)),
+                Listing::Files => true,
+            };
+        let stat = want_stat
             .then(|| entry.metadata().ok().map(|m| (m.len(), modified_ms(&m))))
             .flatten();
-        found.push(Found { name, is_dir, stat });
+        found.push(Found {
+            name,
+            is_dir,
+            link: file_type.is_symlink(),
+            stat,
+        });
     }
     Some((found, hints))
 }
@@ -241,6 +280,8 @@ pub(crate) struct TreeModel {
     markers: HashMap<String, Marker>,
     /// Keys of the folders listed because the person asked (a large one, an ignored one): a walk lists them again.
     asked: HashSet<String>,
+    /// Keys of the listed folders whose listing held a name of a write's temp ([`super::ignore::DirHints::temps`]).
+    temps: HashSet<String>,
 }
 
 impl TreeModel {
@@ -251,7 +292,13 @@ impl TreeModel {
             children: HashMap::new(),
             markers: HashMap::new(),
             asked: HashSet::new(),
+            temps: HashSet::new(),
         }
+    }
+
+    /// Whether the listing of the folder `key` held a name of a write's temp.
+    pub(crate) fn holds_temps(&self, key: &str) -> bool {
+        self.temps.contains(key)
     }
 
     /// Folders holding a project marker (main root, the root itself left out).
@@ -438,16 +485,20 @@ impl TreeModel {
     // ---- walk --------------------------------------------------------------------------------------------------
 
     /// Forgets everything and walks every root again. The folders the person opened (large | ignored) are listed
-    /// again: reading the disk again closes nothing.
-    pub(crate) fn rebuild(&mut self) {
+    /// again: reading the disk again closes nothing. `fresh_rules`: what was read from ignore files is read again (one
+    /// changed, or events were lost); the first walk takes the rules as they are.
+    pub(crate) fn rebuild(&mut self, fresh_rules: bool) {
         let mut asked: Vec<String> = std::mem::take(&mut self.asked).into_iter().collect();
         self.nodes.clear();
         self.children.clear();
         self.markers.clear();
+        self.temps.clear();
         let mut budget = MAX_ENTRIES;
         for index in 0..self.roots.len() {
             let root = self.roots[index].clone();
-            root.ignorer.clear();
+            if fresh_rules {
+                root.ignorer.clear();
+            }
             let frames = root.ignorer.root_frames();
             let mut walk = Walk {
                 root: &root,
@@ -482,7 +533,7 @@ impl TreeModel {
         asked: bool,
     ) -> Result<(), usize> {
         let root = walk.root;
-        let Some((found, hints)) = read_entries(dir_abs, dir_path, false) else {
+        let Some((found, hints)) = read_entries(dir_abs, dir_path, Listing::Names) else {
             return Ok(());
         };
         if root.prefix.is_empty() && (hints.git || hints.permark) {
@@ -490,6 +541,9 @@ impl TreeModel {
         }
         if depth > 0 && !asked && found.len() > LARGE_FOLDER {
             return Err(found.len());
+        }
+        if hints.temps {
+            self.temps.insert(key_of(dir_path));
         }
         // inside a container only nested projects count: its own rules are needed only on the way to an included one
         let frames = if depth == 0 {
@@ -716,11 +770,12 @@ pub struct ScanFile {
     pub path: String,
     pub category: super::Category,
     /// Where it is on disk; a root scan gives it only for the categories whose content is read (Markdown | Text |
-    /// Config), a folder scan for every file.
+    /// Config) and never for a link (listed by name, its target never read), a folder scan for every file.
     pub abs: Option<PathBuf>,
-    /// Size in bytes (a folder scan only; 0 otherwise).
+    /// Size in bytes: a folder scan gives it for every file, the index's walks for the files whose content is read
+    /// (when the listing tells); 0 otherwise.
     pub size: u64,
-    /// Modified time, ms since the epoch (a folder scan only; 0 otherwise).
+    /// Modified time, ms since the epoch: given like `size`; 0 otherwise.
     pub modified_ms: i64,
 }
 
@@ -739,26 +794,66 @@ struct ScanCx<'a> {
     cancel: &'a std::sync::atomic::AtomicBool,
     budget: usize,
     out: Scan,
+    listing: Listing,
     /// A folder scan: size, modified time and absolute path of every file; its callback may end the walk.
     folder: Option<&'a mut dyn FnMut(&ScanFile) -> bool>,
 }
 
-/// Walks `root` afresh with the tree's ignore rules and without its large-folder guard: every file that is not
-/// ignored (links never followed). Ignored folders are not entered; the ones that are not containers are named in
-/// `unchecked`.
-pub(crate) fn scan_root(root: &RootCtx, cancel: &std::sync::atomic::AtomicBool) -> Scan {
-    root.ignorer.clear();
+impl<'a> ScanCx<'a> {
+    fn new(root: &'a RootCtx, cancel: &'a std::sync::atomic::AtomicBool, listing: Listing) -> Self {
+        Self {
+            root,
+            cancel,
+            budget: MAX_ENTRIES,
+            out: Scan::default(),
+            listing,
+            folder: None,
+        }
+    }
+
+    fn done(mut self) -> Scan {
+        self.out.unchecked.sort();
+        self.out
+    }
+}
+
+/// Walks `root` afresh with the tree's ignore rules (as last read: the watch has them read again when an ignore file
+/// changes) and without its large-folder guard: every file that is not ignored (links never followed). Ignored folders
+/// are not entered; the ones that are not containers are named in `unchecked`. `stat`: size and modified time of the
+/// files whose content the index reads, where the listing tells them.
+pub(crate) fn scan_root(
+    root: &RootCtx,
+    cancel: &std::sync::atomic::AtomicBool,
+    stat: bool,
+) -> Scan {
     let frames = root.ignorer.root_frames();
-    let mut cx = ScanCx {
-        root,
-        cancel,
-        budget: MAX_ENTRIES,
-        out: Scan::default(),
-        folder: None,
-    };
+    let listing = if stat { Listing::Index } else { Listing::Names };
+    let mut cx = ScanCx::new(root, cancel, listing);
     scan_dir(&mut cx, &root.abs, &root.prefix, &frames, false, 0);
-    cx.out.unchecked.sort();
-    cx.out
+    cx.done()
+}
+
+/// [`scan_root`] (with sizes and times) limited to the folder `folder` (a project path; `abs`, where it is on disk):
+/// the files a walk of the whole root finds below it (the rules of the folders above count, an ignored folder is
+/// named, not entered).
+pub(crate) fn scan_under(
+    root: &RootCtx,
+    folder: &str,
+    abs: &Path,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Scan {
+    let mut cx = ScanCx::new(root, cancel, Listing::Index);
+    let depth = below_root(folder).matches('/').count() + 1;
+    match root.ignorer.locate(abs, true) {
+        // the root itself
+        None => scan_dir(&mut cx, abs, folder, &root.ignorer.root_frames(), false, 0),
+        Some((Entry::Ignored, _)) => cx.out.unchecked.push(folder.to_owned()),
+        Some((Entry::Container, base)) => scan_dir(&mut cx, abs, folder, &base, true, depth),
+        Some((Entry::Shown | Entry::Project, base)) => {
+            scan_dir(&mut cx, abs, folder, &base, false, depth);
+        }
+    }
+    cx.done()
 }
 
 /// [`scan_root`] started inside a folder of the root (`abs` is where `folder`, a project path, is on disk): the rules
@@ -772,23 +867,16 @@ pub(crate) fn scan_folder(
     cancel: &std::sync::atomic::AtomicBool,
     stop: &mut dyn FnMut(&ScanFile) -> bool,
 ) -> Scan {
-    root.ignorer.clear();
     let (in_ignored, frames) = match root.ignorer.locate(abs, true) {
         None => (false, root.ignorer.root_frames()),
         Some((Entry::Shown | Entry::Project, base)) => (false, root.ignorer.enter(&base, abs)),
         Some((Entry::Container, base)) => (true, root.ignorer.container_frames(&base, abs, None)),
         Some((Entry::Ignored, base)) => (true, base),
     };
-    let mut cx = ScanCx {
-        root,
-        cancel,
-        budget: MAX_ENTRIES,
-        out: Scan::default(),
-        folder: Some(stop),
-    };
+    let mut cx = ScanCx::new(root, cancel, Listing::Files);
+    cx.folder = Some(stop);
     scan_dir(&mut cx, abs, folder, &frames, in_ignored, 0);
-    cx.out.unchecked.sort();
-    cx.out
+    cx.done()
 }
 
 fn scan_dir(
@@ -803,7 +891,7 @@ fn scan_dir(
         cx.out.cut_off = true;
         return;
     }
-    let Some((found, hints)) = read_entries(dir_abs, dir_path, cx.folder.is_some()) else {
+    let Some((found, hints)) = read_entries(dir_abs, dir_path, cx.listing) else {
         return;
     };
     let root = cx.root;
@@ -835,15 +923,11 @@ fn scan_dir(
             if !ignored {
                 let category = category_of(&entry.name);
                 let (size, modified_ms) = entry.stat.unwrap_or((0, 0));
-                let reads_content = cx.folder.is_some()
-                    || matches!(
-                        category,
-                        super::Category::Markdown | super::Category::Text | super::Category::Config
-                    );
+                let reads_content = cx.listing == Listing::Files || content_read(category);
                 let file = ScanFile {
                     path,
                     category,
-                    abs: reads_content.then_some(abs),
+                    abs: (reads_content && !entry.link).then_some(abs),
                     size,
                     modified_ms,
                 };

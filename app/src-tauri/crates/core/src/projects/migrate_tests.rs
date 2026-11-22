@@ -628,10 +628,10 @@ fn include_pauses_followers_copies_then_resumes_with_the_new_owner() {
     });
     let outcome = core
         .projects_include(
-            &env,
             &ProjectPick::Paths {
                 paths: vec!["sub-a".to_owned()],
             },
+            &|| core.initialize(&env),
         )
         .unwrap();
     assert_eq!(outcome.0.included, 1);
@@ -654,10 +654,10 @@ fn include_pauses_followers_copies_then_resumes_with_the_new_owner() {
     // included again: no second copy (a change made in the project meanwhile stays)
     fs::write(fx.root.join("sub-a/.permark/local/quiet.json"), b"{}").unwrap();
     core.projects_include(
-        &env,
         &ProjectPick::Paths {
             paths: vec!["sub-a".to_owned()],
         },
+        &|| core.initialize(&env),
     )
     .unwrap();
     assert_eq!(
@@ -803,7 +803,7 @@ fn the_journal_of_a_project_gets_the_facts_about_its_files() {
         .any(|e| e.fact.path() == Some("docs/a.md")));
 }
 
-/// V7 (verifier, local only): the copy on REAL 0.6.x bytes (the director's `F:/PerMarkRoot/.permark`, copied to a temp
+/// Local only: the copy on REAL 0.6.x bytes (the director's `F:/PerMarkRoot/.permark`, copied to a temp
 /// folder; never touched in place). Every member with entries: copy OK, root bytes identical, entry counts == source
 /// entries under the member, second run writes nothing.
 #[test]

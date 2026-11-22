@@ -2,7 +2,13 @@
 import "../../core/testing/media";
 import { flushSync, mount, tick, unmount } from "svelte";
 import { describe, expect, it } from "vitest";
-import type { HandOffPreview, HandOffSessionView } from "../../api";
+import type {
+  HandOffPreview,
+  HandOffSessionView,
+  PluginMethod,
+  PluginMethods,
+  Result,
+} from "../../api";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import { PluginClient } from "../../core/plugins/client";
 import { approx, canConfirm, included, notes, toggled, type Ready } from "./handoff";
@@ -171,6 +177,75 @@ describe("hand-off flow", () => {
     expect(handOff.state.status).toBe("closed");
     void unmount(view);
     target.remove();
+  });
+
+  it("says why when git tracks the private folder or that could not be checked: its own note, no confirm, nothing handed off", async () => {
+    const { api, store, said } = await setup();
+    api.probe.plugins.agent.withhold(true);
+    await store.open();
+    expect(store.state.status).toBe("withheld");
+    handOff.state = store.state;
+    const target = document.createElement("div");
+    document.body.append(target);
+    const view = mount(HandOffDialog, { target });
+    await settle();
+    const dialog = target.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(target.textContent).toContain(
+      "PerMark does not hand this folder's activity to agents: its git repository tracks PerMark's private folder (.permark/local), or PerMark could not check that.",
+    );
+    const buttons = [...target.querySelectorAll("button")].map((b) => b.textContent.trim());
+    expect(buttons).not.toContain("Hand off and copy");
+    expect(buttons).toContain("Close");
+    expect(target.querySelector('input[type="checkbox"]')).toBeNull();
+    expect(said).toEqual([]);
+    dialog?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await settle();
+    expect(handOff.state.status).toBe("closed");
+    expect(api.probe.plugins.agent.handedOff).toEqual([]);
+    void unmount(view);
+    target.remove();
+  });
+
+  it("a confirm refused because the activity became withheld says why, not a bare failure", async () => {
+    const { api, store, copied, said } = await setup();
+    await store.open();
+    expect(store.state.status).toBe("open");
+    // git started tracking the private folder while the dialog was open: the backend refuses the hand-off
+    api.probe.plugins.agent.withhold(true);
+    await store.confirm();
+    expect(store.state.status).toBe("withheld");
+    expect(api.probe.plugins.agent.handedOff).toEqual([]);
+    expect(copied).toEqual([]);
+    expect(said).toEqual([]);
+  });
+
+  it("a confirm that fails for another reason asks again, then keeps the dialog with its failure line", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    const asked: string[] = [];
+    /** The mock backend, with the confirm failing (a lock, a full disk) while the activity stays shareable. */
+    class ConfirmFails extends PluginClient {
+      override call<M extends PluginMethod>(
+        method: M,
+        args: PluginMethods[M]["args"],
+      ): Promise<Result<PluginMethods[M]["result"]>> {
+        asked.push(method);
+        if (method === "agent.handOffConfirm")
+          return Promise.resolve({ ok: false, error: { kind: "window", message: "disk full" } });
+        return super.call(method, args);
+      }
+    }
+    const store = new HandOffStore(
+      new ConfirmFails(api, () => MOCK_FOLDER),
+      () => Promise.resolve(),
+      () => {},
+      () => true,
+    );
+    await store.open();
+    await store.confirm();
+    expect(asked).toEqual(["agent.handOffPreview", "agent.handOffConfirm", "agent.handOffPreview"]);
+    expect(store.state.status === "open" && store.state.phase).toBe("failed");
   });
 
   it("owns the keyboard while open: focus in, Tab stays inside, Escape closes, focus goes back", async () => {

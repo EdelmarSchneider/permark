@@ -7,21 +7,18 @@ mod filter;
 mod ignore;
 mod model;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use category::{category_of, extension_of, is_html, may_open_with_default_app, Category};
+pub(crate) use explorer::is_ignore_file;
 pub use explorer::{Explorer, WalkGate};
 pub use filter::{FilterShow, TreeFilter};
+pub(crate) use ignore::named;
 pub use ignore::{Ignorer, MemberRule, MemberSet};
 pub(crate) use model::{below_root, is_link as is_link_meta, key_of, path_always_out};
-
-/// Whether `path` itself (not followed) is a link | junction | reparse point.
-pub(crate) fn is_link_meta_of(path: &std::path::Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|m| is_link_meta(&m))
-}
 pub use model::{Marker, Scan, ScanFile};
 
 use crate::error::{ErrorKind, IpcError};
@@ -52,6 +49,7 @@ pub enum NodeKind {
 }
 
 /// One entry of the tree as a window sees it.
+#[allow(clippy::struct_excessive_bools)] // independent marks of one entry, sent as they are
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -66,6 +64,8 @@ pub struct TreeNode {
     pub ignored: bool,
     /// Shown only because it is the kept (open) document.
     pub forced: bool,
+    /// A file the system's default program may be asked to open (never a folder, script, program or macro carrier).
+    pub opens_outside: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

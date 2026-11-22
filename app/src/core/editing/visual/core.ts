@@ -43,7 +43,7 @@ import {
 import { gfm, strikethroughKeymap, tableSchema } from "@milkdown/kit/preset/gfm";
 import { gapCursor } from "@milkdown/kit/prose/gapcursor";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import { EditorState, Selection } from "@milkdown/kit/prose/state";
+import { EditorState, Plugin, Selection } from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
 import { CODE_BLOCK, TABLE_WRAP, taskLabel } from "../../doc/enhance";
@@ -263,9 +263,43 @@ const tableView = $view(tableSchema.node, (ctx): NodeViewConstructor => (node) =
   };
 });
 
-/** Where the caret starts: the first text, so a leading locked block (the front matter) is not selected. */
-function startOf(doc: PMNode): Selection {
-  return Selection.findFrom(doc.resolve(0), 1, true) ?? Selection.atStart(doc);
+/** Where the caret starts: the first text at | after `from` (a top-level position), so a locked block there (the front
+ *  matter) is not selected. */
+export function startOf(doc: PMNode, from = 0): Selection {
+  return (
+    Selection.findFrom(doc.resolve(from), 1, true) ??
+    Selection.findFrom(doc.resolve(from), -1, true) ??
+    Selection.atStart(doc)
+  );
+}
+
+/**
+ * Ctrl | Cmd+Home | End. The browser finds no text to put the caret in when a block kept as written stands at that edge
+ * (the front matter first, a block drawn as View draws it last), and the key did nothing to the caret. Home: the
+ * first text (`startOf`), the page at its top (what stands above that text in view too). End: the last block, selected
+ * when it is kept as written (what is typed then goes after it, `lockedKeys`), scrolled into view.
+ */
+function docEdges(scroller: HTMLElement | undefined): ReturnType<typeof $prose> {
+  return $prose(
+    () =>
+      new Plugin({
+        props: {
+          handleKeyDown: (view, event) => {
+            if (event.key !== "Home" && event.key !== "End") return false;
+            if (event.isComposing || event.altKey || event.shiftKey) return false;
+            if (!(event.ctrlKey || event.metaKey)) return false;
+            const { state } = view;
+            if (event.key === "End") {
+              view.dispatch(state.tr.setSelection(Selection.atEnd(state.doc)).scrollIntoView());
+            } else if (scroller) {
+              view.dispatch(state.tr.setSelection(startOf(state.doc)));
+              scroller.scrollTop = 0;
+            } else view.dispatch(state.tr.setSelection(startOf(state.doc)).scrollIntoView());
+            return true;
+          },
+        },
+      }),
+  );
 }
 
 /**
@@ -317,8 +351,9 @@ export type Core = {
   mdast(text: string): MdastNode;
   /** mdast as parsed (positions, references still references). */
   parseRaw(text: string): MdastNode;
-  /** Replaces the whole document (history starts over). */
-  setDoc(doc: PMNode): void;
+  /** Replaces the whole document (history starts over), the caret at the first text at | after the top-level position
+   *  `from` (none: the start). */
+  setDoc(doc: PMNode, from?: number): void;
   /** The webview's own spellcheck over the text on | off (on when made). */
   setSpellcheck(on: boolean): void;
   destroy(): Promise<void>;
@@ -333,6 +368,12 @@ export type CoreOptions = {
   looks?: LooksHost;
   /** The pane that scrolls the editor: its tables are measured as they come near its view. */
   scroller?: HTMLElement;
+  /**
+   * Tells `told` once an embed (a formula, highlighted code) mounted in an element of the page; returns what stops
+   * telling. A table around that element is measured again: its columns were read from the source text, which is
+   * far wider than a formula.
+   */
+  embedMounted?: (told: (element: HTMLElement) => void) => () => void;
   /** Before the stock plugins (keys and pastes seen first). */
   first?: Parameters<Editor["use"]>[0][];
   /** After the stock plugins. */
@@ -387,6 +428,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     .use(lockedNode)
     .use(lockedView)
     .use(lockedKeys)
+    .use(docEdges(options.scroller))
     .use(lockedRelook)
     .use(inlineSource)
     .use(promptBoxes)
@@ -410,6 +452,10 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     const serializer = ctx.get(serializerCtx);
     const remark = ctx.get(remarkCtx);
     const written = new WeakMap<PMNode, string>();
+    const unlisten = options.embedMounted?.((element) => {
+      const table = element.closest("table");
+      if (table) tables.redrawn(table);
+    });
     const core: Core = {
       editor,
       view,
@@ -430,11 +476,11 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       mdast: (text) =>
         stripPositions(remark.runSync(remark.parse(text), { value: text }) as MdastNode),
       parseRaw: (text) => remark.parse(text) as MdastNode,
-      setDoc: (doc) => {
+      setDoc: (doc, from) => {
         const state = EditorState.create({
           schema: view.state.schema,
           doc,
-          selection: startOf(doc),
+          selection: startOf(doc, from),
           plugins: view.state.plugins,
         });
         view.updateState(state);
@@ -446,6 +492,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
         view.setProps({});
       },
       destroy: async () => {
+        unlisten?.();
         tables.stop();
         await editor.destroy();
       },

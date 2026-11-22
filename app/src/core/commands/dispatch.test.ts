@@ -6,6 +6,7 @@ import { neutralContext } from "../conditions/context.svelte";
 import type { CommandItem } from "./commands";
 import {
   installButtons,
+  installContextMenuGuard,
   installKeys,
   isStraySelectAll,
   isTextTarget,
@@ -286,13 +287,157 @@ describe("the listener", () => {
     }
     expect(run).toHaveBeenCalledOnce();
     // other keys nobody holds stay the webview's
-    const free = press({ key: "F3" });
+    const free = press({ key: "F9" });
     window.dispatchEvent(free);
     expect(free.defaultPrevented).toBe(false);
     stop();
     const after = press({ key: "F5" });
     window.dispatchEvent(after);
     expect(after.defaultPrevented).toBe(false);
+  });
+
+  it("never leaves the webview's reload and print chords to it: with no command to run the key is taken", () => {
+    document.body.innerHTML = '<p id="words">words</p><input id="field">';
+    const from = (
+      id: string,
+      init: Partial<KeyboardEventInit> & { key: string },
+    ): KeyboardEvent => {
+      const event = press(init);
+      document.getElementById(id)?.dispatchEvent(event);
+      return event;
+    };
+    const open = vi.fn();
+    const held = env([command("search.quickOpen", { run: open, requires: PROJECT })], {
+      "search.quickOpen": "Mod+p",
+    });
+    let now: KeyEnv = held;
+    const stop = installKeys(window, () => now);
+    const reload = { key: "r", code: "KeyR", ctrlKey: true };
+    const hardReload = { key: "R", code: "KeyR", ctrlKey: true, shiftKey: true };
+    const print = { key: "p", code: "KeyP", ctrlKey: true };
+    // quick open cannot run here (no project) | a dialog owns the input | nobody holds the keys
+    for (const state of [
+      { ...held, context: neutralContext() },
+      { ...held, dialog: true },
+      { ...held, overlay: "question" as const },
+      env([], {}),
+    ]) {
+      now = state;
+      for (const init of [reload, hardReload, print]) {
+        // also from a text field: these chords are never text
+        for (const id of ["words", "field"]) {
+          expect(from(id, init).defaultPrevented, `${init.key} ${id}`).toBe(true);
+        }
+      }
+    }
+    expect(open).not.toHaveBeenCalled();
+    // other chords nobody holds stay the webview's
+    now = env([], {});
+    expect(from("words", { key: "q", code: "KeyQ", ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(from("words", { key: "r", code: "KeyR", altKey: true }).defaultPrevented).toBe(false);
+    expect(from("field", { key: "r", code: "KeyR" }).defaultPrevented).toBe(false);
+    // macOS: Cmd, not Control
+    now = { ...env([], {}), mac: true };
+    expect(from("words", { ...reload, ctrlKey: false, metaKey: true }).defaultPrevented).toBe(true);
+    expect(from("words", { ...print, ctrlKey: false, metaKey: true }).defaultPrevented).toBe(true);
+    expect(from("words", print).defaultPrevented).toBe(false);
+    stop();
+    expect(from("words", reload).defaultPrevented).toBe(false);
+  });
+
+  it("never leaves the webview's find and caret-browsing keys to it: with no command to run the key is taken", () => {
+    document.body.innerHTML =
+      '<p id="words">words</p><input id="field"><div class="cm-content" id="source"></div>';
+    const from = (
+      id: string,
+      init: Partial<KeyboardEventInit> & { key: string },
+    ): KeyboardEvent => {
+      const event = press(init);
+      document.getElementById(id)?.dispatchEvent(event);
+      return event;
+    };
+    let docOpen = false;
+    const find = vi.fn();
+    const next = vi.fn();
+    const shown = (): boolean => docOpen;
+    const held = env(
+      [
+        command("doc.find", { run: find, requires: PROJECT, when: shown }),
+        command("doc.nextChange", { run: next, requires: PROJECT, when: shown }),
+      ],
+      { "doc.find": "Mod+f", "doc.nextChange": "F7" },
+    );
+    let now: KeyEnv = held;
+    const stop = installKeys(window, () => now);
+    const findKey = { key: "f", code: "KeyF", ctrlKey: true };
+    const nextKey = { key: "g", code: "KeyG", ctrlKey: true };
+    const previousKey = { key: "G", code: "KeyG", ctrlKey: true, shiftKey: true };
+    const keys = [
+      findKey,
+      { key: "F3" },
+      { key: "F3", shiftKey: true },
+      { key: "F7" },
+      nextKey,
+      previousKey,
+    ];
+    // no document open | Welcome | a dialog owns the input | nobody holds the keys
+    for (const state of [
+      held,
+      { ...held, context: neutralContext() },
+      { ...held, dialog: true },
+      env([], {}),
+    ]) {
+      now = state;
+      for (const init of keys) {
+        // also from a text field: the webview's find bar | caret-browsing prompt is never wanted
+        for (const id of ["words", "field"]) {
+          expect(from(id, init).defaultPrevented, `${init.key} ${id}`).toBe(true);
+        }
+      }
+    }
+    expect(find).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    // a document is open: the same keys run PerMark's own commands
+    docOpen = true;
+    now = held;
+    expect(from("words", findKey).defaultPrevented).toBe(true);
+    expect(find).toHaveBeenCalledOnce();
+    expect(from("words", { key: "F7" }).defaultPrevented).toBe(true);
+    expect(next).toHaveBeenCalledOnce();
+    // an editor handles its own find first (CodeMirror's search panel): the command does not run over it
+    const source = document.getElementById("source");
+    const own = vi.fn((event: Event) => event.preventDefault());
+    source?.addEventListener("keydown", own);
+    expect(from("source", findKey).defaultPrevented).toBe(true);
+    expect(from("source", { key: "F3" }).defaultPrevented).toBe(true);
+    // CodeMirror's go to line is on Mod+G: it still gets the key first
+    expect(from("source", nextKey).defaultPrevented).toBe(true);
+    expect(own).toHaveBeenCalledTimes(3);
+    expect(find).toHaveBeenCalledOnce();
+    source?.removeEventListener("keydown", own);
+    // only those keys: Alt+F | Ctrl+Alt+F | Ctrl+F3 | Alt+G nobody holds stay the webview's
+    now = env([], {});
+    expect(from("words", { ...findKey, ctrlKey: false, altKey: true }).defaultPrevented).toBe(
+      false,
+    );
+    expect(from("words", { ...findKey, altKey: true }).defaultPrevented).toBe(false);
+    expect(from("words", { key: "F3", ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(from("words", { ...nextKey, ctrlKey: false, altKey: true }).defaultPrevented).toBe(
+      false,
+    );
+    // macOS: Cmd+G | Cmd+Shift+G, not Control
+    now = { ...env([], {}), mac: true };
+    expect(from("words", { ...nextKey, ctrlKey: false, metaKey: true }).defaultPrevented).toBe(
+      true,
+    );
+    expect(from("words", { ...previousKey, ctrlKey: false, metaKey: true }).defaultPrevented).toBe(
+      true,
+    );
+    expect(from("words", nextKey).defaultPrevented).toBe(false);
+    stop();
+    expect(from("words", findKey).defaultPrevented).toBe(false);
+    expect(from("words", { key: "F7" }).defaultPrevented).toBe(false);
+    expect(from("words", nextKey).defaultPrevented).toBe(false);
   });
 
   it("never leaves select-all to the webview where no text has the keyboard: the key is taken and nothing runs", () => {
@@ -398,6 +543,48 @@ describe("the listener", () => {
     window.dispatchEvent(press({ key: "F7", repeat: true }));
     expect(next).toHaveBeenCalledTimes(2);
     stop();
+  });
+});
+
+describe("context menus", () => {
+  function rightClick(target: Element | null): MouseEvent {
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+    target?.dispatchEvent(event);
+    return event;
+  }
+
+  it("takes the webview's own page menu outside text; fields, editors and the features' menus keep theirs", () => {
+    document.body.innerHTML =
+      '<main id="empty"><footer id="bar"><button id="chip">chip</button><span id="status">3 words</span></footer>' +
+      '<p id="words">words</p><a href="#x" id="link">link</a><input type="checkbox" id="box">' +
+      '<input id="field"><textarea id="area"></textarea><div contenteditable="true" id="edit"><p id="in">x</p></div>' +
+      '<div class="cm-content" id="source"><span id="line">y</span></div><ul id="tree"><li id="row">a.md</li></ul></main>';
+    const get = (id: string): Element | null => document.getElementById(id);
+    const stop = installContextMenuGuard(window);
+    for (const id of ["empty", "bar", "chip", "status", "words", "link", "box"]) {
+      expect(rightClick(get(id)).defaultPrevented, id).toBe(true);
+    }
+    expect(rightClick(document.body).defaultPrevented).toBe(true);
+    // the native text menu (cut, copy, paste, spelling suggestions) stays where text is
+    for (const id of ["field", "area", "edit", "in", "source", "line"]) {
+      expect(rightClick(get(id)).defaultPrevented, id).toBe(false);
+    }
+    // a feature's own menu took the event on its element first: left as it is, its menu opens
+    const opened = vi.fn((event: Event) => event.preventDefault());
+    get("row")?.addEventListener("contextmenu", opened);
+    const own = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+    const prevent = vi.spyOn(own, "preventDefault");
+    get("row")?.dispatchEvent(own);
+    expect(opened).toHaveBeenCalledOnce();
+    expect(prevent).toHaveBeenCalledOnce();
+    // a window listener added later (the keyboard menu of the spelling marks) still finds an editor event untaken
+    const later = vi.fn((event: Event) => event.defaultPrevented);
+    window.addEventListener("contextmenu", later);
+    rightClick(get("in"));
+    expect(later).toHaveLastReturnedWith(false);
+    window.removeEventListener("contextmenu", later);
+    stop();
+    expect(rightClick(get("status")).defaultPrevented).toBe(false);
   });
 });
 

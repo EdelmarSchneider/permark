@@ -36,9 +36,17 @@ impl Time {
 }
 
 fn store() -> (tempfile::TempDir, StateStore) {
+    store_at(false)
+}
+
+/// A project's store: its state in the profile, or (`initialized`) in its own `.permark/local/`.
+fn store_at(initialized: bool) -> (tempfile::TempDir, StateStore) {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("p");
     std::fs::create_dir_all(&project).unwrap();
+    if initialized {
+        std::fs::create_dir(project.join(".permark")).unwrap();
+    }
     let root = Root::open(&project).unwrap();
     let store = StateStore::for_project(&AppDirs::under(&dir.path().join("state")), &root);
     (dir, store)
@@ -544,6 +552,298 @@ fn an_older_format_is_kept_aside_and_noted_until_the_next_hand_off() {
     assert_eq!(log.snapshot().upgraded_from, None);
 }
 
+/// An own journal of today (rows, rows dropped by retention, a hand-off's checkpoint + package, outside rows, a close)
+/// loads exactly as it was written, and opening it without new rows writes nothing.
+#[test]
+fn an_own_journal_loads_unchanged_and_opening_it_writes_nothing() {
+    let (_dir, store) = store();
+    let time = Time::new();
+    let before = {
+        let log = ActivityLog::open(&store, time.clock());
+        log.person(save("old.md", &["A"]));
+        time.pass(KEEP_MS + MIN);
+        log.person(save("a.md", &["A"]));
+        let preview = scope(&log.snapshot(), log.now());
+        let _ = log.hand_off(preview.upto, Some("abc".to_owned()), "rows".to_owned(), 1);
+        log.outside(&batch(vec![change("b.md", ChangeKind::Created, false)]));
+        log.closed();
+        log.snapshot()
+    };
+    assert_eq!(before.trimmed_through, 1);
+    assert_eq!(before.checkpoint.as_ref().map(|c| c.seq), Some(2));
+    assert_eq!(before.package.as_ref().map(|p| p.seq), Some(3));
+    assert_eq!(before.next, 6);
+    let path = store.file::<Journal>(JOURNAL_FILE).path().to_path_buf();
+    let bytes = std::fs::read(&path).unwrap();
+    {
+        let log = ActivityLog::open(&store, time.clock());
+        assert_eq!(log.snapshot(), before);
+    }
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+}
+
+/// A row of a planted journal, as the file holds it.
+fn planted_row(seq: u64) -> serde_json::Value {
+    serde_json::to_value(Entry {
+        seq,
+        at: T0,
+        by: By::Person,
+        fact: save("a.md", &["A"]),
+    })
+    .unwrap()
+}
+
+/// Puts `data` in place of the journal of `store` (today's format version); returns the journal's path.
+fn plant(store: &StateStore, data: &serde_json::Value) -> std::path::PathBuf {
+    let path = store.file::<Journal>(JOURNAL_FILE).path().to_path_buf();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let envelope = serde_json::json!({ "version": Journal::VERSION, "data": data });
+    std::fs::write(&path, envelope.to_string()).unwrap();
+    path
+}
+
+/// Whether a file moved aside sits next to `path`.
+fn kept_aside(path: &std::path::Path) -> bool {
+    std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .filter_map(Result::ok)
+        .any(|e| e.file_name().to_string_lossy().contains(".broken-"))
+}
+
+/// Any seq-bearing number above what a journal reaches (a planted file), or a `next` | row that leaves no seq for a
+/// new row (every later push would be refused: the journal would record nothing again): moved aside like another
+/// format version, a fresh journal starts and gives seqs from 1 (no panic, no wrap).
+#[test]
+fn a_journal_with_a_number_past_the_highest_seq_is_kept_aside_and_a_fresh_one_starts() {
+    let big = MAX_SEQ + 1;
+    let row = planted_row;
+    let cases = [
+        serde_json::json!({ "next": u64::MAX, "entries": [row(1)] }),
+        serde_json::json!({ "next": big, "entries": [row(1)] }),
+        serde_json::json!({ "next": MAX_SEQ, "entries": [] }),
+        serde_json::json!({ "next": MAX_SEQ, "entries": [row(1)] }),
+        serde_json::json!({ "next": 3, "entries": [row(1), row(MAX_SEQ)] }),
+        serde_json::json!({ "next": 3, "entries": [row(1), row(MAX_SEQ - 1)] }),
+        serde_json::json!({ "next": 3, "entries": [row(1), row(big)] }),
+        serde_json::json!({ "next": 3, "entries": [row(1)], "trimmed_through": big }),
+        serde_json::json!({ "next": 3, "entries": [row(1)], "checkpoint": { "seq": big, "at": T0 } }),
+        serde_json::json!({
+            "next": 3,
+            "entries": [row(1)],
+            "package": { "seq": big, "at": T0, "text": "rows", "rows": 1 }
+        }),
+    ];
+    for data in cases {
+        let (_dir, store) = store();
+        let path = plant(&store, &data);
+        let time = Time::new();
+        let log = ActivityLog::open(&store, time.clock());
+        assert_eq!(log.snapshot(), Journal::default(), "{data}");
+        assert!(kept_aside(&path), "{data}");
+        log.person(save("a.md", &["A"]));
+        assert_eq!(log.snapshot().entries[0].seq, 1, "{data}");
+    }
+}
+
+/// Once the last seq is given a new row is refused (a change outside, a hand-off): nothing wraps, no checkpoint |
+/// package is noted without its marker. The next load starts a fresh journal (the file kept aside), so the journal
+/// records again.
+#[test]
+fn a_journal_out_of_seqs_refuses_new_rows_then_starts_fresh_at_the_next_load() {
+    let (_dir, store) = store();
+    let path = plant(
+        &store,
+        &serde_json::json!({ "next": MAX_SEQ - 1, "entries": [] }),
+    );
+    let time = Time::new();
+    {
+        let log = ActivityLog::open(&store, time.clock());
+        log.person(save("a.md", &["A"]));
+        log.outside(&batch(vec![change("b.md", ChangeKind::Created, false)]));
+        assert_eq!(log.hand_off(MAX_SEQ - 1, None, "rows".to_owned(), 1), None);
+        let journal = log.snapshot();
+        let seqs: Vec<u64> = journal.entries.iter().map(|e| e.seq).collect();
+        assert_eq!(seqs, [MAX_SEQ - 1], "{journal:?}");
+        assert_eq!(journal.next, MAX_SEQ);
+        assert_eq!(journal.checkpoint, None);
+        assert_eq!(journal.package, None);
+    }
+    let time = Time::new();
+    let log = ActivityLog::open(&store, time.clock());
+    assert_eq!(log.snapshot(), Journal::default());
+    assert!(kept_aside(&path));
+    log.person(save("a.md", &["A"]));
+    assert_eq!(log.snapshot().entries[0].seq, 1);
+}
+
+/// Every seq a journal gives is checked: from `next` at the top of `u64` or at the highest seq nothing is added (no
+/// panic, no wrap); below it rows go on up to it, and a merged outside row out of seqs leaves the earlier row in place.
+#[test]
+fn a_journal_out_of_seqs_adds_nothing_and_never_wraps() {
+    for next in [u64::MAX, MAX_SEQ] {
+        let mut journal = Journal {
+            next,
+            ..Journal::default()
+        };
+        assert_eq!(journal.push(T0, By::Person, save("a.md", &["A"])), None);
+        assert!(journal.entries.is_empty());
+        assert_eq!(journal.next, next);
+    }
+    let mut journal = Journal {
+        next: MAX_SEQ - 1,
+        ..Journal::default()
+    };
+    journal.push_outside(T0, OutsideChange::Created, "a.md", None);
+    assert_eq!(journal.next, MAX_SEQ);
+    journal.push_outside(T0, OutsideChange::Modified, "a.md", None);
+    assert_eq!(journal.entries.len(), 1);
+    assert_eq!(journal.entries[0].seq, MAX_SEQ - 1);
+    // a created + deleted pair needs no new row: it still nets to nothing
+    journal.push_outside(T0, OutsideChange::Deleted, "a.md", None);
+    assert!(journal.entries.is_empty());
+}
+
+/// `next` behind the rows (a planted file) is raised past the last one: a new row never repeats a seq.
+#[test]
+fn a_next_behind_the_rows_is_raised_and_a_new_row_never_repeats_a_seq() {
+    let (_dir, store) = store();
+    plant(
+        &store,
+        &serde_json::json!({ "next": 2, "entries": [planted_row(5)] }),
+    );
+    let time = Time::new();
+    let log = ActivityLog::open(&store, time.clock());
+    assert_eq!(log.snapshot().next, 6);
+    log.person(save("b.md", &["B"]));
+    let seqs: Vec<u64> = log.snapshot().entries.iter().map(|e| e.seq).collect();
+    assert_eq!(seqs, [5, 6]);
+}
+
+/// A checkpoint | package ahead of every seq the journal gave (a planted file) is brought back to the last one given:
+/// new rows come after the hand-off, never count as handed off already.
+#[test]
+fn a_checkpoint_ahead_of_the_rows_is_brought_back_and_new_rows_follow_it() {
+    let (_dir, store) = store();
+    let far = 1_000_000_000_000_u64;
+    plant(
+        &store,
+        &serde_json::json!({
+            "next": 3,
+            "entries": [planted_row(1), planted_row(2)],
+            "checkpoint": { "seq": far, "at": T0 },
+            "package": { "seq": far, "at": T0, "text": "rows", "rows": 1 }
+        }),
+    );
+    let time = Time::new();
+    let log = ActivityLog::open(&store, time.clock());
+    let journal = log.snapshot();
+    assert_eq!(journal.checkpoint.as_ref().map(|c| c.seq), Some(2));
+    assert_eq!(journal.package.as_ref().map(|p| p.seq), Some(2));
+    log.person(save("b.md", &["B"]));
+    let journal = log.snapshot();
+    assert_eq!(journal.since_checkpoint().len(), 1);
+    assert_eq!(scope(&journal, log.now()).case, Case::One);
+}
+
+/// A trimmed mark ahead of every seq the journal gave (a planted file) is brought back to the last one given: rows
+/// after the hand-off never count as dropped by retention.
+#[test]
+fn a_trimmed_mark_ahead_of_the_rows_is_brought_back() {
+    let (_dir, store) = store();
+    let far = 1_000_000_000_000_u64;
+    plant(
+        &store,
+        &serde_json::json!({
+            "next": 3,
+            "entries": [planted_row(1), planted_row(2)],
+            "trimmed_through": far,
+            "checkpoint": { "seq": 2, "at": T0 }
+        }),
+    );
+    let time = Time::new();
+    let log = ActivityLog::open(&store, time.clock());
+    assert_eq!(log.snapshot().trimmed_through, 2);
+    log.person(save("b.md", &["B"]));
+    assert!(!scope(&log.snapshot(), log.now()).trimmed);
+}
+
+/// A journal file over the journal's cap is never read, not even for its version: unreadable, left in place, never
+/// written over.
+#[test]
+fn a_journal_over_its_cap_is_never_read_and_never_written_over() {
+    let (_dir, store) = store();
+    let path = store.file::<Journal>(JOURNAL_FILE).path().to_path_buf();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let head = r#"{"version":0,"data":{}}"#;
+    let pad = usize::try_from(Journal::MAX_BYTES).unwrap() + 1 - head.len();
+    std::fs::write(&path, format!("{head}{}", " ".repeat(pad))).unwrap();
+    let time = Time::new();
+    {
+        let log = ActivityLog::open(&store, time.clock());
+        assert_eq!(log.snapshot(), Journal::default());
+        log.person(save("a.md", &["A"]));
+    }
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().len(),
+        Journal::MAX_BYTES + 1
+    );
+    assert!(!kept_aside(&path));
+}
+
+/// A link in place of the journal in `.permark/` is never followed, not even for its version: unreadable, left as it
+/// is, its target untouched.
+#[cfg(unix)]
+#[test]
+fn a_link_in_place_of_the_journal_is_never_followed() {
+    let (_dir, store) = store_at(true);
+    let path = store.file::<Journal>(JOURNAL_FILE).path().to_path_buf();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let target = outside.path().join("activity.json");
+    let old = r#"{"version":0,"data":{}}"#;
+    std::fs::write(&target, old).unwrap();
+    std::os::unix::fs::symlink(&target, &path).unwrap();
+    let time = Time::new();
+    {
+        let log = ActivityLog::open(&store, time.clock());
+        assert_eq!(log.snapshot(), Journal::default());
+        log.person(save("a.md", &["A"]));
+    }
+    assert!(std::fs::symlink_metadata(&path)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), old);
+}
+
+/// A FIFO in place of the journal (profile or `.permark/`) never makes the project's open wait: unreadable, left as it
+/// is.
+#[cfg(unix)]
+#[test]
+fn a_fifo_in_place_of_the_journal_never_makes_the_open_wait() {
+    use std::os::unix::fs::FileTypeExt;
+    for initialized in [false, true] {
+        let (_dir, store) = store_at(initialized);
+        let path = store.file::<Journal>(JOURNAL_FILE).path().to_path_buf();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let made = std::process::Command::new("mkfifo").arg(&path).status();
+        assert!(made.is_ok_and(|s| s.success()), "mkfifo {}", path.display());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let log = ActivityLog::open(&store, Time::new().clock());
+            let _ = tx.send(log.snapshot());
+        });
+        let journal = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the open waited on a FIFO");
+        assert_eq!(journal, Journal::default(), "initialized: {initialized}");
+        assert!(std::fs::symlink_metadata(&path)
+            .unwrap()
+            .file_type()
+            .is_fifo());
+    }
+}
+
 #[test]
 fn retention_drops_old_entries_then_outside_ones_first() {
     let (_dir, store) = store();
@@ -964,7 +1264,7 @@ fn journal_of(store: &StateStore) -> Journal {
     }
 }
 
-/// N4 (verifier 2026-10-25): while the owners are not known at most [`MAX_WAITING`] facts wait, the oldest go first;
+/// While the owners are not known at most [`MAX_WAITING`] facts wait, the oldest go first;
 /// the opened folder's journal keeps them all.
 #[test]
 fn at_most_the_newest_waiting_facts_reach_the_project_journal() {
@@ -989,7 +1289,7 @@ fn at_most_the_newest_waiting_facts_reach_the_project_journal() {
     assert_eq!(facts, newest);
 }
 
-/// N4 (verifier 2026-10-25): a change made outside PerMark before the owners are known reaches the project's own
+/// A change made outside PerMark before the owners are known reaches the project's own
 /// journal once told, its path relative to the project; one outside every project stays in the folder's journal.
 #[test]
 fn an_outside_change_before_the_owners_are_known_reaches_the_project_journal_once_told() {
@@ -1019,7 +1319,7 @@ fn an_outside_change_before_the_owners_are_known_reaches_the_project_journal_onc
     );
 }
 
-/// N4 (verifier 2026-10-25): across a Pause and a Resume the project's journal keeps the order and the time of every
+/// Across a Pause and a Resume the project's journal keeps the order and the time of every
 /// fact: the ones before, the ones that waited (actions and outside changes mixed), the ones after.
 #[test]
 fn facts_keep_their_order_and_time_across_a_pause_and_a_resume() {
@@ -1071,4 +1371,168 @@ fn facts_keep_their_order_and_time_across_a_pause_and_a_resume() {
             (T0 + 4 * MIN, tag(true, "e.md", "t")),
         ]
     );
+}
+
+#[test]
+fn a_batch_of_many_outside_changes_is_noted_in_one_pass() {
+    // a checkout | an unzip reaches the journal as one batch on the watch thread, under the journal's lock
+    let (_dir, store) = store();
+    let log = ActivityLog::open(&store, Time::new().clock());
+    let changes = (0..50_000)
+        .map(|i| {
+            change(
+                &format!("d{}/f{i}.md", i / 100),
+                ChangeKind::Modified,
+                false,
+            )
+        })
+        .collect();
+    let started = std::time::Instant::now();
+    log.outside(&batch(changes));
+    let took = started.elapsed();
+    assert!(took < std::time::Duration::from_secs(2), "{took:?}");
+    let journal = log.snapshot();
+    assert_eq!(journal.entries.len(), KEEP_ENTRIES);
+    assert_eq!(
+        journal.entries.last().and_then(|e| e.fact.path()),
+        Some("d499/f49999.md")
+    );
+}
+
+impl Journal {
+    /// One change outside merged on its own (a run of one).
+    fn push_outside(&mut self, at: u64, change: OutsideChange, path: &str, from: Option<&str>) {
+        self.outside_run().push(at, change, path, from);
+    }
+
+    /// Reference for the property check: each change searches the tail from its end and the row it replaces leaves at
+    /// once.
+    fn push_outside_one_by_one(
+        &mut self,
+        at: u64,
+        change: OutsideChange,
+        path: &str,
+        from: Option<&str>,
+    ) {
+        let key = if change == OutsideChange::Renamed {
+            from.unwrap_or(path)
+        } else {
+            path
+        };
+        let tail = self
+            .entries
+            .iter()
+            .rposition(|e| e.by != By::Outside)
+            .map_or(0, |i| i + 1);
+        let found = self.entries[tail..]
+            .iter()
+            .rposition(|e| e.fact.path() == Some(key))
+            .map(|i| i + tail);
+        let Some(index) = found else {
+            let fact = Fact::Outside {
+                change,
+                path: path.to_owned(),
+                from: from.map(str::to_owned),
+            };
+            let _ = self.push(at, By::Outside, fact);
+            return;
+        };
+        let Fact::Outside {
+            change: before,
+            from: before_from,
+            ..
+        } = self.entries[index].fact.clone()
+        else {
+            return;
+        };
+        let replaced = match merged_outside((before, before_from), change, key, path, from) {
+            Some((change, path, from)) => self
+                .push(at, By::Outside, Fact::Outside { change, path, from })
+                .is_some(),
+            None => true,
+        };
+        if replaced {
+            self.entries.remove(index);
+        }
+    }
+}
+
+mod outside_runs {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    const PATHS: [&str; 4] = ["a.md", "b.md", "c.md", "d.md"];
+
+    fn kind() -> impl Strategy<Value = OutsideChange> {
+        prop_oneof![
+            Just(OutsideChange::Created),
+            Just(OutsideChange::Modified),
+            Just(OutsideChange::Deleted),
+            Just(OutsideChange::Renamed),
+        ]
+    }
+
+    /// (change, path, from) over a few paths, so that changes meet the rows of earlier ones.
+    fn outside_change() -> impl Strategy<Value = Item> {
+        (kind(), 0..PATHS.len(), proptest::option::of(0..PATHS.len()))
+    }
+
+    /// (change, path index, from index)
+    type Item = (OutsideChange, usize, Option<usize>);
+
+    /// A row already in the journal: the person's (ends the tail), an outside one, or an outside row holding another
+    /// kind of fact (a file from elsewhere: a change meeting it is dropped).
+    fn row() -> impl Strategy<Value = (u8, Item)> {
+        (0..6_u8, outside_change())
+    }
+
+    fn journal_of(next: u64, rows: &[(u8, Item)]) -> Journal {
+        let mut journal = Journal {
+            next,
+            ..Journal::default()
+        };
+        for (what, (change, path, from)) in rows {
+            let path = PATHS[*path];
+            let (by, fact) = match what {
+                0 => (By::Person, save(path, &["A"])),
+                1 => (By::Outside, tag(true, path, "t")),
+                _ => (
+                    By::Outside,
+                    Fact::Outside {
+                        change: *change,
+                        path: path.to_owned(),
+                        from: from.map(|f| PATHS[f].to_owned()),
+                    },
+                ),
+            };
+            let _ = journal.push(T0, by, fact);
+        }
+        journal
+    }
+
+    proptest! {
+        #[test]
+        fn a_run_merges_exactly_as_each_change_on_its_own(
+            rows in proptest::collection::vec(row(), 0..12),
+            changes in proptest::collection::vec(outside_change(), 0..40),
+            near_the_end in proptest::bool::ANY,
+        ) {
+            // near the end: the seqs run out inside the run
+            let next = if near_the_end { MAX_SEQ - 20 } else { 1 };
+            let mut one_by_one = journal_of(next, &rows);
+            let mut runs = one_by_one.clone();
+            for (change, path, from) in &changes {
+                let from = from.map(|f| PATHS[f]);
+                one_by_one.push_outside_one_by_one(T0 + MIN, *change, PATHS[*path], from);
+            }
+            {
+                let mut run = runs.outside_run();
+                for (change, path, from) in &changes {
+                    run.push(T0 + MIN, *change, PATHS[*path], from.map(|f| PATHS[f]));
+                }
+            }
+            prop_assert_eq!(runs, one_by_one);
+        }
+    }
 }

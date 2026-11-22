@@ -76,12 +76,16 @@
   const initialized = $derived(conditions.current.permark === "initialized");
 
   // the folder's shared settings, for every section that shows them (and the app rows a plugin key of the folder's file
-  // would have set): read while the page shows a folder, again once PerMark gets initialized there (external I/O)
+  // would have set): read while the page shows a folder, again once PerMark gets initialized there and whenever they
+  // change (external I/O)
   $effect(() => {
     if (!inProject) return;
     void initialized;
-    void projectSettings.load();
-    return () => projectSettings.clearProblem();
+    const stop = projectSettings.follow(store.root);
+    return () => {
+      stop();
+      projectSettings.clearProblem();
+    };
   });
   /** The folder shown (its name in the title), `null` in a window with none (a single file, the Notes, the Welcome). */
   const folder = $derived(

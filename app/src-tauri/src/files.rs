@@ -79,6 +79,12 @@ impl WindowFiles for ShellFiles {
         }
     }
 
+    fn announce_written(&self, window: &str, abs: &Path) {
+        if let Some(core) = self.project(window) {
+            core.announce_written(abs);
+        }
+    }
+
     fn scan_folder(
         &self,
         window: &str,

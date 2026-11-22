@@ -695,6 +695,9 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
         );
       } else if (!mod && !event.altKey && !event.shiftKey && leavesBox(editing.field, event.key)) {
         closeSource(editing, event.key === "ArrowUp" ? "before" : "after");
+      } else if (event.key === "Tab" && !mod && !event.altKey) {
+        // the browser's next focus stop would be a link drawn somewhere else in the page (a footnote's back link)
+        closeSource(editing, event.shiftKey ? "before" : "after");
       } else return;
       event.preventDefault();
       event.stopPropagation();

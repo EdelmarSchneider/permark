@@ -56,6 +56,12 @@ export function errorKey(kind: ErrorKind): MessageKey {
       return "error.editorFailed";
     case "settingsUnreadable":
       return "error.settingsUnreadable";
+    case "locked":
+      return "error.locked";
+    case "diskFull":
+      return "error.diskFull";
+    case "readOnly":
+      return "error.readOnly";
     default:
       return kind satisfies never;
   }

@@ -28,6 +28,7 @@ import type { AnswerArgs } from "./generated/AnswerArgs";
 import type { ChangeList } from "./generated/ChangeList";
 import type { ContinueWay } from "./generated/ContinueWay";
 import type { FileChange } from "./generated/FileChange";
+import type { RulesProblem } from "./generated/RulesProblem";
 import type { LoginArgs } from "./generated/LoginArgs";
 import type { LoginMethod } from "./generated/LoginMethod";
 import type { PermissionChoice } from "./generated/PermissionChoice";
@@ -298,6 +299,9 @@ export type AcpProbe = {
   snap: boolean;
   /** Project paths agents may not see: a passage of one is refused, such an open document is not named. */
   hidden: Set<string>;
+  /** A rule file on what agents may see that cannot be read (`AcpStatus.rules`; `null`: none). One that keeps the
+   *  agent out (`closed`) refuses every message with its file. */
+  rules: RulesProblem | null;
   /** The project's last conversation (`null`: none kept). */
   saved: MockSaved | null;
   /** The settings changes asked for, in order. */
@@ -480,6 +484,7 @@ export function createMockAcp(
     skipped: 0,
     snap: false,
     hidden: new Set(),
+    rules: null,
     saved: mockEarlierConversation(),
     optionSets: [],
     refuseOption: null,
@@ -760,6 +765,7 @@ export function createMockAcp(
               ? null
               : { title: saved.title, at: saved.at, supports: saved.supports },
           options: [...options],
+          ...(probe.rules === null ? {} : { rules: probe.rules }),
         };
       },
       "acp.agents": () => {
@@ -795,6 +801,8 @@ export function createMockAcp(
       "acp.prompt": (sent) => {
         probe.calls.push("prompt");
         check(sent);
+        if (probe.rules?.fallback === "closed")
+          throw new MockPluginError("unavailable", probe.rules.file, "rulesUnreadable");
         if (sent.selection !== undefined && probe.hidden.has(sent.selection.path))
           throw new MockPluginError("denied", sent.selection.path, "hiddenFromAgents");
         // an open document agents may not see is not named

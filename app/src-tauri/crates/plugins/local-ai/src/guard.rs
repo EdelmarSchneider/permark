@@ -1,4 +1,4 @@
-//! Memory guard (AC-5, D-8 v1): before a load, catalog `needs` vs this computer's memory now; too little -> refused
+//! Memory guard (v1): before a load, catalog `needs` vs this computer's memory now; too little -> refused
 //! ([`EngineError::OutOfMemory`]), no load attempted.
 //!
 //! - Need = `ram_min` (files) + [`MARGIN`] (context + runtime).

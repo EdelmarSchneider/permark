@@ -19,7 +19,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use permark_core::process;
-use permark_core::state::{Loaded, StateData, StateFile};
+use permark_core::state::{Loaded, StateData, StateFile, StateStore};
 use permark_core::{ErrorKind, IpcError};
 use serde::{Deserialize, Serialize};
 
@@ -144,6 +144,18 @@ pub struct Plan {
     pub env: Vec<(String, String)>,
     /// The program by its name, then the arguments.
     pub shown: String,
+}
+
+impl Plan {
+    /// The plan as the person allows it ([`process::ProgramApprovals`]).
+    #[must_use]
+    pub fn call(&self) -> process::ProgramCall {
+        process::ProgramCall {
+            program: self.program.clone(),
+            args: self.args.clone(),
+            env: self.env.clone(),
+        }
+    }
 }
 
 /// How one choice would start now.
@@ -283,6 +295,9 @@ fn resolve_listed(listed: &Listed, platforms: &[&str], find: &FindFn) -> Resolve
         plan: None,
     }
 }
+
+/// Longest own command accepted, in characters.
+pub const MAX_COMMAND: usize = 1000;
 
 /// Words of the person's own command: double quotes group (a path with spaces), whitespace splits outside them, `""`
 /// is an empty word, quotes join the letters next to them (`--a="b c"` -> `--a=b c`). No backslash escapes: on
@@ -524,8 +539,8 @@ impl Agents {
     /// `InvalidData`: `unknownAgent` (not in this computer's list) | `emptyCommand` (no program) | `openQuote` (a
     /// quote of the command left open) | `networkProgram` (a program on a share | device path: never looked up, a
     /// lookup alone would connect to the server) | `relativeProgram` (a program path that is not absolute: it would
-    /// name a file under the folder the agent starts in) | `oneChoice` (none or both given); `Unavailable` (`snap`:
-    /// inside a Snap nothing can start | `noProfile`); IO.
+    /// name a file under the folder the agent starts in) | `tooLong` (longer than [`MAX_COMMAND`]) | `oneChoice` (none
+    /// or both given); `Unavailable` (`snap`: inside a Snap nothing can start | `noProfile`); IO.
     pub fn choose(&self, args: &ChooseArgs) -> Result<(), IpcError> {
         let (choice, file) = self.checked(args)?;
         file.update(|_| Some(choice.clone()))?;
@@ -596,6 +611,8 @@ impl Agents {
                 {
                     return Err(refused("relativeProgram"));
                 }
+                // short enough for the dialog before its first start to show it
+                Some(_) if typed.chars().count() > MAX_COMMAND => return Err(refused("tooLong")),
                 Some(_) => Choice::Command(typed.to_owned()),
             },
             _ => return Err(refused("oneChoice")),
@@ -605,6 +622,17 @@ impl Agents {
             .as_ref()
             .ok_or_else(|| IpcError::new(ErrorKind::Unavailable).detail("noProfile"))?;
         Ok((choice, file))
+    }
+}
+
+/// The person's own command chosen in the profile of `store`, as it would start now (`None`: none chosen | its
+/// program not found): what an update takes as already allowed.
+#[must_use]
+pub fn own_command(store: &StateStore) -> Option<process::ProgramCall> {
+    let chosen = Agents::new(Some(store.app_file(CHOICE_FILE))).chosen()?;
+    match chosen.choice {
+        Choice::Command(_) => chosen.resolved.plan.as_ref().map(Plan::call),
+        Choice::Agent(_) => None,
     }
 }
 

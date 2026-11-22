@@ -74,7 +74,7 @@ async function openFolder(root: string): Promise<void> {
 }
 
 async function explorer(): Promise<{ store: InstanceType<typeof ExplorerStore> }> {
-  const store = new ExplorerStore(api, {
+  const store = new ExplorerStore(api, 1, {
     fail: () => {},
     note: () => {},
     view: () => "main",
@@ -286,6 +286,10 @@ describe("the detail card", () => {
     flushSync();
     await until(() => block().includes("Git can't read this project."), "can't read");
     expect(block()).toContain("Git doesn't trust this folder's owner.");
+    // the reason wraps whole: never cut to a tooltip only a hover reaches
+    const why = document.querySelector("[data-project-git] [data-git-why]");
+    expect(why?.textContent).toBe("Git doesn't trust this folder's owner.");
+    expect(why?.classList.contains("cut")).toBe(false);
   });
 });
 

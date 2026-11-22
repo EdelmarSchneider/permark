@@ -31,6 +31,7 @@ export default {
   "welcome.noRecents": "최근 폴더가 아직 없습니다.",
   "welcome.notFound": "(찾을 수 없음)",
   "welcome.remove": "제거",
+  "welcome.recentKeys": "Delete 키를 누르면 선택한 폴더를 목록에서 제거합니다.",
   "welcome.dropHint": "폴더나 파일을 여기에 끌어다 놓으면 열립니다.",
   "welcome.openFailed": "{path}을(를) 열 수 없습니다: {message}",
 
@@ -50,9 +51,15 @@ export default {
     "이 위치는 변경 내용을 알릴 수 없으므로 PerMark가 실시간으로 따라갈 수 없습니다. 창으로 돌아오면 새로 고칩니다.",
 
   // ---- notices
-  "notice.stateRecovered": "저장된 PerMark 데이터 일부를 읽을 수 없어 따로 보관했습니다: {file}",
+  "notice.stateRecovered":
+    "저장된 PerMark 데이터 일부를 읽을 수 없어 따로 보관했습니다: {file}. 이전 사본은 여기에 있습니다: {backup}",
   "notice.stateUnreadable":
     "저장된 PerMark 데이터 일부를 읽을 수 없었습니다. 데이터는 그대로 두었으며, 다시 읽을 수 있을 때까지(보통 다시 시작한 후) PerMark는 이 데이터를 변경하지 않습니다: {file}",
+  "crash.notice":
+    "지난번에 PerMark가 예기치 않게 종료되었습니다. 보고서가 이 컴퓨터에 저장되었으며 아무것도 전송되지 않았습니다. 공유하려면 먼저 내용을 확인하세요. 파일 이름이나 문서 내용 일부가 들어 있을 수 있습니다. “GitHub에 보고”를 선택하면 보고서도 복사되므로 GitHub 페이지에 붙여 넣을 수 있습니다.",
+  "crash.copy": "보고서 복사",
+  "crash.report": "GitHub에 보고",
+  "crash.openFolder": "폴더 열기",
 
   // ---- settings
   "settings.title": "설정",
@@ -75,6 +82,10 @@ export default {
   "error.invalidPath": "올바른 경로가 아닙니다: {subject}",
   "error.denied": "{subject}에 대한 사용 권한이 없습니다.",
   "error.io": "{subject}에 액세스할 수 없습니다: {detail}",
+  "error.locked":
+    "{subject}이(가) 다른 프로그램에서 열려 있어 변경할 수 없습니다. 그 프로그램에서 닫은 다음 다시 시도하세요.",
+  "error.diskFull": "디스크가 가득 차서 {subject}을(를) 쓸 수 없습니다.",
+  "error.readOnly": "{subject}은(는) 읽기 전용이라 변경할 수 없습니다.",
   "error.exists": "이미 있습니다: {subject}",
   "error.binary": "이진 파일이라 텍스트로 표시할 수 없습니다: {subject}",
   "error.tooLarge": "너무 큽니다: {subject}",
@@ -161,6 +172,7 @@ export default {
   "fileOps.summaryMoved": "{what} 이동됨",
   "fileOps.summaryRenamed": "이름 변경됨: {from} → {to}",
   "fileOps.summaryDeleted": "{what} 삭제됨",
+  "fileOps.partlyDeleted": "{what} 삭제됨. {refused}은(는) 휴지통으로 이동할 수 없습니다.",
   "fileOps.dropInto": "{folder}(으)로 이동",
   "fileOps.projectRoot": "프로젝트 폴더",
   "fileOps.dialogLabel": "링크 업데이트",
@@ -294,6 +306,7 @@ export default {
   "doc.deleted.title": "이 파일은 {time}에 삭제되었습니다.",
   "doc.diagramFailed": "다이어그램을 렌더링할 수 없습니다",
   "doc.diagramRendering": "다이어그램 렌더링 중…",
+  "doc.diagramSource": "다이어그램 소스",
   "doc.error.title": "이 파일을 열 수 없습니다",
   "doc.footnoteBackref": "참조 {ref}(으)로 돌아가기",
   "doc.frontmatter": "프런트 매터",
@@ -398,7 +411,7 @@ export default {
   "role.copilot": "Copilot 지침",
   "role.model-card": "모델 카드",
   "role.dataset-card": "데이터 세트 카드",
-  "structured.mode": "보기 방식",
+  "structured.mode": "표시 방식",
   "structured.tree": "트리",
   "structured.source": "소스",
   "structured.invalid": "올바르지 않은 내용이라 텍스트로 표시합니다.",
@@ -915,6 +928,8 @@ export default {
   "since.nothing": "{when} 이후 변경된 내용이 없습니다.",
   "review.offer.one": "마지막으로 읽은 후 변경됨 · 변경 {n}건",
   "review.offer.other": "마지막으로 읽은 후 변경됨 · 변경 {n}건",
+  "review.offerCommit.one": "마지막 커밋 이후 변경됨 · 변경 {n}건",
+  "review.offerCommit.other": "마지막 커밋 이후 변경됨 · 변경 {n}건",
   "review.review": "검토",
   "review.reviewing.one": "변경 {n}건 검토 중",
   "review.reviewing.other": "변경 {n}건 검토 중",
@@ -939,6 +954,7 @@ export default {
   "review.change": "변경 {n}건 중 {i}번째, {kind}",
   "review.keptAll": "모든 변경 내용 유지됨",
   "review.revertedAll": "{name}의 모든 변경 내용을 되돌림",
+  "review.endedMixed": "{name}의 변경 내용 중 일부는 유지하고 나머지는 되돌림",
   "review.undo": "실행 취소",
   "review.undoStale": "실행 취소할 수 없음: 그 후 {name} 파일이 변경되었습니다.",
   "review.allDone": "모든 변경 내용 검토 완료",
@@ -992,6 +1008,15 @@ export default {
   "git.stateHint.busy": "Git이 아직 끝나지 않은 다른 작업을 진행 중입니다.",
   "git.unavailableHint": "선택한 Git을 사용할 수 없습니다. 설정에서 다른 Git을 선택하세요.",
   "git.errorOwnership": "Git이 이 폴더의 소유자를 신뢰하지 않습니다.",
+  "git.why.timeout": "Git이 제시간에 응답하지 않았습니다.",
+  "git.why.tooLarge": "Git의 응답이 너무 길어 읽을 수 없습니다.",
+  "git.why.spawn": "Git을 시작할 수 없습니다.",
+  "git.why.parse": "Git의 응답을 이해할 수 없습니다.",
+  "git.why.notLocal":
+    "이 저장소의 git 폴더가 이 컴퓨터 밖을 가리키거나 링크를 거치므로 PerMark에서 열지 않습니다.",
+  "git.why.noGit": "이 폴더에는 저장소로 이어지는 .git이 없습니다.",
+  "git.why.stopped": "Git이 응답하기 전에 중지되었습니다.",
+  "git.why.failed": "세부 정보: {detail}",
   "git.errorHint": "설정을 열어 다른 Git을 선택하세요(기본 제공 Git은 신뢰 설정이 필요 없습니다).",
   "git.folderChanged.one": "변경된 파일 {n}개 포함",
   "git.folderChanged.other": "변경된 파일 {n}개 포함",
@@ -1078,6 +1103,8 @@ export default {
   "review.versions.list": "버전",
   "review.versions.loading": "기록을 읽는 중…",
   "review.versions.more": "더 보기",
+  "review.versions.added.one": "버전 {n}개 더",
+  "review.versions.added.other": "버전 {n}개 더",
   "review.versions.same": "지금과 같은 텍스트",
   "review.versions.authors": "{author} (공동 작성: {others})",
   "review.versions.compare": "비교",
@@ -1234,6 +1261,16 @@ export default {
   "comments.replyPlaceholder": "답글 쓰기…",
   "comments.deleteConfirm": "댓글을 삭제할까요?",
   "comments.copyFailed": "클립보드에 복사할 수 없습니다.",
+  "comments.aside.line.one": "PerMark 밖에서 댓글 {n}개가 삭제되었습니다.",
+  "comments.aside.line.other": "PerMark 밖에서 댓글 {n}개가 삭제되었습니다.",
+  "comments.aside.restore": "복원",
+  "comments.aside.dismiss": "버리기",
+  "comments.aside.dismissHint": "이 댓글을 버립니다. 버린 후에는 복원할 수 없습니다.",
+  "comments.aside.restored.one": "댓글 {n}개를 복원했습니다.",
+  "comments.aside.restored.other": "댓글 {n}개를 복원했습니다.",
+  "comments.aside.nothing": "그 댓글은 이미 돌아왔습니다.",
+  "comments.aside.restoreFailed": "댓글을 복원할 수 없습니다: {message}",
+  "comments.aside.dismissFailed": "삭제된 댓글을 버릴 수 없습니다: {message}",
   "brokenLinks.title": "끊어진 링크",
   "brokenLinks.checking": "문서를 확인하는 중…",
   "brokenLinks.none": "끊어진 링크 없음",
@@ -1420,7 +1457,7 @@ export default {
   "agent.title": "에이전트 연결",
   "agent.switch": "이 폴더를 에이전트와 공유",
   "agent.switchHint":
-    "연결한 에이전트(Claude Code나 Cursor처럼 MCP를 지원하는 AI 도구)가 지금 보고 있는 내용과 변경된 내용을 확인하고, 이 폴더의 파일을 검색하고 읽으며, 댓글과 공유한 메모를 읽고, 특정 위치를 보여 줄 수 있습니다. 이 컴퓨터에서만 작동합니다. .aiignore에 적은 파일은 에이전트에게 전달되지 않습니다. 이렇게 연결한 에이전트는 읽기만 하며 PerMark를 통해 파일을 편집하지 않습니다. 에이전트가 편집을 제안하게 하려면 어시스턴트를 사용하세요. 이는 에이전트가 PerMark에서 받는 내용에만 해당합니다. 에이전트는 여전히 컴퓨터의 파일을 직접 열 수 있습니다.",
+    "연결한 에이전트(Claude Code나 Cursor처럼 MCP를 지원하는 AI 도구)가 지금 보고 있는 내용과 변경된 내용을 확인하고, 이 폴더의 파일을 검색하고 읽으며, 댓글과 공유한 메모를 읽고, 특정 위치를 보여 줄 수 있습니다. 이 컴퓨터에서만 작동합니다. .aiignore에 적은 파일은 에이전트에게 전달되지 않습니다. 이렇게 연결한 에이전트는 PerMark를 통해 파일을 편집하지 않습니다. 내용을 읽고, 허용한 경우에만 댓글을 완료로 표시합니다. 에이전트가 편집을 제안하게 하려면 어시스턴트를 사용하세요. 이는 에이전트가 PerMark에서 받는 내용에만 해당합니다. 에이전트는 여전히 컴퓨터의 파일을 직접 열 수 있습니다.",
   "agent.folderReplaced":
     "연결한 후 이 폴더가 바뀌었습니다. 여기에서 에이전트를 허용하려면 연결을 다시 켜세요.",
   "agent.groups": "에이전트가 할 수 있는 작업",
@@ -1519,6 +1556,20 @@ export default {
   "agent.outcome.off": "꺼짐",
   "agent.outcome.notOpen": "열려 있지 않음",
   "agent.outcome.error": "실패",
+  "agentRules.lastGood":
+    "{file}을(를) 읽을 수 없습니다: {why}. 수정할 때까지 PerMark는 이 파일에서 마지막으로 작동한 규칙을 사용합니다.",
+  "agentRules.closed":
+    "{file}을(를) 읽을 수 없습니다: {why}. 수정할 때까지 에이전트는 이 파일이 다루는 내용을 전혀 받지 못합니다.",
+  "agentRules.why.tooLarge": "파일이 너무 큽니다",
+  "agentRules.why.notText": "일반 텍스트가 아닙니다",
+  "agentRules.why.notToml": "올바른 TOML이 아닙니다",
+  "agentRules.why.badValue": "설정 중 하나의 값 형식이 올바르지 않습니다",
+  "agentRules.why.badPattern": "패턴 중 하나가 올바르지 않습니다",
+  "agentRules.why.notAFile": "일반 파일이 아닙니다",
+  "agentRules.why.locked": "다른 프로그램이 사용 중입니다",
+  "agentRules.why.denied": "PerMark에 읽기 권한이 없습니다",
+  "agentRules.why.failed": "읽지 못했습니다",
+  "agent.outcome.rulesUnreadable": "규칙 읽기 불가",
   "agent.open.notice": "에이전트가 보여 주려는 위치: {path}",
   "agent.open.show": "표시",
   "agent.ask.resolve": "에이전트가 댓글을 완료로 표시하려고 합니다. 이 프로젝트에서 허용할까요?",
@@ -1557,6 +1608,8 @@ export default {
   "agent.handoff.done.one": "작업 {n}개를 넘겼습니다. 복사되었으니 프롬프트에 붙여 넣으세요.",
   "agent.handoff.done.other": "작업 {n}개를 넘겼습니다. 복사되었으니 프롬프트에 붙여 넣으세요.",
   "agent.handoff.failed": "넘기지 못했습니다. 다시 시도하세요.",
+  "agent.handoff.withheld":
+    "PerMark는 이 폴더의 활동 내역을 에이전트에 넘기지 않습니다. 이 폴더의 git 저장소가 PerMark의 비공개 폴더(.permark/local)를 추적하고 있거나 PerMark가 이를 확인할 수 없었습니다.",
   "agent.handoff.copyFailed": "넘겼지만 복사하지 못했습니다.",
   "config.sheet": "이 파일의 설정",
   "config.root": "최상위",
@@ -1581,6 +1634,8 @@ export default {
   "config.reason.noValue": "값이 없는 키입니다. 소스에서 변경하세요.",
   "config.reason.empty": "빈 항목입니다. 소스에서 변경하세요.",
   "config.reason.unterminated": "닫히지 않은 따옴표입니다. 소스에서 변경하세요.",
+  "config.reason.escape":
+    "여기에서는 정확히 유지할 수 없는 이스케이프 코드가 포함된 값입니다. 소스에서 변경하세요.",
   "config.reason.other": "여기에서는 정확하게 편집할 수 없습니다. 소스를 사용하세요.",
   "config.refused.newline": "여기에서는 값에 줄 바꿈을 넣을 수 없습니다.",
   "config.refused.empty": "값을 입력하세요.",
@@ -1643,6 +1698,8 @@ export default {
     "이 폴더에서 각 플러그인에 대한 선택입니다. '모두에게 꺼짐'은 .permark/config.toml에 저장되며 이 폴더를 여는 모든 사람에게 적용됩니다.",
   "plugins.removeConfirm": "{name}의 데이터를 제거할까요?",
   "plugins.removeConfirmBytes": "{name}의 데이터를 제거할까요? {size}이(가) 확보됩니다.",
+  "plugins.removeScope":
+    "자체 .permark 폴더에 데이터를 보관하는 폴더는 열려 있는 동안에만 정리됩니다.",
   "plugins.removeData": "데이터 제거",
   "plugins.removeYes": "제거",
   "plugins.turnOn": "{name} 켜기",
@@ -1650,15 +1707,31 @@ export default {
   "project.ignoreHint":
     "일치하는 파일은 검색되지 않으며 실시간 변경 목록에도 나타나지 않습니다. 파일 목록에서는 git이 무시하는 파일처럼 흐리게 표시됩니다.",
   "project.ignoreLabel": "검색 및 실시간 변경 목록에서 제외",
+  "project.dataAsk":
+    "이 폴더에 이제 .permark 폴더가 있습니다. 이 폴더에 대한 댓글, 읽음 표시 등의 데이터는 계속 이 컴퓨터에 보관됩니다.",
+  "project.dataMove": "폴더로 옮기기",
+  "project.dataKeep": "이 컴퓨터에 두기",
+  "project.dataMissing":
+    "이 폴더의 .permark 폴더가 없거나 사용할 수 없습니다. PerMark는 이 컴퓨터에 보관된 데이터 사본을 사용하고 있으며, 이 사본은 더 오래되었을 수 있습니다.",
+  "project.dataKeepCopy": "이 사본 계속 사용",
+  "project.dataPlace": "이 폴더에 대한 데이터",
+  "project.dataPlaceProfile": "이 컴퓨터의 사용자 프로필에 보관됩니다.",
+  "project.dataMoved": "이 폴더에 대한 데이터가 이제 .permark 폴더에 있습니다.",
+  "project.dataMoveHeld":
+    "이 폴더의 .permark 폴더에 이미 다른 곳에서 온 PerMark 데이터가 있어 데이터는 이 컴퓨터에 그대로 둡니다.",
+  "project.dataMoveFailed": "데이터를 폴더로 옮길 수 없습니다: {message}",
   "project.initButton": "PerMark 초기화",
   "project.initConfig": "이 프로젝트가 팀과 공유하는 설정입니다.",
   "project.initConfirm": "PerMark 초기화",
   "project.initFailed": "{path}에서 PerMark를 초기화할 수 없습니다: {message}",
+  "project.initHeld":
+    "{path}/.permark/local에 이미 다른 곳에서 온 PerMark 데이터가 있습니다. 아무것도 변경하지 않았습니다.",
   "project.initIgnore": "비공개 폴더를 Git에서 제외합니다.",
   "project.initIntro": "PerMark가 여기에 다음 내용이 담긴 .permark 폴더를 만듭니다:",
-  "project.initLocal": "이 프로젝트에 대한 개인 데이터(댓글, 읽음 표시)와 캐시입니다.",
+  "project.initLocal":
+    "이 프로젝트에 대한 개인 데이터(댓글, 읽음 표시, 실행 취소 기록)와 PerMark가 언제든 다시 만들 수 있는 캐시입니다.",
   "project.initNote":
-    "파일은 건드리지 않습니다. 이 프로젝트에 이미 있는 태그, 댓글, 읽음 표시를 복사해 넣습니다.",
+    "파일은 건드리지 않습니다. 이 프로젝트에 이미 있는 태그, 댓글, 읽음 표시를 복사해 넣습니다. 에이전트 접근처럼 이 폴더에 허용한 항목은 이 컴퓨터에 있는 본인의 PerMark 데이터에 그대로 남습니다.",
   "project.initTitle": "{name}에서 PerMark를 초기화할까요?",
   "project.newTitle": "{name}을(를) 프로젝트로 만들까요?",
   "project.newWhy":
@@ -1681,8 +1754,30 @@ export default {
   "project.treeUnset": "설정 안 됨",
   "project.scopes":
     "'모두'로 표시된 설정은 이 폴더의 .permark/config.toml에 저장되어 이 폴더를 여는 모든 사람과 공유됩니다. '나만'으로 표시된 설정은 이 컴퓨터에만 남습니다.",
+  "project.shareGit": "Git이 이 폴더의 PerMark 설정을 보게 하기",
+  "project.shareGitCustom":
+    "이 폴더의 .permark/.gitignore는 다른 사람이 작성한 것이므로 PerMark는 그대로 둡니다.",
+  "project.shareGitFailed": "Git이 .permark에서 보는 항목을 바꾸지 못했습니다: {message}",
+  "project.shareGitHint":
+    "켜짐: Git이 .permark의 설정, 태그, 프로젝트 목록, 프로젝트 설명을 보므로 팀을 위해 커밋할 수 있습니다. 꺼짐: Git이 .permark 폴더 전체를 무시합니다. 이미 커밋된 파일은 커밋된 상태로 남습니다. .permark/.gitignore가 커밋되어 있으면 팀도 이 변경을 받습니다. 개인 데이터와 캐시는 항상 Git에서 제외됩니다.",
+  "project.shareGitOff": "꺼짐",
+  "project.shareGitOn": "켜짐",
   "project.shareInit": "모두와 공유하려면 PerMark를 초기화하세요",
   "project.sharedFileHint": "이 폴더를 여는 모든 사람과 공유됩니다.",
+  "project.sharedFileUnreadable":
+    "PerMark가 이 파일의 {line}번째 줄을 읽을 수 없습니다. 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
+  "project.sharedLocked":
+    "PerMark가 .permark/config.toml을 읽을 수 없습니다. 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
+  "project.sharedLocked.line":
+    "PerMark가 .permark/config.toml의 {line}번째 줄을 읽을 수 없습니다. 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
+  "project.sharedLocked.notText":
+    "PerMark가 .permark/config.toml을 읽을 수 없습니다(일반 텍스트가 아닙니다). 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
+  "project.sharedLocked.tooLarge":
+    "PerMark가 .permark/config.toml을 읽을 수 없습니다(파일이 너무 큽니다). 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
+  "project.sharedLocked.locked":
+    "PerMark가 .permark/config.toml을 읽을 수 없습니다(다른 프로그램이 사용 중입니다). 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
+  "project.privateTracked":
+    "에이전트는 이 폴더의 댓글과 활동 내역을 받지 않습니다. 이 폴더의 git 저장소가 PerMark의 비공개 폴더(.permark/local)를 추적하고 있거나 PerMark가 이를 확인할 수 없었습니다.",
   "settings.all": "모든 설정",
   "settings.editorPreview": "예:",
   "settings.linkUpdateHint": "파일을 이동하거나 이름을 바꿀 때 링크를 어떻게 처리할지 정합니다.",
@@ -1720,6 +1815,8 @@ export default {
   "settings.problem.noPath": "명령에는 {path} 자리 표시자가 필요합니다.",
   "settings.problem.notInitialized": "이 폴더에는 아직 PerMark 설정이 없습니다.",
   "settings.problem.tomlOnly": ".toml로 끝나는 파일 이름을 사용하세요.",
+  "settings.problem.notToml":
+    "PerMark가 .permark/config.toml을 읽을 수 없어 아무것도 변경되지 않았습니다.",
   "settings.problem.other": "이 값은 허용되지 않습니다.",
   "welcome.newProject": "새 프로젝트…",
   "welcome.newProjectHint": "폴더를 선택하면 PerMark가 프로젝트로 설정합니다.",
@@ -1775,6 +1872,7 @@ export default {
   "plugin.graphviz.name": "Graphviz 다이어그램",
   "plugin.graphviz.about": "코드 블록의 Graphviz(DOT) 그래프를 그립니다.",
   "graphviz.tooLarge": "이 그래프는 너무 커서 여기에 그릴 수 없습니다.",
+  "plantuml.tooLarge": "이 다이어그램은 너무 커서 여기에 그릴 수 없습니다.",
   "plugin.media.name": "이미지, 오디오, 비디오",
   "plugin.media.about": "이미지, 오디오, 비디오를 그 자리에서 엽니다.",
   "plugin.json-view.name": "JSON",
@@ -1810,6 +1908,8 @@ export default {
     "이 PerMark는 설치된 버전이 아니므로 기본 앱이 될 수 없습니다. 시스템 설정에서 이 파일에 사용할 앱을 선택하세요.",
   "defaultApp.confined": "시스템 설정에서 이 파일에 사용할 앱을 선택하세요.",
   "defaultApp.failed": "기본 앱을 변경할 수 없습니다: {message}",
+  "defaultApp.chooseInFinder":
+    "이 파일의 기본 앱은 계속 PerMark입니다. 다른 앱을 사용하려면 Finder에서 파일 하나를 선택하고 파일 > 정보 가져오기를 선택한 다음 '다음으로 열기'에서 앱을 고르세요.",
   "defaultApp.askTitle": "이 파일을 PerMark로 열까요?",
   "defaultApp.askBody":
     "선택한 형식의 파일을 두 번 클릭하면 PerMark에서 열립니다. 언제든지 설정에서 변경할 수 있습니다.",
@@ -1831,6 +1931,8 @@ export default {
   "shell.newFile.row": "“새 Markdown 파일”",
   "shell.newFile.hint": "폴더의 오른쪽 클릭 메뉴에서 그 자리에 파일을 만들고 엽니다.",
   "shell.failed": "메뉴를 변경할 수 없습니다: {message}",
+  "shell.readFailed": "메뉴 항목을 읽을 수 없습니다. {message}",
+  "shell.retry": "다시 시도",
   "updates.section": "업데이트",
   "updates.row": "새 버전",
   "updates.notes": "새로운 기능",
@@ -2061,7 +2163,7 @@ export default {
     "선택한 토크나이저로 문서, 선택 영역 또는 섹션의 토큰을 셉니다. 토크나이저가 공개된 경우 정확하게, 그렇지 않으면 근사치로(표시와 함께) 셉니다.",
   "plugin.local-ai.name": "로컬 AI",
   "plugin.local-ai.about":
-    "이 컴퓨터에서 오프라인으로 실행되는 작은 AI 모델로, PerMark가 교정하고 번역하고 의미로 찾도록 돕습니다. 요청하기 전에는 아무것도 내려받지 않습니다.",
+    "이 컴퓨터에서 실행되는 작은 AI 모델로, PerMark가 교정하고 번역하고 의미로 찾도록 돕습니다. 요청하기 전에는 아무것도 내려받지 않습니다.",
   // ---- TOON data and the converter
   "config.table.rows.one": "행 {n}개",
   "config.table.rows.other": "행 {n}개",
@@ -2097,6 +2199,7 @@ export default {
   "toon.notValid": "올바른 TOON 4.4가 아님",
   "convert.menu": "변환…",
   "convert.table": "변환…",
+  "convert.tableCommand": "표 변환…",
   "convert.title": "{name} 변환",
   "convert.fromPage": "페이지의 텍스트",
   "convert.close": "닫기",
@@ -2216,6 +2319,21 @@ export default {
   "closeWindow.body.other": "다음 탭에 저장하지 않은 변경 내용이 있습니다:",
   "closeWindow.saveAll": "모두 저장",
   "closeWindow.discard": "저장 안 함",
+  "stuck.title": "PerMark가 응답하지 않습니다",
+  "stuck.detail":
+    "이 창의 페이지가 응답하지 않습니다. 그래도 닫으면 이 창의 탭에 있는 저장하지 않은 변경 내용이 사라질 수 있습니다.",
+  "stuck.closeAnyway": "그래도 닫기",
+  "stuck.wait": "기다리기",
+  "stuck.engineStopped":
+    "PerMark의 창을 표시하는 부분이 작동을 멈춰 PerMark를 종료해야 합니다. 저장하지 않은 변경 내용은 사라지며, 열려 있던 탭은 다음에 PerMark를 시작할 때 다시 열립니다.",
+  "stuck.reloaded": "이 탭이 작동을 멈춰 다시 불러왔습니다.",
+  "stuck.reloadedLost":
+    "이 탭이 작동을 멈춰 다시 불러왔습니다. {file}의 저장하지 않은 변경 내용이 사라졌습니다.",
+  "stuck.reloadedPage": "이 페이지가 작동을 멈춰 다시 불러왔습니다.",
+  "stuck.windowFailed":
+    "PerMark 창이 페이지를 열지 못해 닫혔습니다. 다른 창은 계속 사용할 수 있습니다.",
+  "stuck.viewFailedExit":
+    "PerMark가 창을 열지 못해 종료해야 합니다. 열려 있던 탭은 다음에 PerMark를 시작할 때 다시 열립니다.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "하위 프로젝트",
@@ -2465,7 +2583,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "로컬 AI",
   "localAi.intro":
-    "이 컴퓨터에서 오프라인으로 실행되는 작은 AI 모델입니다. 요청하기 전에는 아무것도 다운로드하지 않습니다.",
+    "이 컴퓨터에서 실행되는 작은 AI 모델입니다. 요청하기 전에는 아무것도 다운로드하지 않습니다.",
   "localAi.command": "로컬 AI 설정 열기",
   "localAi.loadFailed": "로컬 AI 설정을 읽지 못했습니다.",
   "localAi.retry": "다시 시도",
@@ -2537,8 +2655,8 @@ export default {
   "localAi.models.details.size": "다운로드 크기",
   "localAi.models.details.restriction": "사용할 수 있는 사람",
   "localAi.models.comingSoon": "곧 제공",
-  "localAi.models.needs.newer": "더 새로운 버전의 AI 엔진이 필요합니다.",
-  "localAi.models.needs.missing": "PerMark에 아직 없는 AI 엔진이 필요합니다.",
+  "localAi.models.needs.newer": "이 모델을 사용하려면 이후 버전의 PerMark가 필요합니다.",
+  "localAi.models.needs.missing": "PerMark는 아직 이런 종류의 모델을 실행할 수 없습니다.",
   "localAi.dl.waiting": "대기 중…",
   "localAi.dl.cancelLabel": "{name} 받기 취소",
   "localAi.dl.progress": "{done} / {total}",
@@ -3084,7 +3202,10 @@ export default {
   "acp.fail.copyFailed": "PerMark가 에이전트를 위한 이 폴더의 복사본을 준비하지 못했습니다.",
   "acp.fail.tooLarge": "이 폴더는 너무 커서 에이전트를 위해 복사할 수 없습니다.",
   "acp.fail.projectsNotReady": "PerMark가 아직 이 폴더를 읽는 중입니다. 잠시 후 다시 시도하세요.",
+  "acp.fail.rulesUnreadable":
+    "에이전트가 볼 수 있는 범위를 정하는 파일을 읽을 수 없습니다. 수정될 때까지 에이전트는 아무것도 받지 못합니다.",
   "acp.fail.startFailed": "에이전트의 프로그램을 시작할 수 없습니다.",
+  "acp.fail.notAllowed": "에이전트의 프로그램 실행을 허용하지 않았습니다.",
   "acp.fail.timedOut": "에이전트가 제시간에 응답하지 않았습니다.",
   "acp.fail.initFailed":
     "이 프로그램은 PerMark와 통신할 수 있는 에이전트처럼 응답하지 않았습니다. 명령을 확인하고 다시 시도하세요.",
@@ -3097,6 +3218,7 @@ export default {
   "acp.fail.exited": "에이전트의 프로그램이 예기치 않게 종료되었습니다.",
   "acp.fail.sendFailed": "메시지를 에이전트에 전달할 수 없습니다.",
   "acp.error.relativeProgram": "프로그램의 전체 경로나 이름만 입력하세요.",
+  "acp.error.commandTooLong": "명령이 너무 깁니다(최대 1000자).",
   "acp.error.networkProgram":
     "PerMark는 이 컴퓨터에 있는 프로그램만 실행하며, 네트워크 폴더에서는 실행하지 않습니다.",
   "acp.error.oneChoice": "에이전트 하나를 선택하거나 명령 하나를 입력하세요.",

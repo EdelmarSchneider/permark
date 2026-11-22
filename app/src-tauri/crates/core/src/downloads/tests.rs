@@ -317,7 +317,7 @@ fn unit(id: &str, assets: Vec<Asset>) -> Unit {
     Unit::new(id, "models", assets).unwrap()
 }
 
-/// Store under a folder with a space + non-ASCII letter (AC-12).
+/// Store under a folder with a space + non-ASCII letter.
 fn store() -> (tempfile::TempDir, PathBuf) {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("Jo\u{e3}o docs").join("store");
@@ -968,7 +968,7 @@ fn busy_maps_to_unavailable() {
     );
 }
 
-// ---- review fixes (U5) ----
+// ---- review fixes ----
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;

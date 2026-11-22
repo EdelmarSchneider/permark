@@ -20,6 +20,7 @@ ts-rs.workspace = true
 tempfile.workspace = true
 dunce.workspace = true
 permark-plugin-git.workspace = true
+permark-plugin-frontmatter-card.workspace = true
 git2.workspace = true
 
 [lints]

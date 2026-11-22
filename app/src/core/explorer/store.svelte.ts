@@ -2,6 +2,7 @@
 // every action on files. The backend owns the truth (tree, files, undo); this mirrors it through snapshots + deltas
 // and sends actions. UI modes are tagged unions; actions are methods called from event handlers.
 
+import { conditions } from "../conditions/context.svelte";
 import { confirmLeave } from "../editing/guard";
 import { editing } from "../editing/session.svelte";
 import { DEFAULT_REFERENCE_TEMPLATE, formatReference } from "../doc/reference";
@@ -19,6 +20,7 @@ import {
   type TreeFilter,
   type TreeNode,
   type Unlisten,
+  type WorkspaceId,
 } from "../../api";
 import { IDENTITY_UNKNOWN } from "../../api/error";
 import { language, t, tn } from "../i18n";
@@ -30,7 +32,6 @@ import {
   applyDelta,
   canDrop,
   depthOf,
-  inNameOrder,
   movesInto,
   nameOf,
   parentOf,
@@ -42,6 +43,7 @@ import {
   topmost,
   type Row,
 } from "./list";
+import { NameOrder } from "./order";
 
 const SESSION_FILTER = "explorer.filter";
 /** An outside drag resting this long on a closed folder opens it. */
@@ -132,6 +134,9 @@ export function quickNameProblem(name: string): NameProblem | null {
 export class ExplorerStore {
   readonly #api: Api;
   readonly #host: ExplorerHost;
+  /** The workspace this Explorer was made for, fixed for its life: a call still on its way when another folder opens
+   *  in the window must not reach the list of the project shown then (the backend refuses a call naming another). */
+  readonly #workspace: WorkspaceId;
 
   load = $state.raw<Load>({ status: "loading" });
   roots = $state.raw<readonly RootNode[]>([]);
@@ -156,13 +161,17 @@ export class ExplorerStore {
   outsidePoint = $state.raw<{ x: number; y: number } | null>(null);
   /** The list's geometry: the folder a point on screen belongs to (`null`: outside the list). Set by the panel. */
   geometry: ((x: number, y: number) => string | null) | null = null;
+  /** Gives the keyboard to the list (its row named) when nothing holds it. Set by the panel (`null`: no list drawn). */
+  takeKeyboard: (() => void) | null = null;
   /** A request to bring a row into view (`n` makes repeated requests for one path distinct). */
   scrollTo = $state.raw<{ path: string; n: number } | null>(null);
   /** Whether a Refresh is under way (its button shows it; asking again meanwhile does nothing). */
   refreshing = $state.raw<Refreshing>({ status: "idle" });
 
-  /** The list in the order of the interface language (sorted again only when the list or the language changes). */
-  #ordered = $derived<readonly TreeNode[]>(inNameOrder(this.nodes, language.locale));
+  /** The list in the order of the interface language: sorted in full for a new list or language, kept through
+   *  deltas (a delta re-places only what it brings or takes). */
+  #names = new NameOrder();
+  #ordered = $derived<readonly TreeNode[]>(this.#names.of(this.nodes, language.locale));
   rows = $derived<Row[]>(rowsOf(this.roots, this.#ordered, this.expanded, this.collapsedRoots));
 
   #seq = 0;
@@ -188,9 +197,10 @@ export class ExplorerStore {
   /** Ends a Refresh no list answered. */
   #refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(api: Api, host: ExplorerHost) {
+  constructor(api: Api, workspace: WorkspaceId, host: ExplorerHost) {
     this.#api = api;
     this.#host = host;
+    this.#workspace = workspace;
   }
 
   // ---- lifecycle -------------------------------------------------------------------------------------------------
@@ -221,7 +231,7 @@ export class ExplorerStore {
     this.#timer = null;
     this.#clearAuto();
     this.#refreshed();
-    void this.#api.treeClose();
+    void this.#api.treeClose(this.#workspace);
   }
 
   /** The list asked for as `ask` is still wanted: the store is open and no newer list was asked for since. */
@@ -244,7 +254,7 @@ export class ExplorerStore {
     if (open.ok && Array.isArray(open.value)) {
       this.expanded = new Set(open.value.filter((v): v is string => typeof v === "string"));
     }
-    const result = await this.#api.treeOpen(filter);
+    const result = await this.#api.treeOpen(this.#workspace, filter);
     if (!this.#wanted(ask)) return;
     if (!result.ok) {
       this.load = { status: "failed", error: result.error };
@@ -309,19 +319,27 @@ export class ExplorerStore {
     this.#seq = delta.seq;
     // the project's default moved and this window follows it
     if (delta.filter !== null) this.filter = delta.filter;
-    // state that follows renames moves before the list changes
-    this.expanded = remapSet(this.expanded, delta.renamed);
-    this.selection = remapSet(this.selection, delta.renamed);
-    if (this.focus !== null) {
-      this.focus =
-        remapSet(new Set([this.focus]), delta.renamed)
-          .values()
-          .next().value ?? null;
+    // state that follows renames moves before the list changes (no rename: the same state, the rows stay)
+    if (delta.renamed.length > 0) {
+      this.expanded = remapSet(this.expanded, delta.renamed);
+      this.selection = remapSet(this.selection, delta.renamed);
+      if (this.focus !== null) {
+        this.focus =
+          remapSet(new Set([this.focus]), delta.renamed)
+            .values()
+            .next().value ?? null;
+      }
     }
-    this.nodes = applyDelta(this.nodes, delta);
+    // a delta that brings and takes nothing (the folder read again, unchanged) keeps the list and the rows
+    if (delta.removed.length > 0 || delta.added.length > 0) {
+      const before = this.nodes;
+      const after = applyDelta(before, delta);
+      this.#names.step(before, delta, after, language.locale);
+      this.nodes = after;
+    }
     this.totalFiles = delta.totalFiles;
     this.shownFiles = delta.shownFiles;
-    const alive = new Set(this.nodes.map((n) => n.path));
+    const alive = this.#names.paths(this.nodes, language.locale);
     if (this.selection.size > 0) {
       this.selection = new Set(Array.from(this.selection).filter((p) => alive.has(p)));
     }
@@ -375,7 +393,7 @@ export class ExplorerStore {
 
   async setFilter(filter: TreeFilter): Promise<void> {
     if (this.#closed) return;
-    const result = await this.#api.treeSetFilter(filter);
+    const result = await this.#api.treeSetFilter(this.#workspace, filter);
     if (this.#closed) return;
     if (!result.ok) {
       this.#host.fail(result.error);
@@ -407,7 +425,7 @@ export class ExplorerStore {
   /** Back to the project's default filter. */
   async resetFilter(): Promise<void> {
     if (this.#closed) return;
-    const result = await this.#api.treeOpen(null);
+    const result = await this.#api.treeOpen(this.#workspace, null);
     if (this.#closed) return;
     if (!result.ok) {
       this.#host.fail(result.error);
@@ -459,7 +477,7 @@ export class ExplorerStore {
       const node = this.nodes.find((n) => n.path === p);
       if (this.#closed) return;
       if (node?.kind.type === "dir" && node.kind.unlisted !== null) {
-        const result = await this.#api.treeOpenFolder(p);
+        const result = await this.#api.treeOpenFolder(this.#workspace, p);
         if (!result.ok) this.#host.fail(result.error);
       }
     }
@@ -517,6 +535,14 @@ export class ExplorerStore {
       this.focus = first;
       this.#anchor = first;
     }
+  }
+
+  /** The keyboard reached the tree with no shown row to name: the first selected row shown, else the first row, so a
+   *  screen reader hears a row at once and not only the tree. Names it only: the selection stays as it is. */
+  enter(): void {
+    const keys = this.rows.filter((r) => r.type === "node").map(rowKey);
+    if (this.focus !== null && keys.includes(this.focus)) return;
+    this.focus = keys.find((key) => this.selection.has(key)) ?? keys[0] ?? null;
   }
 
   /** Arrow keys: the row `step` away from the focused one (clamped). */
@@ -617,7 +643,7 @@ export class ExplorerStore {
 
   async #follow(path: string | null): Promise<void> {
     if (this.#closed) return;
-    const kept = await this.#api.treeKeep(path);
+    const kept = await this.#api.treeKeep(this.#workspace, path);
     if (!kept.ok && !treeGone(kept.error)) this.#host.fail(kept.error);
     if (path !== null) this.reveal(path);
   }
@@ -651,8 +677,9 @@ export class ExplorerStore {
   // ---- inline names ----------------------------------------------------------------------------------------------
 
   beginRename(path?: string): void {
-    const target = path ?? this.targets()[0];
-    if (target === undefined || this.targets().length > 1) return;
+    const targets = this.targets();
+    const target = path ?? targets[0];
+    if (target === undefined || targets.length > 1) return;
     this.edit = { mode: "rename", path: target, value: nameOf(target), problem: null };
     this.#reveal(target);
   }
@@ -823,17 +850,36 @@ export class ExplorerStore {
       this.#host.fail(result.error);
       return;
     }
+    const { deleted, refused } = result.value;
+    const what =
+      deleted.length === 1 && deleted[0] !== undefined
+        ? nameOf(deleted[0])
+        : tn("fileOps.items", deleted.length);
+    // the bin may stop part way: what went is journaled (Undo brings it back), what stayed is named
+    const kept =
+      refused.length === 1 && refused[0] !== undefined
+        ? nameOf(refused[0])
+        : tn("fileOps.items", refused.length);
     this.#host.note(
-      targets.length === 1 && targets[0] !== undefined
-        ? t("fileOps.summaryDeleted", { what: nameOf(targets[0]) })
-        : t("fileOps.summaryDeleted", { what: tn("fileOps.items", targets.length) }),
+      refused.length === 0
+        ? t("fileOps.summaryDeleted", { what })
+        : t("fileOps.partlyDeleted", { what, refused: kept }),
       this.#undoAction(),
     );
   }
 
-  /** The Undo of a note about a file operation: the journal's undo, as Ctrl+Z in the tree (wherever the focus is). */
+  /** The Undo of a note about a file operation: the journal's undo, as Ctrl+Z (Cmd+Z) in the tree, where file
+   *  operations are done (screen readers are told that key). The button went with its note: once undone, the keyboard
+   *  is on the tree, where the undone items are, and not on whatever came before the notes in the Tab order. */
   #undoAction(): NoticeAction {
-    return { label: t("fileOps.undo"), run: () => void this.undo() };
+    return {
+      label: t("fileOps.undo"),
+      keys: conditions.current.platform === "mac" ? "Meta+Z" : "Control+Z",
+      run: async () => {
+        await this.undo();
+        this.takeKeyboard?.();
+      },
+    };
   }
 
   async undo(): Promise<void> {

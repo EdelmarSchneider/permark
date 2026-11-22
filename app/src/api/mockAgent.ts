@@ -2,6 +2,8 @@
 // published context and a status that a probe can fill (a connected client, requests). In memory.
 
 import type { HandOffSessionView } from "./generated/HandOffSessionView";
+import type { RulesProblem } from "./generated/RulesProblem";
+import { MockPluginError } from "./mockOrganizing";
 import type {
   AgentRequest,
   AgentSession,
@@ -46,9 +48,13 @@ export type AgentProbe = {
   replaceFolder(): void;
   /** The server fails to start (`inUse`: another PerMark serves the project; any other text: the reason) | runs. */
   fail(reason: string | null): void;
+  /** A rule file on what agents may see cannot be read (`AgentStatus.rules`) | every one reads well (`null`). */
+  rules(problem: RulesProblem | null): void;
   status(): AgentStatus;
   /** The hand-offs confirmed, as `{ upto, checked }`. */
   handedOff: { upto: number; checked: number[] }[];
+  /** Git tracks the folder's private folder (off at start): the activity is not handed off. */
+  withhold(on: boolean): void;
 };
 
 const HOUR = 3_600_000;
@@ -113,6 +119,8 @@ export function createMockAgent(
   const published: AgentWindowContext[] = [];
   let focused = 0;
   const handedOff: { upto: number; checked: number[] }[] = [];
+  let withheld = false;
+  let rules: RulesProblem | null = null;
   const status = (): AgentStatus => ({
     enabled,
     replaced,
@@ -125,6 +133,7 @@ export function createMockAgent(
     groups: { ...groups },
     denied: [],
     recent,
+    ...(rules === null ? {} : { rules }),
   });
   const announce = (): void => emit("agent:status", status());
   const handlers: Handlers = {
@@ -163,6 +172,7 @@ export function createMockAgent(
     },
     "agent.setup": () => "C:\\Program Files\\PerMark\\PerMark.exe",
     "agent.handOffPreview": ({ checked }): HandOffPreview => {
+      if (withheld) return { state: "withheld" };
       if (handedOff.length > 0) return { state: "nothing" };
       const sessions = sessionsNow(Date.now(), checked);
       const inside = sessions.filter((s) => s.checked);
@@ -181,6 +191,7 @@ export function createMockAgent(
       };
     },
     "agent.handOffConfirm": ({ upto, checked }) => {
+      if (withheld) throw new MockPluginError("unavailable");
       handedOff.push({ upto, checked });
       const rows = sessionsNow(Date.now(), checked)
         .filter((s) => s.checked)
@@ -215,6 +226,10 @@ export function createMockAgent(
         failure = reason;
         announce();
       },
+      rules: (problem) => {
+        rules = problem;
+        announce();
+      },
       connect: (client, id = "mocksession01") => {
         if (client === null) sessions = [];
         else if (!refused.has(id)) {
@@ -236,6 +251,9 @@ export function createMockAgent(
       },
       status,
       handedOff,
+      withhold: (on) => {
+        withheld = on;
+      },
     },
   };
 }

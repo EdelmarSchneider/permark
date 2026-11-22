@@ -13,6 +13,8 @@ const STORE_OVERLAY: &str = include_str!("../tauri.msstore.conf.json");
 const CONFIG: &str = include_str!("../tauri.conf.json");
 const MACOS: &str = include_str!("../tauri.macos.conf.json");
 const LINUX: &str = include_str!("../tauri.linux.conf.json");
+const SIGNING: &str = include_str!("../tauri.signing.conf.json");
+const CAPABILITY: &str = include_str!("../capabilities/default.json");
 const DESKTOP: &str = include_str!("../linux/permark.desktop");
 const WORKSPACE: &str = include_str!("../Cargo.toml");
 const HOOKS: &str = include_str!("../installer/hooks.nsh");
@@ -84,6 +86,108 @@ const CUSTOM_LANGUAGES: [(&str, &str); 17] = [
 
 fn json(text: &str) -> serde_json::Value {
     serde_json::from_str(text).expect("valid JSON")
+}
+
+/// The directives of the page policy (`app.security.csp`): name -> sources.
+fn csp_directives(config: &serde_json::Value) -> BTreeMap<String, Vec<String>> {
+    let csp = config["app"]["security"]["csp"].as_str().expect("a CSP");
+    csp.split(';')
+        .filter_map(|directive| {
+            let mut words = directive.split_whitespace();
+            let name = words.next()?.to_owned();
+            Some((name, words.map(str::to_owned).collect()))
+        })
+        .collect()
+}
+
+#[test]
+fn the_page_policy_runs_only_the_apps_own_scripts_and_embeds_nothing() {
+    let directives = csp_directives(&json(CONFIG));
+    let scripts = directives.get("script-src").expect("script-src");
+    // compiled WebAssembly (`'wasm-unsafe-eval'`) is allowed; text turned into code is not
+    for token in ["'unsafe-inline'", "'unsafe-eval'"] {
+        assert!(!scripts.iter().any(|s| s == token), "script-src {token}");
+    }
+    assert!(scripts.iter().all(|s| s != "*" && !s.ends_with(':')));
+    for name in ["object-src", "frame-src", "base-uri", "form-action"] {
+        assert_eq!(
+            directives.get(name),
+            Some(&vec!["'none'".to_owned()]),
+            "{name}"
+        );
+    }
+    // an overlay that names `app` would bring its own policy
+    for overlay in [MACOS, LINUX, STORE_OVERLAY, SIGNING] {
+        assert!(json(overlay)["app"].is_null());
+    }
+}
+
+#[test]
+fn unused_plugin_commands_are_left_out_and_the_shared_prototype_stays_writable() {
+    let config = json(CONFIG);
+    // plugin commands no capability allows are not compiled into a release build
+    assert_eq!(config["build"]["removeUnusedCommands"], true);
+    // a frozen `Object.prototype` breaks the Edit view and most diagrams: the editor's Markdown serializer gives an
+    // object its own `toString`, an assignment a frozen prototype refuses ("Cannot assign to read only property").
+    // Only the app's web view freezes it (the dev server and the mock backend do not): only a release would show it.
+    assert_ne!(config["app"]["security"]["freezePrototype"], true);
+}
+
+/// Whether a capability's window pattern (`*` = any run of characters) names the window `label`.
+fn names_window(pattern: &str, label: &str) -> bool {
+    // the other glob forms would need a real matcher: none is used
+    assert!(!pattern.contains(['?', '[', '{']), "{pattern}");
+    let mut parts = pattern.split('*');
+    let Some(mut rest) = parts.next().and_then(|first| label.strip_prefix(first)) else {
+        return false;
+    };
+    let middle: Vec<&str> = parts.collect();
+    let Some((last, between)) = middle.split_last() else {
+        return rest.is_empty();
+    };
+    for part in between {
+        let Some(at) = rest.find(part) else {
+            return false;
+        };
+        rest = &rest[at + part.len()..];
+    }
+    rest.ends_with(last)
+}
+
+#[test]
+fn the_app_windows_hold_three_permissions_and_the_export_pages_none() {
+    assert!(names_window("w-*", "w-3") && !names_window("w-*", "export-1"));
+    assert!(names_window("*", "export-1") && names_window("main", "main"));
+    let default = json(CAPABILITY);
+    assert_eq!(default["windows"], serde_json::json!(["main", "w-*"]));
+    assert_eq!(
+        default["permissions"],
+        serde_json::json!([
+            "core:event:allow-listen",
+            "core:event:allow-unlisten",
+            "dialog:allow-open"
+        ])
+    );
+    // the hidden export | print pages (`export-*`) reach no command; no web page outside the app reaches one
+    let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities");
+    let files: Vec<_> = std::fs::read_dir(folder)
+        .expect("the capabilities folder")
+        .map(|entry| entry.expect("a capability file").path())
+        .collect();
+    assert!(files.iter().any(|file| file.ends_with("default.json")));
+    for file in files {
+        let text = std::fs::read_to_string(&file).expect("a capability file");
+        let capability = json(&text);
+        let at = file.display();
+        assert!(capability["remote"].is_null(), "{at}");
+        let patterns = ["windows", "webviews"]
+            .into_iter()
+            .flat_map(|key| capability[key].as_array().cloned().unwrap_or_default());
+        for pattern in patterns {
+            let pattern = pattern.as_str().expect("a label pattern");
+            assert!(!names_window(pattern, "export-1"), "{at}: {pattern}");
+        }
+    }
 }
 
 #[test]
@@ -164,6 +268,21 @@ fn the_store_overlay_removes_the_updater() {
         .as_object()
         .is_some_and(|plugins| plugins.contains_key("updater")));
     assert_eq!(overlay["bundle"]["createUpdaterArtifacts"], false);
+}
+
+#[test]
+fn every_bundle_is_named_and_none_is_an_msi() {
+    // the release's updater manifest has no `.msi` rule, so an `.msi` bundle would keep the release a draft; the
+    // bundler keeps the targets of the platform it runs on, so one list in the base config serves all three jobs
+    let config = json(CONFIG);
+    assert_eq!(
+        config["bundle"]["targets"],
+        serde_json::json!(["nsis", "deb", "rpm", "appimage", "app", "dmg"])
+    );
+    // an overlay replaces the list: Windows (`.msi`) would come back through a platform file
+    for overlay in [MACOS, LINUX, STORE_OVERLAY] {
+        assert!(json(overlay)["bundle"]["targets"].is_null());
+    }
 }
 
 #[test]

@@ -34,12 +34,15 @@ afterEach(async () => {
 });
 
 describe("a state file that could not be read", () => {
-  it("set aside: says so", async () => {
-    const store = await bootedWith(FILE + ".bad");
+  it("set aside: says so and names where the old copy went", async () => {
+    const backup = FILE + ".broken-1700000000000";
+    const store = await bootedWith(backup);
     const target = document.body.appendChild(document.createElement("div"));
     component = mount(Notices, { target, props: { store } });
     flushSync();
-    expect(target.textContent).toContain(en["notice.stateRecovered"].replace("{file}", FILE));
+    expect(target.textContent).toContain(
+      en["notice.stateRecovered"].replace("{file}", FILE).replace("{backup}", backup),
+    );
   });
 
   it("left in place (no backup): says it was kept and not saved over, never that it was set aside", async () => {

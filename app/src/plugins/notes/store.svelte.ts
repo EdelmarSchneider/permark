@@ -169,8 +169,16 @@ export class NotesStore {
     this.#workspace = workspace;
     this.#documents.setWorkspace(workspace);
     this.#editing.bindJournal((path, baseHash, text) => {
+      // the text a crash left for a loose file is its only copy (a loose file has no versions): an editor opened on
+      // it anyway (the mode switch) never writes over it, nor clears it, before the person chooses
+      if (this.#leftByACrash(path)) return;
       void this.#client.call("notes.buffer", { path, baseHash, text });
     });
+    // nor does any route open an editor on such a file (the window's chosen mode, the mode switch) before the person
+    // chooses in its bar: typing there would replace that only copy
+    const unblock = this.#editing.block((path) =>
+      this.#leftByACrash(path) ? "leftByACrash" : null,
+    );
     const offSaved = this.#editing.onSaved(() => this.#refreshSoon());
     const timer = setInterval(() => {
       // a hidden tab waits: coming back on screen reads the list (below)
@@ -196,6 +204,7 @@ export class NotesStore {
     // a wish from another view (the Welcome of another window, a project tab) while this tab is open already; before
     // the first read, that read takes it
     let offIntent: (() => void) | null = null;
+    let offShares: (() => void) | null = null;
     let gone = false;
     void this.#api
       .onAppPlugin("notes:intent", () => {
@@ -205,10 +214,19 @@ export class NotesStore {
         if (gone) off();
         else offIntent = off;
       });
+    // a project's agent panel (another tab | window) changed a share: the marks follow at once, hidden or not (one
+    // read per change; the tab shown next draws them right)
+    void this.#api
+      .onAppPlugin("notes:shares", () => void this.refresh())
+      .then((off) => {
+        if (gone) off();
+        else offShares = off;
+      });
     void this.refresh();
     return () => {
       gone = true;
       offIntent?.();
+      offShares?.();
       clearInterval(timer);
       offShown();
       if (this.#refreshTimer !== null) clearTimeout(this.#refreshTimer);
@@ -216,6 +234,7 @@ export class NotesStore {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
       offSaved();
+      unblock();
       this.#editing.bindJournal(null);
       this.#workspace = null;
       this.#restored = false;
@@ -259,6 +278,13 @@ export class NotesStore {
 
   #listed(path: string): boolean {
     return this.entries.some((e) => e.path === path);
+  }
+
+  /** A loose file whose row holds text an earlier run kept and the person has not chosen about (Reload | Keep mine |
+   *  Save as note). */
+  #leftByACrash(path: string): boolean {
+    const entry = this.entries.find((e) => e.path === path);
+    return entry?.kind === "file" && entry.state === "unsaved";
   }
 
   /** Takes the wish the backend keeps (once: no other view gets it) and does it. `null`: there was none. */
@@ -311,15 +337,22 @@ export class NotesStore {
     await this.#edit(path);
   }
 
-  /** Notes are for writing: the editor opens on the note, in the mode last used. */
+  /** Notes are for writing: the editor opens on the note, in the mode last used. A loose file with text a crash left
+   *  waits for the person's choice in its bar first. */
   async #edit(path: string): Promise<void> {
     const view = this.#documents.view;
     if (view === null || this.#documents.shown !== path || view.editable.editable === "readOnly") {
       return;
     }
+    if (this.#leftByACrash(path)) return;
     const kind = view.format === "markdown" ? "markdown" : "text";
     const mode = this.#editing.lastEditOr(this.#window.editMode);
-    await this.#editing.enter(mode, path, kind, this.#documents.savePolicy);
+    // no choice of the person's: the mode the window's other tabs open their documents in stays (a project left in
+    // View shows its page again when the person comes back to it). `enter` records the mode before its first wait.
+    const chosen = this.#editing.chosenMode;
+    const entered = this.#editing.enter(mode, path, kind, this.#documents.savePolicy);
+    this.#editing.chooseNext(chosen);
+    await entered;
   }
 
   /** A new empty note, shown and ready for typing. */
@@ -825,13 +858,19 @@ export class NotesStore {
     }
   }
 
-  /** The person keeps what was typed: it is written over the file. */
+  /** The person keeps what was typed: it is written over the file, only while it is still the version its row shows
+   *  (a file changed meanwhile is refused and the list read again). The editor answers only from its own conflict
+   *  view; text a crash left is the backend's, so an editor on the file lets go first. */
   async keepMine(path: string): Promise<void> {
-    if (this.current === path && this.#editing.path === path) {
+    if (this.#editing.path === path && this.#editing.state.s === "conflict") {
       this.#editing.dispatch({ e: "keepMine" });
       return;
     }
-    const result = await this.#client.call("notes.keepMine", { path });
+    // only text a crash left outranks the editor's: any other editor keeps what was typed in it
+    if (this.#editing.path === path && this.#leftByACrash(path)) this.#editing.release();
+    // no hash (shown as gone, or listed before any text was kept): sent as gone, refused while a file is there
+    const seen = this.entries.find((e) => e.path === path)?.hash ?? null;
+    const result = await this.#client.call("notes.keepMine", { path, seen });
     if (!result.ok) this.#fail(result.error);
     await this.refresh();
     if (this.current === path) {

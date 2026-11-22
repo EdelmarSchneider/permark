@@ -162,6 +162,34 @@ describe("the frame", () => {
     expect(region(".panel")?.getAttribute("aria-label")).toBe("Right panel");
   });
 
+  it("puts each splitter inside the region it resizes: no content outside a landmark, Tab in screen order", () => {
+    component = mount(FrameHost, { target, props: { bottom: true } });
+    flushSync();
+    const bars = [...target.querySelectorAll<HTMLElement>("[role=separator][data-side]")];
+    expect(
+      bars.map((bar) => [bar.dataset.side, bar.closest("aside")?.getAttribute("data-region")]),
+    ).toEqual([
+      ["sidebar", "sidebar"],
+      ["bottom", "bottom"],
+      ["right", "right"],
+    ]);
+    // the handle is a child of its region, beside the box that holds (and clips) the region's content: its hit
+    // area across the border stays whole
+    for (const bar of bars) {
+      expect(bar.parentElement, bar.dataset.side).toBe(bar.closest("aside"));
+    }
+    for (const id of ["side-button", "bottom-button", "right-text"]) {
+      const box = target.querySelector(`#${id}`)?.parentElement;
+      expect(box?.tagName, id).toBe("DIV");
+      expect(box?.parentElement?.tagName, id).toBe("ASIDE");
+    }
+    // the sidebar's handle on its right edge comes after its content; the right | bottom panel's before theirs
+    const focusable = [...target.querySelectorAll<HTMLElement>("button, [tabindex='0']")].map(
+      (el) => el.id || el.dataset.side,
+    );
+    expect(focusable).toEqual(["side-button", "sidebar", "bottom", "bottom-button", "right"]);
+  });
+
   it("in focus mode hides every region but the page: inert, still mounted, no splitters", () => {
     component = mount(FrameHost, { target, props: { focus: true } });
     flushSync();
@@ -270,7 +298,7 @@ describe("the bottom region of the frame", () => {
     expect(bottom()?.parentElement).toBe(region(".center"));
     expect(region(".sidebar")?.parentElement).toBe(region(".body"));
     expect(region(".panel")?.parentElement).toBe(region(".body"));
-    expect(bar()?.parentElement).toBe(region(".center"));
+    expect(bar()?.parentElement).toBe(bottom());
     expect(bar()?.getAttribute("aria-orientation")).toBe("horizontal");
     expect(bar()?.getAttribute("aria-label")).toBe("Resize the bottom panel");
     expect(bar()?.getAttribute("aria-valuenow")).toBe("300");

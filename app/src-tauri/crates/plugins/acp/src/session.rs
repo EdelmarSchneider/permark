@@ -65,6 +65,7 @@ use agent_client_protocol_schema::MaybeUndefined;
 use agent_client_protocol_schema::ProtocolVersion;
 use permark_core::paths::{self, Root, Vault, VaultPath};
 use permark_core::plugins::PluginEvents;
+use permark_core::process::ProgramApprovals;
 use permark_core::state::StateFile;
 use permark_core::{ErrorKind, IpcError};
 use serde_json::Value;
@@ -78,7 +79,7 @@ use crate::dto::{
     ResolvedCommand, SetOptionArgs,
 };
 use crate::reply;
-use crate::work::{copy_dir, kept_out, start_of, Project, WorkCopy};
+use crate::work::{copy_dir, kept_out, start_of, Project, WorkCopy, RULES_UNREADABLE};
 use crate::SharedCopy;
 use login::login_methods;
 pub use options::{Picks, OPTIONS_FILE};
@@ -103,6 +104,8 @@ pub struct Host {
     /// The catalog + the person's choice (read at every start).
     pub agents: Agents,
     pub launch: crate::agents::Launch,
+    /// What the person allowed to start: their own command waits for their yes (asked once per program + words).
+    pub approvals: ProgramApprovals,
     pub project: Project,
     /// Folder the copy is made in (`None`: no profile, no copy can be made).
     pub place: Option<PathBuf>,
@@ -464,6 +467,7 @@ impl Session {
         let last = chosen
             .as_ref()
             .and_then(|c| self.core.saved()?.offer(&c.choice));
+        let rules = self.core.host.project.rules_problem();
         let inner = lock(&self.core.inner);
         AcpStatus {
             state: inner.state.name(),
@@ -481,6 +485,7 @@ impl Session {
             skipped_files: self.core.skipped.load(Ordering::Relaxed),
             last,
             options: inner.shown.clone(),
+            rules,
         }
     }
 
@@ -519,7 +524,8 @@ impl Session {
     /// # Errors
     /// `Unavailable` (`noAgent`): no agent chosen; `Conflict` (`busy`): the agent starts | works; `Denied`
     /// (`hiddenFromAgents`): the passage is of a file agents may not see; `Unavailable` (`projectsNotReady`): what
-    /// agents may see is not known yet; `InvalidData` | `InvalidPath`: a prompt that cannot be sent.
+    /// agents may see is not known yet; `Unavailable` (`rulesUnreadable`, subject: the file): a rule file cannot be
+    /// read and no last good rules of it stand in; `InvalidData` | `InvalidPath`: a prompt that cannot be sent.
     pub fn prompt(&self, args: PromptArgs) -> Result<(), IpcError> {
         check(&args)?;
         if self.core.host.agents.chosen().is_none() {
@@ -967,6 +973,9 @@ fn call_failed(connection: &Connection, step: Step, error: CallError) -> AcpErro
 fn copy_error(error: &IpcError) -> AcpError {
     AcpError::new(match error.kind {
         ErrorKind::TooLarge => AcpErrorCode::TooLarge,
+        ErrorKind::Unavailable if error.detail.as_deref() == Some(RULES_UNREADABLE) => {
+            AcpErrorCode::RulesUnreadable
+        }
         ErrorKind::Unavailable => AcpErrorCode::ProjectsNotReady,
         _ => AcpErrorCode::CopyFailed,
     })
@@ -1287,16 +1296,26 @@ impl Core {
         }
     }
 
-    /// The copy's folder, made when absent (`true`: made now), cleared of agent settings (`None`: replaced meanwhile).
-    fn ensure_copy(&self, generation: u64) -> Result<Option<(PathBuf, bool)>, AcpError> {
+    /// The copy's folder, made when absent (`true`: made now), cleared of agent settings, with the copy's lock (`None`:
+    /// stopped | replaced meanwhile). The caller holds the lock until its agent is registered | stopped: a start that
+    /// waited for the copy (behind a newer start, a turn, a stop) finds itself replaced here and launches nothing, and
+    /// two starts never share the start folder.
+    fn ensure_copy(
+        &self,
+        generation: u64,
+    ) -> Result<Option<(CopyHeld<'_>, PathBuf, bool)>, AcpError> {
         // held while the copy is made: a plugin stop waits for it, then finds it (or nothing) to remove
         let mut copy = lock(&self.host.copy);
+        if !self.is_current(generation) {
+            return Ok(None);
+        }
         if let Some(existing) = copy.as_ref() {
             // settings an agent wrote would load at this start
             existing
                 .purge()
                 .map_err(|_| AcpError::new(AcpErrorCode::CopyFailed))?;
-            return Ok(Some((existing.dir().to_path_buf(), false)));
+            let dir = existing.dir().to_path_buf();
+            return Ok(Some((copy, dir, false)));
         }
         let place = self
             .host
@@ -1315,7 +1334,7 @@ impl Core {
         self.count_skipped(&built);
         let dir = built.dir().to_path_buf();
         *copy = Some(built);
-        Ok(Some((dir, true)))
+        Ok(Some((copy, dir, true)))
     }
 
     /// The agent's start folder, empty: anything an earlier run left there would be read as a runner's settings.
@@ -1347,13 +1366,27 @@ impl Core {
             .plan
             .clone()
             .ok_or_else(|| AcpError::new(AcpErrorCode::NotFound))?;
-        let Some((dir, fresh)) = self.ensure_copy(generation)? else {
+        // before any copy is made: a no leaves nothing behind
+        if matches!(chosen.choice, Choice::Command(_)) {
+            // a program inside the project: refused like one never found, nobody asked
+            if self.host.approvals.in_project(&plan.program) {
+                return Err(AcpError::new(AcpErrorCode::NotFound));
+            }
+            if !self.host.approvals.allow(&plan.call()) {
+                return Err(AcpError::new(AcpErrorCode::NotAllowed));
+            }
+        }
+        let Some((held, dir, fresh)) = self.ensure_copy(generation)? else {
             return Ok(None);
         };
         let copy = Root::open(&dir)
             .map(Vault::new)
             .map_err(|_| AcpError::new(AcpErrorCode::CopyFailed))?;
         let run = self.start_folder()?;
+        // a stop since the copy was ready: nothing launched (one coming later finds the agent registered below)
+        if !self.is_current(generation) {
+            return Ok(None);
+        }
         let AgentPipes {
             to_agent,
             from_agent,
@@ -1381,6 +1414,8 @@ impl Core {
         let kept = self.with_current(generation, |inner| {
             inner.state = State::Starting(Some(Arc::clone(&agent)));
         });
+        // registered | stopped: the next start may take the copy (the session's setup below reads it)
+        drop(held);
         if kept.is_none() {
             agent.stop();
             return Ok(None);
@@ -1669,6 +1704,9 @@ fn open_session(
 
 /// The modes and config options a session was opened | continued with.
 type SessionSetup = (Option<SessionModeState>, Option<Vec<SessionConfigOption>>);
+
+/// The work copy's lock, held by a start from its last look at the generation until its agent is registered.
+type CopyHeld<'a> = std::sync::MutexGuard<'a, Option<WorkCopy>>;
 
 /// Sets `session` to the asking mode when offered and not on ([`ask_mode`]): every open | continue, since a
 /// conversation continued may come back in whatever mode its agent keeps. Answers the config options afterwards (a

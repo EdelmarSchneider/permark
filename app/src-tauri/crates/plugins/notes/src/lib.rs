@@ -28,12 +28,13 @@ use std::sync::Arc;
 
 use permark_core::conditions::Requirement;
 use permark_core::error::IpcError;
+use permark_core::fsx::now_ms;
 use permark_core::notes::{
     NotesScope, ObserverLease, ProjectKey, SharedNote, SharedNotes, SharedNotesApi,
 };
 use permark_core::plugins::{
-    typed, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
-    RpcRegistration, Running, ServiceLease,
+    typed, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginEvents, PluginId, PluginKind,
+    PluginScope, RpcRegistration, Running, ServiceLease,
 };
 use permark_core::settings::AppSettings;
 use permark_core::state::ProjectId;
@@ -43,7 +44,7 @@ pub use folder::{FolderInfo, FolderStatus, Places};
 pub use intent::{Intents, NotesIntent};
 pub use loose::{find_renamed, folder_label, new_id, prune as prune_loose, MAX_LISTED};
 pub use names::Moment;
-pub use service::{now_ms, NotesService};
+pub use service::NotesService;
 pub use types::{
     Deleted, EntryKind, LooseState, MoveUndone, Moved, NoteEntry, NoteList, NotesSummary,
     SharedWith,
@@ -78,6 +79,13 @@ struct WantArgs {
 #[derive(Deserialize)]
 struct PathArgs {
     path: String,
+}
+
+/// Keep mine: the version of the file its row showed, its content hash (`None`: shown as gone).
+#[derive(Deserialize)]
+struct KeepArgs {
+    path: String,
+    seen: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -155,8 +163,18 @@ struct MoveArgs {
     name: String,
 }
 
-/// What an agent area may ask of the notes: the ones the person shared with its project.
-struct Shared(Arc<NotesService>);
+/// What an agent area may ask of the notes: the ones the person shared with its project. A share changed there is
+/// told (`notes:shares`): the Notes tab, another view, draws its marks from its own list read.
+struct Shared(Arc<NotesService>, PluginEvents);
+
+impl Shared {
+    fn told(&self, done: Result<(), IpcError>) -> Result<(), IpcError> {
+        if done.is_ok() {
+            self.1.emit("shares", serde_json::Value::Null);
+        }
+        done
+    }
+}
 
 impl SharedNotes for Shared {
     fn list(&self, project: &ProjectKey) -> Vec<SharedNote> {
@@ -168,12 +186,12 @@ impl SharedNotes for Shared {
     }
 
     fn share(&self, project: &ProjectKey, id: &str) -> Result<(), IpcError> {
-        self.0.share(project, id)
+        self.told(self.0.share(project, id))
     }
 
     fn unshare(&self, project: &ProjectKey, id: &str) {
         // a name that is not a note is shared with nobody: nothing to stop
-        let _ = self.0.unshare(id, Some(&project.id));
+        let _ = self.told(self.0.unshare(id, Some(&project.id)));
     }
 
     fn candidates(&self) -> Vec<SharedNote> {
@@ -230,9 +248,10 @@ impl Plugin for NotesPlugin {
         }
         let lease = app
             .services
-            .provide(Arc::new(SharedNotesApi(Arc::new(Shared(Arc::clone(
-                &service,
-            ))))));
+            .provide(Arc::new(SharedNotesApi(Arc::new(Shared(
+                Arc::clone(&service),
+                cx.events().clone(),
+            )))));
         let observer = scope.install_observer(Arc::new(Observer(Arc::clone(&service))));
         Ok(Box::new(NotesRunning {
             service,
@@ -413,7 +432,7 @@ fn register(serve: &mut Serve<'_>, service: &Arc<NotesService>) {
     let s = Arc::clone(service);
     serve(
         "keepMine",
-        typed(move |args: PathArgs, _| s.keep_mine(&args.path)),
+        typed(move |args: KeepArgs, _| s.keep_mine(&args.path, args.seen.as_deref())),
     );
     let s = Arc::clone(service);
     serve(

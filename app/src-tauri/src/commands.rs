@@ -32,6 +32,7 @@ use permark_core::session::{ProjectSession, RecentFolder};
 use permark_core::settings::{
     AppSettings, ProjectConfigFile, ProjectSettingChange, ProjectSettings, SettingChange,
 };
+use permark_core::state::Sharing;
 use permark_core::tree::{TreeFilter, TreeSnapshot};
 use permark_core::workspace::{
     ProjectCore, TabId, WindowSummary, WindowView, Workspace, WorkspaceId, WorkspaceRef,
@@ -44,7 +45,7 @@ use ts_rs::TS;
 
 use crate::open::{open_placed, OpenOutcome};
 use crate::shell::{state, Shell};
-use crate::views::{BarTheme, CloseAnswer, ViewRequest};
+use crate::views::{BarTheme, CloseAnswer, NativeWords, Reloaded};
 use permark_core::open::OpenPlacement;
 
 /// What a view (one tab, or a window's Welcome) needs to draw its first frame.
@@ -62,6 +63,10 @@ pub struct BootInfo {
     pub context: Context,
     pub settings: AppSettings,
     pub notices: Vec<StateRecovered>,
+    /// The last run's crash report, offered to the first window that boots (once per start).
+    pub crash: Option<crate::crash::CrashOffer>,
+    /// Its page was loaded again after the page process ended (`None`: a first boot).
+    pub reloaded: Option<Reloaded>,
     /// Opens from outside that failed before this window could listen.
     pub failures: Vec<OpenFailed>,
     pub platform: Platform,
@@ -89,6 +94,20 @@ pub struct PluginInfo {
 /// Serializes project session writes (two windows on one project).
 static PROJECT_SESSION: Mutex<()> = Mutex::new(());
 
+/// Runs `work` on the blocking pool. A sync `#[tauri::command(async)]` runs on one of the few async workers every
+/// command shares: one that waits on the disk, the network, another program or the person (a system dialog) would
+/// keep the other commands waiting meanwhile.
+///
+/// # Errors
+/// `Internal` when the work panicked.
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, IpcError> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))
+}
+
 #[tauri::command(async)]
 pub fn app_info() -> AppInfo {
     permark_core::app_info()
@@ -114,6 +133,8 @@ pub fn window_boot(handle: AppHandle, window: Webview) -> BootInfo {
             .unwrap_or_else(|| Context::welcome(shell.env.distribution)),
         settings: shell.env.settings(),
         notices: shell.take_notices(),
+        crash: shell.take_crash(),
+        reloaded: crate::views::take_reloaded(&handle, &label),
         failures: shell.window_booted(&label),
         platform: Platform::current(),
         region: permark_core::settings::system_region(),
@@ -264,13 +285,7 @@ pub fn tab_close(handle: AppHandle, tab: TabId) {
             return;
         }
         crate::open::run(&handle, outcome);
-        let _ = handle.emit_to(
-            view.as_str(),
-            "tab-close-requested",
-            ViewRequest {
-                window: view.clone(),
-            },
-        );
+        crate::views::ask_tab_close(&handle, &view);
         return;
     }
     crate::open::run(&handle, shell.registry.close_tab(tab));
@@ -382,15 +397,29 @@ fn project_of(handle: &AppHandle, window: &Webview) -> Result<Arc<ProjectCore>, 
 
 // ---- Explorer: tree ------------------------------------------------------------------------------------------------------
 
+/// The project the invoking window shows, only while it is still `workspace` (the one the window's Explorer was made
+/// for): the tree calls of the project shown before land on nothing (`Unsupported`, as with no project).
+fn tree_project(
+    handle: &AppHandle,
+    window: &Webview,
+    workspace: WorkspaceId,
+) -> Result<Arc<ProjectCore>, IpcError> {
+    state(handle)
+        .registry
+        .project_shown(window.label(), workspace)
+        .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject("project"))
+}
+
 /// The window's tree: its filter (None: the project default) and the whole list. Later changes arrive as
 /// `tree-changed` events.
 #[tauri::command(async)]
 pub fn tree_open(
     handle: AppHandle,
     window: Webview,
+    workspace: WorkspaceId,
     filter: Option<TreeFilter>,
 ) -> Result<TreeSnapshot, IpcError> {
-    Ok(project_of(&handle, &window)?
+    Ok(tree_project(&handle, &window, workspace)?
         .explorer()
         .open_view(window.label(), filter))
 }
@@ -399,40 +428,53 @@ pub fn tree_open(
 pub fn tree_set_filter(
     handle: AppHandle,
     window: Webview,
+    workspace: WorkspaceId,
     filter: TreeFilter,
 ) -> Result<TreeSnapshot, IpcError> {
-    Ok(project_of(&handle, &window)?
+    Ok(tree_project(&handle, &window, workspace)?
         .explorer()
         .set_filter(window.label(), filter)?)
 }
 
 /// Lists a folder left unopened (large | ignored).
 #[tauri::command(async)]
-pub fn tree_open_folder(handle: AppHandle, window: Webview, path: String) -> Result<(), IpcError> {
-    Ok(project_of(&handle, &window)?
+pub fn tree_open_folder(
+    handle: AppHandle,
+    window: Webview,
+    workspace: WorkspaceId,
+    path: String,
+) -> Result<(), IpcError> {
+    Ok(tree_project(&handle, &window, workspace)?
         .explorer()
         .open_folder(&path)?)
 }
 
 /// The open document stays in the tree even when the filter hides it.
 #[tauri::command(async)]
-pub fn tree_keep(handle: AppHandle, window: Webview, path: Option<String>) -> Result<(), IpcError> {
-    Ok(project_of(&handle, &window)?
+pub fn tree_keep(
+    handle: AppHandle,
+    window: Webview,
+    workspace: WorkspaceId,
+    path: Option<String>,
+) -> Result<(), IpcError> {
+    Ok(tree_project(&handle, &window, workspace)?
         .explorer()
         .keep(window.label(), path.as_deref())?)
 }
 
 /// The person's "Refresh": the project folder is read again (the tree, and everything else that keeps a picture of the
-/// disk). Returns at once; what differs arrives as `tree-changed` events.
+/// disk). Returns at once; what differs arrives as `tree-changed` events. Not bound to a `workspace` like the other
+/// tree calls: a late one only reads again the project shown now, which changes nothing but its picture of the disk.
 #[tauri::command(async)]
 pub fn tree_refresh(handle: AppHandle, window: Webview) -> Result<(), IpcError> {
     project_of(&handle, &window)?.refresh();
     Ok(())
 }
 
+/// The window's Explorer goes. The registry already closed the view of a project the window no longer shows.
 #[tauri::command(async)]
-pub fn tree_close(handle: AppHandle, window: Webview) {
-    if let Ok(core) = project_of(&handle, &window) {
+pub fn tree_close(handle: AppHandle, window: Webview, workspace: WorkspaceId) {
+    if let Ok(core) = tree_project(&handle, &window, workspace) {
         core.explorer().close_view(window.label());
     }
 }
@@ -445,8 +487,8 @@ pub fn projects_view(handle: AppHandle, window: Webview) -> Result<ProjectsView,
     Ok(project_of(&handle, &window)?.projects_view())
 }
 
-/// Includes projects (`all` = every offered one). A folder without `.permark/` is initialized first; its windows are
-/// told.
+/// Includes projects (`all` = every offered one). A folder without `.permark/` is initialized first, as from the
+/// settings (every open folder that includes it holds its writes around the copy); its windows are told.
 #[tauri::command(async)]
 pub fn projects_include(
     handle: AppHandle,
@@ -455,7 +497,8 @@ pub fn projects_include(
 ) -> Result<IncludeOutcome, IpcError> {
     let shell = state(&handle);
     let core = project_of(&handle, &window)?;
-    let (outcome, initialized) = core.projects_include(&shell.env, &pick)?;
+    let (outcome, initialized) =
+        core.projects_include(&pick, &|| shell.registry.init_project(core.root()))?;
     if initialized {
         shell.registry.refresh();
     }
@@ -639,25 +682,28 @@ pub fn fileops_plan_move(
         .plan_move_with(&moves, update_links, &unsaved)?)
 }
 
-#[tauri::command(async)]
-pub fn fileops_apply_move(
+#[tauri::command]
+pub async fn fileops_apply_move(
     handle: AppHandle,
     window: Webview,
     plan_id: u64,
     update_links: bool,
 ) -> Result<MoveOutcome, IpcError> {
-    Ok(project_of(&handle, &window)?
-        .fileops()
-        .apply_move(plan_id, update_links)?)
+    blocking(move || {
+        Ok(project_of(&handle, &window)?
+            .fileops()
+            .apply_move(plan_id, update_links)?)
+    })
+    .await?
 }
 
-#[tauri::command(async)]
-pub fn fileops_delete(
+#[tauri::command]
+pub async fn fileops_delete(
     handle: AppHandle,
     window: Webview,
     paths: Vec<String>,
 ) -> Result<DeleteOutcome, IpcError> {
-    Ok(project_of(&handle, &window)?.fileops().delete(&paths)?)
+    blocking(move || Ok(project_of(&handle, &window)?.fileops().delete(&paths)?)).await?
 }
 
 /// A new empty file | folder; returns its project path.
@@ -675,9 +721,12 @@ pub fn fileops_new(
 }
 
 /// Takes the newest operation back; `None`: nothing to undo.
-#[tauri::command(async)]
-pub fn fileops_undo(handle: AppHandle, window: Webview) -> Result<Option<UndoOutcome>, IpcError> {
-    Ok(project_of(&handle, &window)?.fileops().undo()?)
+#[tauri::command]
+pub async fn fileops_undo(
+    handle: AppHandle,
+    window: Webview,
+) -> Result<Option<UndoOutcome>, IpcError> {
+    blocking(move || Ok(project_of(&handle, &window)?.fileops().undo()?)).await?
 }
 
 /// Takes back exactly the operation `id` (an import notice's Undo); `None`: gone, or touched by a newer operation.
@@ -693,16 +742,19 @@ pub fn fileops_undo_entry(
 // ---- Explorer: files dropped in from outside --------------------------------------------------------------------------
 
 /// What dropping files | folders from the system onto a folder of the project would do. Nothing is touched.
-#[tauri::command(async)]
-pub fn fileops_import_plan(
+#[tauri::command]
+pub async fn fileops_import_plan(
     handle: AppHandle,
     window: Webview,
     target: String,
     sources: Vec<String>,
 ) -> Result<ImportPlan, IpcError> {
-    Ok(project_of(&handle, &window)?
-        .fileops()
-        .import_plan(&target, &sources)?)
+    blocking(move || {
+        Ok(project_of(&handle, &window)?
+            .fileops()
+            .import_plan(&target, &sources)?)
+    })
+    .await?
 }
 
 /// Event `import-progress`: to the view that asked (plan ids count per project, so two views can run plan 1).
@@ -715,27 +767,30 @@ pub struct ImportProgressEvent {
 }
 
 /// Copies | moves what a plan listed. Returns when done; the view hears `import-progress` meanwhile.
-#[tauri::command(async)]
-pub fn fileops_import_apply(
+#[tauri::command]
+pub async fn fileops_import_apply(
     handle: AppHandle,
     window: Webview,
     plan_id: u64,
     mode: ImportMode,
     conflicts: ConflictChoice,
 ) -> Result<ImportOutcome, IpcError> {
-    let core = project_of(&handle, &window)?;
-    let label = window.label().to_owned();
-    // a progress event nobody hears (window gone) is not an error
-    let report = |progress: &permark_core::fileops::ImportProgress| {
-        let event = ImportProgressEvent {
-            window: label.clone(),
-            progress: progress.clone(),
+    blocking(move || {
+        let core = project_of(&handle, &window)?;
+        let label = window.label().to_owned();
+        // a progress event nobody hears (window gone) is not an error
+        let report = |progress: &permark_core::fileops::ImportProgress| {
+            let event = ImportProgressEvent {
+                window: label.clone(),
+                progress: progress.clone(),
+            };
+            let _ = handle.emit_to(label.as_str(), "import-progress", event);
         };
-        let _ = handle.emit_to(label.as_str(), "import-progress", event);
-    };
-    Ok(core
-        .fileops()
-        .import_apply(plan_id, mode, conflicts, &report)?)
+        Ok(core
+            .fileops()
+            .import_apply(plan_id, mode, conflicts, &report)?)
+    })
+    .await?
 }
 
 /// Stops a running import; what was finished stays. `true`: there was one.
@@ -762,39 +817,42 @@ pub fn file_abs_path(handle: AppHandle, window: Webview, path: String) -> Result
 }
 
 /// Default program | browser | file manager, for a file of the project: never an executable | script.
-#[tauri::command(async)]
-pub fn file_open_external(
+#[tauri::command]
+pub async fn file_open_external(
     handle: AppHandle,
     window: Webview,
     path: String,
     mode: OpenMode,
 ) -> Result<(), IpcError> {
-    let abs = if let Some((_, Workspace::Notes(core))) =
-        state(&handle).registry.workspace_of(window.label())
-    {
-        // the Notes only show a file in the file manager; they never hand a note to another program
-        if mode != OpenMode::Reveal {
-            return Err(IpcError::new(ErrorKind::Unsupported).subject(path));
-        }
-        let (_, abs) = core.scope().resolve(&path)?;
-        abs
-    } else {
-        let core = project_of(&handle, &window)?;
-        // the vault checks the path and the kind of file; the opener only ever sees the validated absolute path
-        external_target(core.vault(), &path, mode)?
-    };
-    let opener = handle.opener();
-    let done = match mode {
-        OpenMode::Reveal => opener.reveal_item_in_dir(&abs),
-        OpenMode::DefaultApp | OpenMode::Browser => {
-            opener.open_path(abs.to_string_lossy(), None::<&str>)
-        }
-    };
-    done.map_err(|e| {
-        IpcError::new(ErrorKind::Io)
-            .subject(path)
-            .detail(e.to_string())
+    blocking(move || {
+        let abs = if let Some((_, Workspace::Notes(core))) =
+            state(&handle).registry.workspace_of(window.label())
+        {
+            // the Notes only show a file in the file manager; they never hand a note to another program
+            if mode != OpenMode::Reveal {
+                return Err(IpcError::new(ErrorKind::Unsupported).subject(path));
+            }
+            let (_, abs) = core.scope().resolve(&path)?;
+            abs
+        } else {
+            let core = project_of(&handle, &window)?;
+            // the vault checks the path and the kind of file; the opener only ever sees the validated absolute path
+            external_target(core.vault(), &path, mode)?
+        };
+        let opener = handle.opener();
+        let done = match mode {
+            OpenMode::Reveal => opener.reveal_item_in_dir(&abs),
+            OpenMode::DefaultApp | OpenMode::Browser => {
+                opener.open_path(abs.to_string_lossy(), None::<&str>)
+            }
+        };
+        done.map_err(|e| {
+            IpcError::new(ErrorKind::Io)
+                .subject(path)
+                .detail(e.to_string())
+        })
     })
+    .await?
 }
 
 /// The window shows this document (None: none): the hint other features follow.
@@ -856,23 +914,26 @@ fn documents_of(workspace: &Workspace) -> &Arc<permark_core::document::Documents
 
 /// Reads and renders a document for this window and remembers it as the one shown. `known`: ids of the blocks the
 /// window holds (their HTML is not sent again).
-#[tauri::command(async)]
-pub fn document_open(
+#[tauri::command]
+pub async fn document_open(
     handle: AppHandle,
     window: Webview,
     path: String,
     known: Vec<String>,
 ) -> Result<DocumentView, IpcError> {
-    let (workspace, formats) = reading_of(&handle, &window)?;
-    let view = documents_of(&workspace).open(window.label(), &path, &known, &formats)?;
-    if let Workspace::Project(core) = &workspace {
-        // without live updates the open document is polled
-        let abs = VaultPath::parse(&path)
-            .ok()
-            .and_then(|parsed| core.vault().resolve(&parsed).ok());
-        core.watcher().poll_document(window.label(), abs.as_deref());
-    }
-    Ok(view)
+    blocking(move || {
+        let (workspace, formats) = reading_of(&handle, &window)?;
+        let view = documents_of(&workspace).open(window.label(), &path, &known, &formats)?;
+        if let Workspace::Project(core) = &workspace {
+            // without live updates the open document is polled
+            let abs = VaultPath::parse(&path)
+                .ok()
+                .and_then(|parsed| core.vault().resolve(&parsed).ok());
+            core.watcher().poll_document(window.label(), abs.as_deref());
+        }
+        Ok(view)
+    })
+    .await?
 }
 
 /// The window shows no document any more.
@@ -941,24 +1002,36 @@ pub fn code_refs_resolve(
 }
 
 /// Opens a file of the workspace in the person's editor (setting `editor`) at a line. The path is checked against the
-/// workspace; the program and its arguments come from the setting only.
-#[tauri::command(async)]
-pub fn open_in_editor(
+/// workspace; the program and its arguments come from the setting only, and start only once the person allowed them
+/// (a system dialog the first time: waits for the answer, off the UI thread).
+#[tauri::command]
+pub async fn open_in_editor(
     handle: AppHandle,
     window: Webview,
     path: String,
     line: Option<u32>,
     col: Option<u32>,
 ) -> Result<(), IpcError> {
-    let (workspace, _) = reading_of(&handle, &window)?;
-    let (_, abs) = documents_of(&workspace).scope().resolve(&path)?;
-    // a file, never a folder (a single file's root path is its folder)
-    if !abs.is_file() {
-        return Err(IpcError::new(ErrorKind::NotFound).subject(path));
-    }
-    let template = state(&handle).env.settings().editor;
-    editor::launch(&template, &abs, line.unwrap_or(1), col.unwrap_or(1))?;
-    Ok(())
+    blocking(move || {
+        let (workspace, _) = reading_of(&handle, &window)?;
+        let (_, abs) = documents_of(&workspace).scope().resolve(&path)?;
+        // a file, never a folder (a single file's root path is its folder)
+        if !abs.is_file() {
+            return Err(IpcError::new(ErrorKind::NotFound).subject(path));
+        }
+        let shell = state(&handle);
+        let template = shell.env.settings().editor;
+        let approvals = crate::consent::approvals(&shell);
+        editor::launch(
+            &template,
+            &abs,
+            line.unwrap_or(1),
+            col.unwrap_or(1),
+            &approvals,
+        )?;
+        Ok(())
+    })
+    .await?
 }
 
 /// Opens a web link in the system browser. Only `http`, `https` and `mailto`.
@@ -978,7 +1051,7 @@ pub fn open_web(handle: AppHandle, url: String) -> Result<(), IpcError> {
 }
 
 /// Web links the browser may be given: a known scheme, no control characters, a sane length.
-fn web_url_allowed(url: &str) -> bool {
+pub(crate) fn web_url_allowed(url: &str) -> bool {
     let lower = url.trim().to_ascii_lowercase();
     url.len() <= 4096
         && !url.chars().any(char::is_control)
@@ -1040,47 +1113,53 @@ pub fn edit_segments(
 }
 
 /// Applies line edits to the version `seen_hash`; a different disk version is a conflict.
-#[tauri::command(async)]
-pub fn edit_save(
+#[tauri::command]
+pub async fn edit_save(
     handle: AppHandle,
     window: Webview,
     path: String,
     seen_hash: String,
     edits: Vec<LineEdit>,
 ) -> Result<SaveOutcome, IpcError> {
-    with_editor(&handle, &window, |editor, workspace| {
-        let outcome = editor.save(&path, &seen_hash, &edits)?;
-        if let SaveOutcome::Saved { hash, .. } = &outcome {
-            documents_of(workspace).saved(window.label(), &path, hash);
-            if let Workspace::Project(core) = workspace {
-                core.note_save(&path, &edits);
+    blocking(move || {
+        with_editor(&handle, &window, |editor, workspace| {
+            let outcome = editor.save(&path, &seen_hash, &edits)?;
+            if let SaveOutcome::Saved { hash, .. } = &outcome {
+                documents_of(workspace).saved(window.label(), &path, hash);
+                if let Workspace::Project(core) = workspace {
+                    core.note_save(&path, &edits);
+                }
             }
-        }
-        Ok(outcome)
+            Ok(outcome)
+        })
     })
+    .await?
 }
 
 /// The person's text as a new file (`exact`: at `path` itself, when free). Returns its path.
-#[tauri::command(async)]
-pub fn edit_save_as(
+#[tauri::command]
+pub async fn edit_save_as(
     handle: AppHandle,
     window: Webview,
     path: String,
     text: String,
     exact: bool,
 ) -> Result<String, IpcError> {
-    with_editor(&handle, &window, |editor, workspace| {
-        let saved = editor.save_as(&path, &text, exact)?;
-        if let Workspace::Project(core) = workspace {
-            core.activity().person(permark_core::activity::Fact::File {
-                op: permark_core::activity::FileOp::New,
-                path: saved.clone(),
-                from: None,
-                undo: false,
-            });
-        }
-        Ok(saved)
+    blocking(move || {
+        with_editor(&handle, &window, |editor, workspace| {
+            let saved = editor.save_as(&path, &text, exact)?;
+            if let Workspace::Project(core) = workspace {
+                core.activity().person(permark_core::activity::Fact::File {
+                    op: permark_core::activity::FileOp::New,
+                    path: saved.clone(),
+                    from: None,
+                    undo: false,
+                });
+            }
+            Ok(saved)
+        })
     })
+    .await?
 }
 
 /// Picture bytes (raw body; headers `pm-doc`: document path, percent-encoded; `pm-ext`: type; `pm-folder`: one
@@ -1111,13 +1190,12 @@ pub async fn edit_write_asset(
         .and_then(|v| v.to_str().ok())
         .map_or_else(|| "img".to_owned(), permark_core::links::percent_decode);
     let bytes = bytes.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         with_editor(&handle, &window, |editor, _| {
             editor.write_asset(&doc, &ext, &bytes, &folder)
         })
     })
-    .await
-    .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))?
+    .await?
 }
 
 /// A picture dropped from the system onto an editor: its bytes (raw response). Absolute path, picture type, at most
@@ -1131,9 +1209,9 @@ pub fn picture_read(path: String) -> Result<tauri::ipc::Response, IpcError> {
 
 /// A picture on the web the person asked for (a click on its chip, or web pictures on for the project): its bytes
 /// (raw response). `https` only, picture types the bytes confirm, at most 20 MB (`permark_core::remote`).
-#[tauri::command(async)]
-pub fn remote_picture(url: String) -> Result<tauri::ipc::Response, IpcError> {
-    Ok(tauri::ipc::Response::new(crate::web_pictures::fetch(&url)?))
+#[tauri::command]
+pub async fn remote_picture(url: String) -> Result<tauri::ipc::Response, IpcError> {
+    blocking(move || Ok(tauri::ipc::Response::new(crate::web_pictures::fetch(&url)?))).await?
 }
 
 /// Whether web pictures load by themselves in this window's project (kept in the profile only).
@@ -1313,7 +1391,7 @@ pub async fn plugin_call(
     method: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, IpcError> {
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         let call = RpcCall {
             window: window.label().to_owned(),
             args,
@@ -1330,8 +1408,7 @@ pub async fn plugin_call(
             .rpc()
             .call(&plugin, &method, &call)
     })
-    .await
-    .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))?
+    .await?
 }
 
 /// Asks this view's window to close: at once when nothing is unsaved, else one prompt (`close-requested`).
@@ -1357,6 +1434,18 @@ pub fn window_close_answer(handle: AppHandle, window: Webview, answer: CloseAnsw
 #[tauri::command(async)]
 pub fn view_saved(handle: AppHandle, window: Webview, saved: bool) {
     crate::views::view_saved(&handle, window.label(), saved);
+}
+
+/// This view received a close | tab-close ask and its prompt is up: the person's answer is not timed.
+#[tauri::command(async)]
+pub fn view_heard(handle: AppHandle, window: Webview) {
+    crate::views::heard(&handle, window.label());
+}
+
+/// The words of the app's own system dialogs in the person's language (the backend holds no translations).
+#[tauri::command(async)]
+pub fn native_words(handle: AppHandle, words: NativeWords) {
+    crate::views::set_words(&handle, words);
 }
 
 /// The view's page painted (a hidden window shows with it).
@@ -1428,34 +1517,45 @@ pub fn view_set_theme(handle: AppHandle, theme: Option<BarTheme>) {
 // ---- Default app ----------------------------------------------------------------------------------------------------
 
 /// The default-app rows of the settings, and whether to ask (first run).
-#[tauri::command(async)]
-pub fn default_app_get(handle: AppHandle) -> permark_core::desktop::DefaultAppView {
-    let shell = state(&handle);
-    crate::default_app::view(&handle, &shell.env.dirs, shell.env.distribution)
+#[tauri::command]
+pub async fn default_app_get(
+    handle: AppHandle,
+) -> Result<permark_core::desktop::DefaultAppView, IpcError> {
+    blocking(move || {
+        let shell = state(&handle);
+        crate::default_app::view(&handle, &shell.env.dirs, shell.env.distribution)
+    })
+    .await
 }
 
 /// Makes PerMark the default app of a group of file types, or gives the group back (macOS, an installed Linux package).
-#[tauri::command(async)]
-pub fn default_app_set(
+#[tauri::command]
+pub async fn default_app_set(
     handle: AppHandle,
     group: permark_core::desktop::FileGroup,
     on: bool,
 ) -> Result<permark_core::desktop::DefaultAppView, IpcError> {
-    let shell = state(&handle);
-    crate::default_app::set(&handle, &shell.env.dirs, shell.env.distribution, group, on)
+    blocking(move || {
+        let shell = state(&handle);
+        crate::default_app::set(&handle, &shell.env.dirs, shell.env.distribution, group, on)
+    })
+    .await?
 }
 
 /// The first-run question was answered or put off.
-#[tauri::command(async)]
-pub fn default_app_asked(handle: AppHandle) -> Result<(), IpcError> {
-    crate::default_app::asked(&state(&handle).env.dirs)
+#[tauri::command]
+pub async fn default_app_asked(handle: AppHandle) -> Result<(), IpcError> {
+    blocking(move || crate::default_app::asked(&state(&handle).env.dirs)).await?
 }
 
 /// Opens Windows' Default Apps page (Windows only).
-#[tauri::command(async)]
-pub fn default_app_handoff(handle: AppHandle) -> Result<(), IpcError> {
-    let shell = state(&handle);
-    crate::default_app::handoff(&handle, &shell.env.dirs, shell.env.distribution)
+#[tauri::command]
+pub async fn default_app_handoff(handle: AppHandle) -> Result<(), IpcError> {
+    blocking(move || {
+        let shell = state(&handle);
+        crate::default_app::handoff(&handle, &shell.env.dirs, shell.env.distribution)
+    })
+    .await?
 }
 
 // ---- Demo pages -----------------------------------------------------------------------------------------------------
@@ -1496,6 +1596,26 @@ pub fn demo_install(handle: AppHandle) -> Result<String, IpcError> {
 #[tauri::command(async)]
 pub fn demo_dismiss(handle: AppHandle) -> Result<(), IpcError> {
     permark_core::demo::dismiss(&state(&handle).app_store)
+}
+
+/// The person dismissed the last run's crash report offer: not offered again.
+#[tauri::command(async)]
+pub fn crash_dismiss(handle: AppHandle) -> Result<(), IpcError> {
+    state(&handle).dismiss_crash()
+}
+
+/// Shows the offered crash report in the file manager. The path is the one read at start, never one from the window.
+#[tauri::command(async)]
+pub fn crash_reveal(handle: AppHandle) -> Result<(), IpcError> {
+    let shell = state(&handle);
+    let target = shell
+        .crash_file()
+        .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject("crash report"))?;
+    handle.opener().reveal_item_in_dir(target).map_err(|e| {
+        IpcError::new(ErrorKind::Io)
+            .subject(target.display().to_string())
+            .detail(e.to_string())
+    })
 }
 
 /// Lists every command once: Tauri handler + names (contract test).
@@ -1540,6 +1660,13 @@ pub fn project_init(handle: AppHandle, path: String) -> Result<(), IpcError> {
     state(&handle).init_project(std::path::Path::new(&path))
 }
 
+/// Keeps a folder's private data on this computer (the answer to its window's offer): only the profile's row is
+/// written, never the folder. Move is `project_init`.
+#[tauri::command(async)]
+pub fn project_data_keep(handle: AppHandle, path: String) -> Result<(), IpcError> {
+    state(&handle).keep_data(std::path::Path::new(&path))
+}
+
 /// Whether a folder has nothing in it yet (New project asks first before writing `.permark/` into a folder with files).
 /// A folder that cannot be read counts as not empty.
 #[tauri::command(async)]
@@ -1547,15 +1674,23 @@ pub fn folder_empty(path: String) -> bool {
     std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_none())
 }
 
-/// The shared settings of the project the window shows.
+/// The shared settings of the project the window shows, and whether git tracks its private folder (asks git: this
+/// command runs off the main thread).
 #[tauri::command(async)]
 pub fn project_config_get(handle: AppHandle, window: Webview) -> Result<ProjectSettings, IpcError> {
     let core = project_of(&handle, &window)?;
     let initialized = ProjectConfigFile::of(core.root()).initialized();
-    Ok(ProjectSettings::of(initialized, &core.config()))
+    let sharing = permark_core::state::sharing(core.root());
+    Ok(ProjectSettings::of(
+        initialized,
+        sharing,
+        &core.config(),
+        core.private_tracked(),
+    ))
 }
 
-/// One shared setting of the project: written surgically to `.permark/config.toml`, live at once.
+/// One shared setting of the project: written surgically to `.permark/config.toml`, live at once (the core tells the
+/// windows, the plugins page included when the plugins moved).
 #[tauri::command(async)]
 pub fn project_config_set(
     handle: AppHandle,
@@ -1563,16 +1698,36 @@ pub fn project_config_set(
     change: ProjectSettingChange,
 ) -> Result<ProjectSettings, IpcError> {
     let shell = state(&handle);
-    let touches_plugins = matches!(change, ProjectSettingChange::PluginOff { .. });
     if let ProjectSettingChange::PluginOff { plugin, .. } = &change {
         project_plugin(&shell.env.registry, plugin)?;
     }
     let core = project_of(&handle, &window)?;
     let config = core.change_config(&shell.env, &change)?;
-    if touches_plugins {
-        plugins_changed(&shell);
-    }
-    Ok(ProjectSettings::of(true, &config))
+    let sharing = permark_core::state::sharing(core.root());
+    Ok(ProjectSettings::of(
+        true,
+        sharing,
+        &config,
+        core.private_tracked(),
+    ))
+}
+
+/// What git may see of the project's `.permark/` folder: PerMark's own `.permark/.gitignore` rewritten, only from the
+/// forms PerMark writes (someone else's file stays as it is).
+#[tauri::command(async)]
+pub fn project_sharing_set(
+    handle: AppHandle,
+    window: Webview,
+    sharing: Sharing,
+) -> Result<ProjectSettings, IpcError> {
+    let core = project_of(&handle, &window)?;
+    let sharing = core.set_sharing(sharing)?;
+    Ok(ProjectSettings::of(
+        true,
+        sharing,
+        &core.config(),
+        core.private_tracked(),
+    ))
 }
 
 /// Only a plugin of this build that runs per project can be turned on | off for one project.
@@ -1667,11 +1822,13 @@ pub fn plugin_remove_data(handle: AppHandle, plugin: String) -> Result<(), IpcEr
         return Err(IpcError::new(ErrorKind::Unavailable).subject(plugin));
     }
     let roots: Vec<_> = cores.iter().map(|core| core.root().clone()).collect();
+    let found = shell.env.registry.get(&id);
     // what the plugin keeps outside its namespaces first (it reads where from its own state, deleted next)
-    if let Some(found) = shell.env.registry.get(&id) {
+    if let Some(found) = found {
         found.remove_data(&shell.app_store)?;
     }
-    permark_core::state::remove_plugin_data_everywhere(&shell.env.dirs, &id, &roots)?;
+    let root_files = found.map_or(&[][..], |found| found.root_files());
+    permark_core::state::remove_plugin_data_everywhere(&shell.env.dirs, &id, root_files, &roots)?;
     Ok(())
 }
 
@@ -1771,9 +1928,11 @@ commands![
     search_recent,
     plugin_call,
     project_init,
+    project_data_keep,
     folder_empty,
     project_config_get,
     project_config_set,
+    project_sharing_set,
     plugins_list,
     plugin_set_project,
     plugin_remove_data,
@@ -1781,6 +1940,8 @@ commands![
     window_close,
     window_close_answer,
     view_saved,
+    view_heard,
+    native_words,
     view_ready,
     view_set_title,
     view_set_theme,
@@ -1793,6 +1954,8 @@ commands![
     demo_offer,
     demo_install,
     demo_dismiss,
+    crash_dismiss,
+    crash_reveal,
 ];
 
 #[cfg(test)]
@@ -1834,6 +1997,48 @@ mod tests {
         }
         let unique: std::collections::BTreeSet<_> = NAMES.iter().collect();
         assert_eq!(unique.len(), NAMES.len(), "duplicate command");
+    }
+
+    /// Commands that wait on the disk, the network, another program or the person (a system dialog).
+    const SLOW: &[&str] = &[
+        "fileops_apply_move",
+        "fileops_delete",
+        "fileops_undo",
+        "fileops_import_plan",
+        "fileops_import_apply",
+        "file_open_external",
+        "document_open",
+        "open_in_editor",
+        "edit_save",
+        "edit_save_as",
+        "edit_write_asset",
+        "remote_picture",
+        "plugin_call",
+        "default_app_get",
+        "default_app_set",
+        "default_app_asked",
+        "default_app_handoff",
+    ];
+
+    /// A sync `#[tauri::command(async)]` runs on one of the few async workers every command shares: a slow one keeps
+    /// the others waiting. The slow ones are async and hand their work to the blocking pool, through one helper.
+    #[test]
+    fn slow_commands_run_on_the_blocking_pool() {
+        let text = include_str!("commands.rs").replace("\r\n", "\n");
+        let code = text.split("\n#[cfg(test)]\nmod tests").next().unwrap_or("");
+        for name in SLOW {
+            assert!(NAMES.contains(name), "{name} is not a command");
+            let Some(start) = code.find(&format!("\npub async fn {name}(")) else {
+                panic!("{name} is not an async fn");
+            };
+            let body = &code[start..];
+            let body = &body[..body.find("\n}\n").unwrap_or(body.len())];
+            assert!(
+                body.contains("blocking(move ||") && !body.contains("spawn_blocking"),
+                "{name} does not hand its work to `blocking`"
+            );
+        }
+        assert_eq!(code.matches("spawn_blocking(").count(), 1, "one helper");
     }
 
     #[test]

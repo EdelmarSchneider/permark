@@ -74,6 +74,9 @@ pub struct DirHints {
     pub git: bool,
     /// A real `.permark` folder (not a link | file) is among the entries.
     pub permark: bool,
+    /// A name of a write's temp ([`crate::fsx::stale_temps`]) is among the entries (never in the model): a crash may
+    /// have left it.
+    pub temps: bool,
 }
 
 /// Whether `dir` is a folder of its own, not a link to one (a walk never follows links; neither do its probes).
@@ -399,6 +402,24 @@ impl Ignorer {
             && self.rel_key(dir).is_some_and(|key| {
                 members.by_key.contains_key(&key) || members.above.contains(&key)
             })
+    }
+
+    /// Whether a folder created at `abs`, below the ignored folder `top` (the topmost one on its way), may be a
+    /// repository that makes `top` lead to a nested project: no folder no marker un-hides (`node_modules`, the person's
+    /// lists) ever does, nor one deeper than [`Ignorer::is_container`] looks for a `.git`.
+    #[must_use]
+    pub(crate) fn may_lead_to_project(&self, top: &Path, abs: &Path) -> bool {
+        let Ok(below) = abs.strip_prefix(top) else {
+            return true;
+        };
+        // the search finds a `.git` at most PROJECT_SEARCH_DEPTH levels below `top`: its repository one level above
+        if below.components().count() >= PROJECT_SEARCH_DEPTH {
+            return false;
+        }
+        !matches!(
+            self.locate(top, true),
+            Some((Entry::Ignored, frames)) if self.hard_hidden(&frames, top, true)
+        )
     }
 
     fn folder_layer(&self, dir: &Path) -> Option<Arc<Gitignore>> {

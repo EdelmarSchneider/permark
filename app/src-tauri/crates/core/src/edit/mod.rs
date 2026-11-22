@@ -16,7 +16,7 @@ mod tests;
 
 use std::io;
 use std::path::Path;
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, UNIX_EPOCH};
 
 use serde::Serialize;
 use ts_rs::TS;
@@ -98,6 +98,35 @@ pub struct Editor<'a> {
     pub tree: Option<&'a Explorer>,
 }
 
+/// Waits of a save for a file another program holds (a sync client | scanner reading it after each change): about
+/// 1.5 s in all, longer than other writes, since the person's edits wait on it.
+const SAVE_RETRY_DELAYS: [Duration; 6] = [
+    Duration::from_millis(20),
+    Duration::from_millis(60),
+    Duration::from_millis(150),
+    Duration::from_millis(300),
+    Duration::from_millis(450),
+    Duration::from_millis(500),
+];
+
+/// A failed save in words. Windows refuses to replace a file another program opened without delete sharing with
+/// "access denied"; when the file is not read-only, that program holding it is the reason, not a missing permission.
+fn save_error(path: &str, abs: &Path, error: &io::Error, replacing: bool) -> IpcError {
+    let error_of = IpcError::io(path, error);
+    let held = cfg!(windows)
+        && replacing
+        && error.kind() == io::ErrorKind::PermissionDenied
+        && std::fs::metadata(abs).is_ok_and(|m| !m.permissions().readonly());
+    if held {
+        IpcError {
+            kind: ErrorKind::Locked,
+            ..error_of
+        }
+    } else {
+        error_of
+    }
+}
+
 fn mtime_ms(path: &Path) -> u64 {
     std::fs::metadata(path)
         .ok()
@@ -122,12 +151,22 @@ fn editable_text(path: &str, bytes: &[u8]) -> Result<fsx::Decoded, IpcError> {
     Ok(decoded)
 }
 
-/// What the disk holds now: `None` gone, else its hash.
+/// What the disk holds now: its hash; `None` when no file the editor can read stands there (gone, a folder | FIFO |
+/// device, past [`MAX_TEXT_BYTES`]): never the version read. A FIFO is never waited on, a large file never taken in.
 fn disk_hash(abs: &Path) -> io::Result<Option<String>> {
-    match fsx::retry(&fsx::RETRY_DELAYS, || std::fs::read(abs)) {
+    match fsx::read_regular(abs, MAX_TEXT_BYTES, fsx::Zone::Anywhere) {
         Ok(bytes) => Ok(Some(fsx::hash(&bytes).hex())),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e),
+        Err(FsxError::TooLarge { .. }) => Ok(None),
+        Err(FsxError::Io { source, .. })
+            if matches!(
+                source.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::InvalidData
+            ) =>
+        {
+            Ok(None)
+        }
+        Err(FsxError::Io { source, .. }) => Err(source),
+        Err(e @ FsxError::Binary(_)) => Err(io::Error::other(e)),
     }
 }
 
@@ -218,16 +257,20 @@ impl Editor<'_> {
             Err(e) => return Err(IpcError::io(path, &e)),
         };
         if meta.permissions().readonly() {
-            return Err(IpcError::new(ErrorKind::Denied)
-                .subject(path)
-                .detail("readOnly"));
+            return Err(IpcError::new(ErrorKind::ReadOnly).subject(path));
         }
         let bytes = match fsx::read_bytes(&abs, MAX_TEXT_BYTES) {
             Ok(bytes) => bytes,
             Err(FsxError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
                 return Ok(SaveOutcome::Conflict { disk_hash: None })
             }
-            Err(e) => return Err(e.into()),
+            // named by its project path, as every other answer of a save
+            Err(e) => {
+                return Err(IpcError {
+                    subject: Some(path.to_owned()),
+                    ..e.into()
+                })
+            }
         };
         let disk = fsx::hash(&bytes).hex();
         if disk != seen_hash {
@@ -264,15 +307,20 @@ impl Editor<'_> {
         let announced = self.announce(path, &out);
         let mut gone = false;
         let mut other = None;
-        let written = fsx::write_atomic_checked(&abs, &out, || match disk_hash(&abs)? {
-            Some(now) if now == seen_hash => Ok(true),
-            Some(now) => {
-                other = Some(now);
-                Ok(false)
-            }
-            None => {
-                gone = true;
-                Ok(false)
+        // the check runs once the temp is written, right before each replace
+        let mut replacing = false;
+        let written = fsx::write_atomic_checked_retrying(&abs, &out, &SAVE_RETRY_DELAYS, || {
+            replacing = true;
+            match disk_hash(&abs)? {
+                Some(now) if now == seen_hash => Ok(true),
+                Some(now) => {
+                    other = Some(now);
+                    Ok(false)
+                }
+                None => {
+                    gone = true;
+                    Ok(false)
+                }
             }
         });
         match written {
@@ -293,7 +341,7 @@ impl Editor<'_> {
             }
             Err(e) => {
                 self.retract(path, announced);
-                Err(IpcError::io(path, &e))
+                Err(save_error(path, &abs, &e, replacing))
             }
         }
     }

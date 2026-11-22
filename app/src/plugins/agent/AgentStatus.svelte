@@ -6,6 +6,7 @@
   import Bot from "@lucide/svelte/icons/bot";
   import type { AgentRequest } from "../../api";
   import { formatLocale, t, tn, type MessageKey } from "../../core/i18n";
+  import { inNotices } from "../../core/shell/sides";
   import { ui } from "../../core/shell/ui.svelte";
   import { claudeCodeCommand } from "./setup";
   import { GROUPS } from "./groups";
@@ -63,6 +64,7 @@
     invalid: "agent.outcome.invalid",
     off: "agent.outcome.off",
     notOpen: "agent.outcome.notOpen",
+    rulesUnreadable: "agent.outcome.rulesUnreadable",
     error: "agent.outcome.error",
   };
 
@@ -107,7 +109,8 @@
     return () => clearTimeout(timer);
   });
 
-  // closes on Escape | a click outside
+  // closes on Escape | a click outside (a notice's button is no outside: Undo of a Disconnect brings the agent back
+  // into the open list)
   $effect(() => {
     if (!agent.popover) return;
     const onKey = (e: KeyboardEvent): void => {
@@ -117,7 +120,9 @@
       chip?.focus();
     };
     const onPointer = (e: PointerEvent): void => {
-      if (box && e.target instanceof Node && !box.contains(e.target)) agent.popover = false;
+      if (box && e.target instanceof Node && !box.contains(e.target) && !inNotices(e.target)) {
+        agent.popover = false;
+      }
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onPointer);

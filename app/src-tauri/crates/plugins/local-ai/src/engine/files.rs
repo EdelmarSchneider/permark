@@ -1,22 +1,26 @@
-//! Engine worker files (D-6): one unit per platform (worker exe + llama/ggml libs + backend libs), each file pinned
+//! Engine worker files: one unit per platform (worker exe + llama/ggml libs + backend libs), each file pinned
 //! url + bytes + sha256, built + published by PerMark CI (`worker-v*` releases), downloaded only when the person acts
 //! (core `downloads`, own [`Downloads`] over `<plugin data>/engine/`). Pins compiled into the app (updater-signed):
 //! the ONLY programs the runtime spawns.
 //!
 //! - No pin for this platform in [`PINS`] -> [`FilesError::NotAvailable`] ("not available yet for this computer").
 //! - Pin per (platform, variant); table order = preference (first pin of this platform wins).
-//! - Unit folder `<tag>-<platform>-<variant>`: a new pin = new folder (old one left for a later sweep).
+//! - Unit folder `<tag>-<platform>-<variant>`: a new pin = new folder; the folders of earlier pins are removed once
+//!   the current unit is installed ([`WorkerFiles::sweep_earlier`]).
 //! - Unix: exec bit set on the worker exe when it is resolved ([`WorkerFiles::exe`]).
 //! - Debug builds only: `PERMARK_WORKER` = path to a local worker build (used instead of the pinned unit).
 //! - Dormant: nothing created | fetched until [`WorkerFiles::enqueue`].
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use permark_core::downloads::{Asset, DownloadKit, Downloads, Listener, Source, Unit};
+use permark_core::fsx;
 use permark_engine::engine_at_least;
 
 use crate::catalog::{Engine, EngineNeed, MinEngine};
+use crate::store;
 
 /// Folder of the engine store in the plugin's data folder.
 pub const DIR: &str = "engine";
@@ -611,7 +615,7 @@ pub enum FilesError {
 /// # Errors
 /// [`FilesError::BadPin`].
 pub fn unit_of(pin: &WorkerPin) -> Result<Unit, FilesError> {
-    let folder = format!("{}-{}-{}", pin.tag, pin.platform, pin.variant.as_str());
+    let folder = unit_folder(pin);
     let assets = pin
         .files
         .iter()
@@ -624,6 +628,23 @@ pub fn unit_of(pin: &WorkerPin) -> Result<Unit, FilesError> {
     Unit::new(folder.clone(), &folder, assets).map_err(|_| FilesError::BadPin)
 }
 
+/// Unit folder of `pin`: `<tag>-<platform>-<variant>`.
+fn unit_folder(pin: &WorkerPin) -> String {
+    format!("{}-{}-{}", pin.tag, pin.platform, pin.variant.as_str())
+}
+
+/// `name` spells the unit folder of some pin of `platform` (`worker-v<version>-<platform>-<variant>`).
+fn pin_folder_of(name: &str, platform: &str) -> bool {
+    name.strip_prefix("worker-v")
+        .and_then(|rest| rest.split_once(&format!("-{platform}-")))
+        .is_some_and(|(version, variant)| {
+            !version.is_empty()
+                && version.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+                && !variant.is_empty()
+                && variant.bytes().all(|b| b.is_ascii_alphanumeric())
+        })
+}
+
 /// Engine files of one plugin instance (dormant until [`WorkerFiles::enqueue`]).
 pub struct WorkerFiles {
     pin: Option<&'static WorkerPin>,
@@ -632,6 +653,8 @@ pub struct WorkerFiles {
     store: PathBuf,
     /// Debug builds: local worker build (`PERMARK_WORKER`).
     dev: Option<PathBuf>,
+    /// Folders of earlier pins swept ([`WorkerFiles::sweep_earlier`]).
+    swept: AtomicBool,
 }
 
 impl WorkerFiles {
@@ -656,6 +679,7 @@ impl WorkerFiles {
             downloads: kit.map(|kit| kit.downloads(store.clone(), listener)),
             store,
             dev: None,
+            swept: AtomicBool::new(false),
         }
     }
 
@@ -684,21 +708,55 @@ impl WorkerFiles {
             })
     }
 
-    /// Queues the worker unit (listener: progress, `Done` | `Failed`; already installed: `Done`).
+    /// Queues the worker unit (listener: progress, `Done` | `Failed`; already installed: `Done`). `false`: the
+    /// downloads shut down, no news comes ([`Downloads::enqueue`]).
     ///
     /// # Errors
     /// [`FilesError::NotAvailable`] | [`FilesError::BadPin`] | [`FilesError::NoDownloads`].
-    pub fn enqueue(&self) -> Result<(), FilesError> {
+    pub fn enqueue(&self) -> Result<bool, FilesError> {
         let unit = self.unit()?;
         let downloads = self.downloads.as_ref().ok_or(FilesError::NoDownloads)?;
-        downloads.enqueue(unit);
-        Ok(())
+        Ok(downloads.enqueue(unit))
     }
 
     /// Stops the worker unit's download (part kept for resume).
     pub fn cancel(&self) {
         if let (Ok(unit), Some(downloads)) = (self.unit(), self.downloads.as_ref()) {
             downloads.cancel(unit.id());
+        }
+    }
+
+    /// Once the current unit is installed: removes the unit folders earlier pins of this platform left
+    /// (`worker-v<version>-<platform>-<variant>`), each a real folder (a link is never followed nor removed) holding
+    /// no download part; under the store lock with no download queued | running. Best effort, once per instance (a
+    /// busy store: tried again at the next call).
+    pub fn sweep_earlier(&self) {
+        if self.swept.load(Ordering::Relaxed) || !self.is_installed() {
+            return;
+        }
+        let (Some(pin), Some(downloads)) = (self.pin, &self.downloads) else {
+            return;
+        };
+        let current = unit_folder(pin);
+        let swept = downloads.while_idle(|| {
+            for entry in std::fs::read_dir(&self.store)
+                .into_iter()
+                .flatten()
+                .flatten()
+            {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let path = entry.path();
+                if name != current
+                    && pin_folder_of(&name, pin.platform)
+                    && store::real_dir(&path)
+                    && !store::has_part(&path)
+                {
+                    let _ = fsx::retry(&fsx::RETRY_DELAYS, || std::fs::remove_dir_all(&path));
+                }
+            }
+        });
+        if swept.is_ok() {
+            self.swept.store(true, Ordering::Relaxed);
         }
     }
 

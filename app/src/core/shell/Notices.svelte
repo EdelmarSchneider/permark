@@ -45,11 +45,14 @@
     }
   }
 
-  // the room the notices take at the bottom (0 when none): pages pad their end by it
+  /** Some notice is shown (the region itself stays on the page, empty, when none is). */
+  const shown = $derived(store.notices.length > 0);
+
+  // the room the notices take at the bottom (none when no notice is shown): pages pad their end by it
   $effect(() => {
     const el = region;
     const root = document.documentElement;
-    if (!el) {
+    if (!el || !shown) {
       root.style.removeProperty("--notices-h");
       return;
     }
@@ -78,11 +81,13 @@
         // no backup: left in place, never written over (state files, board item 15)
         return notice.notice.backup === null
           ? t("notice.stateUnreadable", { file: notice.notice.file })
-          : t("notice.stateRecovered", { file: notice.notice.file });
+          : t("notice.stateRecovered", { file: notice.notice.file, backup: notice.notice.backup });
       case "settingNotSaved":
         return t("settings.notSaved", { message: apiErrorText(notice.error) });
       case "initFailed":
         return t("project.initFailed", { path: notice.path, message: apiErrorText(notice.error) });
+      case "initHeld":
+        return t("project.initHeld", { path: notice.path });
       case "fileOpFailed":
         return apiErrorText(notice.error);
       case "note":
@@ -95,59 +100,65 @@
   }
 </script>
 
-{#if store.notices.length > 0}
-  <div
-    class="notices"
-    role="status"
-    aria-live="polite"
-    style:--notices-right="{rightInset}px"
-    bind:this={region}
-  >
-    {#each store.notices as notice (notice.id)}
-      <!-- Esc bubbling up from its own buttons: the group only hears it, it never takes the keyboard itself -->
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <div
-        role="group"
-        class="notice"
-        onpointerenter={() => store.holdNotice(notice.id, "pointer")}
-        onpointerleave={() => store.releaseNotice(notice.id, "pointer")}
-        onfocusin={(e) => {
-          entered(e);
-          store.holdNotice(notice.id, "focus");
-        }}
-        onkeydown={(e) => {
-          if (e.key !== "Escape" || e.defaultPrevented) return;
-          // this notice, nothing behind it (a review, the page)
-          e.preventDefault();
-          e.stopPropagation();
-          void act(notice.id, null);
-        }}
-        onfocusout={(e) => {
-          const into = e.relatedTarget;
-          if (!(into instanceof Node && e.currentTarget.contains(into))) {
-            store.releaseNotice(notice.id, "focus");
-          }
-        }}
+<!-- always on the page, empty when no notice is shown: screen readers (NVDA, JAWS on Chromium) announce only changes
+     inside a live region that was there before them, so a region added with its first notice is often not heard -->
+<div
+  class="notices"
+  data-notices
+  role="status"
+  aria-live="polite"
+  style:--notices-right="{rightInset}px"
+  bind:this={region}
+>
+  {#each store.notices as notice (notice.id)}
+    <!-- Esc bubbling up from its own buttons: the group only hears it, it never takes the keyboard itself -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      role="group"
+      class="notice"
+      onpointerenter={() => store.holdNotice(notice.id, "pointer")}
+      onpointerleave={() => store.releaseNotice(notice.id, "pointer")}
+      onfocusin={(e) => {
+        entered(e);
+        store.holdNotice(notice.id, "focus");
+      }}
+      onkeydown={(e) => {
+        if (e.key !== "Escape" || e.defaultPrevented) return;
+        // this notice, nothing behind it (a review, the page)
+        e.preventDefault();
+        e.stopPropagation();
+        void act(notice.id, null);
+      }}
+      onfocusout={(e) => {
+        const into = e.relatedTarget;
+        if (!(into instanceof Node && e.currentTarget.contains(into))) {
+          store.releaseNotice(notice.id, "focus");
+        }
+      }}
+    >
+      <span class="text">{text(notice)}</span>
+      {#if notice.kind === "action" || notice.kind === "timed"}
+        {#each notice.actions as action (action.label)}
+          <button
+            type="button"
+            class="btn btn--sm"
+            aria-keyshortcuts={action.keys}
+            onclick={() => void act(notice.id, action)}
+          >
+            {action.label}
+          </button>
+        {/each}
+      {/if}
+      <button
+        type="button"
+        class="btn btn--ghost btn--sm"
+        onclick={() => void act(notice.id, null)}
       >
-        <span class="text">{text(notice)}</span>
-        {#if notice.kind === "action" || notice.kind === "timed"}
-          {#each notice.actions as action (action.label)}
-            <button type="button" class="btn btn--sm" onclick={() => void act(notice.id, action)}>
-              {action.label}
-            </button>
-          {/each}
-        {/if}
-        <button
-          type="button"
-          class="btn btn--ghost btn--sm"
-          onclick={() => void act(notice.id, null)}
-        >
-          {t("common.dismiss")}
-        </button>
-      </div>
-    {/each}
-  </div>
-{/if}
+        {t("common.dismiss")}
+      </button>
+    </div>
+  {/each}
+</div>
 
 <style>
   .notices {

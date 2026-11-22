@@ -9,10 +9,10 @@ mod feed;
 
 use std::borrow::Cow;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use permark_core::activity::{By, Entry, Fact, Journal, Listening};
 use permark_core::conditions::Requirement;
+use permark_core::fsx::now_ms;
 use permark_core::plugins::{
     typed, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
     RpcRegistration, Running,
@@ -40,12 +40,6 @@ pub fn plugin() -> Arc<dyn Plugin> {
             default_enabled: true,
         },
     })
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 impl Plugin for LiveFeedPlugin {

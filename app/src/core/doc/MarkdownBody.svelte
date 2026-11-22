@@ -65,20 +65,25 @@
   });
 
   // web pictures: kept ones take their chips' places again after a block is drawn; with the project's choice on, the
-  // others load (a frame after the page changed, once)
+  // others load (a frame after the page changed, once). Only what was added is looked into: a whole-page query each
+  // frame cost a long document dearly while it was built and its embeds drew.
   $effect(() => {
     const root = container;
     if (!root) return;
     let frame = 0;
-    const observer = new MutationObserver(() => {
+    let added: Node[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) for (const node of record.addedNodes) added.push(node);
       if (frame !== 0) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        documents.sweepWebPictures(root);
+        const nodes = added;
+        added = [];
+        documents.sweepWebPictures(nodes);
       });
     });
     observer.observe(root, { childList: true, subtree: true });
-    documents.sweepWebPictures(root);
+    documents.sweepWebPictures([root]);
     return () => {
       observer.disconnect();
       if (frame !== 0) cancelAnimationFrame(frame);

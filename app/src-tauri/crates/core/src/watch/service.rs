@@ -13,7 +13,7 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
 
 use super::own::OwnWrites;
 use super::reconcile::{reconcile, Env, Pending};
-use super::sigs::{sig_of, SigStore};
+use super::sigs::{sig_of, stat_sig, SigStore, HASH_LIMIT};
 use super::types::{FsBatch, BULK_CHANGES};
 use super::wsl::is_wsl;
 use super::{LiveStatus, StatusHook, WatchHub};
@@ -65,6 +65,9 @@ struct Shared {
     hook: Option<StatusHook>,
     timing: Timing,
     tree: OnceLock<PathLookup>,
+    /// Hints taken into the pending set (each one is looked at on disk at the flush).
+    #[cfg(test)]
+    admitted: std::sync::atomic::AtomicUsize,
 }
 
 /// What the tree holds at a project path, once it is built. `None` from the lookup: no node (or the tree is not built).
@@ -88,6 +91,31 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 impl Shared {
+    /// What the reconcile pass knows of this project: the tree before the watch knew anything, opened ignored folders.
+    fn with_env<R>(&self, f: impl FnOnce(&Env<'_>) -> R) -> R {
+        let known = |path: &str| {
+            self.own.moved_from(path).or_else(|| {
+                self.tree
+                    .get()
+                    .and_then(|tree| tree(path).map(|hold| !matches!(hold, PathHold::File)))
+            })
+        };
+        let opened_ignored = |path: &str| {
+            self.tree
+                .get()
+                .is_some_and(|tree| matches!(tree(path), Some(PathHold::OpenedIgnored)))
+        };
+        let wanted = |path: &str| self.own.expects_write(path);
+        f(&Env {
+            vault: &self.vault,
+            sigs: &self.sigs,
+            ignorers: &self.ignorers,
+            known: &known,
+            opened_ignored: &opened_ignored,
+            wanted: &wanted,
+        })
+    }
+
     fn set_unavailable(&self, reason: &str) {
         let changed = {
             let mut status = lock(&self.status);
@@ -240,20 +268,36 @@ impl RenamePairs {
     }
 }
 
-/// Git is in the middle of an operation (checkout, merge, rebase, ...): its marker files exist.
-fn git_operation(root: &Path) -> bool {
+/// Markers git leaves in its folder for the length of an operation: a merge | cherry-pick | revert waiting for its
+/// commit, a rebase, a bisect (they may stay for hours).
+const OPERATION_MARKERS: [&str; 6] = [
+    "MERGE_HEAD",
+    "CHERRY_PICK_HEAD",
+    "REVERT_HEAD",
+    "BISECT_LOG",
+    "rebase-merge",
+    "rebase-apply",
+];
+
+/// Which [`OPERATION_MARKERS`] exist in the project's git folder (bit `i` = marker `i`).
+fn operation_markers(root: &Path) -> u8 {
     let git = root.join(".git");
-    [
-        "index.lock",
-        "MERGE_HEAD",
-        "CHERRY_PICK_HEAD",
-        "REVERT_HEAD",
-        "BISECT_LOG",
-        "rebase-merge",
-        "rebase-apply",
-    ]
-    .iter()
-    .any(|marker| git.join(marker).exists())
+    OPERATION_MARKERS
+        .iter()
+        .enumerate()
+        .filter(|(_, marker)| git.join(marker).exists())
+        .fold(0, |bits, (i, _)| bits | (1 << i))
+}
+
+/// Whether git's work makes this flush a bulk one. `markers`: the operation markers as the last flush found them
+/// (updated). The index lock counts while it exists (git is writing now, or a crashed git left it); a long-lived marker
+/// counts only on the flush where the markers appear | change, or when the batch carries the repository's own signals
+/// (HEAD, index, refs: the operation moved on). A plain save during a merge is no bulk batch.
+fn git_operation(root: &Path, markers: &mut u8, git_signals: bool) -> bool {
+    let now = operation_markers(root);
+    let changed = now != *markers;
+    *markers = now;
+    root.join(".git").join("index.lock").exists() || (now != 0 && (changed || git_signals))
 }
 
 impl Watcher {
@@ -293,6 +337,8 @@ impl Watcher {
             hook,
             timing,
             tree: OnceLock::new(),
+            #[cfg(test)]
+            admitted: std::sync::atomic::AtomicUsize::new(0),
         });
         let mut natives = Vec::new();
         if native && is_wsl(vault.main().path()) {
@@ -366,9 +412,10 @@ impl Watcher {
                     std::fs::symlink_metadata(path),
                 ) {
                     let (key, sigs) = (key_of(vp.as_str()), &self.shared.sigs);
+                    let held = sigs.get(&key);
                     // with live updates what the watch holds for the path stays: the file is read only for a path
                     // it knows nothing of
-                    if polling || sigs.get(&key).is_none() {
+                    if polling || held.is_none() {
                         match sig_of(path, &meta) {
                             // nothing but the polls tells of the file: what the window read is what is known, and
                             // the first poll must not report a change that is none
@@ -377,6 +424,18 @@ impl Watcher {
                             // told (a new file the app made and shows at once is still to be news)
                             Some(sig) => sigs.note_read(key, vp.as_str(), sig),
                             None => {}
+                        }
+                    } else if held.is_some_and(|s| s.hash == 0)
+                        && meta.is_file()
+                        && meta.len() <= HASH_LIMIT
+                    {
+                        // a new big file the watch left unread: shown now, so read once, or every touch that
+                        // leaves its bytes would be news. Taken only if nothing changed it while it was read
+                        if let Some(sig) = sig_of(path, &meta) {
+                            let stat = (sig.len, sig.mtime_ms);
+                            if std::fs::symlink_metadata(path).is_ok_and(|m| stat_sig(&m) == stat) {
+                                sigs.fill_hash(&key, stat, sig.hash);
+                            }
                         }
                     }
                 }
@@ -399,6 +458,14 @@ impl Watcher {
     #[cfg(test)]
     pub(crate) fn inject(&self, hint: Pending) {
         let _ = self.tx.send(Msg::Hint(hint));
+    }
+
+    /// Test hook: how many hints were taken into the pending set so far.
+    #[cfg(test)]
+    pub(crate) fn admitted(&self) -> usize {
+        self.shared
+            .admitted
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Test hook: live updates stop, as when the OS watch fails with the project folder out of reach.
@@ -451,7 +518,10 @@ fn start_natives(vault: &Vault, tx: &Sender<Msg>) -> Result<Vec<RecommendedWatch
                 let _ = sender.send(Msg::Failed);
             }
         };
-        let watcher = notify::recommended_watcher(handler)
+        // a link inside the project is never followed (inotify | kqueue would watch its target, `/` included); the
+        // other systems never follow one
+        let config = notify::Config::default().with_follow_symlinks(false);
+        let watcher = RecommendedWatcher::new(handler, config)
             .and_then(|mut w| w.watch(&path, RecursiveMode::Recursive).map(|()| w));
         match watcher {
             Ok(watcher) => started.push(watcher),
@@ -494,8 +564,27 @@ impl PendingSet {
     }
 }
 
+/// Whether a hint may change the ignore decisions read so far: an ignore file, or a `.git` that came | went | moved
+/// (a nested repository has rules of its own).
+fn rules_may_change(hint: &Pending) -> bool {
+    let named = |abs: &Path, is: fn(&str) -> bool| {
+        abs.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is)
+    };
+    [Some(hint.abs.as_path()), hint.rename_from.as_deref()]
+        .into_iter()
+        .flatten()
+        .any(|abs| named(abs, Ignorer::is_ignore_file) || named(abs, Ignorer::is_git_name))
+}
+
 fn run(shared: &Shared, rx: &Receiver<Msg>) {
+    // an operation already under way when the watch began is no news by itself
+    let mut markers = operation_markers(shared.vault.main().path());
     let mut pending = PendingSet::default();
+    // folders found ignored while hints arrive ([`Env::ignored_early`]); `None` until the next flush once the rules
+    // may be changing (an ignore file, a `.git` came or went: the flush reads them again)
+    let mut ignored_folders: Option<HashMap<PathBuf, bool>> = Some(HashMap::new());
     let mut rescan = false;
     let mut first: Option<Instant> = None;
     let mut last = Instant::now();
@@ -512,13 +601,27 @@ fn run(shared: &Shared, rx: &Receiver<Msg>) {
         };
         match rx.recv_timeout(wait) {
             Ok(Msg::Hint(hint)) => {
-                let now = Instant::now();
-                first.get_or_insert(now);
-                last = now;
-                pending.add(hint);
-                if pending.len() > MAX_PENDING {
-                    pending.take();
-                    rescan = true;
+                // dropped hints still reach the flush check below: a storm never holds a due flush back. An ignore
+                // file in a closed ignored folder (packages ship them) decides nothing outside it: dropped as well
+                let dropped = ignored_folders.as_mut().is_some_and(|folders| {
+                    shared.with_env(|env| env.ignored_early(&hint, folders))
+                });
+                if !dropped && rules_may_change(&hint) {
+                    ignored_folders = None;
+                }
+                if !dropped {
+                    let now = Instant::now();
+                    first.get_or_insert(now);
+                    last = now;
+                    #[cfg(test)]
+                    shared
+                        .admitted
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    pending.add(hint);
+                    if pending.len() > MAX_PENDING {
+                        pending.take();
+                        rescan = true;
+                    }
                 }
             }
             Ok(Msg::Rescan) => {
@@ -545,7 +648,13 @@ fn run(shared: &Shared, rx: &Receiver<Msg>) {
             let due = now.saturating_duration_since(last) >= shared.timing.quiet
                 || now.saturating_duration_since(started) >= shared.timing.max;
             if due {
-                let deferred = flush(shared, pending.take(), std::mem::take(&mut rescan));
+                let deferred = flush(
+                    shared,
+                    pending.take(),
+                    std::mem::take(&mut rescan),
+                    &mut markers,
+                );
+                ignored_folders = Some(HashMap::new());
                 first = None;
                 for hint in deferred {
                     first.get_or_insert(now);
@@ -577,8 +686,9 @@ fn run(shared: &Shared, rx: &Receiver<Msg>) {
     }
 }
 
-/// Reconciles `pending` with the disk and publishes the result. Returns paths to look at again.
-fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
+/// Reconciles `pending` with the disk and publishes the result. Returns paths to look at again. `markers`: see
+/// [`git_operation`].
+fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool, markers: &mut u8) -> Vec<Pending> {
     // an ignore file that changed counts for the rest of this batch: rules read before it are stale
     let is_ignore_file = |abs: &Path| {
         abs.file_name()
@@ -598,28 +708,7 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
             ignorer.clear();
         }
     }
-    let known = |path: &str| {
-        shared.own.moved_from(path).or_else(|| {
-            shared
-                .tree
-                .get()
-                .and_then(|tree| tree(path).map(|hold| !matches!(hold, PathHold::File)))
-        })
-    };
-    let opened_ignored = |path: &str| {
-        shared
-            .tree
-            .get()
-            .is_some_and(|tree| matches!(tree(path), Some(PathHold::OpenedIgnored)))
-    };
-    let env = Env {
-        vault: &shared.vault,
-        sigs: &shared.sigs,
-        ignorers: &shared.ignorers,
-        known: &known,
-        opened_ignored: &opened_ignored,
-    };
-    let mut done = reconcile(&env, pending);
+    let mut done = shared.with_env(|env| reconcile(env, pending));
     // a nested project came, went or moved: the changes above were decided with what was known before (a project
     // that went still reports its files); from now on the new layout counts, and everything that keeps a picture of
     // the disk builds it again (tree, index, unread)
@@ -633,10 +722,10 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
     shared.own.mark(&mut done.changes, |path| {
         shared.sigs.get(&key_of(path)).map(|s| s.hash)
     });
-    let bulk = done.changes.len() > BULK_CHANGES
-        || done.truncated
-        || rescan
-        || git_operation(shared.vault.main().path());
+    // the project's own repository moved (its signals are project paths below `.git/`)
+    let git_signals = done.changes.iter().any(|c| c.path.starts_with(".git/"));
+    let operation = git_operation(shared.vault.main().path(), markers, git_signals);
+    let bulk = done.changes.len() > BULK_CHANGES || done.truncated || rescan || operation;
     let batch = FsBatch {
         changes: done.changes,
         bulk,

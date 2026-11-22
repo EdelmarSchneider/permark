@@ -4,7 +4,8 @@
 //! it was last read (`read`). Unread = they differ, or it was never read. Paths are project paths (`@wt/<name>/...`
 //! in a linked worktree), compared the way the file system compares them (folded).
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::time::SystemTime;
 
 use permark_core::paths::VaultPath;
 
@@ -56,6 +57,22 @@ pub struct Tracker {
     looked: bool,
     scan: Option<ScanLog>,
     revision: u64,
+    /// When each document was last written, as the disk last told (folded key -> time; `None`: gone | unreadable
+    /// then). Forgotten when a batch | a walk says the file changed: only those are asked again.
+    written: HashMap<String, Option<SystemTime>>,
+    /// Goes up whenever a time is forgotten: what a look at the disk begun before found is not kept.
+    written_epoch: u64,
+}
+
+/// The unread documents for a list, with the times already known ([`Tracker::unread_times`]).
+#[derive(Debug, Default)]
+pub struct UnreadTimes {
+    /// Handed back with what the disk told ([`Tracker::keep_times`]).
+    pub epoch: u64,
+    /// `(time last written | None: gone, path)` of the documents whose time is known.
+    pub known: Vec<(Option<SystemTime>, String)>,
+    /// The documents whose time the disk must tell.
+    pub unknown: Vec<String>,
 }
 
 fn under(folder_key: &str, key: &str) -> bool {
@@ -84,6 +101,8 @@ impl Tracker {
             looked: false,
             scan: None,
             revision: 0,
+            written: HashMap::new(),
+            written_epoch: 0,
         };
         for (path, hash) in saved.into_iter().flatten() {
             if is_tracked(&path) {
@@ -206,6 +225,12 @@ impl Tracker {
         }
     }
 
+    /// The file at `key` was written | moved | went: when it was written is asked again.
+    fn forget_written(&mut self, key: &str) {
+        self.written.remove(key);
+        self.written_epoch += 1;
+    }
+
     /// The disk is about to be walked.
     pub fn begin_scan(&mut self) {
         self.scan = Some(ScanLog::default());
@@ -255,6 +280,9 @@ impl Tracker {
         for member in &mut self.members {
             member.1 = false;
         }
+        // a walk follows lost events: any file may have been written
+        self.written.clear();
+        self.written_epoch += 1;
         // documents the walk did not find are gone (except what the app touched meanwhile)
         let before = self.docs.len();
         self.docs
@@ -274,6 +302,7 @@ impl Tracker {
         }
         let key = key_of(path);
         self.touch(&key);
+        self.forget_written(&key);
         let doc = self.docs.entry(key).or_insert_with(|| Doc {
             path: path.to_owned(),
             current: None,
@@ -322,6 +351,7 @@ impl Tracker {
                 gone.push(doc);
             }
             self.forget(k);
+            self.forget_written(k);
         }
         if !keys.is_empty() {
             self.revision += 1;
@@ -337,6 +367,7 @@ impl Tracker {
         }
         let key = key_of(path);
         self.touch(&key);
+        self.forget_written(&key);
         self.docs.insert(
             key,
             Doc {
@@ -369,6 +400,7 @@ impl Tracker {
                 continue;
             };
             self.forget(&k);
+            self.forget_written(&k);
             // the part of the path below the moved item (starts with `/`)
             let tail = if doc.path.len() >= from.len() && doc.path.is_char_boundary(from.len()) {
                 doc.path[from.len()..].to_owned()
@@ -389,6 +421,7 @@ impl Tracker {
             doc.path.clone_from(&new_path);
             let new_key = key_of(&new_path);
             self.touch(&new_key);
+            self.forget_written(&new_key);
             wrote |= doc.read.is_some();
             self.docs.insert(new_key, doc);
         }
@@ -405,6 +438,8 @@ impl Tracker {
         }
         let key = key_of(path);
         self.touch(&key);
+        // only unread documents show when they were written; a change makes it unread again and asks anew
+        self.written.remove(&key);
         let doc = self.docs.entry(key).or_insert_with(|| Doc {
             path: path.to_owned(),
             current: None,
@@ -521,6 +556,39 @@ impl Tracker {
             .collect()
     }
 
+    /// Like [`Tracker::unread`], each with when it was last written if the disk already told since it last changed.
+    #[must_use]
+    pub fn unread_times(&self) -> UnreadTimes {
+        let mut out = UnreadTimes {
+            epoch: self.written_epoch,
+            ..UnreadTimes::default()
+        };
+        if self.baseline_pending || !self.looked {
+            return out;
+        }
+        for (key, doc) in &self.docs {
+            if doc.current.is_none() || doc.read == doc.current {
+                continue;
+            }
+            match self.written.get(key) {
+                Some(time) => out.known.push((*time, doc.path.clone())),
+                None => out.unknown.push(doc.path.clone()),
+            }
+        }
+        out
+    }
+
+    /// What the disk told of the documents [`Tracker::unread_times`] did not know (`epoch`: its epoch): kept only
+    /// if no file changed meanwhile.
+    pub fn keep_times(&mut self, epoch: u64, found: &[(Option<SystemTime>, String)]) {
+        if epoch != self.written_epoch {
+            return;
+        }
+        for (time, path) in found {
+            self.written.insert(key_of(path), *time);
+        }
+    }
+
     /// What `read.json` holds: the hash of every document that was read.
     #[must_use]
     pub fn saved(&self) -> BTreeMap<String, u64> {
@@ -618,6 +686,21 @@ mod tests {
         t.changed("new.md", 9, false);
         t.changed("a.md", 5, false);
         assert_eq!(t.unread(), ["a.md", "new.md"]);
+    }
+
+    #[test]
+    fn a_document_read_lets_go_of_when_it_was_written() {
+        let mut t = Tracker::new(saved(&[("a.md", 1)]));
+        scanned(&mut t, &[("a.md", 2)]);
+        let listed = t.unread_times();
+        assert_eq!(listed.unknown, ["a.md"]);
+        t.keep_times(
+            listed.epoch,
+            &[(Some(SystemTime::UNIX_EPOCH), "a.md".to_owned())],
+        );
+        assert_eq!(t.unread_times().known.len(), 1);
+        t.mark_read("a.md", 2);
+        assert!(t.written.is_empty());
     }
 
     #[test]

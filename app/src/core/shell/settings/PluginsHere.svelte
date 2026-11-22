@@ -2,8 +2,8 @@
   // This folder > Plugins here: the plugins that work per folder, each with its choice for this folder - the app's
   // switch, on or off for this person only (kept on this computer), or off for everyone (kept in the folder's
   // `.permark/config.toml`, which wins over each person's choice). Off for everyone waits for Initialize while
-  // `.permark/` is missing (its option says so). The row's chip says who the choice in force is for: none while it
-  // follows the app.
+  // `.permark/` is missing (its option says so), and while that file does not read (the backend refuses every change to
+  // it until it is fixed by hand). The row's chip says who the choice in force is for: none while it follows the app.
   import type { PluginInfo } from "../../../api";
   import { api } from "../../../api";
   import { conditions } from "../../conditions/context.svelte";
@@ -30,6 +30,7 @@
   $effect(() => pluginsStore.follow(store.label));
 
   const initialized = $derived(conditions.current.permark === "initialized");
+  const locked = $derived(projectSettings.sharedLocked);
   const listing = $derived(pluginsStore.state);
   const infos = $derived(
     listing.status === "ready"
@@ -100,7 +101,7 @@
   <p class="quiet">{t("app.loading")}</p>
 {:else}
   <p class="intro">{t("plugins.hereIntro")}</p>
-  {#if !initialized}
+  {#if !initialized || projectSettings.unreadable}
     <ShareInit compact />
   {/if}
   <Card>
@@ -134,9 +135,11 @@
           }}
         >
           {#each CHOICES as choice (choice.value)}
-            {@const waits = choice.value === "offEveryone" && !initialized}
+            {@const waits = choice.value === "offEveryone" && locked}
             <option value={choice.value} disabled={waits}
-              >{t(waits ? "plugins.choice.offEveryoneNeedsInit" : choice.label)}</option
+              >{t(
+                waits && !initialized ? "plugins.choice.offEveryoneNeedsInit" : choice.label,
+              )}</option
             >
           {/each}
         </select>

@@ -6,6 +6,7 @@ import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import type { DocumentView } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
 import { PluginClient } from "../../core/plugins/client";
+import { WindowStore } from "../../core/window.svelte";
 import { CommentsStore, RELOAD_MS } from "./store.svelte";
 
 const settle = async (): Promise<void> => {
@@ -343,5 +344,129 @@ describe("the project goes", () => {
     expect(store.draft).toBeNull();
     expect(store.all).toEqual([]);
     expect(store.ready).toBe(false);
+  });
+});
+
+describe("comments removed outside the app", () => {
+  const removed = [
+    { path: GUIDE, quote: "Back to the readme", text: "Link the install steps", line: 3 },
+    { path: "README.md", quote: "Demo", text: "Why this name?", line: 1 },
+  ];
+
+  /** A store whose lasting notices go to a window of its own (read in `notices.notices`). */
+  async function withAsides() {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    const notes: string[] = [];
+    const notices = new WindowStore(api);
+    const store = new CommentsStore(
+      new PluginClient(api, () => MOCK_FOLDER),
+      () => MOCK_FOLDER,
+      (text) => notes.push(text),
+      () => Promise.resolve(true),
+      notices,
+    );
+    const stop = store.start();
+    await settle();
+    return { api, store, stop, notes, notices, organizing: api.probe.plugins.organizing };
+  }
+
+  const texts = (store: CommentsStore): string[] => store.all.map((c) => c.text).sort();
+
+  it("shows no line and no notice while nothing was set aside", async () => {
+    const { store, stop, notices } = await withAsides();
+    expect(store.ready).toBe(true);
+    expect(store.lines).toEqual([]);
+    expect(notices.notices).toEqual([]);
+    stop();
+  });
+
+  it("hears an aside, and Restore adds the comments back, says how many, and the line goes", async () => {
+    const { store, stop, notes, notices, organizing } = await withAsides();
+    organizing.setAside(removed, false);
+    await later();
+    expect(store.lines).toEqual([{ project: "", folder: "", ids: ["1"], count: 2, big: [] }]);
+    // not a large part of the comments: the panel's line is enough
+    expect(notices.notices).toEqual([]);
+    await store.restore("");
+    expect(notes.at(-1)).toBe("Restored 2 comments.");
+    expect(texts(store)).toEqual(["Link the install steps", "Why this name?"]);
+    expect(store.lines).toEqual([]);
+    stop();
+  });
+
+  it("a Restore after another window restored them adds nothing and says so", async () => {
+    const { api, store, stop, notes, organizing } = await withAsides();
+    organizing.setAside(removed, false);
+    await later();
+    await api.pluginCall("comments.restore", { id: "1" });
+    // before this window heard of it
+    await store.restore("");
+    expect(notes.at(-1)).toBe("Those comments are back already.");
+    expect(store.all).toHaveLength(2);
+    expect(store.lines).toEqual([]);
+    stop();
+  });
+
+  it("Dismiss lets the aside go and adds nothing", async () => {
+    const { store, stop, organizing } = await withAsides();
+    organizing.setAside(removed, false);
+    await later();
+    await store.dismissAside("");
+    expect(store.lines).toEqual([]);
+    expect(store.all).toEqual([]);
+    stop();
+  });
+
+  it("a refused Restore says why and keeps the line", async () => {
+    const { store, stop, notes, organizing } = await withAsides();
+    organizing.setAside(removed, false);
+    organizing.refuseRestore(true);
+    await later();
+    await store.restore("");
+    expect(notes.at(-1)).toBe("Couldn't restore the comments: This isn't available right now.");
+    expect(store.all).toEqual([]);
+    expect(store.lines).toHaveLength(1);
+    stop();
+  });
+
+  it("a large loss also gets one lasting notice with Restore, told once; it goes with the aside", async () => {
+    const { store, stop, notes, notices, organizing } = await withAsides();
+    organizing.setAside(removed, true);
+    await later();
+    const lasting = () =>
+      notices.notices.flatMap((n) => (n.kind === "action" && n.lasting === true ? [n] : []));
+    expect(lasting().map((n) => n.text)).toEqual(["2 comments were removed outside PerMark."]);
+    expect(lasting()[0]?.actions.map((a) => a.label)).toEqual(["Restore"]);
+    // the person dismisses it: another reload does not bring it back
+    notices.dismiss(lasting()[0]!.id);
+    await store.load();
+    expect(lasting()).toEqual([]);
+    // a second large loss is told again, in the same single notice
+    organizing.setAside([{ path: GUIDE, quote: "Guide", text: "Shorter title", line: 1 }], true);
+    await later();
+    expect(lasting().map((n) => n.text)).toEqual(["3 comments were removed outside PerMark."]);
+    await lasting()[0]!.actions[0]!.run();
+    expect(notes.at(-1)).toBe("Restored 3 comments.");
+    expect(lasting()).toEqual([]);
+    expect(store.lines).toEqual([]);
+    stop();
+  });
+
+  it("a notice whose aside went elsewhere goes too, and the project going takes everything away", async () => {
+    const { api, store, stop, notices, organizing } = await withAsides();
+    organizing.setAside(removed, true);
+    await later();
+    expect(notices.notices).toHaveLength(1);
+    await api.pluginCall("comments.dismissAside", { id: "1" });
+    await later();
+    expect(store.lines).toEqual([]);
+    expect(notices.notices).toEqual([]);
+    organizing.setAside(removed, true);
+    await later();
+    expect(notices.notices).toHaveLength(1);
+    stop();
+    expect(notices.notices).toEqual([]);
+    expect(store.lines).toEqual([]);
   });
 });

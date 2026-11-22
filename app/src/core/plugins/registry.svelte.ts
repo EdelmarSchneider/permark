@@ -89,6 +89,9 @@ export type Contribution = Owned &
         inPalette?: boolean;
         /** Values for the placeholders of `label` ("Show {name}"), read whenever the label is drawn. */
         labelParams?: () => Readonly<Record<string, string>>;
+        /** The label as things stand, read whenever it is drawn, for a command whose words follow a state (as a
+         *  button's do); `label` when absent. */
+        labelNow?: () => MessageKey;
       }
     | { kind: "paletteEntry"; id: string; label: MessageKey; command: string }
     | { kind: "shortcut"; keys: string; command: string }

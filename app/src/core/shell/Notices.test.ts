@@ -2,6 +2,7 @@
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../../api/mock";
+import { t } from "../i18n";
 import { WindowStore } from "../window.svelte";
 import Notices from "./Notices.svelte";
 
@@ -30,6 +31,29 @@ describe("the notices", () => {
     expect(region?.style.getPropertyValue("--notices-right")).toBe("300px");
   });
 
+  it("keep their live region on the page before the first notice, so screen readers hear that one too", () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    const store = new WindowStore(createMockApi());
+    component = mount(Notices, { target, props: { store } });
+    flushSync();
+    const region = target.querySelector<HTMLElement>('[role="status"][aria-live="polite"]');
+    if (!region) throw new Error("no live region before the first notice");
+    expect(region.textContent?.trim()).toBe("");
+    // no notice takes no room at the bottom of the pages
+    expect(document.documentElement.style.getPropertyValue("--notices-h")).toBe("");
+    store.notifyNote("Saved, 1 change.");
+    flushSync();
+    // the same element: the words land inside the region the screen reader already watches
+    expect(target.querySelector('[role="status"]')).toBe(region);
+    expect(region.textContent).toContain("Saved, 1 change.");
+    expect(document.documentElement.style.getPropertyValue("--notices-h")).not.toBe("");
+    for (const notice of store.notices) store.dismiss(notice.id, "dismissed");
+    flushSync();
+    expect(target.querySelector('[role="status"]')).toBe(region);
+    expect(document.documentElement.style.getPropertyValue("--notices-h")).toBe("");
+  });
+
   it("are told politely to screen readers, and their buttons take the keyboard", () => {
     const { store, target } = shown(0);
     store.notifyAction("Deleted a.md", { label: "Undo", run: () => {} });
@@ -40,6 +64,43 @@ describe("the notices", () => {
       (b) => b.textContent?.trim() === "Undo",
     );
     expect(undo?.tabIndex).toBe(0);
+  });
+
+  it("tell screen readers the shortcut that does what a button does, on that button only", () => {
+    const { store, target } = shown(0);
+    store.notifyAction(
+      "Deleted a.md",
+      { label: "Undo", run: () => {}, keys: "Control+Z" },
+      { label: "Open", run: () => {} },
+    );
+    flushSync();
+    const button = (label: string): HTMLButtonElement | undefined =>
+      Array.from(target.querySelectorAll("button")).find((b) => b.textContent?.trim() === label);
+    expect(button("Undo")?.getAttribute("aria-keyshortcuts")).toBe("Control+Z");
+    expect(button("Open")?.hasAttribute("aria-keyshortcuts")).toBe(false);
+  });
+
+  it("say which folder a refused Initialize left as it was", async () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    const store = new WindowStore({
+      ...createMockApi(),
+      projectInit: () =>
+        Promise.resolve({
+          ok: false,
+          error: {
+            kind: "backend",
+            command: "project_init",
+            error: { kind: "conflict", subject: "C:/a/b/.permark/local", detail: "bothHoldData" },
+          },
+        }),
+    });
+    component = mount(Notices, { target, props: { store } });
+    expect(await store.initProject("C:/a/b")).toBe(false);
+    flushSync();
+    expect(target.querySelector(".notice .text")?.textContent).toBe(
+      t("project.initHeld", { path: "C:/a/b" }),
+    );
   });
 });
 

@@ -41,7 +41,7 @@ impl Lab {
     }
 }
 
-/// D-1 + D-2: system rules + 2 few-shot turns + raw piece; greedy, fixed seed; cap = ceil(1.3 x tokens) + 32.
+/// System rules + 2 few-shot turns + raw piece; greedy, fixed seed; cap = ceil(1.3 x tokens) + 32.
 #[test]
 fn requests_carry_the_prompt_greedy_sampling_and_the_answer_cap() {
     let lab = Lab::new(FakeEngine::new());
@@ -59,7 +59,7 @@ fn requests_carry_the_prompt_greedy_sampling_and_the_answer_cap() {
     assert_eq!(roles, want);
     assert_eq!(request.messages[0].content, prompt::SYSTEM);
     assert_eq!(request.messages[want.len() - 1].content, text);
-    // the first two examples keep a marker (D-3)
+    // the first two examples keep a marker
     assert!(request.messages[1..5]
         .iter()
         .all(|m| m.content.contains("⟦1⟧")));

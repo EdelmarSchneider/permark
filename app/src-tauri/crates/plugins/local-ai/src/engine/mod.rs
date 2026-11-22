@@ -1,7 +1,9 @@
 //! Engine seam in the plugin: contract + worker protocol + host proxy = crate `permark-engine` (re-exported here;
 //! rules in its crate doc). Plugin side: [`model_files`] (installed version -> files), [`files`] (pinned worker
-//! program), [`FakeEngine`] (tests of future features).
+//! program), `FakeEngine` (deterministic engine for tests: this crate's + feature plugins' via Cargo feature
+//! `testkit`; never in an app build).
 
+#[cfg(any(test, feature = "testkit"))]
 mod fake;
 pub mod files;
 
@@ -10,6 +12,7 @@ pub use permark_engine::*;
 use crate::catalog::{self, Catalog};
 use crate::installs::AssignedModel;
 
+#[cfg(any(test, feature = "testkit"))]
 pub use fake::FakeEngine;
 
 /// Files of the installed version `model` (from [`crate::Installs::model_for`]) + prompt data of the `catalog` entry

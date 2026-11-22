@@ -13,11 +13,11 @@ use permark_core::conditions::Distribution;
 use permark_core::events::NoEvents;
 use permark_core::paths::Root;
 use permark_core::plugins::{
-    CommitId, NoBlob, PluginId, PluginRegistry, ProjectFacts, RepoHandle, RpcCall,
+    CommitId, NoBlob, NoTracking, PluginId, PluginRegistry, ProjectFacts, RepoHandle, RpcCall,
 };
-use permark_core::projects::ProjectUid;
+use permark_core::projects::{OwnerSlot, Owners, ProjectUid};
 use permark_core::settings::AppSettings;
-use permark_core::state::AppDirs;
+use permark_core::state::{AppDirs, StateStore};
 use permark_core::workspace::{CoreEnv, ProjectCore};
 
 use super::*;
@@ -265,6 +265,7 @@ fn the_root_status_leaves_out_included_projects_with_their_own_repository() {
                 quiet: Duration::from_millis(20),
                 max_wait: Duration::from_millis(100),
                 lock_wait: Duration::from_millis(100),
+                ..Timings::default()
             },
             facts: ProjectFacts::new(None),
             announce: Arc::new(move |s| lock_vec(&heard).push(s.cloned())),
@@ -338,6 +339,7 @@ fn members_known_at_start_never_show_in_the_root_status() {
                 quiet: Duration::from_millis(20),
                 max_wait: Duration::from_millis(100),
                 lock_wait: Duration::from_millis(100),
+                ..Timings::default()
             },
             facts: ProjectFacts::new(None),
             announce: Arc::new(move |s| lock_vec(&heard).push(s.cloned())),
@@ -384,6 +386,7 @@ fn real_env(ops: Arc<dyn GitOps>) -> Env {
             quiet: Duration::from_millis(20),
             max_wait: Duration::from_millis(100),
             lock_wait: Duration::from_millis(100),
+            ..Timings::default()
         },
         on_repos: Arc::new(|_| {}),
         on_snapshot: Arc::new(|_| {}),
@@ -706,6 +709,136 @@ fn an_included_project_has_its_own_repository_in_the_root_tab() {
     drop(core);
 }
 
+/// The reader other plugins use asks each repository about its own private folder: a member's from the member's
+/// index (asked again after that index changed), the root's from the root's.
+#[test]
+fn the_reader_asks_each_repository_what_its_index_holds() {
+    let (_dir, root) = base();
+    let outer = Repository::init(&root).unwrap();
+    write(&root, "top.md", "t\n");
+    write(&root, ".gitignore", "hubs/\n");
+    commit_all(&outer, "outer");
+    let folder = root.join("hubs").join("hub ü");
+    let inner = Repository::init(&folder).unwrap();
+    write(&folder, "doc.md", "d\n");
+    commit_all(&inner, "inner first");
+    write(&folder, ".permark/local/comments.json", "{}\n");
+    let mut index = inner.index().unwrap();
+    index
+        .add_path(Path::new(".permark/local/comments.json"))
+        .unwrap();
+    index.write().unwrap();
+    write(
+        &root,
+        ".permark/projects.toml",
+        "version = 1\n\n[[project]]\nid = \"k7m2q7xd2a\"\npath = \"hubs/hub ü\"\n",
+    );
+    let state = tempfile::tempdir().unwrap();
+    let env = env_for(state.path());
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    wait_until("the member repo", || {
+        call(&core, "repos", serde_json::Value::Null)
+            .as_array()
+            .is_some_and(|a| a.len() == 1)
+    });
+    wait_until("the root snapshot", || {
+        !call(&core, "snapshot", serde_json::Value::Null).is_null()
+    });
+    let reader = core.services().services.get::<RepoHandle>().unwrap();
+    let member = "hubs/hub ü/.permark/local";
+    assert_eq!(reader.0.tracked_under(member), Ok(true));
+    assert_eq!(reader.0.tracked_under(".permark/local"), Ok(false));
+    // `git rm --cached` in the member: no refresh needed
+    index
+        .remove_path(Path::new(".permark/local/comments.json"))
+        .unwrap();
+    index.write().unwrap();
+    assert_eq!(reader.0.tracked_under(member), Ok(false));
+    drop(core);
+}
+
+/// An included project whose own repository the plugin refuses to open (its config includes a file on a share) cannot
+/// vouch for its index: its private folder is withheld from agents, never read from the root's repository instead,
+/// while the root's private folder is served as before.
+#[test]
+fn a_member_whose_repository_is_refused_withholds_its_private_folder() {
+    let (_dir, root) = base();
+    let outer = Repository::init(&root).unwrap();
+    write(
+        &root, "top.md", "t
+",
+    );
+    write(
+        &root,
+        ".gitignore",
+        "hubs/
+",
+    );
+    commit_all(&outer, "outer");
+    let folder = root.join("hubs").join("hub ü");
+    let inner = Repository::init(&folder).unwrap();
+    write(
+        &folder, "doc.md", "d
+",
+    );
+    write(
+        &folder,
+        ".permark/local/comments.json",
+        "{}
+",
+    );
+    commit_all(&inner, "inner first");
+    drop(inner);
+    let config = folder.join(".git").join("config");
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text.push_str(
+        "[include]
+	path = //192.0.2.1/s/x
+",
+    );
+    std::fs::write(&config, text).unwrap();
+    write(
+        &root,
+        ".permark/projects.toml",
+        "version = 1
+
+[[project]]
+id = \"k7m2q7xd2a\"
+path = \"hubs/hub ü\"
+",
+    );
+    let state = tempfile::tempdir().unwrap();
+    let env = env_for(state.path());
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    wait_until("the member repo", || {
+        call(&core, "repos", serde_json::Value::Null)
+            .as_array()
+            .is_some_and(|a| a.len() == 1)
+    });
+    wait_until("the root snapshot", || {
+        !call(&core, "snapshot", serde_json::Value::Null).is_null()
+    });
+    let reader = core.services().services.get::<RepoHandle>().unwrap();
+    let member = "hubs/hub ü/.permark/local";
+    assert_eq!(reader.0.tracked_under(member), Err(NoTracking::Failed));
+    assert_eq!(reader.0.tracked_under(".permark/local"), Ok(false));
+    // the rule agents are served by
+    let dirs = AppDirs::under(state.path());
+    let owners = Owners::new(
+        StateStore::for_project(&dirs, &Root::open(&root).unwrap()),
+        vec![OwnerSlot::member(
+            ProjectUid::parse("k7m2q7xd2a").unwrap(),
+            "hubs/hub ü",
+            StateStore::for_project(&dirs, &Root::open(&folder).unwrap()),
+        )],
+    );
+    assert!(!owners.root().private_tracked(Some(&*reader)));
+    assert!(owners.slots()[1].private_tracked(Some(&*reader)));
+    drop(core);
+}
+
 #[test]
 fn a_project_renamed_while_closed_is_found_again_by_its_first_commit() {
     let (_dir, root) = base();
@@ -908,6 +1041,7 @@ fn a_list_set_before_the_first_look_beats_the_one_asked_at_start() {
             quiet: Duration::from_millis(20),
             max_wait: Duration::from_millis(100),
             lock_wait: Duration::from_millis(100),
+            ..Timings::default()
         },
         facts: ProjectFacts::new(None),
         announce: Arc::new(|_| {}),

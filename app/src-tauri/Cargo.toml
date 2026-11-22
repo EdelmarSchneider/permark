@@ -4,7 +4,7 @@ resolver = "2"
 
 # Version source = app/package.json; written here by `npm run version:sync`.
 [workspace.package]
-version = "0.17.0"
+version = "0.18.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/EdelmarSchneider/permark"
@@ -65,6 +65,8 @@ dunce = "1.0.5"
 unicode-normalization = "0.1.25"
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 sha2 = "0.10"
+# HMAC + system randomness for the install key (already in the lock through rustls)
+ring = "0.17"
 toml_edit = "0.25.17"
 dirs = "7.0.0"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
@@ -90,6 +92,8 @@ notify = "8.2.0"
 trash = "5.2.9"
 comrak = { version = "0.56", default-features = false, features = ["shortcodes"] }
 ammonia = "4.2"
+# the parser ammonia uses (same version: one copy in the build), for the depth guard before sanitizing
+html5ever = "0.40"
 git2 = { version = "0.21.0", default-features = false }
 rmcp = { version = "3.5.0", default-features = false, features = ["server", "transport-io"] }
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "time", "io-util"] }
@@ -107,12 +111,29 @@ expect_used = "deny"
 [profile.dev.package."*"]
 debug = false
 
+# The HTML parser runs twice on every rendered Markdown document (depth guard, then sanitizer); unoptimized it is several
+# times slower than the rest of the pipeline in dev and test builds.
+[profile.dev.package.html5ever]
+opt-level = 2
+[profile.dev.package.markup5ever]
+opt-level = 2
+[profile.dev.package.tendril]
+opt-level = 2
+
 [profile.release]
 codegen-units = 1
 lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# Measurements (`--profile perf`: the ignored `perf_*` tests, a measured app build): release code with debug assertions
+# on. `AppDirs::system` picks its folder by `debug_assertions`, so a measured app uses the development profile folder
+# (`PerMark-dev`) and never reads or writes the person's real profile. Local measuring only, never shipped: debug
+# assertions also turn on the development overrides (updater endpoint and key, worker path, dev origin, devtools).
+[profile.perf]
+inherits = "release"
+debug-assertions = true
 
 # The Store package's shell extension DLL (`-p permark-shell --profile release-shell`): it unwinds so no panic crosses
 # the COM boundary (a panic setting cannot be given per package), and it is small (a system process loads it).

@@ -8,7 +8,7 @@
 // start are left out with a warning: a package without one exact version, a variable that changes code loading or
 // program lookup.
 
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -117,5 +117,13 @@ const snapshot = {
 };
 
 const target = join(dirname(fileURLToPath(import.meta.url)), "registry.json");
+// an agent new to the snapshot may read settings from its folder: the Rust test
+// `every_agent_of_the_snapshot_has_its_project_settings_kept_out` fails until it is classified
+const before = new Set(
+  existsSync(target) ? (JSON.parse(readFileSync(target, "utf8")).agents ?? []).map((agent) => agent.id) : [],
+);
+for (const agent of snapshot.agents) {
+  if (!before.has(agent.id)) console.warn(`new agent ${agent.id}: classify its project settings (src/agents/tests.rs)`);
+}
 writeFileSync(target, `${JSON.stringify(snapshot, null, 2)}\n`);
 console.log(`${snapshot.agents.length} agents -> ${target}`);

@@ -33,6 +33,7 @@ export default {
   "welcome.noRecents": "最近使ったフォルダーはまだありません。",
   "welcome.notFound": "（見つかりません）",
   "welcome.remove": "削除",
+  "welcome.recentKeys": "Delete キーを押すと、選択したフォルダーを一覧から削除します。",
   "welcome.dropHint": "フォルダーやファイルをここにドロップすると開きます。",
   "welcome.openFailed": "{path} を開けません：{message}",
 
@@ -53,9 +54,14 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "保存されていた PerMark のデータの一部を読み取れなかったため、別の場所に移しました：{file}",
+    "保存されていた PerMark のデータの一部を読み取れなかったため、別の場所に移しました：{file}。以前のコピーはこちらにあります：{backup}",
   "notice.stateUnreadable":
     "保存されていた PerMark のデータの一部を読み取れませんでした。データはそのまま残してあり、もう一度読み取れるようになるまで（通常は再起動後）PerMark は変更しません：{file}",
+  "crash.notice":
+    "前回、PerMark が予期せず終了しました。レポートはこのコンピューターに保存され、何も送信されていません。共有する場合は、先に内容を確認してください。ファイル名や文章の一部が含まれていることがあります。「GitHub で報告」を選ぶとレポートもコピーされるため、GitHub のページに貼り付けられます。",
+  "crash.copy": "レポートをコピー",
+  "crash.report": "GitHub で報告",
+  "crash.openFolder": "フォルダーを開く",
 
   // ---- settings
   "settings.title": "設定",
@@ -78,6 +84,10 @@ export default {
   "error.invalidPath": "{subject} は有効なパスではありません。",
   "error.denied": "{subject} を使用する権限がありません。",
   "error.io": "{subject} にアクセスできませんでした：{detail}",
+  "error.locked":
+    "{subject} は別のプログラムで開かれていて、変更できません。そのプログラムで閉じてから、もう一度お試しください。",
+  "error.diskFull": "ディスクがいっぱいのため、{subject} を書き込めませんでした。",
+  "error.readOnly": "{subject} は読み取り専用のため、変更できません。",
   "error.exists": "{subject} は既に存在します。",
   "error.binary": "{subject} はバイナリファイルのため、テキストとして表示できません。",
   "error.tooLarge": "{subject} は大きすぎます。",
@@ -166,6 +176,7 @@ export default {
   "fileOps.summaryMoved": "移動しました：{what}",
   "fileOps.summaryRenamed": "{from} の名前を {to} に変更しました",
   "fileOps.summaryDeleted": "削除しました：{what}",
+  "fileOps.partlyDeleted": "削除しました：{what}。{refused} はごみ箱に移動できませんでした。",
   "fileOps.dropInto": "移動先：{folder}",
   "fileOps.projectRoot": "プロジェクトフォルダー",
   "fileOps.dialogLabel": "リンクの更新",
@@ -303,6 +314,7 @@ export default {
   "doc.deleted.title": "このファイルは {time} に削除されました。",
   "doc.diagramFailed": "図を描画できませんでした",
   "doc.diagramRendering": "図を描画しています…",
+  "doc.diagramSource": "図のソース",
   "doc.error.title": "このファイルを開けません",
   "doc.footnoteBackref": "参照 {ref} に戻る",
   "doc.frontmatter": "フロントマター",
@@ -408,7 +420,7 @@ export default {
   "role.copilot": "Copilot 向けの指示",
   "role.model-card": "モデルカード",
   "role.dataset-card": "データセットカード",
-  "structured.mode": "表示",
+  "structured.mode": "表示形式",
   "structured.tree": "ツリー",
   "structured.source": "ソース",
   "structured.invalid": "有効ではないため、テキストとして表示しています。",
@@ -937,6 +949,8 @@ export default {
   "since.nothing": "{when} 以降、変更はありません。",
   "review.offer.one": "前回読んだ後に変更されました · {n} 件の変更",
   "review.offer.other": "前回読んだ後に変更されました · {n} 件の変更",
+  "review.offerCommit.one": "最後のコミット以降に変更されました · {n} 件の変更",
+  "review.offerCommit.other": "最後のコミット以降に変更されました · {n} 件の変更",
   "review.review": "レビュー",
   "review.reviewing.one": "{n} 件の変更をレビュー中",
   "review.reviewing.other": "{n} 件の変更をレビュー中",
@@ -961,6 +975,7 @@ export default {
   "review.change": "変更 {i}/{n}（{kind}）",
   "review.keptAll": "すべての変更を保持しました",
   "review.revertedAll": "{name} のすべての変更を元に戻しました",
+  "review.endedMixed": "{name} の変更の一部を保持し、残りを元に戻しました",
   "review.undo": "元に戻す",
   "review.undoStale": "元に戻せません：その後 {name} が変更されました。",
   "review.allDone": "すべての変更をレビューしました",
@@ -1016,6 +1031,15 @@ export default {
   "git.stateHint.busy": "Git は別の処理の途中で、その処理はまだ完了していません。",
   "git.unavailableHint": "選択した git を使用できません。設定で別の git を選択してください。",
   "git.errorOwnership": "Git がこのフォルダーの所有者を信頼していません。",
+  "git.why.timeout": "Git が時間内に応答しませんでした。",
+  "git.why.tooLarge": "Git の応答が長すぎて読み取れませんでした。",
+  "git.why.spawn": "Git を起動できませんでした。",
+  "git.why.parse": "Git の応答を解釈できませんでした。",
+  "git.why.notLocal":
+    "このリポジトリの git フォルダーはこのコンピューターの外、またはリンクを経由した場所を指しているため、PerMark は開きません。",
+  "git.why.noGit": "このフォルダーには、リポジトリにつながる .git がありません。",
+  "git.why.stopped": "Git は応答する前に停止されました。",
+  "git.why.failed": "詳細：{detail}",
   "git.errorHint":
     "設定を開いて別の git を選択してください（内蔵の git では信頼の設定は不要です）。",
   "git.folderChanged.one": "中の {n} 個のファイルが変更されています",
@@ -1104,6 +1128,8 @@ export default {
   "review.versions.list": "バージョン",
   "review.versions.loading": "履歴を読み込んでいます…",
   "review.versions.more": "もっと見る",
+  "review.versions.added.one": "さらに {n} 件のバージョン",
+  "review.versions.added.other": "さらに {n} 件のバージョン",
   "review.versions.same": "現在と同じテキスト",
   "review.versions.authors": "{author}（{others} と共同）",
   "review.versions.compare": "比較",
@@ -1267,6 +1293,16 @@ export default {
   "comments.replyPlaceholder": "返信を入力…",
   "comments.deleteConfirm": "コメントを削除しますか？",
   "comments.copyFailed": "クリップボードにコピーできませんでした。",
+  "comments.aside.line.one": "PerMark の外で {n} 件のコメントが削除されました。",
+  "comments.aside.line.other": "PerMark の外で {n} 件のコメントが削除されました。",
+  "comments.aside.restore": "復元",
+  "comments.aside.dismiss": "破棄",
+  "comments.aside.dismissHint": "これらのコメントを破棄します。破棄すると復元できません。",
+  "comments.aside.restored.one": "{n} 件のコメントを復元しました。",
+  "comments.aside.restored.other": "{n} 件のコメントを復元しました。",
+  "comments.aside.nothing": "これらのコメントはすでに戻っています。",
+  "comments.aside.restoreFailed": "コメントを復元できませんでした：{message}",
+  "comments.aside.dismissFailed": "削除されたコメントを破棄できませんでした：{message}",
   "brokenLinks.title": "リンク切れ",
   "brokenLinks.checking": "ドキュメントを確認しています…",
   "brokenLinks.none": "リンク切れはありません",
@@ -1457,7 +1493,7 @@ export default {
   "agent.title": "エージェント接続",
   "agent.switch": "このフォルダーをエージェントと共有",
   "agent.switchHint":
-    "接続したエージェント（Claude Code や Cursor など、MCP に対応した AI ツール）は、表示中の内容や変更点の確認、このフォルダーのファイルの検索と読み取り、コメントと共有したメモの読み取り、特定の場所の表示ができます。このコンピューター上でのみ動作します。.aiignore に記載したファイルはエージェントから見えません。この方法で接続したエージェントは読み取りだけを行い、PerMark を通じてファイルを編集することはありません。エージェントに編集を提案させるには、アシスタントを使ってください。これは PerMark からエージェントに渡る情報だけが対象です。エージェントは、コンピューター上のファイルを独自に開くこともできます。",
+    "接続したエージェント（Claude Code や Cursor など、MCP に対応した AI ツール）は、表示中の内容や変更点の確認、このフォルダーのファイルの検索と読み取り、コメントと共有したメモの読み取り、特定の場所の表示ができます。このコンピューター上でのみ動作します。.aiignore に記載したファイルはエージェントから見えません。この方法で接続したエージェントが PerMark を通じてファイルを編集することはありません。読み取りを行い、コメントを完了にするのは許可した場合だけです。エージェントに編集を提案させるには、アシスタントを使ってください。これは PerMark からエージェントに渡る情報だけが対象です。エージェントは、コンピューター上のファイルを独自に開くこともできます。",
   "agent.folderReplaced":
     "接続した後にこのフォルダーが変わりました。ここでエージェントを許可するには、接続をもう一度オンにしてください。",
   "agent.groups": "エージェントに許可すること",
@@ -1557,6 +1593,20 @@ export default {
   "agent.outcome.off": "オフ",
   "agent.outcome.notOpen": "開いていない",
   "agent.outcome.error": "失敗",
+  "agentRules.lastGood":
+    "{file} を読み込めませんでした：{why}。修正されるまで、PerMark はこのファイルで最後に機能したルールを使います。",
+  "agentRules.closed":
+    "{file} を読み込めませんでした：{why}。修正されるまで、エージェントはこのファイルが対象とするものを一切受け取りません。",
+  "agentRules.why.tooLarge": "大きすぎます",
+  "agentRules.why.notText": "プレーンテキストではありません",
+  "agentRules.why.notToml": "有効な TOML ではありません",
+  "agentRules.why.badValue": "設定の一つの値の種類が正しくありません",
+  "agentRules.why.badPattern": "パターンの一つが無効です",
+  "agentRules.why.notAFile": "通常のファイルではありません",
+  "agentRules.why.locked": "別のプログラムが使用中です",
+  "agentRules.why.denied": "PerMark に読み取り権限がありません",
+  "agentRules.why.failed": "読み取りに失敗しました",
+  "agent.outcome.rulesUnreadable": "ルール読み取り不可",
   "agent.open.notice": "エージェントが {path} を表示しようとしています。",
   "agent.open.show": "表示",
   "agent.ask.resolve":
@@ -1600,6 +1650,8 @@ export default {
   "agent.handoff.done.other":
     "{n} 件の操作を引き継ぎました — コピー済みなので、プロンプトに貼り付けられます。",
   "agent.handoff.failed": "引き継ぎに失敗しました。もう一度お試しください。",
+  "agent.handoff.withheld":
+    "PerMark はこのフォルダーのアクティビティをエージェントに引き継ぎません。git リポジトリが PerMark の非公開フォルダー (.permark/local) を追跡しているか、PerMark がそれを確認できませんでした。",
   "agent.handoff.copyFailed": "引き継ぎましたが、コピーに失敗しました。",
   "config.sheet": "このファイルの設定",
   "config.root": "最上位",
@@ -1626,6 +1678,8 @@ export default {
   "config.reason.noValue": "値のないキーです。ソースで変更してください。",
   "config.reason.empty": "空の項目です。ソースで変更してください。",
   "config.reason.unterminated": "閉じられていない引用符があります。ソースで変更してください。",
+  "config.reason.escape":
+    "ここでは正確に保持できないエスケープを含む値です。ソースで変更してください。",
   "config.reason.other": "ここでは正確に編集できません。ソースを使用してください。",
   "config.refused.newline": "ここでは、値に改行を含めることはできません。",
   "config.refused.empty": "何か入力してください。",
@@ -1689,6 +1743,8 @@ export default {
     "このフォルダーでの各プラグインの選択です。「全員に対してオフ」は .permark/config.toml に保存され、このフォルダーを開く全員に適用されます。",
   "plugins.removeConfirm": "{name} のデータを削除しますか？",
   "plugins.removeConfirmBytes": "{name} のデータを削除しますか？{size} が空きます。",
+  "plugins.removeScope":
+    "自身の .permark フォルダーにデータを保存しているフォルダーでは、開いている間だけデータが削除されます。",
   "plugins.removeData": "データを削除",
   "plugins.removeYes": "削除",
   "plugins.turnOn": "{name} をオンにする",
@@ -1696,15 +1752,31 @@ export default {
   "project.ignoreHint":
     "一致するファイルは検索されず、リアルタイムの変更にも表示されません。ファイル一覧では、git が無視するファイルと同じように淡色で表示されます。",
   "project.ignoreLabel": "検索とリアルタイムの変更から除外",
+  "project.dataAsk":
+    "このフォルダーに .permark フォルダーができました。このフォルダーのコメント、既読の印などのデータは、引き続きこのコンピューターに保存されています。",
+  "project.dataMove": "フォルダーに移動",
+  "project.dataKeep": "このコンピューターに残す",
+  "project.dataMissing":
+    "このフォルダーの .permark フォルダーが見つからないか、使えません。PerMark はこのコンピューターに保存されたデータのコピーを使っています。このコピーは古い可能性があります。",
+  "project.dataKeepCopy": "このコピーを使い続ける",
+  "project.dataPlace": "このフォルダーのデータ",
+  "project.dataPlaceProfile": "このコンピューターのユーザープロファイルに保存されています。",
+  "project.dataMoved": "このフォルダーのデータは .permark フォルダーに移りました。",
+  "project.dataMoveHeld":
+    "このフォルダーの .permark フォルダーには別の場所からの PerMark データが既にあるため、データはこのコンピューターに残ります。",
+  "project.dataMoveFailed": "データをフォルダーに移動できませんでした：{message}",
   "project.initButton": "PerMark を初期化",
   "project.initConfig": "このプロジェクトがチームと共有する設定。",
   "project.initConfirm": "PerMark を初期化",
   "project.initFailed": "{path} で PerMark を初期化できませんでした：{message}",
+  "project.initHeld":
+    "{path}/.permark/local には別の場所からの PerMark データが既にあります。何も変更していません。",
   "project.initIgnore": "非公開のフォルダーを git の対象から外します。",
   "project.initIntro": "PerMark はここに .permark フォルダーを作成し、次のものを置きます：",
-  "project.initLocal": "このプロジェクトの個人データ（コメント、既読の印）とキャッシュ。",
+  "project.initLocal":
+    "このプロジェクトの個人データ（コメント、既読の印、元に戻す履歴）と、PerMark がいつでも作り直せるキャッシュ。",
   "project.initNote":
-    "ファイルには手を加えません。このプロジェクトに既にあるタグ、コメント、既読の印はコピーされます。",
+    "ファイルには手を加えません。このプロジェクトに既にあるタグ、コメント、既読の印はコピーされます。このフォルダーに許可した内容（エージェントのアクセスなど）は、このコンピューター上のあなた自身の PerMark データに残ります。",
   "project.initTitle": "{name} で PerMark を初期化しますか？",
   "project.newTitle": "{name} をプロジェクトにしますか？",
   "project.newWhy":
@@ -1728,8 +1800,30 @@ export default {
   "project.treeUnset": "未設定",
   "project.scopes":
     "「全員」の設定はこのフォルダーの .permark/config.toml に保存され、このフォルダーを開くすべての人と共有されます。「自分のみ」の設定はこのコンピューターに残ります。",
+  "project.shareGit": "このフォルダーの PerMark の設定を git に見せる",
+  "project.shareGitCustom":
+    "このフォルダーの .permark/.gitignore はほかの人が書いたものなので、PerMark はそのままにします。",
+  "project.shareGitFailed": "git が .permark で認識するものを変更できませんでした：{message}",
+  "project.shareGitHint":
+    "オン：git は .permark 内の設定、タグ、プロジェクトの一覧、プロジェクトの説明を認識するので、チームのためにコミットできます。オフ：git は .permark フォルダー全体を無視します。すでにコミットされたファイルはコミットされたままです。.permark/.gitignore がコミットされている場合、この変更はチームにも届きます。個人のデータとキャッシュは常に git の対象外です。",
+  "project.shareGitOff": "オフ",
+  "project.shareGitOn": "オン",
   "project.shareInit": "全員と共有するには PerMark を初期化してください",
   "project.sharedFileHint": "このフォルダーを開く全員と共有されます。",
+  "project.sharedFileUnreadable":
+    "PerMark はこのファイルの {line} 行目を読み取れません。修正されるまで「全員」の設定は変更できません。",
+  "project.sharedLocked":
+    "PerMark は .permark/config.toml を読み取れません。修正されるまで「全員」の設定は変更できません。",
+  "project.sharedLocked.line":
+    "PerMark は .permark/config.toml の {line} 行目を読み取れません。修正されるまで「全員」の設定は変更できません。",
+  "project.sharedLocked.notText":
+    "PerMark は .permark/config.toml を読み取れません（プレーンテキストではありません）。修正されるまで「全員」の設定は変更できません。",
+  "project.sharedLocked.tooLarge":
+    "PerMark は .permark/config.toml を読み取れません（ファイルが大きすぎます）。修正されるまで「全員」の設定は変更できません。",
+  "project.sharedLocked.locked":
+    "PerMark は .permark/config.toml を読み取れません（別のプログラムが使用しています）。修正されるまで「全員」の設定は変更できません。",
+  "project.privateTracked":
+    "エージェントはこのフォルダーのコメントもアクティビティも受け取りません。git リポジトリが PerMark の非公開フォルダー (.permark/local) を追跡しているか、PerMark がそれを確認できませんでした。",
   "settings.all": "すべての設定",
   "settings.editorPreview": "例：",
   "settings.linkUpdateHint": "ファイルの移動や名前の変更時に、リンクをどうするかを指定します。",
@@ -1767,6 +1861,8 @@ export default {
   "settings.problem.noPath": "コマンドには {path} が必要です。",
   "settings.problem.notInitialized": "このフォルダーにはまだ PerMark の設定がありません。",
   "settings.problem.tomlOnly": "末尾が .toml のファイル名を使ってください。",
+  "settings.problem.notToml":
+    "PerMark は .permark/config.toml を読み取れないため、何も変更されませんでした。",
   "settings.problem.other": "この値は受け付けられませんでした。",
   "welcome.newProject": "新しいプロジェクト…",
   "welcome.newProjectHint": "フォルダーを選ぶと、PerMark がプロジェクトとして設定します。",
@@ -1825,6 +1921,7 @@ export default {
   "plugin.graphviz.name": "Graphviz 図",
   "plugin.graphviz.about": "コードブロックから Graphviz（DOT）のグラフを描画します。",
   "graphviz.tooLarge": "このグラフは大きすぎるため、ここでは描画できません。",
+  "plantuml.tooLarge": "この図は大きすぎるため、ここでは描画できません。",
   "plugin.media.name": "画像、音声、動画",
   "plugin.media.about": "画像、音声、動画をその場で開きます。",
   "plugin.json-view.name": "JSON",
@@ -1861,6 +1958,8 @@ export default {
     "この PerMark はインストールされていないため、既定のアプリにできません。これらのファイルを開くアプリは、システムの設定で選択してください。",
   "defaultApp.confined": "これらのファイルを開くアプリは、システムの設定で選択してください。",
   "defaultApp.failed": "既定のアプリを変更できませんでした：{message}",
+  "defaultApp.chooseInFinder":
+    "これらのファイルの既定のアプリは PerMark のままです。別のアプリを使うには、Finder でいずれかのファイルを選び、「ファイル」>「情報を見る」を選んで、「このアプリケーションで開く」でアプリを選んでください。",
   "defaultApp.askTitle": "これらのファイルを PerMark で開きますか？",
   "defaultApp.askBody":
     "チェックした種類のファイルは、ダブルクリックすると PerMark で開きます。これは設定でいつでも変更できます。",
@@ -1883,6 +1982,8 @@ export default {
   "shell.newFile.hint":
     "フォルダーの右クリックメニューに表示されます。そこにファイルを作成して開きます。",
   "shell.failed": "メニューを変更できませんでした：{message}",
+  "shell.readFailed": "メニュー項目を読み取れませんでした。{message}",
+  "shell.retry": "再試行",
   "updates.section": "更新",
   "updates.row": "新しいバージョン",
   "updates.notes": "新機能",
@@ -2119,7 +2220,7 @@ export default {
     "選んだトークナイザーで数えた、ドキュメント、選択範囲、セクションのトークン数。トークナイザーが公開されていれば正確に、公開されていなければ概算で（印付きで）表示します。",
   "plugin.local-ai.name": "ローカル AI",
   "plugin.local-ai.about":
-    "このコンピューター上でオフラインで動く小さな AI モデルです。PerMark の校正、翻訳、意味による検索を助けます。求められるまで何もダウンロードしません。",
+    "このコンピューター上で動く小さな AI モデルです。PerMark の校正、翻訳、意味による検索を助けます。求められるまで何もダウンロードしません。",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} 行",
   "config.table.rows.other": "{n} 行",
@@ -2155,6 +2256,7 @@ export default {
   "toon.notValid": "有効な TOON 4.4 ではありません",
   "convert.menu": "変換…",
   "convert.table": "変換…",
+  "convert.tableCommand": "表を変換…",
   "convert.title": "{name} を変換",
   "convert.fromPage": "ページのテキスト",
   "convert.close": "閉じる",
@@ -2274,6 +2376,21 @@ export default {
   "closeWindow.body.other": "次のタブには保存されていない変更があります：",
   "closeWindow.saveAll": "すべて保存",
   "closeWindow.discard": "破棄",
+  "stuck.title": "PerMark が応答していません",
+  "stuck.detail":
+    "このウィンドウ内のページが応答していません。このまま閉じると、このウィンドウのタブの保存されていない変更が失われる可能性があります。",
+  "stuck.closeAnyway": "このまま閉じる",
+  "stuck.wait": "待つ",
+  "stuck.engineStopped":
+    "PerMark のウィンドウを表示する部分が動作を停止したため、PerMark を終了する必要があります。保存されていない変更は失われます。開いていたタブは、次回 PerMark を起動したときに戻ります。",
+  "stuck.reloaded": "このタブが動作を停止したため、再読み込みしました。",
+  "stuck.reloadedLost":
+    "このタブが動作を停止したため、再読み込みしました。{file} の保存されていない変更は失われました。",
+  "stuck.reloadedPage": "このページが動作を停止したため、再読み込みしました。",
+  "stuck.windowFailed":
+    "PerMark のウィンドウがページを開けなかったため、閉じました。ほかのウィンドウは引き続き使えます。",
+  "stuck.viewFailedExit":
+    "PerMark はウィンドウを開けなかったため、終了する必要があります。開いていたタブは、次回 PerMark を起動したときに戻ります。",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "内部のプロジェクト",
@@ -2529,7 +2646,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "ローカル AI",
   "localAi.intro":
-    "このコンピューター上でオフラインで動く小さな AI モデルです。指示するまで何もダウンロードされません。",
+    "このコンピューター上で動く小さな AI モデルです。指示するまで何もダウンロードされません。",
   "localAi.command": "ローカル AI の設定を開く",
   "localAi.loadFailed": "ローカル AI の設定を読み込めませんでした。",
   "localAi.retry": "再試行",
@@ -2602,8 +2719,8 @@ export default {
   "localAi.models.details.size": "ダウンロードサイズ",
   "localAi.models.details.restriction": "利用できる人",
   "localAi.models.comingSoon": "近日対応",
-  "localAi.models.needs.newer": "新しいバージョンの AI エンジンが必要です。",
-  "localAi.models.needs.missing": "PerMark にまだない AI エンジンが必要です。",
+  "localAi.models.needs.newer": "このモデルには、より新しいバージョンの PerMark が必要です。",
+  "localAi.models.needs.missing": "PerMark はまだこの種類のモデルを実行できません。",
   "localAi.dl.waiting": "待機中…",
   "localAi.dl.cancelLabel": "{name} の入手をキャンセル",
   "localAi.dl.progress": "{done} / {total}",
@@ -3160,7 +3277,10 @@ export default {
   "acp.fail.tooLarge": "このフォルダーは大きすぎるため、エージェント用にコピーできません。",
   "acp.fail.projectsNotReady":
     "PerMark はまだこのフォルダーを読み込んでいます。しばらくしてから、もう一度お試しください。",
+  "acp.fail.rulesUnreadable":
+    "エージェントが見られる範囲を定めるファイルを読み込めませんでした。修正されるまで、エージェントには何も渡されません。",
   "acp.fail.startFailed": "エージェントのプログラムを起動できませんでした。",
+  "acp.fail.notAllowed": "エージェントのプログラムの起動は許可されませんでした。",
   "acp.fail.timedOut": "エージェントが時間内に応答しませんでした。",
   "acp.fail.initFailed":
     "このプログラムは、PerMark が通信できるエージェントとして応答しませんでした。コマンドを確認して、もう一度お試しください。",
@@ -3174,6 +3294,7 @@ export default {
   "acp.fail.exited": "エージェントのプログラムが予期せず終了しました。",
   "acp.fail.sendFailed": "メッセージをエージェントに渡せませんでした。",
   "acp.error.relativeProgram": "プログラムのフルパスか、名前だけを書いてください。",
+  "acp.error.commandTooLong": "コマンドが長すぎます（最大 1000 文字）。",
   "acp.error.networkProgram":
     "PerMark はこのコンピューター上のプログラムだけを起動します。ネットワーク フォルダーからは起動しません。",
   "acp.error.oneChoice": "エージェントを 1 つ選ぶか、コマンドを 1 つ入力してください。",

@@ -145,5 +145,7 @@ fn a_root_with_2000_projects_and_2000_entries() {
         (listed.heap - offered_heap) / n,
     );
     assert!(parse_ms < 2000.0, "parse {parse_ms} ms");
-    assert!(listed.map_ms < 30_000.0, "map {} ms", listed.map_ms);
+    // about 15 s on a desktop and up to 2.5x that on a shared CI runner: each of the 2000 members settles its data
+    // place once (one durable profile write each); a regression to work per member pair would take many minutes
+    assert!(listed.map_ms < 60_000.0, "map {} ms", listed.map_ms);
 }

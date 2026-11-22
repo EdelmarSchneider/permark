@@ -23,6 +23,8 @@ pub struct CopyFile {
 
 impl StateData for CopyFile {
     const VERSION: u32 = 1;
+    /// A text of up to [`MAX_COPY_BYTES`], escaped as JSON (a control character takes 6 bytes).
+    const MAX_BYTES: u64 = 16 * 1024 * 1024;
 }
 
 fn check_of(text: &str) -> String {
@@ -101,6 +103,12 @@ impl CopyStore {
         std::fs::read_dir(self.folder()).map_or(0, |entries| entries.filter_map(Result::ok).count())
     }
 
+    /// Deletes the copy of `hash`. Returns whether it went.
+    #[must_use]
+    pub fn remove(&self, hash: u64) -> bool {
+        std::fs::remove_file(self.file(hash).path()).is_ok()
+    }
+
     /// Deletes the copies no version in `keep` needs. Returns how many went.
     pub fn remove_unused(&self, keep: &HashSet<u64>) -> usize {
         let Ok(entries) = std::fs::read_dir(self.folder()) else {
@@ -171,6 +179,8 @@ mod tests {
         std::fs::write(copies.folder().join("zz.json"), "{}").unwrap();
         assert_eq!(copies.remove_unused(&HashSet::from([2_u64])), 2);
         assert!(copies.has(2) && !copies.has(1) && !copies.has(3));
+        assert!(copies.remove(2) && !copies.has(2));
+        assert!(!copies.remove(2), "gone already");
         assert!(copies.folder().join("notes.txt").exists());
         assert!(copies.folder().join("zz.json").exists());
         assert_eq!(

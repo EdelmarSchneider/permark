@@ -1,12 +1,14 @@
 //! The read-only operations both git backends implement, and the pure rules they share (paths below the project,
 //! "too broad" repositories, repository state from marker files). NEVER commits, stages or creates anything.
 
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use permark_core::conditions::RepoState;
-use permark_core::plugins::{CommitId, FileVersion, FileVersions, NoBlob, NoVersions};
+use permark_core::conditions::{GitErrorCode, RepoState};
+use permark_core::fsx::{same_file, SameFile};
+use permark_core::plugins::{CommitId, FileVersion, FileVersions, NoBlob, NoTracking, NoVersions};
 
 use crate::types::{BackendKind, HeadInfo, Letter};
 use crate::worktrees::{common_dir, in_nested_repository};
@@ -22,7 +24,7 @@ pub const MAX_RENAME_PATHS: usize = 1000;
 /// Most co-authors kept of a commit message.
 pub const MAX_CO_AUTHORS: usize = 16;
 
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum GitError {
     #[error("cannot run git: {0}")]
     Spawn(String),
@@ -34,6 +36,55 @@ pub enum GitError {
     TooLarge(usize),
     #[error("unreadable git output: {0}")]
     Parse(String),
+    /// Not asked of git at all: PerMark's own reason, which the windows word themselves.
+    #[error("repository not opened: {0}")]
+    Refused(RepoRefusal),
+    /// The look was cancelled: the program, if one ran, was ended.
+    #[error("git was stopped")]
+    Stopped,
+}
+
+/// Why PerMark does not open a repository (no git call is made for it).
+#[derive(Debug, Clone, Copy, thiserror::Error, PartialEq, Eq)]
+pub enum RepoRefusal {
+    /// Opening it would make git look up a path off this computer | through a link
+    /// ([`crate::worktrees::git_dir_stays_local`]).
+    #[error("the repository's git folder points outside this computer or through a link")]
+    NotLocal,
+    /// No `.git`, or a link in its place (a member is read from files only, never through a link).
+    #[error("no .git")]
+    NoGit,
+    /// A `.git` file naming no repository here: unreadable, without a `gitdir:` line, its target missing.
+    #[error("the .git file names no repository")]
+    BadGitFile,
+}
+
+impl GitError {
+    /// Why, as the windows put it in words.
+    #[must_use]
+    pub fn code(&self) -> GitErrorCode {
+        match self {
+            Self::Spawn(_) => GitErrorCode::Spawn,
+            Self::Failed(_) => GitErrorCode::Failed,
+            Self::Timeout => GitErrorCode::Timeout,
+            Self::TooLarge(_) => GitErrorCode::TooLarge,
+            Self::Parse(_) => GitErrorCode::Parse,
+            Self::Refused(RepoRefusal::NotLocal) => GitErrorCode::NotLocal,
+            // either way the person finds no repository behind the folder's `.git`
+            Self::Refused(RepoRefusal::NoGit | RepoRefusal::BadGitFile) => GitErrorCode::NoGit,
+            Self::Stopped => GitErrorCode::Stopped,
+        }
+    }
+
+    /// The words that came with it (git's own for a failure, e.g. "dubious ownership"); none for a timeout | an
+    /// answer too long | PerMark's own reasons (the code says it all, in the window's language).
+    #[must_use]
+    pub fn reason(&self) -> String {
+        match self {
+            Self::Spawn(words) | Self::Failed(words) | Self::Parse(words) => words.clone(),
+            Self::Timeout | Self::TooLarge(_) | Self::Refused(_) | Self::Stopped => String::new(),
+        }
+    }
 }
 
 impl From<git2::Error> for GitError {
@@ -57,8 +108,14 @@ pub struct RepoLocation {
 pub enum Discovery {
     Repo(RepoLocation),
     NoRepo,
-    /// A repository is there but cannot be used (the sentence says why).
-    Error(String),
+    /// The repository ignores the project folder (`.gitignore`): git features stay off as without a repository, yet
+    /// its index may hold files of the folder (`git add -f`), so what it tracks is still asked.
+    Ignored(RepoLocation),
+    /// A `.git` is there, but opening it would make git look up a path off this computer | through a link: git
+    /// features stay off as without a repository, yet nothing can be told of its index.
+    Refused,
+    /// A repository is there but cannot be used.
+    Error(GitError),
 }
 
 /// What status is measured against.
@@ -135,6 +192,18 @@ pub trait GitOps: Send + Sync {
         after: usize,
         limit: usize,
     ) -> Result<FileVersions, GitError>;
+    /// Whether the index holds the folder `path` (relative to the project folder), anything below it, or a submodule |
+    /// link at a folder above it inside the project ([`tracked_entry`], other spellings on disk via [`disk_aliases`]):
+    /// entries of every stage (a conflict), intent-to-add and skip-worktree ones too, before the first commit as well.
+    /// Names compare without case when the repository is caseless (`core.ignorecase`).
+    ///
+    /// # Errors
+    /// Git failed | timed out; a backend that does not read the index fails.
+    fn tracked_under(&self, _location: &RepoLocation, _path: &str) -> Result<bool, GitError> {
+        Err(GitError::Failed(
+            "this backend does not read the index".to_owned(),
+        ))
+    }
     /// Whether the repository has the commit.
     fn commit_exists(&self, location: &RepoLocation, oid: &str) -> bool;
     /// Commits reachable from `new` and not from `old` (`None`: a commit unknown | git failed).
@@ -282,6 +351,214 @@ pub fn versions_of(
         })
 }
 
+/// Whether the index of the repository holds the folder `path` (relative to the project folder) or anything below it
+/// ([`GitOps::tracked_under`]), as the reader other plugins use gives it.
+///
+/// # Errors
+/// [`NoTracking`]: see [`tracked_question`]; git was too slow, or the call failed.
+pub fn tracked_of(
+    backend: &dyn GitOps,
+    location: &RepoLocation,
+    path: &str,
+) -> Result<bool, NoTracking> {
+    tracked_question(location, path)?;
+    backend
+        .tracked_under(location, path)
+        .map_err(|error| match error {
+            GitError::Timeout => NoTracking::Slow,
+            _ => NoTracking::Failed,
+        })
+}
+
+/// What is known of the tracked question about the folder `path` (relative to the project folder) before the index is
+/// read: cheap, read from the folders as they are now.
+///
+/// # Errors
+/// [`NoTracking::OtherRepository`]: the folder is inside another repository below this one (the index is not asked);
+/// [`NoTracking::Failed`]: `path` is not plain names (`.`, `..`, empty names: both backends would read it differently).
+pub fn tracked_question(location: &RepoLocation, path: &str) -> Result<(), NoTracking> {
+    if path.contains('\0') || path.split('/').any(|name| matches!(name, "" | "." | "..")) {
+        return Err(NoTracking::Failed);
+    }
+    // the trailing slash makes every name a folder: a repository at the folder itself holds what is below it too
+    let folder = format!("{}/", repo_path(&location.prefix, path));
+    if in_nested_repository(&location.workdir, &folder) {
+        return Err(NoTracking::OtherRepository);
+    }
+    Ok(())
+}
+
+/// Whether the index entry `entry` (a path relative to the working tree) brings content into the folder `path`
+/// (relative to the project folder `prefix`) at a checkout: the entry is the folder, below it, or at a folder above it
+/// inside the project (a submodule | a link there delivers what is below). Whole names only (`a/b-c` is not below
+/// `a/b`); the project folder itself is not inside the project. `caseless`: ASCII letters compare without case, as git
+/// and libgit2 compare the names of a caseless repository.
+///
+/// Any name of the path (a name of `prefix`, a member, `.permark`, the folder's own name) may also be another spelling
+/// that the volume resolves to it (a Windows short name such as `PERMAR~1` | `NOTESA~1`, a Unicode case fold of a
+/// caseless volume, a last `.` Windows drops): a name [`alias_candidate`] takes is put to `alias` with its place among
+/// the names of `prefix` + `path` once every other name agrees, the names after it compared without ASCII case (the
+/// volume finds them so); the volume says what it answers ([`disk_aliases`]): another folder -> not inside, unknown ->
+/// the same folder. Every other name compares as written.
+#[must_use]
+pub fn tracked_entry(
+    entry: &[u8],
+    prefix: &str,
+    path: &str,
+    caseless: bool,
+    alias: &mut dyn FnMut(usize, &[u8]) -> SameFile,
+) -> bool {
+    let above = prefix.split('/').filter(|name| !name.is_empty()).count();
+    let asked = prefix
+        .split('/')
+        .filter(|name| !name.is_empty())
+        .chain(path.split('/'));
+    let held: Vec<&[u8]> = entry.split(|byte| *byte == b'/').collect();
+    // the project folder itself and the folders above it are not inside the project
+    if held.len() <= above {
+        return false;
+    }
+    // one of the two is the other or starts it: every name both have agrees, the volume asked last (a look only for
+    // an entry no written name rules out)
+    let mut spelled = Vec::new();
+    for (place, (part, name)) in held.iter().zip(asked).enumerate() {
+        let loose = caseless || !spelled.is_empty();
+        if (loose && part.eq_ignore_ascii_case(name.as_bytes())) || *part == name.as_bytes() {
+            continue;
+        }
+        if !alias_candidate(part) {
+            return false;
+        }
+        spelled.push(place);
+    }
+    spelled
+        .into_iter()
+        .all(|place| alias(place, held[place]) != SameFile::Other)
+}
+
+/// A name some volume may resolve to a folder of another name: a short name (`~`), a letter beyond ASCII (case folds
+/// such as KELVIN SIGN to `k`), a last `.` | space (dropped by Windows). Ordinary ASCII names never are: they never cost
+/// a look at the disk.
+fn alias_candidate(name: &[u8]) -> bool {
+    name.iter().any(|byte| *byte == b'~' || !byte.is_ascii())
+        || matches!(name.last(), Some(b'.' | b' '))
+}
+
+/// Most folders [`disk_aliases`] puts to the volume for one question; past it a further one is not asked and the answer
+/// is unknown (counted as the same folder): an index crafted with countless such names costs no more. Files, links and
+/// missing names are not counted: they are answered without comparing two folders.
+const MAX_ALIASES: usize = 64;
+
+/// The `alias` of [`tracked_entry`] for the folder `path` (relative to the project folder of `location`): whether a
+/// name at a place of the path (counted over the names of the prefix, then of `path`) is, beside the asked name of that
+/// place and inside the asked folders above it, that same folder on disk ([`same_file`], links not followed; no file
+/// ids on the volume (FAT, exFAT) -> the canonical paths compare). A file | nothing at the name | at the asked name,
+/// not one plain name -> another folder; a link at the name, at the asked name or at a folder above them -> unknown,
+/// never looked through (the repository may ship a link to a share: even a lookup there connects to the server and
+/// offers it the person's sign-in); no UTF-8 | a look that fails otherwise | a place past the path -> unknown. Each
+/// name is looked at once per place.
+pub fn disk_aliases(location: &RepoLocation, path: &str) -> impl FnMut(usize, &[u8]) -> SameFile {
+    let workdir = location.workdir.clone();
+    let asked: Vec<String> = location
+        .prefix
+        .split('/')
+        .filter(|name| !name.is_empty())
+        .chain(path.split('/'))
+        .map(str::to_owned)
+        .collect();
+    let mut seen: HashMap<(usize, Vec<u8>), SameFile> = HashMap::new();
+    let mut bases: HashMap<usize, Result<PathBuf, SameFile>> = HashMap::new();
+    let mut looked = 0;
+    move |place, name| {
+        let Some(own) = asked.get(place) else {
+            return SameFile::Unknown;
+        };
+        let key = (place, name.to_vec());
+        if let Some(answer) = seen.get(&key) {
+            return *answer;
+        }
+        let base = bases
+            .entry(place)
+            .or_insert_with(|| plain_base(&workdir, &asked[..place]));
+        let answer = match base {
+            Ok(base) => volume_alias(base, &base.join(own), name, &mut looked),
+            Err(answer) => *answer,
+        };
+        seen.insert(key, answer);
+        answer
+    }
+}
+
+/// `workdir` + `names`, each name looked at without following it: a link among them -> unknown (a look below it would
+/// go where it leads); a name missing -> another folder (nothing below it).
+fn plain_base(workdir: &Path, names: &[String]) -> Result<PathBuf, SameFile> {
+    let mut base = workdir.to_path_buf();
+    for name in names {
+        base.push(name);
+        match std::fs::symlink_metadata(&base) {
+            Ok(meta) if meta.file_type().is_symlink() => return Err(SameFile::Unknown),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(SameFile::Other)
+            }
+            Err(_) => return Err(SameFile::Unknown),
+        }
+    }
+    Ok(base)
+}
+
+/// [`disk_aliases`] of one name inside `base` (no link in it); `looked`: the folders put to the volume so far.
+fn volume_alias(base: &Path, folder: &Path, name: &[u8], looked: &mut usize) -> SameFile {
+    let Ok(name) = std::str::from_utf8(name) else {
+        return SameFile::Unknown;
+    };
+    let mut parts = Path::new(name).components();
+    if !matches!(
+        (parts.next(), parts.next()),
+        (Some(Component::Normal(_)), None)
+    ) {
+        return SameFile::Other;
+    }
+    let there = base.join(name);
+    let kind = match std::fs::symlink_metadata(&there) {
+        Ok(meta) => meta.file_type(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return SameFile::Other,
+        Err(_) => return SameFile::Unknown,
+    };
+    // where a link leads is never looked at (its own ids tell nothing either)
+    if kind.is_symlink() {
+        return SameFile::Unknown;
+    }
+    if !kind.is_dir() {
+        return SameFile::Other;
+    }
+    match std::fs::symlink_metadata(folder) {
+        Ok(meta) if meta.file_type().is_symlink() => return SameFile::Unknown,
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return SameFile::Other,
+        Err(_) => return SameFile::Unknown,
+    }
+    if *looked >= MAX_ALIASES {
+        return SameFile::Unknown;
+    }
+    *looked += 1;
+    // two plain folders, no link on the way: their ids, else their canonical paths, stay on this volume
+    let answer = same_file(&there, folder);
+    if answer != SameFile::Unknown {
+        return answer;
+    }
+    let key = |path: &Path| {
+        permark_core::paths::canonicalize(path)
+            .ok()
+            .and_then(|canonical| canonical.to_str().map(permark_core::paths::key_of))
+    };
+    match (key(&there), key(folder)) {
+        (Some(there), Some(folder)) if there == folder => SameFile::Yes,
+        (Some(_), Some(_)) => SameFile::Other,
+        _ => SameFile::Unknown,
+    }
+}
+
 /// `path` (relative to the working tree) below the project folder `prefix`: the part below it; `None`: outside.
 #[must_use]
 pub fn below_prefix<'a>(prefix: &str, path: &'a str) -> Option<&'a str> {
@@ -340,10 +617,16 @@ pub fn prefix_of(workdir: &Path, project: &Path) -> Option<String> {
     )
 }
 
+/// Whether the git folder file `path` is there; a link counts as there and is never followed (its target may be on a
+/// share, and even a look connects to the server).
+fn marker(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
+}
+
 /// The state of the repository from the marker files in its git folder.
 #[must_use]
 pub fn repo_state(git_dir: &Path) -> RepoState {
-    let has = |name: &str| git_dir.join(name).exists();
+    let has = |name: &str| marker(&git_dir.join(name));
     if has("rebase-merge") || has("rebase-apply") {
         RepoState::Rebasing
     } else if has("MERGE_HEAD") {
@@ -366,7 +649,7 @@ pub fn repo_state(git_dir: &Path) -> RepoState {
 /// common git folder.
 #[must_use]
 pub fn shallow(git_dir: &Path) -> bool {
-    common_dir(git_dir).join("shallow").exists()
+    marker(&common_dir(git_dir).join("shallow"))
 }
 
 /// Sorts by path and cuts at [`MAX_FILES`].
@@ -381,6 +664,61 @@ pub fn finish(mut files: Vec<RawFile>) -> (Vec<RawFile>, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_git_error_has_a_code_the_windows_translate_and_only_git_words_as_reason() {
+        let cases = [
+            (GitError::Timeout, GitErrorCode::Timeout, ""),
+            (GitError::TooLarge(4096), GitErrorCode::TooLarge, ""),
+            (
+                GitError::Spawn("not found".to_owned()),
+                GitErrorCode::Spawn,
+                "not found",
+            ),
+            (
+                GitError::Failed("dubious ownership".to_owned()),
+                GitErrorCode::Failed,
+                "dubious ownership",
+            ),
+            (
+                GitError::Parse("line 3".to_owned()),
+                GitErrorCode::Parse,
+                "line 3",
+            ),
+            // PerMark's own reasons: a code the windows translate, never English words to show as git's
+            (
+                GitError::Refused(RepoRefusal::NotLocal),
+                GitErrorCode::NotLocal,
+                "",
+            ),
+            (
+                GitError::Refused(RepoRefusal::NoGit),
+                GitErrorCode::NoGit,
+                "",
+            ),
+            (
+                GitError::Refused(RepoRefusal::BadGitFile),
+                GitErrorCode::NoGit,
+                "",
+            ),
+            (GitError::Stopped, GitErrorCode::Stopped, ""),
+        ];
+        for (error, code, reason) in cases {
+            assert_eq!((error.code(), error.reason().as_str()), (code, reason));
+        }
+        // the code reaches the windows in their own spelling
+        for (error, code) in [
+            (GitError::TooLarge(1), "tooLarge"),
+            (GitError::Refused(RepoRefusal::NotLocal), "notLocal"),
+            (GitError::Refused(RepoRefusal::BadGitFile), "noGit"),
+            (GitError::Stopped, "stopped"),
+        ] {
+            assert_eq!(
+                serde_json::to_value(crate::service::condition_of(&error)).unwrap(),
+                serde_json::json!({"status": "error", "code": code, "reason": ""})
+            );
+        }
+    }
 
     #[test]
     fn paths_below_the_project_prefix() {
@@ -411,7 +749,8 @@ mod tests {
         for failed in [
             GitError::Timeout,
             GitError::Spawn("no git".to_owned()),
-            GitError::Failed("stopped".to_owned()),
+            GitError::Stopped,
+            GitError::Refused(RepoRefusal::NotLocal),
             GitError::Parse("?".to_owned()),
         ] {
             assert_eq!(blob_or_miss(Err(failed)), Err(NoBlob::Unavailable));
@@ -535,6 +874,26 @@ mod tests {
         assert!(shallow(&git));
         assert!(shallow(&admin));
         assert!(!shallow(&dir.path().join("nowhere")));
+    }
+
+    /// A marker file that is a link is there as a link: its target is never looked up (it may be on a share, and even
+    /// a look connects to the server). A link to nothing still marks the state.
+    #[test]
+    fn marker_links_are_never_followed() {
+        use crate::worktrees::tests::link_folder;
+        let dir = tempfile::tempdir().unwrap();
+        let git = dir.path().join(".git");
+        std::fs::create_dir_all(&git).unwrap();
+        let gone = dir.path().join("gone");
+        std::fs::create_dir_all(&gone).unwrap();
+        if !link_folder(&gone, &git.join("shallow")) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+        assert!(link_folder(&gone, &git.join("MERGE_HEAD")));
+        std::fs::remove_dir(&gone).unwrap();
+        assert!(shallow(&git));
+        assert_eq!(repo_state(&git), RepoState::Merging);
     }
 
     #[test]

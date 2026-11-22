@@ -226,23 +226,10 @@ fn lock_dir() -> Option<PathBuf> {
 /// `<base>/permark-locks` of the first base where it is (or is made) a real folder owned by this user, mode 0700.
 #[cfg(all(unix, not(target_os = "macos")))]
 fn private_dir(bases: &[PathBuf]) -> Option<PathBuf> {
-    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
-    let me = rustix::process::geteuid().as_raw();
-    bases.iter().find_map(|base| {
-        let dir = base.join("permark-locks");
-        let _ = std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&dir);
-        let meta = std::fs::symlink_metadata(&dir).ok()?;
-        if !meta.file_type().is_dir() || meta.uid() != me {
-            return None;
-        }
-        if meta.mode() & 0o077 != 0 {
-            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).ok()?;
-        }
-        Some(dir)
-    })
+    bases
+        .iter()
+        .map(|base| base.join("permark-locks"))
+        .find(|dir| crate::fsx::private_dir(dir).is_ok())
 }
 
 /// Three-way merge of keyed entries: what this writer changed since `base` (added, changed, removed) goes on top of
@@ -332,39 +319,58 @@ mod tests {
         const VERSION: u32 = 1;
     }
 
-    #[test]
-    fn state_updates_add_up_and_a_file_of_another_layout_is_set_aside() {
+    /// `count.json` in a fresh app store holding `bytes`, then 4 threads x 20 counting updates: how many went through.
+    fn count_updates(bytes: &[u8]) -> (tempfile::TempDir, super::super::StateFile<Count>, usize) {
         let dir = tempfile::tempdir().unwrap();
         let store = super::super::StateStore::app(&super::super::AppDirs::under(dir.path()));
         let file = store.app_file::<Count>("count.json");
         std::fs::create_dir_all(file.path().parent().unwrap()).unwrap();
-        // a newer version's file: kept beside, never written over
-        std::fs::write(file.path(), br#"{"version":9,"data":{"n":100}}"#).unwrap();
+        std::fs::write(file.path(), bytes).unwrap();
         let threads: Vec<_> = (0..4)
             .map(|_| {
                 let file = file.clone();
                 std::thread::spawn(move || {
-                    for _ in 0..20 {
-                        file.update(|now| {
-                            Some(Count {
-                                n: now.map_or(0, |c| c.n) + 1,
+                    (0..20)
+                        .filter(|_| {
+                            file.update(|now| {
+                                Some(Count {
+                                    n: now.map_or(0, |c| c.n) + 1,
+                                })
                             })
+                            .is_ok()
                         })
-                        .unwrap();
-                    }
+                        .count()
                 })
             })
             .collect();
-        for t in threads {
-            t.join().unwrap();
-        }
-        assert_eq!(file.load(), super::super::Loaded::Found(Count { n: 80 }));
-        let aside = std::fs::read_dir(file.path().parent().unwrap())
+        let done = threads.into_iter().map(|t| t.join().unwrap()).sum();
+        (dir, file, done)
+    }
+
+    fn set_aside(file: &super::super::StateFile<Count>) -> usize {
+        std::fs::read_dir(file.path().parent().unwrap())
             .unwrap()
             .flatten()
             .filter(|e| e.file_name().to_string_lossy().contains(".broken-"))
-            .count();
-        assert_eq!(aside, 1);
+            .count()
+    }
+
+    #[test]
+    fn state_updates_add_up_and_a_corrupt_file_is_set_aside_once() {
+        let (_dir, file, done) = count_updates(b"{ not json");
+        assert_eq!(done, 80);
+        assert_eq!(file.load(), super::super::Loaded::Found(Count { n: 80 }));
+        assert_eq!(set_aside(&file), 1);
+    }
+
+    /// A newer version's file: every update is refused, the file stays in place byte for byte, nothing set aside.
+    #[test]
+    fn state_updates_never_write_over_a_newer_version_s_file() {
+        const NEWER: &[u8] = br#"{"version":9,"data":{"n":100}}"#;
+        let (_dir, file, done) = count_updates(NEWER);
+        assert_eq!(done, 0);
+        assert_eq!(std::fs::read(file.path()).unwrap(), NEWER);
+        assert_eq!(set_aside(&file), 0);
     }
 
     #[test]
@@ -374,14 +380,16 @@ mod tests {
         let held = lock_for(&path).unwrap().expect("lock");
         let other = path.clone();
         let waited = std::thread::spawn(move || {
-            let start = Instant::now();
             let lock = lock_for(&other).unwrap();
-            (lock.is_some(), start.elapsed())
+            (lock.is_some(), Instant::now())
         });
         std::thread::sleep(Duration::from_millis(200));
+        // the order, not a wait length: a thread that starts late under load waits less, but never takes the lock
+        // before it is released
+        let released = Instant::now();
         drop(held);
-        let (got, took) = waited.join().unwrap();
-        assert!(got && took >= Duration::from_millis(150), "{took:?}");
+        let (got, taken) = waited.join().unwrap();
+        assert!(got && taken >= released, "{:?}", released - taken);
         // another file: its own lock, no wait
         let _a = lock_for(&path).unwrap().unwrap();
         let _b = lock_for(&dir.path().join("y.json")).unwrap().unwrap();
@@ -489,7 +497,7 @@ mod verify_tests {
         assert!(start.elapsed() < Duration::from_secs(1));
     }
 
-    /// S1 (verifier 2026-10-25): a wait past what the clock can count (`Duration::MAX`) has no deadline: no overflow
+    /// A wait past what the clock can count (`Duration::MAX`) has no deadline: no overflow
     /// panic, the lock is taken at once when free and as soon as it is freed when held.
     #[test]
     fn a_huge_wait_never_overflows_and_takes_the_lock_once_free() {
@@ -507,7 +515,7 @@ mod verify_tests {
         assert!(waiter.join().unwrap().unwrap());
     }
 
-    /// S2 (verifier 2026-10-25): a writer of another process (the lock file held through its own handle, outside this
+    /// A writer of another process (the lock file held through its own handle, outside this
     /// process's turns) makes a writer give up after its wait and never blocks the turns after it; once freed, a writer
     /// that waited goes on, and the next one takes the lock at once.
     #[test]
@@ -549,7 +557,7 @@ mod verify_tests {
         );
     }
 
-    /// N10 (verifier round 4): a writer holding a plugin's lock gives up after the brief wait, not the long one.
+    /// A writer holding a plugin's lock gives up after the brief wait, not the long one.
     #[test]
     fn a_brief_wait_writer_gives_up_long_before_the_others() {
         let dir = tempfile::tempdir().unwrap();

@@ -32,6 +32,7 @@ export default {
   "welcome.noRecents": "Noch keine zuletzt geöffneten Ordner.",
   "welcome.notFound": "(nicht gefunden)",
   "welcome.remove": "Entfernen",
+  "welcome.recentKeys": "Entf entfernt den gewählten Ordner aus der Liste.",
   "welcome.dropHint": "Ordner oder Dateien hier ablegen, um sie zu öffnen.",
   "welcome.openFailed": "{path} konnte nicht geöffnet werden: {message}",
 
@@ -52,9 +53,14 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Einige gespeicherte PerMark-Daten konnten nicht gelesen werden und wurden beiseitegelegt: {file}",
+    "Einige gespeicherte PerMark-Daten konnten nicht gelesen werden und wurden beiseitegelegt: {file}. Die alte Kopie finden Sie hier: {backup}",
   "notice.stateUnreadable":
     "Einige gespeicherte PerMark-Daten konnten nicht gelesen werden. Sie bleiben unverändert, und PerMark ändert sie nicht, solange es sie nicht wieder lesen kann, meist bis zu einem Neustart: {file}",
+  "crash.notice":
+    "PerMark wurde beim letzten Mal unerwartet beendet. Ein Bericht wurde auf diesem Computer gespeichert, gesendet wurde nichts. Vor dem Teilen bitte prüfen: Er kann Dateinamen oder Teile des Textes enthalten. „Auf GitHub melden“ kopiert den Bericht auch, damit er dort eingefügt werden kann.",
+  "crash.copy": "Bericht kopieren",
+  "crash.report": "Auf GitHub melden",
+  "crash.openFolder": "Ordner öffnen",
 
   // ---- settings
   "settings.title": "Einstellungen",
@@ -78,6 +84,10 @@ export default {
   "error.invalidPath": "{subject} ist kein gültiger Pfad.",
   "error.denied": "Keine Berechtigung für {subject}.",
   "error.io": "Zugriff auf {subject} nicht möglich: {detail}",
+  "error.locked":
+    "{subject} ist in einem anderen Programm geöffnet, das Änderungen verhindert. Schließe es dort und versuche es erneut.",
+  "error.diskFull": "Der Datenträger ist voll, daher konnte {subject} nicht geschrieben werden.",
+  "error.readOnly": "{subject} ist schreibgeschützt und kann nicht geändert werden.",
   "error.exists": "{subject} existiert bereits.",
   "error.binary": "{subject} ist eine Binärdatei und kann nicht als Text angezeigt werden.",
   "error.tooLarge": "{subject} ist zu groß.",
@@ -168,6 +178,8 @@ export default {
   "fileOps.summaryMoved": "Verschoben: {what}",
   "fileOps.summaryRenamed": "Umbenannt: {from} in {to}",
   "fileOps.summaryDeleted": "Gelöscht: {what}",
+  "fileOps.partlyDeleted":
+    "Gelöscht: {what}. {refused} konnte nicht in den Papierkorb verschoben werden.",
   "fileOps.dropInto": "Nach {folder} verschieben",
   "fileOps.projectRoot": "den Projektordner",
   "fileOps.dialogLabel": "Links aktualisieren",
@@ -304,6 +316,7 @@ export default {
   "doc.deleted.title": "Diese Datei wurde um {time} gelöscht.",
   "doc.diagramFailed": "Diagramm konnte nicht gezeichnet werden",
   "doc.diagramRendering": "Diagramm wird gezeichnet …",
+  "doc.diagramSource": "Quelltext des Diagramms",
   "doc.error.title": "Diese Datei kann nicht geöffnet werden",
   "doc.footnoteBackref": "Zurück zur Referenz {ref}",
   "doc.frontmatter": "Front Matter",
@@ -408,7 +421,7 @@ export default {
   "role.copilot": "Copilot-Anweisungen",
   "role.model-card": "Modellkarte",
   "role.dataset-card": "Datensatzkarte",
-  "structured.mode": "Ansicht",
+  "structured.mode": "Darstellung",
   "structured.tree": "Baum",
   "structured.source": "Quelltext",
   "structured.invalid": "Das ist nicht gültig und wird deshalb als Text gezeigt.",
@@ -939,6 +952,8 @@ export default {
   "since.nothing": "Seit {when} hat sich nichts geändert.",
   "review.offer.one": "Geändert seit dem letzten Lesen · {n} Änderung",
   "review.offer.other": "Geändert seit dem letzten Lesen · {n} Änderungen",
+  "review.offerCommit.one": "Geändert seit dem letzten Commit · {n} Änderung",
+  "review.offerCommit.other": "Geändert seit dem letzten Commit · {n} Änderungen",
   "review.review": "Prüfen",
   "review.reviewing.one": "{n} Änderung wird geprüft",
   "review.reviewing.other": "{n} Änderungen werden geprüft",
@@ -963,6 +978,7 @@ export default {
   "review.change": "Änderung {i} von {n}, {kind}",
   "review.keptAll": "Alle Änderungen behalten",
   "review.revertedAll": "Alle Änderungen in {name} zurückgenommen",
+  "review.endedMixed": "Einige Änderungen in {name} behalten, andere zurückgenommen",
   "review.undo": "Rückgängig",
   "review.undoStale": "Rückgängig nicht möglich: {name} hat sich seitdem geändert.",
   "review.allDone": "Alle Änderungen sind geprüft",
@@ -1019,6 +1035,15 @@ export default {
   "git.unavailableHint":
     "Das gewählte Git ist nicht verfügbar. Wähle in den Einstellungen ein anderes.",
   "git.errorOwnership": "Git vertraut dem Besitzer dieses Ordners nicht.",
+  "git.why.timeout": "Git hat nicht rechtzeitig geantwortet.",
+  "git.why.tooLarge": "Die Antwort von Git war zu lang zum Lesen.",
+  "git.why.spawn": "Git konnte nicht gestartet werden.",
+  "git.why.parse": "Die Antwort von Git war nicht verständlich.",
+  "git.why.notLocal":
+    "Der Git-Ordner dieses Repositorys führt aus diesem Computer hinaus oder über eine Verknüpfung, daher öffnet PerMark es nicht.",
+  "git.why.noGit": "Dieser Ordner hat kein .git, das zu einem Repository führt.",
+  "git.why.stopped": "Git wurde angehalten, bevor es geantwortet hat.",
+  "git.why.failed": "Details: {detail}",
   "git.errorHint":
     "Öffne die Einstellungen, um ein anderes Git zu wählen (das eingebaute braucht kein Vertrauen).",
   "git.folderChanged.one": "{n} geänderte Datei darin",
@@ -1107,6 +1132,8 @@ export default {
   "review.versions.list": "Versionen",
   "review.versions.loading": "Verlauf wird gelesen …",
   "review.versions.more": "Mehr anzeigen",
+  "review.versions.added.one": "{n} weitere Version",
+  "review.versions.added.other": "{n} weitere Versionen",
   "review.versions.same": "Gleicher Text wie jetzt",
   "review.versions.authors": "{author} mit {others}",
   "review.versions.compare": "Vergleichen",
@@ -1275,6 +1302,19 @@ export default {
   "comments.replyPlaceholder": "Antwort schreiben …",
   "comments.deleteConfirm": "Kommentar löschen?",
   "comments.copyFailed": "Das Kopieren in die Zwischenablage ist fehlgeschlagen.",
+  "comments.aside.line.one": "{n} Kommentar wurde außerhalb von PerMark entfernt.",
+  "comments.aside.line.other": "{n} Kommentare wurden außerhalb von PerMark entfernt.",
+  "comments.aside.restore": "Wiederherstellen",
+  "comments.aside.dismiss": "Verwerfen",
+  "comments.aside.dismissHint":
+    "Verwirft diese Kommentare. Danach lassen sie sich nicht mehr wiederherstellen.",
+  "comments.aside.restored.one": "{n} Kommentar wiederhergestellt.",
+  "comments.aside.restored.other": "{n} Kommentare wiederhergestellt.",
+  "comments.aside.nothing": "Diese Kommentare sind schon wieder da.",
+  "comments.aside.restoreFailed":
+    "Die Kommentare konnten nicht wiederhergestellt werden: {message}",
+  "comments.aside.dismissFailed":
+    "Die entfernten Kommentare konnten nicht verworfen werden: {message}",
   "brokenLinks.title": "Defekte Links",
   "brokenLinks.checking": "Dokumente werden geprüft…",
   "brokenLinks.none": "Keine defekten Links",
@@ -1463,7 +1503,7 @@ export default {
   "agent.title": "Agentenverbindung",
   "agent.switch": "Diesen Ordner mit Agenten teilen",
   "agent.switchHint":
-    "Ein verbundener Agent (ein KI-Werkzeug mit MCP-Unterstützung, etwa Claude Code oder Cursor) sieht, was gerade angezeigt wird und was sich geändert hat, kann die Dateien dieses Ordners suchen und lesen, Kommentare und geteilte Notizen lesen und eine Stelle zeigen. Nur auf diesem Computer. Dateien, die in .aiignore stehen, bleiben außer Reichweite. So verbundene Agenten lesen nur und bearbeiten nie Dateien über PerMark; damit ein Agent Änderungen vorschlagen kann, den Assistenten verwenden. Das gilt nur für das, was Agenten von PerMark bekommen: Ein Agent kann Dateien auf diesem Computer weiterhin selbst öffnen.",
+    "Ein verbundener Agent (ein KI-Werkzeug mit MCP-Unterstützung, etwa Claude Code oder Cursor) sieht, was gerade angezeigt wird und was sich geändert hat, kann die Dateien dieses Ordners suchen und lesen, Kommentare und geteilte Notizen lesen und eine Stelle zeigen. Nur auf diesem Computer. Dateien, die in .aiignore stehen, bleiben außer Reichweite. So verbundene Agenten bearbeiten nie Dateien über PerMark: Sie lesen und markieren Kommentare nur dann als erledigt, wenn du es erlaubst. Damit ein Agent Änderungen vorschlagen kann, den Assistenten verwenden. Das gilt nur für das, was Agenten von PerMark bekommen: Ein Agent kann Dateien auf diesem Computer weiterhin selbst öffnen.",
   "agent.folderReplaced":
     "Dieser Ordner hat sich geändert, seit Sie ihn verbunden haben. Schalten Sie die Verbindung wieder ein, um hier Agenten zuzulassen.",
   "agent.groups": "Was Agenten dürfen",
@@ -1563,6 +1603,20 @@ export default {
   "agent.outcome.off": "aus",
   "agent.outcome.notOpen": "nicht geöffnet",
   "agent.outcome.error": "fehlgeschlagen",
+  "agentRules.lastGood":
+    "{file} konnte nicht gelesen werden: {why}. PerMark verwendet die letzten Regeln daraus, die funktioniert haben, bis du die Datei korrigierst.",
+  "agentRules.closed":
+    "{file} konnte nicht gelesen werden: {why}. Agenten erhalten nichts, was diese Datei abdeckt, bis du sie korrigierst.",
+  "agentRules.why.tooLarge": "sie ist zu groß",
+  "agentRules.why.notText": "sie ist kein reiner Text",
+  "agentRules.why.notToml": "sie ist kein gültiges TOML",
+  "agentRules.why.badValue": "eine ihrer Einstellungen hat einen falschen Werttyp",
+  "agentRules.why.badPattern": "eines ihrer Muster ist ungültig",
+  "agentRules.why.notAFile": "sie ist keine normale Datei",
+  "agentRules.why.locked": "ein anderes Programm verwendet sie",
+  "agentRules.why.denied": "PerMark darf sie nicht lesen",
+  "agentRules.why.failed": "sie konnte nicht gelesen werden",
+  "agent.outcome.rulesUnreadable": "Regeln unlesbar",
   "agent.open.notice": "Ein Agent möchte {path} zeigen.",
   "agent.open.show": "Anzeigen",
   "agent.ask.resolve":
@@ -1606,6 +1660,8 @@ export default {
   "agent.handoff.done.other":
     "{n} Aktionen übergeben – kopiert, bereit zum Einfügen in den Prompt.",
   "agent.handoff.failed": "Die Übergabe hat nicht geklappt. Erneut versuchen.",
+  "agent.handoff.withheld":
+    "PerMark übergibt die Aktivität dieses Ordners nicht an Agenten: Sein Git-Repository verfolgt den privaten Ordner von PerMark (.permark/local), oder PerMark konnte das nicht prüfen.",
   "agent.handoff.copyFailed": "Übergeben, aber das Kopieren hat nicht geklappt.",
   "config.sheet": "Einstellungen in dieser Datei",
   "config.root": "Oberste Ebene",
@@ -1632,6 +1688,8 @@ export default {
   "config.reason.noValue": "Ein Schlüssel ohne Wert. Ändere ihn im Quelltext.",
   "config.reason.empty": "Ein leerer Eintrag. Ändere ihn im Quelltext.",
   "config.reason.unterminated": "Ein Anführungszeichen, das nie schließt. Ändere es im Quelltext.",
+  "config.reason.escape":
+    "Ein Wert mit Escape-Sequenzen, die hier nicht genau erhalten bleiben. Ändere ihn im Quelltext.",
   "config.reason.other": "Das lässt sich hier nicht genau bearbeiten. Nutze den Quelltext.",
   "config.refused.newline": "Ein Wert kann hier keinen Zeilenumbruch enthalten.",
   "config.refused.empty": "Gib etwas ein.",
@@ -1696,6 +1754,8 @@ export default {
     "Deine Wahl für jedes Plugin in diesem Ordner. „Für alle aus“ wird in .permark/config.toml gespeichert und gilt für alle, die den Ordner öffnen.",
   "plugins.removeConfirm": "Daten von {name} entfernen?",
   "plugins.removeConfirmBytes": "Daten von {name} entfernen? Das gibt {size} frei.",
+  "plugins.removeScope":
+    "Ordner, die ihre Daten in ihrem eigenen .permark-Ordner aufbewahren, werden nur bereinigt, solange sie geöffnet sind.",
   "plugins.removeData": "Daten entfernen",
   "plugins.removeYes": "Entfernen",
   "plugins.turnOn": "{name} einschalten",
@@ -1703,16 +1763,31 @@ export default {
   "project.ignoreHint":
     "Passende Dateien werden nicht durchsucht und erscheinen nie im Live-Feed. Die Dateiliste zeigt sie abgeblendet, wie von git ignorierte Dateien.",
   "project.ignoreLabel": "Nicht in Suche und Live-Feed",
+  "project.dataAsk":
+    "Dieser Ordner hat jetzt einen .permark-Ordner. Kommentare, Gelesen-Markierungen und andere Daten zu diesem Ordner liegen weiterhin auf diesem Computer.",
+  "project.dataMove": "In den Ordner verschieben",
+  "project.dataKeep": "Auf diesem Computer behalten",
+  "project.dataMissing":
+    "Der .permark-Ordner dieses Ordners fehlt oder ist nicht nutzbar. PerMark verwendet die auf diesem Computer gespeicherte Kopie der Daten, die älter sein kann.",
+  "project.dataKeepCopy": "Diese Kopie weiter verwenden",
+  "project.dataPlace": "Daten zu diesem Ordner",
+  "project.dataPlaceProfile": "Auf diesem Computer gespeichert, im Benutzerprofil.",
+  "project.dataMoved": "Die Daten zu diesem Ordner liegen jetzt in seinem .permark-Ordner.",
+  "project.dataMoveHeld":
+    "Der .permark-Ordner dieses Ordners enthält bereits PerMark-Daten von anderswo, daher bleiben die Daten auf diesem Computer.",
+  "project.dataMoveFailed": "Die Daten konnten nicht in den Ordner verschoben werden: {message}",
   "project.initButton": "PerMark einrichten",
   "project.initConfig": "Die Einstellungen, die dieses Projekt mit dem Team teilt.",
   "project.initConfirm": "PerMark einrichten",
   "project.initFailed": "PerMark konnte in {path} nicht eingerichtet werden: {message}",
+  "project.initHeld":
+    "{path}/.permark/local enthält bereits PerMark-Daten von anderswo; es wurde nichts geändert.",
   "project.initIgnore": "Hält die privaten Ordner aus git heraus.",
   "project.initIntro": "PerMark legt hier einen Ordner .permark an mit:",
   "project.initLocal":
-    "Die privaten Daten zu diesem Projekt (Kommentare, Gelesen-Markierungen) und ihr Cache.",
+    "Die privaten Daten zu diesem Projekt (Kommentare, Gelesen-Markierungen, Rückgängig-Verlauf) und ein Cache, den PerMark jederzeit neu aufbauen kann.",
   "project.initNote":
-    "Die Dateien bleiben unberührt. Vorhandene Tags, Kommentare und Gelesen-Markierungen zu diesem Projekt werden übernommen.",
+    "Die Dateien bleiben unberührt. Vorhandene Tags, Kommentare und Gelesen-Markierungen zu diesem Projekt werden übernommen. Was für diesen Ordner erlaubt wurde, etwa der Zugriff für Agenten, bleibt in den eigenen PerMark-Daten auf diesem Computer.",
   "project.initTitle": "PerMark in {name} einrichten?",
   "project.newTitle": "{name} zum Projekt machen?",
   "project.newWhy":
@@ -1736,8 +1811,30 @@ export default {
   "project.treeUnset": "Nicht festgelegt",
   "project.scopes":
     "Mit „Alle“ markierte Einstellungen werden in .permark/config.toml dieses Ordners gespeichert und mit allen geteilt, die ihn öffnen. Mit „Nur du“ markierte Einstellungen bleiben auf diesem Computer.",
+  "project.shareGit": "Git die PerMark-Einstellungen dieses Ordners sehen lassen",
+  "project.shareGitCustom":
+    ".permark/.gitignore dieses Ordners hat jemand anderes geschrieben, daher lässt PerMark die Datei, wie sie ist.",
+  "project.shareGitFailed": "Es konnte nicht geändert werden, was Git in .permark sieht: {message}",
+  "project.shareGitHint":
+    "An: Git sieht die Einstellungen, Tags, die Projektliste und die Projektbeschreibungen in .permark, sodass du sie für dein Team committen kannst. Aus: Git ignoriert den ganzen .permark-Ordner; bereits committete Dateien bleiben committet. Ist .permark/.gitignore committet, bekommt dein Team diese Änderung auch. Deine privaten Daten und Caches bleiben immer außerhalb von Git.",
+  "project.shareGitOff": "Aus",
+  "project.shareGitOn": "An",
   "project.shareInit": "PerMark einrichten, um dies mit allen zu teilen",
   "project.sharedFileHint": "Geteilt mit allen, die diesen Ordner öffnen.",
+  "project.sharedFileUnreadable":
+    "PerMark kann diese Datei in Zeile {line} nicht lesen. Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn sie korrigiert ist.",
+  "project.sharedLocked":
+    "PerMark kann .permark/config.toml nicht lesen. Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn die Datei korrigiert ist.",
+  "project.sharedLocked.line":
+    "PerMark kann .permark/config.toml in Zeile {line} nicht lesen. Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn die Datei korrigiert ist.",
+  "project.sharedLocked.notText":
+    "PerMark kann .permark/config.toml nicht lesen (sie ist kein reiner Text). Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn die Datei korrigiert ist.",
+  "project.sharedLocked.tooLarge":
+    "PerMark kann .permark/config.toml nicht lesen (sie ist zu groß). Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn die Datei korrigiert ist.",
+  "project.sharedLocked.locked":
+    "PerMark kann .permark/config.toml nicht lesen (ein anderes Programm verwendet sie). Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn die Datei korrigiert ist.",
+  "project.privateTracked":
+    "Agenten erhalten weder Kommentare noch Aktivität dieses Ordners: Sein Git-Repository verfolgt den privaten Ordner von PerMark (.permark/local), oder PerMark konnte das nicht prüfen.",
   "settings.all": "Alle Einstellungen",
   "settings.editorPreview": "Beispiel:",
   "settings.linkUpdateHint":
@@ -1775,6 +1872,8 @@ export default {
   "settings.problem.noPath": "Der Befehl braucht {path}.",
   "settings.problem.notInitialized": "Dieser Ordner hat noch keine PerMark-Einstellungen.",
   "settings.problem.tomlOnly": "Verwende einen Dateinamen, der auf .toml endet.",
+  "settings.problem.notToml":
+    "PerMark kann .permark/config.toml nicht lesen, daher wurde nichts geändert.",
   "settings.problem.other": "Dieser Wert wurde nicht angenommen.",
   "welcome.newProject": "Neues Projekt …",
   "welcome.newProjectHint": "Ordner wählen; PerMark richtet ihn als Projekt ein.",
@@ -1834,6 +1933,7 @@ export default {
   "plugin.graphviz.name": "Graphviz-Diagramme",
   "plugin.graphviz.about": "Zeichnet Graphviz-Graphen (DOT) aus Codeblöcken.",
   "graphviz.tooLarge": "Dieser Graph ist zu groß, um ihn hier zu zeichnen.",
+  "plantuml.tooLarge": "Dieses Diagramm ist zu groß, um es hier zu zeichnen.",
   "plugin.media.name": "Bilder, Audio und Video",
   "plugin.media.about": "Öffnet Bilder, Ton und Video direkt an Ort und Stelle.",
   "plugin.json-view.name": "JSON",
@@ -1874,6 +1974,8 @@ export default {
     "Diese PerMark-Kopie ist nicht installiert und kann daher nicht Standard-App werden. Wählen Sie die App für diese Dateien in den Systemeinstellungen.",
   "defaultApp.confined": "Wählen Sie die App für diese Dateien in den Systemeinstellungen.",
   "defaultApp.failed": "Die Standard-App konnte nicht geändert werden: {message}",
+  "defaultApp.chooseInFinder":
+    "PerMark bleibt die Standard-App für diese Dateien. Um eine andere App zu verwenden, wähle eine der Dateien im Finder aus, wähle Ablage > Informationen und stelle die App unter „Öffnen mit“ ein.",
   "defaultApp.askTitle": "Diese Dateien mit PerMark öffnen?",
   "defaultApp.askBody":
     "PerMark öffnet die angehakten Dateien, wenn Sie darauf doppelklicken. Sie können das jederzeit in den Einstellungen ändern.",
@@ -1895,6 +1997,8 @@ export default {
   "shell.newFile.row": "„Neue Markdown-Datei“",
   "shell.newFile.hint": "Im Kontextmenü von Ordnern: legt dort eine Datei an und öffnet sie.",
   "shell.failed": "Das Menü konnte nicht geändert werden: {message}",
+  "shell.readFailed": "Die Menüeinträge konnten nicht gelesen werden. {message}",
+  "shell.retry": "Erneut versuchen",
   "updates.section": "Updates",
   "updates.row": "Neue Versionen",
   "updates.notes": "Was ist neu",
@@ -2138,7 +2242,7 @@ export default {
     "Token eines Dokuments, einer Auswahl oder eines Abschnitts nach dem gewählten Tokenizer; exakt, wenn der Tokenizer öffentlich ist, sonst als Näherung (und markiert).",
   "plugin.local-ai.name": "Lokale KI",
   "plugin.local-ai.about":
-    "Kleine KI-Modelle, die offline auf diesem Computer laufen und PerMark beim Korrigieren, Übersetzen und Finden nach Bedeutung helfen. Es wird nichts heruntergeladen, bis du darum bittest.",
+    "Kleine KI-Modelle, die auf diesem Computer laufen und PerMark beim Korrigieren, Übersetzen und Finden nach Bedeutung helfen. Es wird nichts heruntergeladen, bis du darum bittest.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} Zeile",
   "config.table.rows.other": "{n} Zeilen",
@@ -2174,6 +2278,7 @@ export default {
   "toon.notValid": "Kein gültiges TOON 4.4",
   "convert.menu": "Umwandeln …",
   "convert.table": "Umwandeln …",
+  "convert.tableCommand": "Tabelle umwandeln …",
   "convert.title": "{name} umwandeln",
   "convert.fromPage": "Text der Seite",
   "convert.close": "Schließen",
@@ -2295,6 +2400,21 @@ export default {
   "closeWindow.body.other": "Diese Tabs haben ungespeicherte Änderungen:",
   "closeWindow.saveAll": "Alle speichern",
   "closeWindow.discard": "Verwerfen",
+  "stuck.title": "PerMark reagiert nicht",
+  "stuck.detail":
+    "Eine Seite in diesem Fenster antwortet nicht. Wird trotzdem geschlossen, können ungespeicherte Änderungen in den Tabs dieses Fensters verloren gehen.",
+  "stuck.closeAnyway": "Trotzdem schließen",
+  "stuck.wait": "Warten",
+  "stuck.engineStopped":
+    "Der Teil von PerMark, der die Fenster anzeigt, funktioniert nicht mehr, daher muss PerMark beendet werden. Ungespeicherte Änderungen gehen verloren; die geöffneten Tabs sind beim nächsten Start von PerMark wieder da.",
+  "stuck.reloaded": "Dieser Tab funktionierte nicht mehr und wurde neu geladen.",
+  "stuck.reloadedLost":
+    "Dieser Tab funktionierte nicht mehr und wurde neu geladen. Ungespeicherte Änderungen an {file} sind verloren.",
+  "stuck.reloadedPage": "Diese Seite funktionierte nicht mehr und wurde neu geladen.",
+  "stuck.windowFailed":
+    "Ein PerMark-Fenster konnte seine Seite nicht öffnen und wurde geschlossen. Die anderen Fenster funktionieren weiter.",
+  "stuck.viewFailedExit":
+    "PerMark konnte sein Fenster nicht öffnen und muss daher beendet werden. Die geöffneten Tabs sind beim nächsten Start von PerMark wieder da.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Projekte darin",
@@ -2551,7 +2671,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "Lokale KI",
   "localAi.intro":
-    "Kleine KI-Modelle, die offline auf diesem Computer laufen. Heruntergeladen wird nur auf Wunsch.",
+    "Kleine KI-Modelle, die auf diesem Computer laufen. Heruntergeladen wird nur auf Wunsch.",
   "localAi.command": "Einstellungen für lokale KI öffnen",
   "localAi.loadFailed": "Die Einstellungen für lokale KI konnten nicht gelesen werden.",
   "localAi.retry": "Erneut versuchen",
@@ -2623,8 +2743,8 @@ export default {
   "localAi.models.details.size": "Downloadgröße",
   "localAi.models.details.restriction": "Wer es nutzen darf",
   "localAi.models.comingSoon": "Demnächst",
-  "localAi.models.needs.newer": "Braucht eine neuere Version der KI-Engine.",
-  "localAi.models.needs.missing": "Braucht eine KI-Engine, die PerMark noch nicht hat.",
+  "localAi.models.needs.newer": "Dieses Modell braucht eine spätere Version von PerMark.",
+  "localAi.models.needs.missing": "PerMark kann diese Art von Modell noch nicht ausführen.",
   "localAi.dl.waiting": "Wartet…",
   "localAi.dl.cancelLabel": "Laden von {name} abbrechen",
   "localAi.dl.progress": "{done} von {total}",
@@ -3192,7 +3312,10 @@ export default {
     "PerMark konnte die Kopie dieses Ordners für den Agenten nicht vorbereiten.",
   "acp.fail.tooLarge": "Dieser Ordner ist zu groß, um ihn für den Agenten zu kopieren.",
   "acp.fail.projectsNotReady": "PerMark liest diesen Ordner noch. Versuche es gleich noch einmal.",
+  "acp.fail.rulesUnreadable":
+    "Eine Datei, die festlegt, was Agenten sehen dürfen, konnte nicht gelesen werden. Der Agent erhält nichts, bis sie korrigiert ist.",
   "acp.fail.startFailed": "Das Programm des Agenten konnte nicht gestartet werden.",
+  "acp.fail.notAllowed": "Du hast den Start des Programms des Agenten nicht erlaubt.",
   "acp.fail.timedOut": "Der Agent hat nicht rechtzeitig geantwortet.",
   "acp.fail.initFailed":
     "Dieses Programm hat nicht wie ein Agent geantwortet, mit dem PerMark sprechen kann. Prüfe den Befehl und versuche es erneut.",
@@ -3207,6 +3330,7 @@ export default {
   "acp.fail.sendFailed": "Die Nachricht konnte nicht an den Agenten übergeben werden.",
   "acp.error.relativeProgram":
     "Den vollständigen Pfad des Programms angeben oder nur seinen Namen.",
+  "acp.error.commandTooLong": "Der Befehl ist zu lang (höchstens 1000 Zeichen).",
   "acp.error.networkProgram":
     "PerMark startet nur Programme auf diesem Computer, nicht aus einem Netzwerkordner.",
   "acp.error.oneChoice": "Einen Agenten wählen oder einen Befehl eingeben.",

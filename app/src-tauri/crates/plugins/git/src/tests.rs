@@ -8,12 +8,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use git2::{IndexAddOption, Repository, Signature};
-use permark_core::conditions::{Distribution, GitCondition, RepoState};
+use permark_core::conditions::{Distribution, GitCondition, GitErrorCode, RepoState};
 use permark_core::events::NoEvents;
+use permark_core::fsx::{same_file, SameFile};
 use permark_core::paths::Root;
 use permark_core::plugins::{
-    CommitId, FileVersion, FileVersions, NoBlob, NoVersions, PluginId, PluginRegistry,
-    ProjectFacts, RepoReader, RpcCall,
+    CommitId, FileVersion, FileVersions, NoBlob, NoTracking, NoVersions, PluginId, PluginRegistry,
+    ProjectFacts, RepoHandle, RepoReader, RpcCall,
 };
 use permark_core::settings::AppSettings;
 use permark_core::state::AppDirs;
@@ -167,6 +168,65 @@ impl Fixture {
     fn head_ref(&self) -> String {
         self.repo.head().unwrap().name().unwrap().to_owned()
     }
+
+    /// Takes one path out of the index, the file stays on disk (`git rm --cached`).
+    fn unstage(&self, rel: &str) {
+        let mut index = self.repo.index().unwrap();
+        index.remove_path(Path::new(rel)).unwrap();
+        index.write().unwrap();
+    }
+
+    /// Puts an index entry for `rel` as given, whatever the disk holds: `stage` (1..=3: a side of a conflict),
+    /// `extended` (intent-to-add | skip-worktree flags).
+    fn put_entry(&self, rel: &str, stage: u16, extended: u16) {
+        self.put_kind(rel, stage, extended, 0o100_644);
+    }
+
+    /// [`Self::put_entry`] of the kind `mode` (`0o160_000`: a submodule, `0o120_000`: a link).
+    fn put_kind(&self, rel: &str, stage: u16, extended: u16, mode: u32) {
+        let text: &[u8] = if extended & git2::IndexEntryExtendedFlag::INTENT_TO_ADD.bits() == 0 {
+            b"x\n"
+        } else {
+            b""
+        };
+        let id = self.repo.blob(text).unwrap();
+        let extended_flag = if extended == 0 {
+            0
+        } else {
+            git2::IndexEntryFlag::EXTENDED.bits()
+        };
+        let mut index = self.repo.index().unwrap();
+        index
+            .add(&git2::IndexEntry {
+                ctime: git2::IndexTime::new(0, 0),
+                mtime: git2::IndexTime::new(0, 0),
+                dev: 0,
+                ino: 0,
+                mode,
+                uid: 0,
+                gid: 0,
+                file_size: u32::try_from(text.len()).unwrap(),
+                id,
+                flags: (stage << 12) | extended_flag,
+                flags_extended: extended,
+                path: rel.as_bytes().to_vec(),
+            })
+            .unwrap();
+        index.write().unwrap();
+        // the entry is on disk as asked (libgit2 keeps the stage and the flags it was given)
+        let index = git2::Index::open(&self.root.join(".git").join("index")).unwrap();
+        let held = index.get_path(Path::new(rel), i32::from(stage)).unwrap();
+        assert_eq!(held.flags_extended & extended, extended, "{rel}");
+    }
+
+    /// `core.ignorecase` of the repository.
+    fn caseless(&self, on: bool) {
+        self.repo
+            .config()
+            .unwrap()
+            .set_bool("core.ignorecase", on)
+            .unwrap();
+    }
 }
 
 fn backends() -> Vec<(&'static str, Arc<dyn GitOps>)> {
@@ -254,6 +314,713 @@ fn discovery_tells_plain_folders_from_repositories_and_finds_the_prefix() {
     });
 }
 
+/// A repository whose git folder is named by a path not on a local drive (a `.git` file | a `commondir` naming a
+/// share no host answers) is refused, at once: neither backend looks it up, since even that connects to the server and
+/// offers it the person's sign-in.
+#[test]
+fn a_repository_named_on_a_share_is_never_opened() {
+    let share = if cfg!(windows) {
+        r"\\192.0.2.1\s"
+    } else {
+        "//192.0.2.1/s"
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let root = dunce::canonicalize(dir.path()).unwrap();
+    let by_file = root.join("by file");
+    std::fs::create_dir_all(&by_file).unwrap();
+    std::fs::write(
+        by_file.join(".git"),
+        format!("gitdir: {}\n", Path::new(share).join("a.git").display()),
+    )
+    .unwrap();
+    let by_common = root.join("by common");
+    std::fs::create_dir_all(by_common.join(".git")).unwrap();
+    std::fs::write(
+        by_common.join(".git").join("HEAD"),
+        "ref: refs/heads/main\n",
+    )
+    .unwrap();
+    std::fs::write(
+        by_common.join(".git").join("commondir"),
+        format!("{}\n", Path::new(share).join("common").display()),
+    )
+    .unwrap();
+    each(|name, ops| {
+        for project in [&by_file, &by_common] {
+            let started = Instant::now();
+            assert_eq!(
+                service::discover_here(ops, project, None),
+                Discovery::Refused,
+                "{name}: {}",
+                project.display()
+            );
+            assert!(
+                started.elapsed() < Duration::from_secs(5),
+                "{name}: {} was looked up",
+                project.display()
+            );
+        }
+    });
+}
+
+/// A project whose `.git` is a link to a repository on this computer opens it as before. One whose `.git` links to a
+/// share is refused, at once, and never the repository around it: both backends would follow the link.
+#[test]
+fn a_git_link_opens_only_a_repository_on_this_computer() {
+    use crate::worktrees::tests::{link_folder, symlink};
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let store = dunce::canonicalize(fx.dir.path()).unwrap().join("store");
+    std::fs::create_dir_all(&store).unwrap();
+    Repository::init(&store).unwrap();
+    let near = fx.root.join("near");
+    std::fs::create_dir_all(&near).unwrap();
+    if !link_folder(&store.join(".git"), &near.join(".git")) {
+        eprintln!("links could not be made here; skipped");
+        return;
+    }
+    each(|name, ops| {
+        let found = service::discover_here(ops, &near, None);
+        // nothing cut beyond the backend's own answer: libgit2 on unix takes the folder the link leads into as the
+        // working tree, so it finds no repository for this project (as before)
+        assert_eq!(found, ops.discover(&near, None), "{name}");
+        if cfg!(windows) || name == "system" {
+            assert!(
+                matches!(&found, Discovery::Repo(at) if at.workdir == near),
+                "{name}: {found:?}"
+            );
+        }
+        // the git folder found is the one the link leads to: a folder, which later calls still accept
+        if let Discovery::Repo(at) = &found {
+            assert!(
+                crate::worktrees::git_dir_stays_local(&at.git_dir),
+                "{name}: {}",
+                at.git_dir.display()
+            );
+        }
+    });
+    let share = if cfg!(windows) {
+        r"\\192.0.2.1\s\r.git"
+    } else {
+        "//192.0.2.1/s/r.git"
+    };
+    let far = fx.root.join("far");
+    std::fs::create_dir_all(&far).unwrap();
+    if !symlink(Path::new(share), &far.join(".git")) {
+        eprintln!("symlinks cannot be made here; the share case is skipped");
+        return;
+    }
+    each(|name, ops| {
+        let started = Instant::now();
+        assert_eq!(
+            service::discover_here(ops, &far, None),
+            Discovery::Refused,
+            "{name}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{name}: the share was looked up"
+        );
+    });
+}
+
+/// `path` as a config value: forward slashes, which git reads on every system (a backslash starts an escape there).
+fn config_path(path: &Path) -> String {
+    path.display().to_string().replace('\\', "/")
+}
+
+/// Adds `text` at the end of the repository's own config file.
+fn add_config(git_dir: &Path, text: &str) {
+    let file = git_dir.join("config");
+    let mut config = std::fs::read_to_string(&file).unwrap();
+    config.push_str(text);
+    std::fs::write(file, config).unwrap();
+}
+
+/// A repository whose own config names only places on this computer opens as before, on both backends: an include of
+/// a local file, a relative `core.worktree`, a local `core.excludesFile`, alternates relative to its objects folder,
+/// beside what nearly every config holds (a remote, a branch, `extensions.worktreeConfig`).
+#[test]
+fn a_repository_whose_config_stays_here_still_opens() {
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let base = dunce::canonicalize(fx.dir.path()).unwrap();
+    Repository::init(base.join("other")).unwrap();
+    std::fs::write(base.join("local.gitconfig"), "[user]\n\tname = Local\n").unwrap();
+    std::fs::write(base.join("ignore"), "*.tmp\n").unwrap();
+    let git = fx.root.join(".git");
+    add_config(
+        &git,
+        &format!(
+            "[include]\n\tpath = ../../local.gitconfig\n[core]\n\tworktree = ..\n\texcludesFile = {}\n[remote \
+             \"origin\"]\n\turl = https://example.com/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \
+             \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n[extensions]\n\tworktreeConfig = true\n",
+            config_path(&base.join("ignore"))
+        ),
+    );
+    std::fs::create_dir_all(git.join("objects").join("info")).unwrap();
+    std::fs::write(
+        git.join("objects").join("info").join("alternates"),
+        "../../../other/.git/objects\n",
+    )
+    .unwrap();
+    each(|name, ops| {
+        let found = service::discover_here(ops, &fx.root, None);
+        assert_eq!(found, ops.discover(&fx.root, None), "{name}");
+        let Discovery::Repo(at) = found else {
+            panic!("{name}: {found:?}");
+        };
+        assert_eq!(dunce::canonicalize(&at.workdir).unwrap(), fx.root, "{name}");
+        assert!(ops.status(&at, &Baseline::Head).is_ok(), "{name}");
+    });
+}
+
+/// git quotes a value holding `#` | `;` when it writes it: a branch named `include#1` gives `[branch "include#1"]` +
+/// `merge = "refs/heads/include#1"`. Such a config, as a plain `git clone` writes it, still opens on both backends.
+#[test]
+fn a_config_git_wrote_with_quoted_values_still_opens() {
+    let fx = Fixture::new();
+    fx.write(
+        "a.md", "a
+",
+    );
+    fx.commit("first");
+    add_config(
+        &fx.root.join(".git"),
+        "[remote \"origin\"]
+	url = https://example.com/r.git
+	fetch =          +refs/heads/*:refs/remotes/origin/*
+[branch \"include#1\"]
+	remote = origin
+	merge =          \"refs/heads/include#1\"
+[extensions]
+	worktreeConfig = true
+",
+    );
+    each(|name, ops| {
+        let found = service::discover_here(ops, &fx.root, None);
+        let Discovery::Repo(at) = found else {
+            panic!("{name}: {found:?}");
+        };
+        assert!(ops.status(&at, &Baseline::Head).is_ok(), "{name}");
+    });
+}
+
+/// A share no host answers (TEST-NET-1, never routed), as a config value.
+const SHARE: &str = "//192.0.2.1/s";
+
+/// What a case puts into a fresh repository: called with its git folder and the folder that holds all cases.
+type PlantFn = dyn Fn(&Path, &Path);
+type Plant<'a> = &'a PlantFn;
+
+/// What `cases` give, each run in a fresh repository in its own folder of `base`: (case, project folder).
+fn risky_projects(base: &Path, cases: &[(&str, Plant<'_>)]) -> Vec<(String, PathBuf)> {
+    cases
+        .iter()
+        .map(|(name, plant)| {
+            let folder = base.join(name);
+            std::fs::create_dir_all(&folder).unwrap();
+            Repository::init(&folder).unwrap();
+            plant(&folder.join(".git"), base);
+            ((*name).to_owned(), folder)
+        })
+        .collect()
+}
+
+/// Every project of `projects` is refused on both backends, all of them within 5 s: nothing was looked up on the share
+/// they name.
+fn never_opened(projects: Vec<(String, PathBuf)>) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut found = Vec::new();
+        for (name, ops) in backends() {
+            for (case, folder) in &projects {
+                found.push((
+                    format!("{name}: {case}"),
+                    service::discover_here(ops.as_ref(), folder, None),
+                ));
+            }
+        }
+        let _ = tx.send(found);
+    });
+    let found = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("a place named by a repository's config was looked up");
+    for (case, discovery) in found {
+        assert_eq!(discovery, Discovery::Refused, "{case}");
+    }
+}
+
+/// A repository whose own config (or a file it includes, or `config.worktree`) names a place git would look up off
+/// this computer, or that git and the built-in backend may read differently, is refused, at once, before either
+/// backend opens it: git reads includes, `core.worktree`, `core.excludesFile`, `core.attributesFile`,
+/// `diff.orderFile` and `mailmap.file` while it answers, and alternates when it reads objects.
+#[test]
+fn a_repository_whose_config_names_a_share_is_never_opened() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dunce::canonicalize(dir.path()).unwrap();
+    let add = |text: String| move |git: &Path, _: &Path| add_config(git, &text);
+    let alternates = |line: &'static str| {
+        move |git: &Path, _: &Path| {
+            let info = git.join("objects").join("info");
+            std::fs::create_dir_all(&info).unwrap();
+            std::fs::write(info.join("alternates"), format!("{line}\n")).unwrap();
+        }
+    };
+    let include = add(format!("[include]\n\tpath = {SHARE}/x\n"));
+    let gitdir = add(format!("[includeIf \"gitdir:/\"]\n\tpath = {SHARE}/x\n"));
+    let branch = add(format!(
+        "[includeIf \"onbranch:main\"]\n\tpath = {SHARE}/x\n"
+    ));
+    let remote = add(format!(
+        "[includeIf \"hasconfig:remote.*.url:x\"]\n\tpath = {SHARE}/x\n"
+    ));
+    let other_user = add("[include]\n\tpath = ~nobody/x\n".to_owned());
+    let prefix = add("[include]\n\tpath = %(prefix)/x\n".to_owned());
+    let nested = |git: &Path, base: &Path| {
+        std::fs::write(
+            base.join("near.gitconfig"),
+            format!("[core]\n\texcludesFile = {SHARE}/x\n"),
+        )
+        .unwrap();
+        add_config(git, "[include]\n\tpath = ../../near.gitconfig\n");
+    };
+    let worktree = add(format!("[core]\n\tworktree = {SHARE}/w\n"));
+    let excludes = add(format!("[core]\n\texcludesFile = {SHARE}/x\n"));
+    let attributes = add(format!("[core]\n\tattributesFile = {SHARE}/x\n"));
+    let order = add(format!("[diff]\n\torderFile = {SHARE}/x\n"));
+    let mailmap = add(format!("[mailmap]\n\tfile = {SHARE}/x\n"));
+    let same_line = add(format!("[core] excludesFile = {SHARE}/x\n"));
+    let quoted = add(format!(
+        "[CORE]\n\tExcludesFile = \"{SHARE}/x\" ; a comment\n"
+    ));
+    // `\\192.0.2.1\s\x` written with git's escapes; a value continued on the next line
+    let escaped = add("[core]\n\texcludesFile = \\\\\\\\192.0.2.1\\\\s\\\\x\n".to_owned());
+    let continued = add(format!("[core]\n\texcludesFile = {SHARE}\\\n/x\n"));
+    let per_tree = |git: &Path, _: &Path| {
+        std::fs::write(
+            git.join("config.worktree"),
+            format!("[core]\n\texcludesFile = {SHARE}/x\n"),
+        )
+        .unwrap();
+    };
+    let unclosed = add("[include\n\tpath = x\n".to_owned());
+    let far_objects = alternates("//192.0.2.1/s/objects");
+    let bare_objects = alternates("other/objects");
+    let cases: [(&str, Plant<'_>); 20] = [
+        ("include", &include),
+        ("include if gitdir", &gitdir),
+        ("include if branch", &branch),
+        ("include if remote", &remote),
+        ("include of another user's home", &other_user),
+        ("include below git's own folder", &prefix),
+        ("include of a file that names a share", &nested),
+        ("worktree", &worktree),
+        ("excludes", &excludes),
+        ("attributes", &attributes),
+        ("order", &order),
+        ("mailmap", &mailmap),
+        ("on the header's line", &same_line),
+        ("quoted", &quoted),
+        ("escaped", &escaped),
+        ("continued", &continued),
+        ("config of the working tree", &per_tree),
+        ("unclosed header", &unclosed),
+        ("alternates on a share", &far_objects),
+        ("alternates beside the current folder", &bare_objects),
+    ];
+    never_opened(risky_projects(&base, &cases));
+}
+
+/// A file | folder of the git folder that git or libgit2 opens on every look (HEAD, config, index, refs, objects,
+/// packed-refs, the info files, alternates, shallow) and that is a link (symlink | junction) makes the repository
+/// refused, at once: both backends would follow it wherever it leads, a share too.
+#[test]
+fn a_repository_with_a_link_in_its_git_folder_is_never_opened() {
+    use crate::worktrees::tests::{link_folder, symlink};
+    let dir = tempfile::tempdir().unwrap();
+    let base = dunce::canonicalize(dir.path()).unwrap();
+    let spare = base.join("spare");
+    std::fs::create_dir_all(&spare).unwrap();
+    // a folder of the git folder moved aside and linked back from its place
+    let folder_link = |name: &'static str| {
+        let spare = spare.clone();
+        move |git: &Path, _: &Path| {
+            let real = git.join(name);
+            std::fs::create_dir_all(&real).unwrap();
+            let aside = spare
+                .join(git.parent().unwrap().file_name().unwrap())
+                .join(name);
+            std::fs::create_dir_all(aside.parent().unwrap()).unwrap();
+            std::fs::rename(&real, &aside).unwrap();
+            assert!(link_folder(&aside, &real), "{name}");
+        }
+    };
+    let mut cases: Vec<(&str, Box<PlantFn>)> = vec![
+        ("refs", Box::new(folder_link("refs"))),
+        ("objects", Box::new(folder_link("objects"))),
+        ("info", Box::new(folder_link("info"))),
+        // deeper, and names git reads only at times (a ref folder, packs, a loose objects folder, the folders of a
+        // rebase | of a submodule's repository): case names without a slash, so no case sits in another's folder
+        ("refs heads", Box::new(folder_link("refs/heads"))),
+        ("refs tags", Box::new(folder_link("refs/tags"))),
+        ("objects pack", Box::new(folder_link("objects/pack"))),
+        ("objects ab", Box::new(folder_link("objects/ab"))),
+        ("rebase-merge", Box::new(folder_link("rebase-merge"))),
+        ("modules", Box::new(folder_link("modules"))),
+    ];
+    if !link_folder(&spare, &base.join("probe")) {
+        eprintln!("links could not be made here; skipped");
+        return;
+    }
+    let symlinks = symlink(&spare.join("x"), &base.join("probe file"));
+    if symlinks {
+        for name in [
+            "HEAD",
+            "config",
+            "index",
+            "packed-refs",
+            "shallow",
+            "config.worktree",
+            "info/exclude",
+            "info/attributes",
+            "objects/info/alternates",
+        ] {
+            cases.push((
+                name,
+                Box::new(move |git: &Path, base: &Path| {
+                    let at = git.join(name);
+                    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+                    let target = base.join(format!("target {}", name.replace('/', " ")));
+                    if at.exists() {
+                        std::fs::copy(&at, &target).unwrap();
+                        std::fs::remove_file(&at).unwrap();
+                    } else {
+                        std::fs::write(&target, "").unwrap();
+                    }
+                    assert!(symlink(&target, &at), "{name}");
+                }),
+            ));
+        }
+        // files git reads only at times, at the top of the git folder | one level below `refs`, `info`, the objects
+        // folders
+        for (case, name) in [
+            (
+                "sharedindex",
+                "sharedindex.0123456789abcdef0123456789abcdef01234567",
+            ),
+            ("merge head", "MERGE_HEAD"),
+            ("refs stash", "refs/stash"),
+            ("info grafts", "info/grafts"),
+            ("commit graph", "objects/info/commit-graph"),
+            ("pack", "objects/pack/pack-0.pack"),
+        ] {
+            cases.push((
+                case,
+                Box::new(move |git: &Path, base: &Path| {
+                    let at = git.join(name);
+                    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+                    let target = base.join(format!("target {case}"));
+                    std::fs::write(&target, "").unwrap();
+                    assert!(symlink(&target, &at), "{name}");
+                }),
+            ));
+        }
+        // a link to a share: never looked up
+        cases.push((
+            "config on a share",
+            Box::new(|git: &Path, _: &Path| {
+                let at = git.join("config");
+                std::fs::remove_file(&at).unwrap();
+                assert!(symlink(&Path::new(SHARE).join("config"), &at));
+            }),
+        ));
+    } else {
+        eprintln!("symlinks cannot be made here; the file cases are skipped");
+    }
+    let cases: Vec<(&str, Plant<'_>)> = cases
+        .iter()
+        .map(|(name, plant)| (*name, plant.as_ref()))
+        .collect();
+    never_opened(risky_projects(&base, &cases));
+}
+
+/// Folders of the git folder neither backend reads may be links (some people keep them on another disk): `hooks`
+/// (every call of the installed git points it elsewhere; the built-in one runs no hook) and `lfs` (Git LFS's own
+/// store). The repository opens as before on both backends.
+#[test]
+fn a_linked_hooks_or_lfs_folder_still_opens() {
+    use crate::worktrees::tests::link_folder;
+    let fx = Fixture::new();
+    fx.write(
+        "a.md", "a
+",
+    );
+    fx.commit("first");
+    let git = fx.root.join(".git");
+    let spare = dunce::canonicalize(fx.dir.path()).unwrap().join("spare");
+    for name in ["hooks", "lfs"] {
+        let aside = spare.join(name);
+        std::fs::create_dir_all(&aside).unwrap();
+        if git.join(name).exists() {
+            std::fs::remove_dir_all(git.join(name)).unwrap();
+        }
+        if !link_folder(&aside, &git.join(name)) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+    }
+    each(|name, ops| {
+        let found = service::discover_here(ops, &fx.root, None);
+        let Discovery::Repo(at) = found else {
+            panic!("{name}: {found:?}");
+        };
+        assert!(ops.status(&at, &Baseline::Head).is_ok(), "{name}");
+    });
+}
+
+/// git and libgit2 pass over a `.git` folder that is no repository to them (an empty one) and open the next one up:
+/// such a decoy below a repository whose config names a place git may not reach opens nothing.
+#[test]
+fn a_decoy_git_folder_below_a_repository_that_names_a_share_opens_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dunce::canonicalize(dir.path()).unwrap();
+    let outer = base.join("t");
+    let project = outer.join("docs");
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    Repository::init(&outer).unwrap();
+    let config = std::fs::read_to_string(outer.join(".git").join("config")).unwrap();
+    // both backends really take the repository above the decoy
+    each(|name, ops| {
+        let found = service::discover_here(ops, &project, None);
+        assert!(
+            matches!(&found, Discovery::Repo(at) if at.workdir == outer),
+            "{name}: {found:?}"
+        );
+    });
+    // a place this side refuses that neither backend looks up off this computer, then a share
+    for include in ["~nobody/x".to_owned(), format!("{SHARE}/c")] {
+        std::fs::write(
+            outer.join(".git").join("config"),
+            format!("{config}[include]\n\tpath = {include}\n"),
+        )
+        .unwrap();
+        never_opened(vec![(include, project.clone())]);
+    }
+}
+
+/// The installed git looks for the repository of every call from the working tree it was found in, never above it: a
+/// `.git` emptied while the project is open (a sync partner swapping it) makes the call fail, and the repository
+/// further up, never looked at, answers nothing.
+#[test]
+fn a_git_folder_emptied_while_open_never_leads_git_to_a_repository_above() {
+    let Some(git) = SystemGit::find() else {
+        eprintln!("SKIPPED: no git executable on PATH");
+        return;
+    };
+    let fx = Fixture::new();
+    fx.write(
+        "inner/a.md",
+        "a
+",
+    );
+    // the repository above holds the file: an answer from it would say "tracked"
+    fx.stage("inner/a.md");
+    let inner = fx.root.join("inner");
+    Repository::init(&inner).unwrap();
+    let at = location(&git, &inner);
+    assert_eq!(dunce::canonicalize(&at.workdir).unwrap(), inner);
+    assert!(matches!(git.tracked_under(&at, "a.md"), Ok(false)));
+    std::fs::remove_dir_all(inner.join(".git")).unwrap();
+    std::fs::create_dir(inner.join(".git")).unwrap();
+    let answer = git.tracked_under(&at, "a.md");
+    assert!(answer.is_err(), "{answer:?}");
+    assert!(
+        git.status(&at, &Baseline::Head).is_err(),
+        "a status from the repository above"
+    );
+}
+
+/// The repository is looked at again before every call of the backend the plugin uses (its files may change while the
+/// project is open): one whose config names a share since it was opened answers nothing, at once, and answers again
+/// once the config is back.
+#[test]
+fn a_repository_whose_config_turns_to_a_share_is_not_asked_again() {
+    for (name, ops) in backends() {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        let head = fx.commit("first");
+        let git = fx.root.join(".git");
+        let config = std::fs::read_to_string(git.join("config")).unwrap();
+        let backend = BackendCell::new(BackendChoice::Fixed(ops)).get().unwrap();
+        let at = location(backend.as_ref(), &fx.root);
+        assert!(backend.status(&at, &Baseline::Head).is_ok(), "{name}");
+        add_config(&git, &format!("[core]\n\texcludesFile = {SHARE}/x\n"));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (asked, place) = (Arc::clone(&backend), at.clone());
+        let id = head.clone();
+        std::thread::spawn(move || {
+            let stopped = asked.cancellable(&Arc::new(std::sync::atomic::AtomicBool::new(false)));
+            let _ = tx.send((
+                asked.status(&place, &Baseline::Head).is_err(),
+                asked.blob_at_head(&place, "a.md").is_err(),
+                asked.blob_at(&place, commit_id(&id), "a.md").is_err(),
+                asked.file_versions(&place, "a.md", 0, 10).is_err(),
+                asked.tracked_under(&place, "a.md").is_err(),
+                asked.commit_exists(&place, &id),
+                asked.commit_count(&place, &id, &id),
+                asked.ahead_behind(&place).is_err(),
+                asked.last_commit(&place).is_err(),
+                asked.root_commit(&place).is_err(),
+                stopped.map(|b| b.status(&place, &Baseline::Head).is_err()),
+            ));
+        });
+        let answers = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the share was looked up");
+        let killable = name == "system";
+        assert_eq!(
+            answers,
+            (
+                true,
+                true,
+                true,
+                true,
+                true,
+                false,
+                None,
+                true,
+                true,
+                true,
+                killable.then_some(true)
+            ),
+            "{name}"
+        );
+        std::fs::write(git.join("config"), &config).unwrap();
+        assert!(backend.status(&at, &Baseline::Head).is_ok(), "{name}");
+        assert!(backend.commit_exists(&at, &head), "{name}");
+    }
+}
+
+/// While the project is open, the `.git` of its working tree may be swapped: a linked tree's gitfile rewritten to name
+/// a share, a `.git` link (junction) pointed at another repository. git, started in the working tree, reads that `.git`
+/// again on every call: the next call of either backend is refused, at once, and nothing is looked up. A `.git` link
+/// that still leads to the git folder found at the open answers as before.
+#[test]
+fn a_git_entry_swapped_while_open_is_refused_at_the_next_call() {
+    use crate::worktrees::tests::link_folder;
+    for (name, ops) in backends() {
+        let backend = BackendCell::new(BackendChoice::Fixed(ops)).get().unwrap();
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.commit("first");
+        let base = dunce::canonicalize(fx.dir.path()).unwrap();
+        let tree = base.join("wt ü");
+        fx.repo.worktree("feat", &tree, None).unwrap();
+        let linked = location(backend.as_ref(), &tree);
+        assert!(backend.status(&linked, &Baseline::Head).is_ok(), "{name}");
+        std::fs::write(
+            tree.join(".git"),
+            format!("gitdir: {}\n", share_path("r").display()),
+        )
+        .unwrap();
+        let mut swapped = vec![("gitfile", linked)];
+        let (one, two, near) = (base.join("one"), base.join("two"), base.join("near"));
+        Repository::init(&one).unwrap();
+        Repository::init(&two).unwrap();
+        std::fs::create_dir_all(&near).unwrap();
+        let link = near.join(".git");
+        if link_folder(&one.join(".git"), &link) {
+            // libgit2 on unix takes the folder the link leads into as the working tree: nothing to swap then
+            if let Discovery::Repo(at) = service::discover_here(backend.as_ref(), &near, None) {
+                if at.workdir == near {
+                    assert!(
+                        backend.status(&at, &Baseline::Head).is_ok(),
+                        "{name}: a .git link to a repository here"
+                    );
+                    std::fs::remove_dir(&link)
+                        .or_else(|_| std::fs::remove_file(&link))
+                        .unwrap();
+                    assert!(link_folder(&two.join(".git"), &link));
+                    swapped.push(("link", at));
+                }
+            }
+        } else {
+            eprintln!("links could not be made here; the link case is skipped");
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let asked = Arc::clone(&backend);
+        std::thread::spawn(move || {
+            let answers: Vec<(&str, Option<GitError>)> = swapped
+                .iter()
+                .map(|(case, at)| (*case, asked.status(at, &Baseline::Head).err()))
+                .collect();
+            let _ = tx.send(answers);
+        });
+        let answers = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("a swapped .git was followed");
+        for (case, answer) in answers {
+            assert_eq!(
+                answer,
+                Some(GitError::Refused(crate::ops::RepoRefusal::NotLocal)),
+                "{name}: {case}"
+            );
+        }
+    }
+}
+
+/// The look before every call reads the git folder's files once while they stay the same (a few stats each call), and
+/// again as soon as one of them changes: an included file, a file that appears where none was, the `.git` file of a
+/// linked tree.
+#[test]
+fn the_look_before_each_call_reads_the_files_again_only_when_they_change() {
+    let scans = || crate::config_scan::SCANS.with(std::cell::Cell::get);
+    let fx = Fixture::new();
+    let git = fx.root.join(".git");
+    add_config(&git, "[include]\n\tpath = ../../near.gitconfig\n");
+    let near = fx.root.parent().unwrap().join("near.gitconfig");
+    std::fs::write(&near, "[user]\n\tname = A\n").unwrap();
+    let at = location(&BuiltinGit, &fx.root);
+    let memo = service::LocalMemo::default();
+    let before = scans();
+    assert!(memo.stays_local(&at));
+    assert!(memo.stays_local(&at));
+    assert_eq!(scans() - before, 1, "unchanged: read once");
+    std::fs::write(&near, format!("[core]\n\texcludesFile = {SHARE}/x\n")).unwrap();
+    assert!(!memo.stays_local(&at));
+    assert!(!memo.stays_local(&at));
+    assert_eq!(scans() - before, 2);
+    std::fs::write(&near, "[user]\n\tname = A\n").unwrap();
+    assert!(memo.stays_local(&at));
+    std::fs::write(
+        git.join("config.worktree"),
+        format!("[mailmap]\n\tfile = {SHARE}/m\n"),
+    )
+    .unwrap();
+    assert!(!memo.stays_local(&at));
+    assert_eq!(scans() - before, 4);
+    std::fs::remove_file(git.join("config.worktree")).unwrap();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let tree = dunce::canonicalize(fx.dir.path()).unwrap().join("wt");
+    fx.repo.worktree("feat", &tree, None).unwrap();
+    let linked = location(&BuiltinGit, &tree);
+    let before = scans();
+    assert!(memo.stays_local(&linked));
+    assert!(memo.stays_local(&linked));
+    assert_eq!(scans() - before, 1, "a linked tree: read once");
+    std::fs::write(
+        tree.join(".git"),
+        format!("gitdir: {}\n", share_path("r").display()),
+    )
+    .unwrap();
+    assert!(!memo.stays_local(&linked));
+    assert_eq!(scans() - before, 2, "its .git file changed");
+}
+
 #[test]
 fn a_nested_repository_is_the_repository_of_its_folder() {
     each(|name, ops| {
@@ -288,10 +1055,12 @@ fn a_repository_that_is_too_broad_or_ignores_the_project_is_no_repository() {
             matches!(ops.discover(&fx.root, Some(&fx.root)), Discovery::Repo(_)),
             "{name}"
         );
-        // the repository ignores the project folder
-        assert_eq!(
-            ops.discover(&fx.root.join("skipped"), None),
-            Discovery::NoRepo,
+        // the repository ignores the project folder: told apart, its index may still hold files of the folder
+        assert!(
+            matches!(
+                ops.discover(&fx.root.join("skipped"), None),
+                Discovery::Ignored(at) if at.prefix == "skipped" && at.workdir == fx.root
+            ),
             "{name}: ignored"
         );
         assert!(
@@ -1431,7 +2200,9 @@ fn a_commit_that_moved_thousands_of_files_is_not_searched_for_the_name_before() 
             (None, None),
             "{name}: after {took:?}"
         );
-        assert!(took < Duration::from_secs(5), "{name}: {took:?}");
+        // a guard against a hang only: the answer above proves the commit was not searched, and a loaded runner may
+        // take seconds for the history walk alone
+        assert!(took < Duration::from_secs(30), "{name}: {took:?}");
         // a commit of a usual size is searched as before
         let moved = versions(ops, &loc, "docs/y.md");
         assert_eq!(moved.renamed_from.as_deref(), Some("docs/x.md"), "{name}");
@@ -1778,6 +2549,11 @@ fn a_backend_that_cannot_read_the_repository_is_a_failure_for_the_reader() {
             Err(NoVersions::Failed),
             "{name}"
         );
+        assert_eq!(
+            ops::tracked_of(ops, &nowhere, PRIVATE),
+            Err(NoTracking::Failed),
+            "{name}"
+        );
     });
 }
 
@@ -1817,6 +2593,1078 @@ fn the_reader_lists_versions_and_tells_a_file_of_a_nested_repository() {
                 "{name}: {path}"
             );
         }
+    });
+}
+
+// ---- what the index holds ------------------------------------------------------------------------------------------
+
+/// PerMark's private folder, as the project path the tracked questions ask about.
+const PRIVATE: &str = ".permark/local";
+
+#[test]
+fn an_index_entry_counts_by_whole_names_below_the_folder_or_at_a_folder_above() {
+    // a volume that keeps every name apart
+    let mut apart = |_: usize, _: &[u8]| SameFile::Other;
+    for (entry, prefix, at, caseless, counts) in [
+        (".permark/local", "", PRIVATE, false, true),
+        (".permark/local/x.json", "", PRIVATE, false, true),
+        (".permark/local-x/y", "", PRIVATE, false, false),
+        (".permark/locals", "", PRIVATE, false, false),
+        (".permark/loca", "", PRIVATE, false, false),
+        // a submodule | a link at the folder above brings what is below it
+        (".permark", "", PRIVATE, false, true),
+        (".permarkx", "", PRIVATE, false, false),
+        (".PerMark/Local/x", "", PRIVATE, false, false),
+        (".PerMark/Local/x", "", PRIVATE, true, true),
+        (".PerMark/Local-x/y", "", PRIVATE, true, false),
+        (".PERMARK", "", PRIVATE, true, true),
+        // a project folder below the working tree: the folder itself and what is beside it are not inside it
+        ("hub/.permark/local/x", "hub", PRIVATE, false, true),
+        ("hub/.permark", "hub", PRIVATE, false, true),
+        ("HUB/.permark/local/x", "hub", PRIVATE, true, true),
+        ("HUB/.permark/local/x", "hub", PRIVATE, false, false),
+        ("hub", "hub", PRIVATE, false, false),
+        ("hubx/.permark/local", "hub", PRIVATE, false, false),
+        (
+            "hub ü/.permark/local/x",
+            "",
+            "hub ü/.permark/local",
+            false,
+            true,
+        ),
+        ("hub ü/.permark", "", "hub ü/.permark/local", false, true),
+        ("hub ü", "", "hub ü/.permark/local", false, true),
+        // letters beyond ASCII keep their case, as git and libgit2 compare them
+        (
+            "HUB Ü/.permark/local/x",
+            "",
+            "hub ü/.permark/local",
+            true,
+            false,
+        ),
+    ] {
+        assert_eq!(
+            ops::tracked_entry(entry.as_bytes(), prefix, at, caseless, &mut apart),
+            counts,
+            "{entry} for {at} below {prefix:?} (caseless {caseless})"
+        );
+    }
+}
+
+/// An entry, the project folder below the working tree, the asked folder, and the names put to the volume (place in
+/// the path, name).
+type Spelled = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static [(usize, &'static str)],
+);
+
+const SPELLED: [Spelled; 22] = [
+    (
+        "PERMAR~1/local/comments.json",
+        "",
+        PRIVATE,
+        &[(0, "PERMAR~1")],
+    ),
+    ("permar~1/local", "", PRIVATE, &[(0, "permar~1")]),
+    ("PERMAR~1/LOCAL/x", "", PRIVATE, &[(0, "PERMAR~1")]),
+    (
+        ".permar\u{212A}/local/x",
+        "",
+        PRIVATE,
+        &[(0, ".permar\u{212A}")],
+    ),
+    (".permark./local/x", "", PRIVATE, &[(0, ".permark.")]),
+    (".permark /local/x", "", PRIVATE, &[(0, ".permark ")]),
+    ("Documentação/local/x", "", PRIVATE, &[(0, "Documentação")]),
+    ("hub/PERMAR~1/local/x", "hub", PRIVATE, &[(1, "PERMAR~1")]),
+    // the folder's own name
+    (".permark/local./x", "", PRIVATE, &[(1, "local.")]),
+    // a submodule | a link at another spelling of a folder above brings what is below it
+    ("PERMAR~1", "", PRIVATE, &[(0, "PERMAR~1")]),
+    ("PERMAR~1/x", "", ".permark", &[(0, "PERMAR~1")]),
+    // a member without a repository of its own is asked through the one of the folder
+    (
+        "m/PERMAR~1/local/x",
+        "",
+        "m/.permark/local",
+        &[(1, "PERMAR~1")],
+    ),
+    (
+        "m/.permar\u{212A}/local/x",
+        "",
+        "m/.permark/local",
+        &[(1, ".permar\u{212A}")],
+    ),
+    (
+        "hub/a b/m/PERMAR~1/local",
+        "hub",
+        "a b/m/.permark/local",
+        &[(3, "PERMAR~1")],
+    ),
+    // the name of a member, of the project folder below the working tree
+    (
+        "NOTESA~1/.permark/local/x",
+        "",
+        "Notes Archive/.permark/local",
+        &[(0, "NOTESA~1")],
+    ),
+    (
+        "HUB Ü/.permark/local/x",
+        "",
+        "hub ü/.permark/local",
+        &[(0, "HUB Ü")],
+    ),
+    (
+        "hub/a b/NOTESA~1/.permark/local",
+        "hub",
+        "a b/Notes Archive/.permark/local",
+        &[(2, "NOTESA~1")],
+    ),
+    (
+        "NOTESA~1/.permark/local/x",
+        "Notes Archive",
+        PRIVATE,
+        &[(0, "NOTESA~1")],
+    ),
+    (
+        "DOCUME~1/notes/.permark/local/x",
+        "Documents/notes",
+        PRIVATE,
+        &[(0, "DOCUME~1")],
+    ),
+    // two names spelled otherwise
+    (
+        "NOTESA~1/PERMAR~1/local/x",
+        "",
+        "Notes Archive/.permark/local",
+        &[(0, "NOTESA~1"), (1, "PERMAR~1")],
+    ),
+    (
+        "NOTESA~1/PERMAR~1/LOCAL/x",
+        "Notes Archive",
+        PRIVATE,
+        &[(0, "NOTESA~1"), (1, "PERMAR~1")],
+    ),
+    (
+        "hub/NOTESA~1/m/PERMAR~1/local",
+        "hub",
+        "Notes Archive/m/.permark/local",
+        &[(1, "NOTESA~1"), (3, "PERMAR~1")],
+    ),
+];
+
+/// Any name of the asked folder's path (the project folder below the working tree, a member, `.permark`, the folder's
+/// own name), spelled so a volume may resolve it to that name (`~`, beyond ASCII, a last `.` | space), is put to the
+/// volume with its place in the path once every other name agrees (letters in any case after it): one folder |
+/// unknown -> counts, two folders -> not. Two such names in one entry are both put, in order, until one is another
+/// folder. Ordinary ASCII names, and entries some other name of which disagrees, never cost a look.
+#[test]
+fn another_spelling_of_any_name_is_put_to_the_volume() {
+    for (entry, prefix, at, names) in SPELLED {
+        for (answer, counts) in [
+            (SameFile::Yes, true),
+            (SameFile::Unknown, true),
+            (SameFile::Other, false),
+        ] {
+            let mut asked: Vec<(usize, String)> = Vec::new();
+            let held = {
+                let mut volume = |place: usize, name: &[u8]| {
+                    asked.push((place, String::from_utf8_lossy(name).into_owned()));
+                    answer
+                };
+                ops::tracked_entry(entry.as_bytes(), prefix, at, false, &mut volume)
+            };
+            assert_eq!(held, counts, "{entry} when the volume answers {answer:?}");
+            // another folder at the first name settles it: the next one is not looked at
+            let expected = if answer == SameFile::Other {
+                &names[..1]
+            } else {
+                names
+            };
+            let expected: Vec<(usize, String)> = expected
+                .iter()
+                .map(|(place, name)| (*place, (*name).to_owned()))
+                .collect();
+            assert_eq!(
+                asked, expected,
+                "{entry} when the volume answers {answer:?}"
+            );
+        }
+    }
+    // the volume resolves the first of two names, keeps the second apart
+    let mut first_only = |place: usize, _: &[u8]| {
+        if place == 0 {
+            SameFile::Yes
+        } else {
+            SameFile::Other
+        }
+    };
+    assert!(!ops::tracked_entry(
+        b"NOTESA~1/PERMAR~1/local/x",
+        "",
+        "Notes Archive/.permark/local",
+        false,
+        &mut first_only
+    ));
+}
+
+/// An entry some written name rules out is never put to the volume, whatever its other names look like.
+#[test]
+fn an_entry_a_written_name_rules_out_costs_no_look() {
+    let mut never = |place: usize, name: &[u8]| -> SameFile {
+        panic!(
+            "the volume was asked about {} at {place}",
+            String::from_utf8_lossy(name)
+        )
+    };
+    for (entry, prefix, at) in [
+        ("docs/local/x", "", PRIVATE),
+        ("Documentação/readme.md", "", PRIVATE),
+        ("PERMAR~1/localx/a", "", PRIVATE),
+        ("hub/PERMAR~1/x", "hub", PRIVATE),
+        ("other/PERMAR~1/local/x", "hub", PRIVATE),
+        ("m/PERMAR~1/x", "", "m/.permark/local"),
+        ("PERMAR~1/local/x", "", "m/.permark/local"),
+        (
+            "NOTESA~1/PERMAR~1/localx",
+            "",
+            "Notes Archive/.permark/local",
+        ),
+        // the project folder and the folders above it are not inside the project
+        ("NOTESA~1", "Notes Archive", PRIVATE),
+        ("DOCUME~1/NOTES~1", "Documents/notes", PRIVATE),
+        // ordinary ASCII names in another case compare as git compares them
+        ("HUB/PERMAR~1/local/x", "hub", PRIVATE),
+    ] {
+        assert!(
+            !ops::tracked_entry(entry.as_bytes(), prefix, at, false, &mut never),
+            "{entry} for {at}"
+        );
+    }
+}
+
+#[test]
+fn the_index_tells_whether_a_folder_is_tracked_whatever_gitignore_says() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.write(".permark/local/comments.json", "{}\n");
+        fx.write(".permark/local/.gitignore", "*\n");
+        fx.write("docs/b.md", "b\n");
+        fx.commit("first");
+        let loc = location(ops, &fx.root);
+        let tracked = |path: &str| ops::tracked_of(ops, &loc, path);
+        assert_eq!(tracked(PRIVATE), Ok(false), "{name}: nothing tracked");
+        // a folder whose name starts the same is another folder
+        fx.write(".permark/local-x/y.md", "y\n");
+        fx.stage(".permark/local-x/y.md");
+        assert_eq!(tracked(PRIVATE), Ok(false), "{name}: sibling");
+        assert_eq!(tracked(".permark/local-x"), Ok(true), "{name}");
+        // only the folder's own .gitignore, added with --force
+        fx.stage(".permark/local/.gitignore");
+        assert_eq!(tracked(PRIVATE), Ok(true), "{name}: .gitignore only");
+        fx.unstage(".permark/local/.gitignore");
+        assert_eq!(tracked(PRIVATE), Ok(false), "{name}: rm --cached");
+        fx.stage(".permark/local/comments.json");
+        assert_eq!(tracked(PRIVATE), Ok(true), "{name}: add -f");
+        assert_eq!(tracked(".permark"), Ok(true), "{name}: the folder above");
+        // a project folder below the working tree asks about its own folder
+        fx.write("docs/.permark/local/c.json", "{}\n");
+        let below = location(ops, &fx.root.join("docs"));
+        assert_eq!(
+            ops::tracked_of(ops, &below, PRIVATE),
+            Ok(false),
+            "{name}: docs"
+        );
+        fx.stage("docs/.permark/local/c.json");
+        assert_eq!(
+            ops::tracked_of(ops, &below, PRIVATE),
+            Ok(true),
+            "{name}: docs"
+        );
+        // a path that is not plain names is no question either backend reads alike
+        for bad in [
+            "",
+            "/.permark/local",
+            ".permark/./local",
+            "../x",
+            ".permark//local",
+        ] {
+            assert_eq!(tracked(bad), Err(NoTracking::Failed), "{name}: {bad:?}");
+        }
+    });
+}
+
+#[test]
+fn an_entry_of_any_kind_counts_as_tracked() {
+    let intent = git2::IndexEntryExtendedFlag::INTENT_TO_ADD.bits();
+    let skip = git2::IndexEntryExtendedFlag::SKIP_WORKTREE.bits();
+    each(|name, ops| {
+        // no commit yet, one file staged
+        let fx = Fixture::new();
+        fx.write(".permark/local/a.json", "{}\n");
+        fx.stage(".permark/local/a.json");
+        assert!(fx.repo.head().is_err(), "unborn");
+        let loc = location(ops, &fx.root);
+        assert_eq!(
+            ops::tracked_of(ops, &loc, PRIVATE),
+            Ok(true),
+            "{name}: unborn"
+        );
+        for (what, rel, stage, extended) in [
+            ("intent-to-add", ".permark/local/i.json", 0, intent),
+            ("skip-worktree", ".permark/local/s.json", 0, skip),
+            ("conflict, ours", ".permark/local/c.json", 2, 0),
+            ("conflict, base", ".permark/local/c.json", 1, 0),
+            ("the folder's own name", PRIVATE, 0, 0),
+        ] {
+            let fx = Fixture::new();
+            fx.write("a.md", "a\n");
+            fx.commit("first");
+            fx.put_entry(rel, stage, extended);
+            let loc = location(ops, &fx.root);
+            assert_eq!(
+                ops::tracked_of(ops, &loc, PRIVATE),
+                Ok(true),
+                "{name}: {what}"
+            );
+        }
+    });
+}
+
+#[test]
+fn a_differently_cased_entry_counts_only_in_a_caseless_repository() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.commit("first");
+        fx.put_entry(".PerMark/Local/x.json", 0, 0);
+        let loc = location(ops, &fx.root);
+        fx.caseless(true);
+        assert_eq!(
+            ops::tracked_of(ops, &loc, PRIVATE),
+            Ok(true),
+            "{name}: caseless"
+        );
+        fx.caseless(false);
+        assert_eq!(
+            ops::tracked_of(ops, &loc, PRIVATE),
+            Ok(false),
+            "{name}: case kept"
+        );
+    });
+}
+
+#[test]
+fn the_folder_of_another_repository_is_never_asked_about() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.commit("first");
+        let loc = location(ops, &fx.root);
+        // a nested repository and a submodule-like folder (a `.git` file) below the project
+        let inner = fx.root.join("docs").join("inner ü");
+        std::fs::create_dir_all(&inner).unwrap();
+        Repository::init(&inner).unwrap();
+        let sub = fx.root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join(".git"), "gitdir: ../.git/modules/sub\n").unwrap();
+        for path in ["docs/inner ü/.permark/local", "sub/.permark/local"] {
+            assert_eq!(
+                ops::tracked_of(ops, &loc, path),
+                Err(NoTracking::OtherRepository),
+                "{name}: {path}"
+            );
+        }
+        // a repository at the folder itself holds what is below it
+        let private = fx.root.join(".permark").join("local");
+        std::fs::create_dir_all(&private).unwrap();
+        Repository::init(&private).unwrap();
+        assert_eq!(
+            ops::tracked_of(ops, &loc, PRIVATE),
+            Err(NoTracking::OtherRepository),
+            "{name}: the folder is a repository"
+        );
+    });
+}
+
+/// A submodule | a link the index holds at the folder or at a folder above it inside the project brings what is below
+/// it with a checkout (`git clone --recursive`): the folder counts as tracked. The project folder itself, names that
+/// only start the same, and a file beside do not.
+#[test]
+fn a_submodule_or_a_link_at_the_folder_or_above_counts_as_tracked() {
+    each(|name, ops| {
+        for (what, rel, mode, tracked) in [
+            ("submodule at the folder", PRIVATE, 0o160_000, true),
+            ("submodule above", ".permark", 0o160_000, true),
+            ("link above", ".permark", 0o120_000, true),
+            ("a name that starts the same", ".permarkx", 0o160_000, false),
+            ("a file beside", ".permark-notes.md", 0o100_644, false),
+        ] {
+            let fx = Fixture::new();
+            fx.write("a.md", "a\n");
+            fx.commit("first");
+            fx.put_kind(rel, 0, 0, mode);
+            let loc = location(ops, &fx.root);
+            assert_eq!(
+                ops::tracked_of(ops, &loc, PRIVATE),
+                Ok(tracked),
+                "{name}: {what}"
+            );
+        }
+        // a project folder below the working tree: the entry at the project folder itself is not inside it
+        let fx = Fixture::new();
+        fx.write("docs [1]/a.md", "a\n");
+        fx.commit("first");
+        let below = location(ops, &fx.root.join("docs [1]"));
+        fx.put_kind("docs [1]", 0, 0, 0o160_000);
+        assert_eq!(
+            ops::tracked_of(ops, &below, PRIVATE),
+            Ok(false),
+            "{name}: the project folder"
+        );
+        fx.put_kind("docs [1]/.permark", 0, 0, 0o160_000);
+        assert_eq!(
+            ops::tracked_of(ops, &below, PRIVATE),
+            Ok(true),
+            "{name}: submodule above, below the working tree"
+        );
+    });
+}
+
+/// A repository made in the folder after an answer was kept, the index unchanged: told at the next question.
+#[test]
+fn a_repository_made_in_the_folder_after_an_answer_was_kept_is_told_at_once() {
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let ops = BuiltinGit;
+    let loc = location(&ops, &fx.root);
+    let memo = service::TrackedMemo::default();
+    assert_eq!(memo.tracked(&ops, &loc, PRIVATE), Ok(false));
+    let index_file = fx.root.join(".git").join("index");
+    let index = std::fs::read(&index_file).unwrap();
+    let private = fx.root.join(".permark").join("local");
+    std::fs::create_dir_all(&private).unwrap();
+    Repository::init(&private).unwrap();
+    assert_eq!(std::fs::read(&index_file).unwrap(), index, "same index");
+    assert_eq!(
+        memo.tracked(&ops, &loc, PRIVATE),
+        Err(NoTracking::OtherRepository)
+    );
+}
+
+/// Another spelling of `.permark` that the volume resolves to the same folder (the short name Windows gives it, a
+/// Unicode case fold on a caseless macOS volume) puts what is below it into the private folder at a checkout: it
+/// counts as that folder. A spelling the volume keeps apart, and an ordinary folder named beyond ASCII, do not.
+#[test]
+fn another_spelling_of_the_folder_on_disk_counts_as_the_folder() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.write(".permark/config.toml", "\n");
+        fx.write("Documentação/local/x.md", "x\n");
+        fx.commit("first");
+        let loc = location(ops, &fx.root);
+        let tracked = || ops::tracked_of(ops, &loc, PRIVATE);
+        assert_eq!(tracked(), Ok(false), "{name}: an ordinary folder");
+        let folder = fx.root.join(".permark");
+        let short = "PERMAR~1/local/comments.json";
+        if same_file(&fx.root.join("PERMAR~1"), &folder) == SameFile::Yes {
+            fx.put_entry(short, 0, 0);
+            assert_eq!(tracked(), Ok(true), "{name}: short name");
+            fx.unstage(short);
+        } else {
+            eprintln!(
+                "SKIPPED: the volume gives `.permark` no short name PERMAR~1 (8.3 names off)"
+            );
+        }
+        // KELVIN SIGN folds to `k` on a caseless macOS volume; NTFS and ext4 keep the two names apart
+        let kelvin = ".permar\u{212A}";
+        let alias = same_file(&fx.root.join(kelvin), &folder) == SameFile::Yes;
+        fx.put_entry(&format!("{kelvin}/local/comments.json"), 0, 0);
+        assert_eq!(
+            tracked(),
+            Ok(alias),
+            "{name}: kelvin sign (one folder on disk: {alias})"
+        );
+    });
+}
+
+/// A member without a repository of its own is asked through the folder's repository as `<member>/.permark/local`:
+/// another spelling of its `.permark` counts there too.
+#[test]
+fn another_spelling_of_a_members_folder_counts_as_the_folder() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.write("m/.permark/config.toml", "\n");
+        fx.commit("first");
+        let loc = location(ops, &fx.root);
+        let member = "m/.permark/local";
+        let tracked = || ops::tracked_of(ops, &loc, member);
+        assert_eq!(tracked(), Ok(false), "{name}: nothing tracked");
+        let folder = fx.root.join("m").join(".permark");
+        let short = "m/PERMAR~1/local/comments.json";
+        if same_file(&fx.root.join("m").join("PERMAR~1"), &folder) == SameFile::Yes {
+            fx.put_entry(short, 0, 0);
+            assert_eq!(tracked(), Ok(true), "{name}: short name");
+            fx.unstage(short);
+        } else {
+            eprintln!(
+                "SKIPPED: the volume gives `.permark` no short name PERMAR~1 (8.3 names off)"
+            );
+        }
+        let kelvin = ".permar\u{212A}";
+        let alias = same_file(&fx.root.join("m").join(kelvin), &folder) == SameFile::Yes;
+        fx.put_entry(&format!("m/{kelvin}/local/comments.json"), 0, 0);
+        assert_eq!(
+            tracked(),
+            Ok(alias),
+            "{name}: kelvin sign (one folder on disk: {alias})"
+        );
+    });
+}
+
+/// Names beyond ASCII are common in notes: a file, a folder without the private folder's name below it, or a file at
+/// a name the index holds as such a folder never counts as the folder, however many there are.
+#[test]
+fn ordinary_names_beyond_ascii_never_count_as_the_folder() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write(".permark/config.toml", "\n");
+        for n in 0..100 {
+            fx.write(&format!("Café {n}.md"), "x\n");
+            fx.write(&format!("Pasta ç {n}/nota.md"), "x\n");
+        }
+        fx.commit("first");
+        let loc = location(ops, &fx.root);
+        let tracked = || ops::tracked_of(ops, &loc, PRIVATE);
+        assert_eq!(tracked(), Ok(false), "{name}: files and folders");
+        fx.write("Notas ü", "x\n");
+        fx.put_entry("Notas ü/local/comments.json", 0, 0);
+        assert_eq!(tracked(), Ok(false), "{name}: a file at the name");
+    });
+}
+
+/// The volume is asked only about names that are folders (or links) on disk, and only those count toward the most
+/// names looked at: past countless files and missing names, a folder still gets the volume's answer.
+#[test]
+fn only_folders_on_disk_are_put_to_the_volume() {
+    let fx = Fixture::new();
+    fx.write(".permark/config.toml", "\n");
+    fx.write("Notas ü/a.md", "x\n");
+    fx.commit("first");
+    let loc = location(&BuiltinGit, &fx.root);
+    let mut alias = ops::disk_aliases(&loc, PRIVATE);
+    for n in 0..100 {
+        let file = format!("Café {n}");
+        fx.write(&file, "x\n");
+        assert_eq!(alias(0, file.as_bytes()), SameFile::Other, "{file}: a file");
+        let missing = format!("Nada ü {n}");
+        assert_eq!(alias(0, missing.as_bytes()), SameFile::Other, "{missing}");
+    }
+    assert_eq!(
+        alias(0, "Notas ü".as_bytes()),
+        SameFile::Other,
+        "another folder"
+    );
+    if same_file(&fx.root.join("PERMAR~1"), &fx.root.join(".permark")) == SameFile::Yes {
+        assert_eq!(alias(0, b"PERMAR~1"), SameFile::Yes, "short name");
+    }
+}
+
+/// A share path the link tests point at: never reachable (TEST-NET-1), so a lookup there would wait for the network.
+fn share_target(rest: &str) -> PathBuf {
+    let share = if cfg!(windows) {
+        r"\\192.0.2.1\s"
+    } else {
+        "//192.0.2.1/s"
+    };
+    Path::new(share).join(rest)
+}
+
+/// A name the repository checks out as a link (here one beyond ASCII at the root, leading to a share) is never
+/// followed when the volume is asked whether it is the private folder: even a lookup connects to the server and offers
+/// it the person's sign-in. Where it leads stays unknown, so the entry counts as tracked (withheld), at once.
+#[test]
+fn a_link_the_repository_ships_is_never_followed_to_the_volume() {
+    for (name, backend) in backends() {
+        let fx = Fixture::new();
+        fx.write(".permark/config.toml", "\n");
+        fx.commit("first");
+        if !crate::worktrees::tests::symlink(&share_target("x"), &fx.root.join("ñ")) {
+            eprintln!("symlinks cannot be made here; skipped");
+            return;
+        }
+        fx.put_kind("ñ", 0, 0, 0o120_000);
+        let loc = location(backend.as_ref(), &fx.root);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(ops::tracked_of(backend.as_ref(), &loc, PRIVATE));
+        });
+        let tracked = rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap_or_else(|_| panic!("{name}: the link's target was looked up"));
+        assert_eq!(tracked, Ok(true), "{name}");
+    }
+}
+
+/// The same for a link (a junction on Windows) to a folder on this computer other than the private folder: where it
+/// leads is not looked at, so it counts as tracked.
+#[test]
+fn a_link_to_another_local_folder_counts_as_the_folder() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write(".permark/config.toml", "\n");
+        fx.write("elsewhere/a.md", "x\n");
+        fx.commit("first");
+        if !crate::worktrees::tests::link_folder(&fx.root.join("elsewhere"), &fx.root.join("ñ")) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+        fx.put_kind("ñ", 0, 0, 0o120_000);
+        let loc = location(ops, &fx.root);
+        assert_eq!(ops::tracked_of(ops, &loc, PRIVATE), Ok(true), "{name}");
+    });
+}
+
+/// The asked folder itself, or a folder above the name, being a link: nothing is looked up through it (the answer is
+/// unknown, so the name counts as the folder).
+#[test]
+fn a_linked_folder_of_the_path_is_never_looked_through() {
+    let fx = Fixture::new();
+    fx.write("ñ/a.md", "x\n");
+    fx.write("store/local/a.json", "{}\n");
+    fx.write("store/lócal/b.json", "{}\n");
+    fx.commit("first");
+    if !crate::worktrees::tests::link_folder(&fx.root.join("store"), &fx.root.join(".permark")) {
+        eprintln!("links could not be made here; skipped");
+        return;
+    }
+    let loc = location(&BuiltinGit, &fx.root);
+    let mut alias = ops::disk_aliases(&loc, PRIVATE);
+    // `.permark` (a link) is the folder `ñ` is compared with; `lócal` sits below that link
+    assert_eq!(alias(0, "ñ".as_bytes()), SameFile::Unknown, "the folder");
+    assert_eq!(alias(1, "lócal".as_bytes()), SameFile::Unknown, "below it");
+}
+
+/// Each name is put to the volume at its own place: a name is compared with the asked name at that place, inside the
+/// folders above it as asked (the project folder below the working tree, a member, `.permark`).
+#[test]
+fn the_volume_is_asked_at_the_place_of_the_name() {
+    let fx = Fixture::new();
+    fx.write("Notes Archive/.permark/local/c.json", "{}\n");
+    fx.write("Notes Archive/Notas ü/a.md", "x\n");
+    fx.write("Notas ü/b.md", "x\n");
+    fx.commit("first");
+    let below = location(&BuiltinGit, &fx.root.join("Notes Archive"));
+    let mut alias = ops::disk_aliases(&below, PRIVATE);
+    // inside the working tree: the project folder's own place
+    assert_eq!(
+        alias(0, "Notas ü".as_bytes()),
+        SameFile::Other,
+        "beside the project"
+    );
+    // inside the project folder: `.permark`'s place
+    assert_eq!(
+        alias(1, "Notas ü".as_bytes()),
+        SameFile::Other,
+        "beside .permark"
+    );
+    // a place past the asked names holds no folder of the path
+    assert_eq!(alias(9, b"x"), SameFile::Unknown, "no such place");
+    let short = |rel: &str| {
+        permark_core::fsx::short_name(&fx.root.join(rel))
+            .and_then(|path| path.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .filter(|name| name.contains('~'))
+    };
+    if cfg!(windows) {
+        // Windows drops a last dot of a name
+        assert_eq!(alias(2, b"local."), SameFile::Yes, "local.");
+    }
+    let (Some(project), Some(holder)) = (short("Notes Archive"), short("Notes Archive/.permark"))
+    else {
+        eprintln!("SKIPPED: the volume keeps no 8.3 short names");
+        return;
+    };
+    assert_eq!(alias(0, project.as_bytes()), SameFile::Yes, "{project}");
+    assert_eq!(alias(1, holder.as_bytes()), SameFile::Yes, "{holder}");
+    // the short name of the project folder is no other spelling of `.permark`
+    assert_eq!(
+        alias(1, project.as_bytes()),
+        SameFile::Other,
+        "{project} at 1"
+    );
+}
+
+/// A short name Windows gives the project folder below the working tree, a member folder or `.permark` puts what is
+/// below it into the private folder at a checkout, also two such names in one path: it counts as tracked. The short
+/// name of another folder does not.
+#[test]
+fn short_names_at_any_place_of_the_path_count_as_the_folder() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.write("Notes Archive/.permark/config.toml", "\n");
+        fx.write("Notes Other/b.md", "b\n");
+        fx.commit("first");
+        let short = |rel: &str| {
+            permark_core::fsx::short_name(&fx.root.join(rel))
+                .and_then(|path| path.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .filter(|name| name.contains('~'))
+        };
+        let (Some(member), Some(holder), Some(other)) = (
+            short("Notes Archive"),
+            short("Notes Archive/.permark"),
+            short("Notes Other"),
+        ) else {
+            eprintln!("SKIPPED: the volume keeps no 8.3 short names");
+            return;
+        };
+        let loc = location(ops, &fx.root);
+        let below = location(ops, &fx.root.join("Notes Archive"));
+        let as_member = || ops::tracked_of(ops, &loc, "Notes Archive/.permark/local");
+        let as_project = || ops::tracked_of(ops, &below, PRIVATE);
+        assert_eq!(as_member(), Ok(false), "{name}: nothing tracked");
+        assert_eq!(as_project(), Ok(false), "{name}: nothing tracked");
+        for entry in [
+            format!("{member}/.permark/local/c.json"),
+            format!("{member}/{holder}/local/c.json"),
+            format!("{member}/{holder}"),
+        ] {
+            fx.put_entry(&entry, 0, 0);
+            assert_eq!(as_member(), Ok(true), "{name}: {entry} (member)");
+            assert_eq!(as_project(), Ok(true), "{name}: {entry} (project)");
+            fx.unstage(&entry);
+        }
+        let entry = format!("{other}/.permark/local/c.json");
+        fx.put_entry(&entry, 0, 0);
+        assert_eq!(as_member(), Ok(false), "{name}: {entry}");
+        assert_eq!(as_project(), Ok(false), "{name}: {entry}");
+    });
+}
+
+#[test]
+fn the_reader_follows_the_index_without_a_refresh() {
+    each(|name, _| {
+        let ops: Arc<dyn GitOps> = if name == "system" {
+            Arc::new(SystemGit::find().unwrap())
+        } else {
+            Arc::new(BuiltinGit)
+        };
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.write(".permark/local/comments.json", "{}\n");
+        fx.write(".permark/local/.gitignore", "*\n");
+        fx.commit("first");
+        let running = start(&fx.root, &ops, Vec::new());
+        wait_until("the first snapshot", || {
+            running.service.snapshot().is_some()
+        });
+        let reader = running.service.reader();
+        assert_eq!(reader.tracked_under(PRIVATE), Ok(false), "{name}");
+        assert_eq!(reader.tracked_under(PRIVATE), Ok(false), "{name}: again");
+        // `git add -f`, then `git rm --cached`: no watch batch, no refresh of the worker
+        fx.stage(".permark/local/comments.json");
+        assert_eq!(reader.tracked_under(PRIVATE), Ok(true), "{name}: add -f");
+        fx.unstage(".permark/local/comments.json");
+        assert_eq!(reader.tracked_under(PRIVATE), Ok(false), "{name}: rm");
+        // a nested repository below is another repository's business
+        let inner = fx.root.join("inner");
+        std::fs::create_dir_all(&inner).unwrap();
+        Repository::init(&inner).unwrap();
+        assert_eq!(
+            reader.tracked_under("inner/.permark/local"),
+            Err(NoTracking::OtherRepository),
+            "{name}"
+        );
+    });
+}
+
+/// A folder without a repository: no repository holds the private folder. One whose repository ignores the project
+/// folder: the windows see no repository, the reader asks its index. A folder whose `.git` names a share holds a
+/// repository the plugin refuses to open: the reader cannot vouch for its index.
+#[test]
+fn the_reader_has_no_repository_to_ask_in_a_plain_folder() {
+    let share = if cfg!(windows) {
+        r"\\192.0.2.1\s"
+    } else {
+        "//192.0.2.1/s"
+    };
+    each(|name, _| {
+        let ops: Arc<dyn GitOps> = if name == "system" {
+            Arc::new(SystemGit::find().unwrap())
+        } else {
+            Arc::new(BuiltinGit)
+        };
+        let plain = tempfile::tempdir().unwrap();
+        let fx = Fixture::new();
+        fx.write("skipped/b.md", "b\n");
+        fx.write(".gitignore", "skipped/\n");
+        fx.commit("first");
+        let far = fx.dir.path().join("far");
+        std::fs::create_dir_all(&far).unwrap();
+        std::fs::write(
+            far.join(".git"),
+            format!("gitdir: {}\n", Path::new(share).join("a.git").display()),
+        )
+        .unwrap();
+        for (folder, answer) in [
+            (
+                dunce::canonicalize(plain.path()).unwrap(),
+                Err(NoTracking::NoRepository),
+            ),
+            (fx.root.join("skipped"), Ok(false)),
+            (dunce::canonicalize(&far).unwrap(), Err(NoTracking::Failed)),
+        ] {
+            let running = start(&folder, &ops, Vec::new());
+            let reader = running.service.reader();
+            // before the first look the reader cannot tell yet
+            wait_until("the first look", || {
+                reader.tracked_under(PRIVATE) != Err(NoTracking::Slow)
+            });
+            assert_eq!(
+                reader.tracked_under(PRIVATE),
+                answer,
+                "{name}: {}",
+                folder.display()
+            );
+            assert_eq!(running.facts.git(), GitCondition::NoRepo, "{name}");
+        }
+    });
+}
+
+/// A project folder the repository ignores shows no repository, yet its index may hold a file of the private folder
+/// (`git add -f` before the clone): the reader still asks that index, so the folder is withheld from agents then.
+#[test]
+fn an_ignored_project_folder_still_asks_the_index() {
+    each(|name, _| {
+        let ops: Arc<dyn GitOps> = if name == "system" {
+            Arc::new(SystemGit::find().unwrap())
+        } else {
+            Arc::new(BuiltinGit)
+        };
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.write(".gitignore", "docs/\n");
+        fx.write("docs/b.md", "b\n");
+        fx.write("docs/.permark/local/comments.json", "{}\n");
+        fx.commit("first");
+        let docs = fx.root.join("docs");
+        let running = start(&docs, &ops, Vec::new());
+        let reader = RepoHandle(running.service.reader());
+        wait_until("the first look", || {
+            reader.0.tracked_under(PRIVATE) != Err(NoTracking::Slow)
+        });
+        assert_eq!(reader.0.tracked_under(PRIVATE), Ok(false), "{name}");
+        assert_eq!(running.facts.git(), GitCondition::NoRepo, "{name}");
+        assert!(running.service.snapshot().is_none(), "{name}");
+        let state = tempfile::tempdir().unwrap();
+        let store = permark_core::state::StateStore::for_project(
+            &AppDirs::under(state.path()),
+            &Root::open(&docs).unwrap(),
+        );
+        let owners = permark_core::projects::Owners::root_only(store);
+        assert!(!owners.root().private_tracked(Some(&reader)), "{name}");
+        // `git add -f docs/.permark/local/comments.json`: no refresh needed
+        fx.stage("docs/.permark/local/comments.json");
+        assert_eq!(reader.0.tracked_under(PRIVATE), Ok(true), "{name}: add -f");
+        assert!(owners.root().private_tracked(Some(&reader)), "{name}");
+        assert_eq!(running.facts.git(), GitCondition::NoRepo, "{name}");
+    });
+}
+
+/// A repository the plugin refuses to open (its config includes a file on a share) shows no repository to the windows,
+/// as before, but its index cannot be read to vouch for anything: a private folder the repository may deliver (added
+/// with `git add -f` before the clone) is withheld from agents, never served as untracked.
+#[test]
+fn a_refused_repository_withholds_its_private_folder() {
+    each(|name, _| {
+        let ops: Arc<dyn GitOps> = if name == "system" {
+            Arc::new(SystemGit::find().unwrap())
+        } else {
+            Arc::new(BuiltinGit)
+        };
+        let fx = Fixture::new();
+        fx.write(
+            "a.md", "a
+",
+        );
+        fx.write(
+            ".permark/local/comments.json",
+            "{}
+",
+        );
+        fx.write(
+            ".permark/local/.gitignore",
+            "*
+",
+        );
+        fx.commit("first");
+        fx.stage(".permark/local/comments.json");
+        // after the fixture's last use of its repository: nothing here reads that config again
+        add_config(
+            &fx.root.join(".git"),
+            &format!(
+                "[include]
+	path = {SHARE}/x
+"
+            ),
+        );
+        let running = start(&fx.root, &ops, Vec::new());
+        let reader = running.service.reader();
+        wait_until("the first look", || {
+            reader.tracked_under(PRIVATE) != Err(NoTracking::Slow)
+        });
+        assert_eq!(
+            reader.tracked_under(PRIVATE),
+            Err(NoTracking::Failed),
+            "{name}"
+        );
+        assert_eq!(running.facts.git(), GitCondition::NoRepo, "{name}");
+        assert!(running.service.snapshot().is_none(), "{name}");
+        // the rule agents are served by
+        let state = tempfile::tempdir().unwrap();
+        let store = permark_core::state::StateStore::for_project(
+            &AppDirs::under(state.path()),
+            &Root::open(&fx.root).unwrap(),
+        );
+        let owners = permark_core::projects::Owners::root_only(store);
+        assert!(
+            owners.root().private_tracked(Some(&RepoHandle(reader))),
+            "{name}"
+        );
+    });
+}
+
+#[test]
+fn a_linked_worktree_answers_from_its_own_index() {
+    each(|name, _| {
+        let ops: Arc<dyn GitOps> = if name == "system" {
+            Arc::new(SystemGit::find().unwrap())
+        } else {
+            Arc::new(BuiltinGit)
+        };
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.commit("first");
+        let wt_dir = fx.dir.path().join("wt ü");
+        fx.repo.worktree("feat", &wt_dir, None).unwrap();
+        std::fs::create_dir_all(wt_dir.join(".permark").join("local")).unwrap();
+        std::fs::write(wt_dir.join(".permark/local/c.json"), "{}\n").unwrap();
+        let wt = Repository::open(&wt_dir).unwrap();
+        let mut index = wt.index().unwrap();
+        index.add_path(Path::new(".permark/local/c.json")).unwrap();
+        index.write().unwrap();
+        let roots: Vec<(String, PathBuf)> = linked_worktrees(&fx.root, None)
+            .into_iter()
+            .map(|l| (l.name, l.folder))
+            .collect();
+        let running = start(&fx.root, &ops, roots);
+        wait_until("worktree letters", || {
+            running
+                .service
+                .snapshot()
+                .is_some_and(|s| !s.worktrees.is_empty())
+        });
+        let reader = running.service.reader();
+        assert_eq!(reader.tracked_under(PRIVATE), Ok(false), "{name}: main");
+        assert_eq!(
+            reader.tracked_under(&format!("@wt/feat/{PRIVATE}")),
+            Ok(true),
+            "{name}: the worktree's index"
+        );
+        assert_eq!(
+            reader.tracked_under(&format!("@wt/nope/{PRIVATE}")),
+            Err(NoTracking::NoRepository),
+            "{name}: no such worktree"
+        );
+    });
+}
+
+/// The kept answer goes with the index as it looks (size + time to the nanosecond): an index written again at the same
+/// size within the same millisecond is read again; one that looks exactly the same is not.
+#[test]
+fn the_kept_answer_follows_an_index_written_again_at_the_same_size() {
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    fx.write(".permark/local/a.md", "a\n");
+    fx.write(".permark/locax/a.md", "a\n");
+    let index_file = fx.root.join(".git").join("index");
+    fx.stage(".permark/local/a.md");
+    let tracked = std::fs::read(&index_file).unwrap();
+    fx.unstage(".permark/local/a.md");
+    fx.stage(".permark/locax/a.md");
+    let other = std::fs::read(&index_file).unwrap();
+    assert_eq!(tracked.len(), other.len(), "the same size");
+    assert_ne!(tracked, other);
+    let at = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let put = |bytes: &[u8], time: std::time::SystemTime| {
+        std::fs::write(&index_file, bytes).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&index_file)
+            .unwrap()
+            .set_modified(time)
+            .unwrap();
+    };
+    let ops = BuiltinGit;
+    let loc = location(&ops, &fx.root);
+    let memo = service::TrackedMemo::default();
+    put(&tracked, at);
+    assert_eq!(memo.tracked(&ops, &loc, PRIVATE), Ok(true));
+    put(&other, at + Duration::from_micros(1));
+    assert_eq!(memo.tracked(&ops, &loc, PRIVATE), Ok(false), "read again");
+    put(&tracked, at + Duration::from_micros(1));
+    assert_eq!(
+        memo.tracked(&ops, &loc, PRIVATE),
+        Ok(false),
+        "looks the same: the kept answer"
+    );
+}
+
+/// The kept answer goes with the config files too: `core.ignorecase` decides whether an entry spelled otherwise counts,
+/// and it changes without a change of the index. The config of a linked tree's common folder counts as well.
+#[test]
+fn the_kept_answer_follows_the_config_of_the_repository() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        fx.commit("first");
+        fx.put_entry(".PerMark/Local/x.json", 0, 0);
+        let loc = location(ops, &fx.root);
+        let memo = service::TrackedMemo::default();
+        fx.caseless(true);
+        assert_eq!(memo.tracked(ops, &loc, PRIVATE), Ok(true), "{name}");
+        fx.caseless(false);
+        assert_eq!(
+            memo.tracked(ops, &loc, PRIVATE),
+            Ok(false),
+            "{name}: case kept since"
+        );
+        // a linked tree reads the common folder's config
+        let tree = dunce::canonicalize(fx.dir.path()).unwrap().join("wt");
+        fx.repo.worktree("feat", &tree, None).unwrap();
+        let wt = Repository::open(&tree).unwrap();
+        let mut index = wt.index().unwrap();
+        let entry = git2::IndexEntry {
+            path: b".PerMark/Local/y.json".to_vec(),
+            ..index.get_path(Path::new("a.md"), 0).unwrap()
+        };
+        index.add(&entry).unwrap();
+        index.write().unwrap();
+        let linked = location(ops, &tree);
+        assert_eq!(memo.tracked(ops, &linked, PRIVATE), Ok(false), "{name}");
+        fx.caseless(true);
+        assert_eq!(
+            memo.tracked(ops, &linked, PRIVATE),
+            Ok(true),
+            "{name}: the common config turned caseless"
+        );
     });
 }
 
@@ -1909,12 +3757,9 @@ fn a_cancelled_git_leaves_nothing_running_in_the_folder() {
         std::thread::sleep(Duration::from_millis(5));
     }
     cancel.store(true, std::sync::atomic::Ordering::SeqCst);
-    assert_eq!(
-        worker.join().unwrap().unwrap_err(),
-        GitError::Failed("stopped".to_owned())
-    );
+    assert_eq!(worker.join().unwrap().unwrap_err(), GitError::Stopped);
     // at once: no grandchild (shell, sleep) holds the folder as its working directory. The system may need a few ms
-    // after the job is empty to let go of a working directory (verifier: 1 in 1200 at once, fine after 10 ms): a short
+    // after the job is empty to let go of a working directory (seen: 1 in 1200 at once, fine after 10 ms): a short
     // retry, never more than 200 ms (an orphan that keeps running holds it for 30 s)
     let target = dir.path().join("renamed ü");
     let started = Instant::now();
@@ -1958,8 +3803,8 @@ fn a_filter_command_from_the_repository_config_never_runs() {
         .unwrap();
     config.set_bool("filter.x.required", true).unwrap();
     // a fresh copy: every file must be looked at again
-    std::thread::sleep(Duration::from_millis(1100));
     fx.write("a.md", "a\n");
+    stamp_unrecorded(&fx.root.join("a.md"));
     let at = location(&git, &fx.root);
     let status = git.status(&at, &Baseline::Head).unwrap();
     assert!(!marker.exists(), "the repository's filter ran");
@@ -1967,6 +3812,199 @@ fn a_filter_command_from_the_repository_config_never_runs() {
     git.status(&at, &Baseline::Commit(head)).unwrap();
     assert!(!marker.exists(), "the repository's filter ran on diff");
     assert!(status.files.iter().all(|f| f.path != ".gitattributes"));
+}
+
+/// Two commits (`b.md` changed in the second), then `a.md` written again with the same bytes after the index was
+/// written: its record in the index is stale, so a `diff` against the first commit refreshes the index. Returns the
+/// first commit.
+fn stale_index_after_two_commits(fx: &Fixture) -> String {
+    fx.write("a.md", "a\n");
+    fx.write("b.md", "b\n");
+    let first = fx.commit("first");
+    fx.write("b.md", "b changed\n");
+    fx.commit("second");
+    fx.write("a.md", "a\n");
+    stamp_unrecorded(&fx.root.join("a.md"));
+    first
+}
+
+/// Gives `file` a modified time the index did not record for it, so git looks at its bytes again, without waiting for
+/// the clock to pass the recorded one.
+fn stamp_unrecorded(file: &Path) {
+    std::fs::File::options()
+        .write(true)
+        .open(file)
+        .unwrap()
+        .set_modified(std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000))
+        .unwrap();
+}
+
+#[test]
+fn a_file_written_again_with_the_same_bytes_is_no_change_against_an_older_commit() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        let first = stale_index_after_two_commits(&fx);
+        let loc = location(ops, &fx.root);
+        let status = ops.status(&loc, &Baseline::Commit(first)).unwrap();
+        assert_eq!(
+            letters(&status),
+            vec![("b.md".to_owned(), Letter::Modified, false)],
+            "{name}"
+        );
+        let head = ops.status(&loc, &Baseline::Head).unwrap();
+        assert!(letters(&head).is_empty(), "{name}: {:?}", head.files);
+    });
+}
+
+/// A folder that came with its `.git/` decides the hooks there, and a `diff` that refreshes the index writes it,
+/// which starts `post-index-change`. Neither a hook file nor a hook the config names (git 2.54+, which
+/// `core.hooksPath` does not reach) ever runs.
+#[test]
+fn no_hook_of_the_repository_ever_runs() {
+    let Some(git) = SystemGit::find() else {
+        eprintln!("SKIPPED: no git executable on PATH");
+        return;
+    };
+    let fx = Fixture::new();
+    let first = stale_index_after_two_commits(&fx);
+    let file_marker = fx.dir.path().join("file hook ran.txt");
+    let config_marker = fx.dir.path().join("config hook ran.txt");
+    let unix_text = |path: &Path| path.to_string_lossy().replace('\\', "/");
+    let script = format!("#!/bin/sh\necho ran >> \"{}\"\n", unix_text(&file_marker));
+    let own_hook = fx.root.join(".git").join("hooks").join("post-index-change");
+    // where a null-device spelling would lead git on Windows: folders of the working tree (`NUL` only through `\\?\`)
+    #[cfg(windows)]
+    let hook_files = {
+        let verbatim = PathBuf::from(format!(r"\\?\{}", fx.root.display()));
+        std::fs::write(
+            fx.root.join(".git").join("info").join("exclude"),
+            "/NUL/\n/dev/\n",
+        )
+        .unwrap();
+        [
+            own_hook,
+            verbatim.join("NUL").join("post-index-change"),
+            verbatim.join("dev").join("null").join("post-index-change"),
+        ]
+    };
+    #[cfg(not(windows))]
+    let hook_files = [own_hook];
+    for hook in &hook_files {
+        std::fs::create_dir_all(hook.parent().unwrap()).unwrap();
+        std::fs::write(hook, &script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+    let mut config = fx.repo.config().unwrap();
+    config
+        .set_str("hook.marker.event", "post-index-change")
+        .unwrap();
+    config
+        .set_str(
+            "hook.marker.command",
+            &format!("echo ran >> \"{}\"", unix_text(&config_marker)),
+        )
+        .unwrap();
+    let at = location(&git, &fx.root);
+    let status = git.status(&at, &Baseline::Commit(first)).unwrap();
+    assert_eq!(
+        letters(&status),
+        vec![("b.md".to_owned(), Letter::Modified, false)]
+    );
+    git.status(&at, &Baseline::Head).unwrap();
+    assert!(!file_marker.exists(), "a hook file ran");
+    assert!(!config_marker.exists(), "a hook the config names ran");
+}
+
+#[test]
+fn a_hook_name_that_cannot_be_switched_off_stops_the_call() {
+    let Some(git) = SystemGit::find() else {
+        eprintln!("SKIPPED: no git executable on PATH");
+        return;
+    };
+    let fx = Fixture::new();
+    let first = stale_index_after_two_commits(&fx);
+    let at = location(&git, &fx.root);
+    assert!(git.status(&at, &Baseline::Commit(first.clone())).is_ok());
+    // `-c hook.a=b.enabled=false` would set `hook.a` to `b.enabled=false`
+    let mut config = fx.repo.config().unwrap();
+    config
+        .set_str("hook.a=b.event", "post-index-change")
+        .unwrap();
+    assert!(git.status(&at, &Baseline::Commit(first)).is_err());
+    assert!(git.status(&at, &Baseline::Head).is_err());
+}
+
+#[test]
+fn every_hook_a_config_names_is_listed_and_odd_names_refuse() {
+    let out = b"system\0hook.lint.command\nrun\0global\0hook.lint.event\npre-commit\0local\0hook.A.b c.event\npost-index-change\0worktree\0hook..command\necho\0command\0hook.x.command\0local\0filter.f.clean\ncat";
+    assert_eq!(
+        system::config_hooks(out),
+        Some(vec![
+            "lint".to_owned(),
+            "A.b c".to_owned(),
+            String::new(),
+            "x".to_owned()
+        ])
+    );
+    assert_eq!(system::config_hooks(b""), Some(Vec::new()));
+    for odd in [
+        b"local\0hook.a=b.command\nrun".as_slice(),
+        b"local\0hook.a\x1bb.command\nrun",
+        b"local\0hook.\xff.command\nrun",
+    ] {
+        assert_eq!(system::config_hooks(odd), None, "{odd:?}");
+    }
+    // the filter list is unchanged by hook keys
+    assert_eq!(system::repo_filter_drivers(out), ["f"]);
+}
+
+/// What `git clone --no-checkout --filter=blob:none <url>` of `source` leaves at `copy`: the commits and folders of
+/// HEAD's history in a promisor pack, no file content, HEAD's branch, and the source as the remote that promises the
+/// rest.
+fn partial_copy(source: &Repository, copy: &Path, url: &str) {
+    let made = Repository::init(copy).unwrap();
+    let mut pack = source.packbuilder().unwrap();
+    let mut walk = source.revwalk().unwrap();
+    walk.push_head().unwrap();
+    for id in walk {
+        let commit = source.find_commit(id.unwrap()).unwrap();
+        pack.insert_object(commit.id(), None).unwrap();
+        pack.insert_object(commit.tree_id(), None).unwrap();
+        let tree = commit.tree().unwrap();
+        tree.walk(git2::TreeWalkMode::PreOrder, |_, entry| {
+            if entry.kind() == Some(git2::ObjectType::Tree) {
+                pack.insert_object(entry.id(), None).unwrap();
+            }
+            git2::TreeWalkResult::Ok
+        })
+        .unwrap();
+    }
+    let packs = made.path().join("objects").join("pack");
+    pack.write(&packs, 0).unwrap();
+    let name = pack.name().unwrap().unwrap();
+    std::fs::write(packs.join(format!("pack-{name}.promisor")), "").unwrap();
+    let mut config = made.config().unwrap();
+    for (key, value) in [
+        ("core.repositoryformatversion", "1"),
+        ("remote.origin.url", url),
+        ("remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"),
+        ("remote.origin.promisor", "true"),
+        ("remote.origin.partialclonefilter", "blob:none"),
+    ] {
+        config.set_str(key, value).unwrap();
+    }
+    let head = source.head().unwrap();
+    let (branch, tip) = (head.name().unwrap(), head.target().unwrap());
+    let made = Repository::open(copy).unwrap();
+    made.reference(branch, tip, true, "clone").unwrap();
+    let short = branch.trim_start_matches("refs/heads/");
+    made.reference(&format!("refs/remotes/origin/{short}"), tip, true, "clone")
+        .unwrap();
+    made.set_head(branch).unwrap();
 }
 
 /// A partial copy of a repository names a place to fetch from, and a fetch may run a program the repository's config
@@ -2027,6 +4065,20 @@ fn a_file_that_was_not_downloaded_is_a_miss_and_nothing_is_fetched() {
         "no partial copy: {}",
         String::from_utf8_lossy(&made.stderr)
     );
+    let holds = |copy: &Path| {
+        let copied = Repository::open(copy).unwrap();
+        let objects = copied.odb().unwrap();
+        texts.iter().any(|text| objects.exists(*text))
+    };
+    // some builds of git copy every object from a file URL whatever the filter (seen on the macOS build machines):
+    // the partial copy is then made by hand
+    let copy = if holds(&copy) {
+        let by_hand = fx.root.with_file_name("partial by hand ü");
+        partial_copy(&fx.repo, &by_hand, &url);
+        by_hand
+    } else {
+        copy
+    };
     // the copy's own config allows the transport: a default policy alone would not stop the fetch
     Repository::open(&copy)
         .unwrap()
@@ -2034,18 +4086,7 @@ fn a_file_that_was_not_downloaded_is_a_miss_and_nothing_is_fetched() {
         .unwrap()
         .set_str("protocol.file.allow", "always")
         .unwrap();
-    let downloaded = || {
-        let copied = Repository::open(&copy).unwrap();
-        let objects = copied.odb().unwrap();
-        texts.iter().any(|text| objects.exists(*text))
-    };
-    if cfg!(target_os = "macos") && downloaded() {
-        // the git of the macOS build machines makes a full copy from a file URL: nothing is missing, so there is
-        // nothing a fetch could bring. The switches under test are the same code on every system, and Windows
-        // and Linux run the case.
-        eprintln!("SKIPPED: this git made a full copy, no object is missing");
-        return;
-    }
+    let downloaded = || holds(&copy);
     assert!(!downloaded(), "the copy came with the files");
     each(|name, ops| {
         let loc = location(ops, &copy);
@@ -2078,6 +4119,7 @@ fn timings() -> Timings {
         quiet: Duration::from_millis(20),
         max_wait: Duration::from_millis(120),
         lock_wait: Duration::from_millis(300),
+        ..Timings::default()
     }
 }
 
@@ -2092,6 +4134,21 @@ fn start_with(
     prefs: Option<permark_core::state::StateFile<Prefs>>,
     visit: Option<permark_core::state::StateFile<Visit>>,
 ) -> Running {
+    launch(root, ops, worktrees, prefs, visit, timings())
+}
+
+fn start_timed(root: &Path, ops: &Arc<dyn GitOps>, timings: Timings) -> Running {
+    launch(root, ops, Vec::new(), None, None, timings)
+}
+
+fn launch(
+    root: &Path,
+    ops: &Arc<dyn GitOps>,
+    worktrees: Vec<(String, PathBuf)>,
+    prefs: Option<permark_core::state::StateFile<Prefs>>,
+    visit: Option<permark_core::state::StateFile<Visit>>,
+    timings: Timings,
+) -> Running {
     let announced: Announced = Arc::default();
     let facts = ProjectFacts::new(None);
     let service = GitService::start(ServiceArgs {
@@ -2099,7 +4156,7 @@ fn start_with(
         worktrees,
         choice: BackendChoice::Fixed(Arc::clone(ops)),
         home: None,
-        timings: timings(),
+        timings,
         facts: Arc::clone(&facts),
         announce: {
             let announced = Arc::clone(&announced);
@@ -2204,6 +4261,181 @@ fn a_burst_of_triggers_is_one_refresh() {
     std::thread::sleep(Duration::from_millis(300));
     // the first snapshot and one for the burst (a straggler is allowed, thirty are not)
     assert!(running.announced.lock().unwrap().len() <= 3);
+}
+
+/// The built-in backend whose status answers in time only for the calls `answers` names (counted from 0): a huge
+/// working tree, a cold disk.
+struct SlowStatus {
+    inner: BuiltinGit,
+    calls: std::sync::atomic::AtomicUsize,
+    answers: fn(usize) -> bool,
+}
+
+impl SlowStatus {
+    fn new(answers: fn(usize) -> bool) -> Arc<Self> {
+        Arc::new(Self {
+            inner: BuiltinGit,
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            answers,
+        })
+    }
+
+    fn calls(&self) -> usize {
+        self.calls.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl GitOps for SlowStatus {
+    fn kind(&self) -> BackendKind {
+        self.inner.kind()
+    }
+
+    fn discover(&self, root: &Path, home: Option<&Path>) -> Discovery {
+        self.inner.discover(root, home)
+    }
+
+    fn status(&self, location: &RepoLocation, baseline: &Baseline) -> Result<RawStatus, GitError> {
+        let n = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if (self.answers)(n) {
+            self.inner.status(location, baseline)
+        } else {
+            Err(GitError::Timeout)
+        }
+    }
+
+    fn blob_at_head(
+        &self,
+        location: &RepoLocation,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        self.inner.blob_at_head(location, path)
+    }
+
+    fn blob_at(
+        &self,
+        location: &RepoLocation,
+        commit: CommitId,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        self.inner.blob_at(location, commit, path)
+    }
+
+    fn file_versions(
+        &self,
+        location: &RepoLocation,
+        path: &str,
+        after: usize,
+        limit: usize,
+    ) -> Result<FileVersions, GitError> {
+        self.inner.file_versions(location, path, after, limit)
+    }
+
+    fn commit_exists(&self, location: &RepoLocation, oid: &str) -> bool {
+        self.inner.commit_exists(location, oid)
+    }
+
+    fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32> {
+        self.inner.commit_count(location, old, new)
+    }
+
+    fn ahead_behind(&self, location: &RepoLocation) -> Result<Option<(u32, u32)>, GitError> {
+        self.inner.ahead_behind(location)
+    }
+
+    fn last_commit(&self, location: &RepoLocation) -> Result<Option<(i64, String)>, GitError> {
+        self.inner.last_commit(location)
+    }
+
+    fn root_commit(&self, location: &RepoLocation) -> Result<Option<String>, GitError> {
+        self.inner.root_commit(location)
+    }
+}
+
+#[test]
+fn a_status_that_times_out_keeps_the_last_picture_and_file_changes_back_off() {
+    let slow = SlowStatus::new(|n| n == 0);
+    let ops: Arc<dyn GitOps> = Arc::clone(&slow) as Arc<dyn GitOps>;
+    let fx = Fixture::new();
+    fx.write("a.md", "committed\n");
+    fx.commit("first");
+    let running = start(&fx.root, &ops, Vec::new());
+    wait_until("the first snapshot", || {
+        running.service.snapshot().is_some()
+    });
+    let first = running.service.snapshot().unwrap();
+    // file changes keep coming while git cannot answer in time
+    for _ in 0..10 {
+        running.service.trigger(Why::Files);
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    wait_until("the timeout told", || {
+        running.facts.git()
+            == GitCondition::Error {
+                code: GitErrorCode::Timeout,
+                reason: String::new(),
+            }
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(slow.calls() <= 2, "{} status calls", slow.calls());
+    // the last picture and the repository stay: the last commit can still be read
+    assert_eq!(running.service.snapshot().unwrap().seq, first.seq);
+    assert_eq!(
+        running.service.reader().blob_at_head("a.md").as_deref(),
+        Some(&b"committed\n"[..])
+    );
+    // a git signal asks at once all the same
+    let before = slow.calls();
+    running.service.trigger(Why::Signal);
+    wait_until("the signal's status call", || slow.calls() > before);
+}
+
+/// A first status too slow while nothing is shown yet (cold caches of a large working tree on a fresh start) is asked
+/// again at once, without a file change and without the backoff: the repository shows up as soon as git answers.
+#[test]
+fn a_first_status_that_times_out_is_asked_again_at_once() {
+    let slow = SlowStatus::new(|n| n >= 1);
+    let ops: Arc<dyn GitOps> = Arc::clone(&slow) as Arc<dyn GitOps>;
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let started = Instant::now();
+    let running = start(&fx.root, &ops, Vec::new());
+    while !matches!(running.facts.git(), GitCondition::Repo { .. }) {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "no repository after {:?}: {:?}",
+            started.elapsed(),
+            running.facts.git()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(running.service.snapshot().is_some());
+    assert_eq!(slow.calls(), 2);
+}
+
+/// The retry at once is one: a status that keeps timing out from the start backs off as before, file changes wait.
+#[test]
+fn a_status_that_keeps_timing_out_from_the_start_backs_off_after_one_retry() {
+    let slow = SlowStatus::new(|_| false);
+    let ops: Arc<dyn GitOps> = Arc::clone(&slow) as Arc<dyn GitOps>;
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let running = start(&fx.root, &ops, Vec::new());
+    wait_until("the retry", || slow.calls() >= 2);
+    for _ in 0..5 {
+        running.service.trigger(Why::Files);
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert_eq!(slow.calls(), 2, "file changes back off");
+    assert!(running.service.snapshot().is_none());
+    assert_eq!(
+        running.facts.git(),
+        GitCondition::Error {
+            code: GitErrorCode::Timeout,
+            reason: String::new(),
+        }
+    );
 }
 
 #[test]
@@ -2333,6 +4565,77 @@ fn the_state_of_a_merge_and_the_wait_for_the_index_lock() {
     });
 }
 
+/// What the windows are told of a repository whose git folder may no longer be opened.
+fn refused() -> GitCondition {
+    service::condition_of(&GitError::Refused(crate::ops::RepoRefusal::NotLocal))
+}
+
+/// The share no host answers as a path (TEST-NET-1, never routed).
+fn share_path(rest: &str) -> PathBuf {
+    let share = if cfg!(windows) {
+        r"\\192.0.2.1\s"
+    } else {
+        SHARE
+    };
+    Path::new(share).join(rest)
+}
+
+/// `index.lock` is a plain file git writes: a link there (symlink | junction) is no lock, neither waited on nor
+/// followed (it may lead anywhere, a share too), and the git folder holding it is refused at the next look. A git
+/// folder swapped for a link is not gone either: refused, and nothing is looked up through it.
+#[test]
+fn a_link_at_the_index_lock_or_the_git_folder_is_refused_without_a_wait() {
+    use crate::worktrees::tests::{link_folder, symlink};
+    let ops: Arc<dyn GitOps> = Arc::new(BuiltinGit);
+    let slow_lock = Timings {
+        lock_wait: Duration::from_secs(5),
+        ..timings()
+    };
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let running = start_timed(&fx.root, &ops, slow_lock);
+    wait_until("the first snapshot", || {
+        running.service.snapshot().is_some()
+    });
+    let elsewhere = fx.dir.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    if !link_folder(&elsewhere, &fx.root.join(".git").join("index.lock")) {
+        eprintln!("links could not be made here; skipped");
+        return;
+    }
+    let started = Instant::now();
+    running.service.trigger(Why::Signal);
+    wait_until("the refusal", || running.facts.git() == refused());
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "waited on a linked lock: {:?}",
+        started.elapsed()
+    );
+    assert!(running.service.snapshot().is_none());
+
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let running = start_timed(&fx.root, &ops, slow_lock);
+    wait_until("the first snapshot", || {
+        running.service.snapshot().is_some()
+    });
+    std::fs::rename(fx.root.join(".git"), fx.dir.path().join("aside")).unwrap();
+    if !symlink(&share_path("r.git"), &fx.root.join(".git")) {
+        eprintln!("symlinks cannot be made here; the share case is skipped");
+        return;
+    }
+    let started = Instant::now();
+    running.service.trigger(Why::Signal);
+    wait_until("the refusal", || running.facts.git() == refused());
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "looked up through the git folder's link: {:?}",
+        started.elapsed()
+    );
+}
+
 #[test]
 fn since_the_last_visit_and_the_choice_of_baseline_are_remembered() {
     let ops: Arc<dyn GitOps> = Arc::new(BuiltinGit);
@@ -2433,6 +4736,61 @@ fn since_the_last_visit_and_the_choice_of_baseline_are_remembered() {
     );
     wait_until("visit 4", || lost.service.snapshot().is_some());
     assert_eq!(lost.service.snapshot().unwrap().baseline.oid, None);
+}
+
+/// The stored visit is a file of the folder: only a full commit id is ever compared with (any case, read as git
+/// prints it); a short id, a revision expression or an option never reaches git.
+#[test]
+fn a_stored_visit_is_used_only_when_it_is_a_full_commit_id() {
+    each(|name, _| {
+        let ops: Arc<dyn GitOps> = if name == "system" {
+            Arc::new(SystemGit::find().unwrap())
+        } else {
+            Arc::new(BuiltinGit)
+        };
+        let fx = Fixture::new();
+        fx.write("a.md", "a\n");
+        let first = fx.commit("first");
+        fx.write("a.md", "a changed\n");
+        fx.commit("second");
+        let store_dir = tempfile::tempdir().unwrap();
+        let store = permark_core::state::StateStore::for_project(
+            &AppDirs::under(store_dir.path()),
+            &Root::open(&fx.root).unwrap(),
+        );
+        let id = PluginId::of("git");
+        let measured_from = |stored: &str| {
+            store
+                .plugin_file::<Visit>(&id, "visit.json")
+                .save(&Visit {
+                    head: Some(stored.to_owned()),
+                })
+                .unwrap();
+            let running = start_with(
+                &fx.root,
+                &ops,
+                Vec::new(),
+                None,
+                Some(store.plugin_file(&id, "visit.json")),
+            );
+            wait_until("a snapshot", || running.service.snapshot().is_some());
+            running.service.snapshot().unwrap().baseline.oid.clone()
+        };
+        assert_eq!(
+            measured_from(&first).as_deref(),
+            Some(first.as_str()),
+            "{name}"
+        );
+        assert_eq!(
+            measured_from(&first.to_uppercase()).as_deref(),
+            Some(first.as_str()),
+            "{name}"
+        );
+        let parent = format!("{first}^");
+        for crafted in [&first[..7], &first[..39], "HEAD~1", "--output=x", &parent] {
+            assert_eq!(measured_from(crafted), None, "{name}: {crafted:?}");
+        }
+    });
 }
 
 #[test]
@@ -2589,6 +4947,57 @@ fn linked_worktrees_are_found_listed_and_given_their_own_letters() {
         assert_eq!(reader.blob_at_head("missing.md"), None);
         the_reader_answers_at_a_commit(name, reader.as_ref(), &wt_dir, first);
     });
+}
+
+/// `git worktree add` as the person runs it: absolute links, and relative ones (`--relative-paths`, git 2.48+: each
+/// link relative to the folder that holds it).
+#[test]
+fn worktrees_made_by_git_are_found_with_absolute_and_relative_links() {
+    let Some(exe) = find_git() else {
+        eprintln!("SKIPPED: no git executable on PATH");
+        return;
+    };
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let git = |args: &[&OsStr]| {
+        let out = system::run(&exe, &fx.root, args, system::TIMEOUT, 1 << 20).unwrap();
+        assert_eq!(out.code, Some(0), "{}", out.stderr);
+        out.stdout
+    };
+    let names = || -> Vec<String> {
+        linked_worktrees(&fx.root, None)
+            .into_iter()
+            .map(|l| l.name)
+            .collect()
+    };
+    let absolute = fx.dir.path().join("wt-abs-ü");
+    git(&[
+        OsStr::new("worktree"),
+        OsStr::new("add"),
+        OsStr::new("-b"),
+        OsStr::new("abs"),
+        absolute.as_os_str(),
+    ]);
+    assert_eq!(names(), ["wt-abs-ü"]);
+    let version = system::version_of(&git(&[OsStr::new("--version")]));
+    if version.is_none_or(|v| v < (2, 48)) {
+        eprintln!("SKIPPED: git {version:?} writes no relative worktree links");
+        return;
+    }
+    let relative = fx.dir.path().join("wt-rel");
+    git(&[
+        OsStr::new("worktree"),
+        OsStr::new("add"),
+        OsStr::new("--relative-paths"),
+        OsStr::new("-b"),
+        OsStr::new("rel"),
+        relative.as_os_str(),
+    ]);
+    assert_eq!(names(), ["wt-abs-ü", "wt-rel"]);
+    let found = linked_worktrees(&fx.root, None);
+    let canonical = |p: &Path| permark_core::paths::canonicalize(p).unwrap();
+    assert_eq!(canonical(&found[1].folder), canonical(&relative));
 }
 
 // ---- the plugin in a project -----------------------------------------------------------------------------------------

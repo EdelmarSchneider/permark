@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::*;
@@ -425,6 +425,20 @@ fn a_preview_lists_every_link_with_its_line_and_a_plan_without_links_reads_nothi
     );
 }
 
+/// A Markdown file that is a link is never planned for: its target's links are changed once, under the target's name,
+/// and the link stays a link.
+#[test]
+fn a_document_that_is_a_link_is_left_out_of_the_link_plan() {
+    let f = fx(&[("far.md", "[l](b.md)\n"), ("b.md", "")]);
+    if !crate::fsx::tests::file_link(&f.dir.path().join("alias.md"), &f.dir.path().join("far.md")) {
+        eprintln!("skipped: no file links here");
+        return;
+    }
+    let plan = f.ops.plan_move(&[spec("b.md", "c.md")], true).unwrap();
+    let planned: Vec<&str> = plan.files.iter().map(|d| d.path.as_str()).collect();
+    assert_eq!(planned, ["far.md"]);
+}
+
 #[test]
 fn a_document_with_unsaved_edits_is_skipped_and_said_so() {
     let f = fx(&[
@@ -627,6 +641,36 @@ fn moves_are_refused_for_every_reason_and_touch_nothing() {
         Err(ErrorKind::Unavailable)
     );
     assert!(exists(&f, "a.md") && exists(&f, "b.md") && exists(&f, "docs/x.md"));
+}
+
+/// Moves into one folder look the folder up once per check; each other folder is still looked up on its own, so one
+/// missing destination folder among many good ones refuses the whole set.
+#[test]
+fn many_moves_into_one_folder_pass_and_one_into_a_missing_folder_refuses_all() {
+    let f = fx(&[("a.md", ""), ("b.md", ""), ("c.md", ""), ("docs/", "")]);
+    let plan = |moves: &[(&str, &str)]| {
+        let specs: Vec<MoveSpec> = moves.iter().map(|(a, b)| spec(a, b)).collect();
+        f.ops.plan_move(&specs, false).map(|_| ()).map_err(kind_of)
+    };
+    let into_docs = [
+        ("a.md", "docs/a.md"),
+        ("b.md", "docs/b.md"),
+        ("c.md", "docs/c.md"),
+    ];
+    assert_eq!(plan(&into_docs), Ok(()));
+    for missing_at in 0..into_docs.len() {
+        let mut moves = into_docs;
+        moves[missing_at].1 = ["nodir/a.md", "nodir/b.md", "nodir/c.md"][missing_at];
+        assert_eq!(plan(&moves), Err(ErrorKind::NotFound), "{moves:?}");
+    }
+    // a folder named like a known one in another case is another folder where names keep their case
+    if !crate::paths::CASE_INSENSITIVE {
+        assert_eq!(
+            plan(&[("a.md", "docs/a.md"), ("b.md", "DOCS/b.md")]),
+            Err(ErrorKind::NotFound)
+        );
+    }
+    assert!(exists(&f, "a.md") && exists(&f, "b.md") && exists(&f, "c.md"));
 }
 
 #[test]
@@ -1190,9 +1234,462 @@ fn the_journal_keeps_twenty_and_survives_a_restart() {
         &StateStore::for_project(&AppDirs::under(f.state.path()), &root),
     );
     assert_eq!(again.undo_depth(), 20);
+    // what makes the journal readable again: the install key kept in the install folder
+    assert!(f.state.path().join("install/install.key").is_file());
     let undone = again.undo().unwrap().unwrap();
     assert_eq!(undone.kind, UndoKind::NewFolder);
     assert!(!exists(&f, "start/f24"));
+}
+
+/// A second service on the same project and state folders: the app started again.
+fn restarted(f: &Fx) -> FileOps {
+    let root = Root::open(f.dir.path()).unwrap();
+    FileOps::new(
+        Vault::new(root.clone()),
+        Arc::clone(&f.explorer),
+        Arc::clone(&f.own),
+        &StateStore::for_project(&AppDirs::under(f.state.path()), &root),
+    )
+}
+
+#[test]
+fn every_kind_of_operation_is_undone_after_a_restart() {
+    let f = fx(&[
+        ("a.md", "[b](b.md)\n"),
+        ("b.md", "b"),
+        ("docs/", ""),
+        ("gone.md", "bye"),
+    ]);
+    mv(&f, &[("b.md", "docs/b.md")]);
+    f.ops.create("docs", "new", NewKind::File).unwrap();
+    f.ops.create("docs", "folder", NewKind::Folder).unwrap();
+    let deleted = f.ops.delete(&["gone.md".to_owned()]).is_ok();
+    let again = restarted(&f);
+    assert_eq!(again.undo_depth(), if deleted { 4 } else { 3 });
+    if deleted {
+        let out = again.undo().unwrap().unwrap();
+        assert_eq!(out.kind, UndoKind::Delete);
+        if out.restored == 1 {
+            assert_eq!(read(&f, "gone.md"), "bye");
+        }
+    }
+    let out = again.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::NewFolder, 1));
+    assert!(!exists(&f, "docs/folder"));
+    let out = again.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::NewFile, 1));
+    assert!(!exists(&f, "docs/new.md"));
+    let out = again.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::Move, 1));
+    assert_eq!(read(&f, "b.md"), "b");
+    assert_eq!(read(&f, "a.md"), "[b](b.md)\n");
+    assert!(again.undo().unwrap().is_none());
+}
+
+#[test]
+fn a_journal_kept_in_the_profile_still_undoes_after_initialize() {
+    let f = fx(&[("docs/", "")]);
+    f.ops.create("docs", "made", NewKind::Folder).unwrap();
+    let root = Root::open(f.dir.path()).unwrap();
+    let dirs = AppDirs::under(f.state.path());
+    assert_eq!(
+        StateStore::for_project(&dirs, &root).location(),
+        crate::state::StateLocation::Profile
+    );
+    let store = crate::state::init_project(&dirs, &root).unwrap();
+    assert_eq!(store.location(), crate::state::StateLocation::Project);
+    f.ops.use_store(&store);
+    assert_eq!(f.ops.undo_depth(), 1);
+    let out = f.ops.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::NewFolder, 1));
+    assert!(!exists(&f, "docs/made"));
+}
+
+/// A journal that came with the folder (a zip, a clone, a sync partner): written where PerMark kept its journal.
+fn plant_journal(f: &Fx, json: &str) {
+    let root = Root::open(f.dir.path()).unwrap();
+    let store = StateStore::for_project(&AppDirs::under(f.state.path()), &root);
+    let path = store.dir().join("fileops").join("undo.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, json).unwrap();
+}
+
+/// Undoes until nothing is left (or the journal refuses).
+fn undo_all(ops: &FileOps) {
+    for _ in 0..25 {
+        if !matches!(ops.undo(), Ok(Some(_))) {
+            break;
+        }
+    }
+}
+
+#[test]
+fn a_journal_that_came_with_the_folder_never_moves_a_file_out() {
+    let f = fx(&[("a.md", "mine")]);
+    // stands in for a folder whose files run at sign-in
+    let startup = tempfile::tempdir().unwrap();
+    let evil = startup.path().join("evil.md");
+    let from = serde_json::to_string(&evil.display().to_string()).unwrap();
+    plant_journal(
+        &f,
+        &format!(
+            r#"{{"version":1,"data":{{"next":2,"entries":[{{"id":1,"at_ms":1,"op":{{"op":"import","copied":[],"moved":[{{"from":{from},"to":"a.md"}}]}}}}]}}}}"#
+        ),
+    );
+    let again = restarted(&f);
+    undo_all(&again);
+    assert_eq!(read(&f, "a.md"), "mine");
+    assert!(!evil.exists());
+    // the journal of the earlier version is kept aside under another name, never read
+    let root = Root::open(f.dir.path()).unwrap();
+    let folder = StateStore::for_project(&AppDirs::under(f.state.path()), &root)
+        .dir()
+        .join("fileops");
+    assert!(!folder.join("undo.json").exists());
+    assert!(fs::read_to_string(folder.join("undo.json.pre-1.0"))
+        .unwrap()
+        .contains("evil.md"));
+}
+
+#[test]
+fn the_journal_of_an_earlier_version_is_never_renamed_over_one_kept_before() {
+    let f = fx(&[("a.md", "mine")]);
+    plant_journal(&f, "older");
+    drop(restarted(&f));
+    plant_journal(&f, "newer");
+    drop(restarted(&f));
+    let root = Root::open(f.dir.path()).unwrap();
+    let folder = StateStore::for_project(&AppDirs::under(f.state.path()), &root)
+        .dir()
+        .join("fileops");
+    assert_eq!(read_text(&folder.join("undo.json")), "newer");
+    assert_eq!(read_text(&folder.join("undo.json.pre-1.0")), "older");
+}
+
+fn read_text(path: &Path) -> String {
+    fs::read_to_string(path).unwrap()
+}
+
+/// This install's journal of the fixture's project, and the project's own install data (key + folder id).
+fn journal_of(
+    f: &Fx,
+) -> (
+    crate::state::StateFile<undo::Journal>,
+    crate::state::Machine,
+) {
+    let root = Root::open(f.dir.path()).unwrap();
+    let store = StateStore::for_project(&AppDirs::under(f.state.path()), &root);
+    (
+        store.machine_file(undo::JOURNAL_FILE).unwrap(),
+        store.machine().unwrap().clone(),
+    )
+}
+
+/// Puts `op` in place of the newest entry's operation (its id, so its mark, stays), sealed under `machine` (`None`:
+/// unsealed).
+fn swap_newest(f: &Fx, op: Op, machine: Option<&crate::state::Machine>) {
+    let (file, _) = journal_of(f);
+    let mut journal = file.load().into_value();
+    let entry = journal.entries.last_mut().unwrap();
+    entry.op = op;
+    let seal = machine.map(|m| entry.seal_with(m)).unwrap_or_default();
+    entry.seal = seal;
+    file.save(&journal).unwrap();
+}
+
+fn import_op(copied: &[&str], moved: &[(&str, &str)]) -> Op {
+    Op::Import {
+        copied: copied.iter().map(|p| (*p).to_owned()).collect(),
+        moved: moved
+            .iter()
+            .map(|(from, to)| undo::ImportMoved {
+                from: (*from).to_owned(),
+                to: (*to).to_owned(),
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn an_entry_this_install_did_not_seal_for_this_folder_or_with_a_bad_path_never_moves_a_file() {
+    let f = fx(&[
+        ("a.md", "mine"),
+        (".git/HEAD", "ref"),
+        ("sub/.permark/x.json", "{}"),
+        ("sub/.permark/empty/", ""),
+        ("docs/", ""),
+    ]);
+    // stands in for a folder whose files run at sign-in
+    let startup = tempfile::tempdir().unwrap();
+    let evil = startup.path().join("evil.md").display().to_string();
+    f.ops.create("docs", "made", NewKind::Folder).unwrap();
+    let (_, mine) = journal_of(&f);
+    let other_state = tempfile::tempdir().unwrap();
+    let root = Root::open(f.dir.path()).unwrap();
+    let other_store = StateStore::for_project(&AppDirs::under(other_state.path()), &root);
+    let other = other_store.machine().unwrap();
+    let out = import_op(&[], &[(&evil, "a.md")]);
+    let cases: Vec<(&str, Op, Option<&crate::state::Machine>)> = vec![
+        ("unsealed", out.clone(), None),
+        ("sealed by another install", out, Some(other)),
+        (
+            "a repository folder",
+            import_op(&[".git"], &[]),
+            Some(&mine),
+        ),
+        (
+            "a member's state",
+            import_op(&["sub/.permark/x.json"], &[]),
+            Some(&mine),
+        ),
+        (
+            "a member's state folder",
+            Op::NewFolder {
+                path: "sub/.permark/empty".to_owned(),
+            },
+            Some(&mine),
+        ),
+        (
+            "a link put back into a state folder",
+            Op::Move {
+                moves: vec![("a.md".to_owned(), "docs/a.md".to_owned())],
+                docs: vec![DocUndo {
+                    path: "sub/.permark/x.json".to_owned(),
+                    original: "sub/.permark/x.json".to_owned(),
+                    hash_after: hash(b"{}").hex(),
+                    edits: vec![UndoEdit {
+                        start: 0,
+                        end: 2,
+                        old: "pwned".to_owned(),
+                    }],
+                    causes: Vec::new(),
+                    moved_by: None,
+                }],
+            },
+            Some(&mine),
+        ),
+    ];
+    for (case, op, machine) in cases {
+        swap_newest(&f, op, machine);
+        assert_eq!(f.ops.undo_depth(), 0, "{case}");
+        assert!(f.ops.undo_entry(1).unwrap().is_none(), "{case}");
+        assert!(f.ops.undo().unwrap().is_none(), "{case}");
+        assert!(restarted(&f).undo().unwrap().is_none(), "{case}");
+        assert_eq!(read(&f, "a.md"), "mine", "{case}");
+        assert!(!Path::new(&evil).exists(), "{case}");
+        assert_eq!(read(&f, ".git/HEAD"), "ref", "{case}");
+        assert_eq!(read(&f, "sub/.permark/x.json"), "{}", "{case}");
+        assert!(exists(&f, "sub/.permark/empty"), "{case}");
+    }
+    // the same entry as this install wrote it is still taken back: its mark was live all along
+    swap_newest(
+        &f,
+        Op::NewFolder {
+            path: "docs/made".to_owned(),
+        },
+        Some(&mine),
+    );
+    let out = f.ops.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::NewFolder, 1));
+    assert!(!exists(&f, "docs/made"));
+}
+
+#[test]
+fn a_step_taken_back_once_never_comes_back_with_an_older_copy_of_the_journal() {
+    let f = fx(&[("docs/", "")]);
+    f.ops.create("docs", "made", NewKind::Folder).unwrap();
+    let (file, _) = journal_of(&f);
+    let before = fs::read(file.path()).unwrap();
+    assert!(f.ops.undo().unwrap().is_some());
+    // made again by hand, then the older journal comes back (a sync partner, a restore)
+    fs::create_dir(f.dir.path().join("docs/made")).unwrap();
+    fs::write(file.path(), &before).unwrap();
+    assert_eq!(f.ops.undo_depth(), 0);
+    assert!(f.ops.undo().unwrap().is_none());
+    assert!(f.ops.undo_entry(1).unwrap().is_none());
+    assert!(restarted(&f).undo().unwrap().is_none());
+    assert!(exists(&f, "docs/made"));
+}
+
+#[test]
+fn an_import_is_put_back_only_on_a_local_drive_outside_the_project_and_the_state_folders() {
+    let f = fx(&[("a.md", "mine"), ("docs/", "")]);
+    let dirs = AppDirs::under(f.state.path());
+    let (_, mine) = journal_of(&f);
+    let inside = f.dir.path().join("back.md").display().to_string();
+    let install = dirs.install.join("a.md").display().to_string();
+    let profile = dirs.profile.join("a.md").display().to_string();
+    let refused = [
+        "//127.0.0.1/share/a.md",
+        r"\\127.0.0.1\share\a.md",
+        r"\\?\C:\a.md",
+        r"\\.\C:\a.md",
+        "out/a.md",
+        &inside,
+        &install,
+        &profile,
+    ];
+    for (n, from) in refused.iter().enumerate() {
+        f.ops
+            .create("docs", &format!("m{n}"), NewKind::Folder)
+            .unwrap();
+        swap_newest(&f, import_op(&[], &[(from, "a.md")]), Some(&mine));
+        let out = f.ops.undo().unwrap().unwrap();
+        assert_eq!(out.kind, UndoKind::Import, "{from}");
+        assert_eq!(out.restored, 0, "{from}");
+        assert_eq!(
+            out.skipped,
+            [Skip {
+                path: "a.md".to_owned(),
+                reason: SkipReason::Missing
+            }],
+            "{from}"
+        );
+        assert_eq!(read(&f, "a.md"), "mine", "{from}");
+    }
+    assert!(!Path::new(&inside).exists() && !Path::new(&install).exists());
+    // a place outside all of them: put back
+    let outside = tempfile::tempdir().unwrap();
+    let back = outside.path().join("a.md");
+    f.ops.create("docs", "last", NewKind::Folder).unwrap();
+    let from = back.display().to_string();
+    swap_newest(&f, import_op(&[], &[(&from, "a.md")]), Some(&mine));
+    let out = f.ops.undo().unwrap().unwrap();
+    assert_eq!((out.restored, out.skipped.len()), (1, 0));
+    assert_eq!(read_text(&back), "mine");
+}
+
+#[test]
+fn ids_go_on_after_the_journal_is_lost() {
+    let f = fx(&[("docs/", "")]);
+    f.ops.create("docs", "one", NewKind::Folder).unwrap();
+    f.ops.create("docs", "two", NewKind::Folder).unwrap();
+    let (file, _) = journal_of(&f);
+    fs::remove_file(file.path()).unwrap();
+    assert_eq!(f.ops.undo_depth(), 0);
+    f.ops.create("docs", "three", NewKind::Folder).unwrap();
+    let journal = file.load().into_value();
+    assert_eq!(
+        journal.entries.iter().map(|e| e.id).collect::<Vec<_>>(),
+        [3]
+    );
+    assert!(f.ops.undo_entry(1).unwrap().is_none());
+    assert!(f.ops.undo_entry(3).unwrap().is_some());
+    assert!(!exists(&f, "docs/three"));
+}
+
+#[test]
+fn a_next_id_written_into_the_journal_file_never_overflows_nor_gives_an_id_twice() {
+    let f = fx(&[("docs/", "")]);
+    f.ops.create("docs", "one", NewKind::Folder).unwrap();
+    // the journal file sits in the project's state folder, where a sync partner can write it
+    let (file, _) = journal_of(&f);
+    let mut journal = file.load().into_value();
+    journal.next = u64::MAX;
+    file.save(&journal).unwrap();
+    f.ops.create("docs", "two", NewKind::Folder).unwrap();
+    f.ops.create("docs", "three", NewKind::Folder).unwrap();
+    let ids: Vec<u64> = file
+        .load()
+        .into_value()
+        .entries
+        .iter()
+        .map(|e| e.id)
+        .collect();
+    assert_eq!(ids, [1, 2, 3]);
+    for name in ["three", "two", "one"] {
+        let out = f.ops.undo().unwrap().unwrap();
+        assert_eq!((out.kind, out.restored), (UndoKind::NewFolder, 1), "{name}");
+        assert!(!exists(&f, &format!("docs/{name}")), "{name}");
+    }
+}
+
+#[test]
+fn an_undo_never_acts_through_a_folder_link_into_a_repository_or_state_folder() {
+    let f = fx(&[
+        ("a.md", "mine"),
+        ("notes/", ""),
+        ("docs/", ""),
+        (".git/x/a.md", "repository data"),
+        ("sub/.permark/y/made.md", ""),
+    ]);
+    mv(&f, &[("a.md", "notes/a.md")]);
+    f.ops.create("docs", "made", NewKind::File).unwrap();
+    // each folder swapped for a link into a protected folder holding the same names
+    let root = f.dir.path();
+    for (folder, target) in [
+        ("notes", root.join(".git").join("x")),
+        ("docs", root.join("sub").join(".permark").join("y")),
+    ] {
+        fs::rename(root.join(folder), root.join(format!("{folder}-was"))).unwrap();
+        if !crate::tree::tests::link_out(&root.join(folder), &target) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+    }
+    let out = f.ops.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::NewFile, 0));
+    let out = f.ops.undo().unwrap().unwrap();
+    assert_eq!((out.kind, out.restored), (UndoKind::Move, 0));
+    assert_eq!(read(&f, ".git/x/a.md"), "repository data");
+    assert!(exists(&f, "sub/.permark/y/made.md"));
+    assert!(!exists(&f, "a.md"));
+}
+
+#[test]
+fn without_a_usable_install_key_operations_work_and_nothing_is_journaled() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("docs")).unwrap();
+    let state = tempfile::tempdir().unwrap();
+    // a file where the install folder should be: no key can be kept
+    let dirs = AppDirs {
+        install: state.path().join("install"),
+        ..AppDirs::under(state.path())
+    };
+    fs::write(&dirs.install, "in the way").unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    let vault = Vault::new(root.clone());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        Arc::new(Recorder::default()),
+        None,
+    ));
+    let store = StateStore::for_project(&dirs, &root);
+    let ops = FileOps::new(vault, explorer, Arc::new(OwnWrites::new()), &store);
+    ops.create("docs", "made", NewKind::Folder).unwrap();
+    assert!(dir.path().join("docs/made").is_dir());
+    assert_eq!(ops.undo_depth(), 0);
+    assert!(ops.undo().unwrap().is_none());
+    assert!(!store.dir().join("machine").exists());
+}
+
+#[test]
+fn an_undo_never_changes_a_root_a_repository_folder_or_any_state_folder() {
+    let undoable = |path: &str| ops::undoable(&VaultPath::parse(path).unwrap());
+    for path in [
+        "a.md",
+        "docs/a.md",
+        "@wt/n/a.md",
+        "permark/x",
+        "sub/.permarks/x",
+    ] {
+        assert!(undoable(path), "{path}");
+    }
+    for path in [
+        "",
+        "@wt/n",
+        ".git",
+        "sub/.git/config",
+        ".permark",
+        ".permark/local/x",
+        "sub/.permark",
+        "sub/.permark/x",
+        "@wt/n/.permark/x",
+        "@wt/n/sub/.permark/x",
+    ] {
+        assert!(!undoable(path), "{path}");
+    }
 }
 
 #[test]
@@ -1480,10 +1977,35 @@ fn the_candidate_filter_matches_plain_ascii_links_in_any_case() {
     assert!(!mentions("[p](docs/other.md)", planner.needles()));
 }
 
-/// Another program holds `path` without delete sharing (a rename over it waits), writes `text` through its handle as
-/// soon as the temp of an atomic write of `path` shows up, and lets go a moment later.
+/// Another program saves `text` to `path` after an atomic write of `path` made its temp and before that write replaces
+/// the file. Windows: the program holds `path` without delete sharing (a rename over it waits), writes through its
+/// handle as soon as the temp shows up, and lets go a moment later. Elsewhere nothing outside holds a rename back: the
+/// write's own seam saves at that point. The returned call waits until the save landed.
 #[cfg(windows)]
-fn slip_in_save(path: &Path, text: &'static str) -> std::thread::JoinHandle<()> {
+fn slip_in_save(path: &Path, text: &'static str) -> impl FnOnce() {
+    let writer = hold_and_save(path, text);
+    move || writer.join().unwrap()
+}
+
+#[cfg(not(windows))]
+fn slip_in_save(path: &Path, text: &'static str) -> impl FnOnce() {
+    let saved = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let landed = Arc::clone(&saved);
+    let target = path.to_path_buf();
+    crate::fsx::slip::before_check(path, move || {
+        fs::write(&target, text).unwrap();
+        landed.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+    move || {
+        assert!(
+            saved.load(std::sync::atomic::Ordering::SeqCst),
+            "the save landed"
+        );
+    }
+}
+
+#[cfg(windows)]
+fn hold_and_save(path: &Path, text: &'static str) -> std::thread::JoinHandle<()> {
     use std::io::Write as _;
     use std::os::windows::fs::OpenOptionsExt;
     const SHARE_READ_WRITE: u32 = 0x1 | 0x2;
@@ -1514,7 +2036,6 @@ fn slip_in_save(path: &Path, text: &'static str) -> std::thread::JoinHandle<()> 
     })
 }
 
-#[cfg(windows)]
 #[test]
 fn a_link_rewrite_never_replaces_a_save_that_slips_in_before_its_write() {
     let f = fx(&[
@@ -1523,9 +2044,9 @@ fn a_link_rewrite_never_replaces_a_save_that_slips_in_before_its_write() {
         ("b.md", ""),
     ]);
     let plan = f.ops.plan_move(&[spec("b.md", "moved.md")], true).unwrap();
-    let writer = slip_in_save(&f.dir.path().join("a.md"), "their save\n");
+    let landed = slip_in_save(&f.dir.path().join("a.md"), "their save\n");
     let outcome = f.ops.apply_move(plan.plan_id, true).unwrap();
-    writer.join().unwrap();
+    landed();
     assert_eq!(read(&f, "a.md"), "their save\n");
     assert_eq!(
         outcome.skipped,
@@ -1537,14 +2058,13 @@ fn a_link_rewrite_never_replaces_a_save_that_slips_in_before_its_write() {
     assert_eq!(read(&f, "c.md"), "[b](moved.md)\n");
 }
 
-#[cfg(windows)]
 #[test]
 fn an_undo_never_replaces_a_save_that_slips_in_before_its_write() {
     let f = fx(&[("a.md", "[b](b.md)\n"), ("b.md", "")]);
     mv(&f, &[("b.md", "c.md")]);
-    let writer = slip_in_save(&f.dir.path().join("a.md"), "their save\n");
+    let landed = slip_in_save(&f.dir.path().join("a.md"), "their save\n");
     let outcome = f.ops.undo().unwrap().unwrap();
-    writer.join().unwrap();
+    landed();
     assert_eq!(read(&f, "a.md"), "their save\n");
     assert!(
         outcome
@@ -1555,4 +2075,356 @@ fn an_undo_never_replaces_a_save_that_slips_in_before_its_write() {
         outcome.skipped
     );
     assert!(exists(&f, "b.md"), "the file still went back");
+}
+
+/// A FIFO named like a document is not a document: listing and the link scan of a move never wait on it.
+#[cfg(unix)]
+#[test]
+fn a_fifo_named_like_a_document_never_holds_up_a_move_preview() {
+    let f = fx(&[("a.md", "A"), ("notes.md", "[a](a.md)\n")]);
+    let fifo = f.dir.path().join("pipe.md");
+    let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+    assert!(made.is_ok_and(|s| s.success()));
+    let (tx, rx) = std::sync::mpsc::channel();
+    let ops = std::sync::Arc::new(f);
+    let worker = std::sync::Arc::clone(&ops);
+    std::thread::spawn(move || {
+        let plan = worker.ops.plan_move(&[spec("a.md", "b.md")], true);
+        let _ = tx.send(plan.map(|p| p.files.len()).ok());
+    });
+    let changes = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the move preview waited on a FIFO");
+    assert_eq!(changes, Some(1));
+    assert_eq!(read(&ops, "notes.md"), "[a](a.md)\n");
+}
+
+// ---- a bin that stops part way --------------------------------------------------------------------------------------------
+
+#[test]
+fn a_delete_the_bin_stops_part_way_journals_what_went_so_undo_brings_it_back() {
+    let f = fx(&[("a.md", "A"), ("b.md", "B")]);
+    // the bin takes the first item, then refuses the next (the freedesktop bin stops at its first failure)
+    let partly = |places: &[PathBuf]| -> Result<(), Unrecycled> {
+        let taken = crate::fsx::recycle(&places[..1]).is_ok();
+        Err(Unrecycled {
+            reason: "refused".to_owned(),
+            gone: vec![taken, false],
+        })
+    };
+    let outcome = f
+        .ops
+        .delete_with(&["a.md".to_owned(), "b.md".to_owned()], partly);
+    if exists(&f, "a.md") {
+        eprintln!("recycle bin not usable here; skipped");
+        return;
+    }
+    // what went and what stayed, not the bin's own words
+    assert_eq!(
+        outcome.unwrap(),
+        DeleteOutcome {
+            deleted: vec!["a.md".to_owned()],
+            refused: vec!["b.md".to_owned()],
+        }
+    );
+    assert_eq!(read(&f, "b.md"), "B");
+    let outcome = f.ops.undo().unwrap().expect("what went is journaled");
+    assert_eq!(outcome.kind, UndoKind::Delete);
+    if outcome.restored == 1 {
+        assert_eq!(read(&f, "a.md"), "A");
+        assert!(outcome.skipped.is_empty(), "{:?}", outcome.skipped);
+    } else {
+        // macOS (no restore API) or a bin that cannot be listed: said, not hidden
+        assert_eq!(
+            outcome.skipped,
+            [Skip {
+                path: "a.md".to_owned(),
+                reason: SkipReason::Missing
+            }]
+        );
+    }
+    assert_eq!(read(&f, "b.md"), "B");
+}
+
+/// The Windows bin cannot take a file held open without sharing; it goes on with the others and then fails. The
+/// outcome counts what went and names what stayed.
+#[cfg(windows)]
+#[test]
+fn the_items_the_bin_took_before_refusing_a_held_one_come_back_with_undo() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let f = fx(&[
+        ("a.md", "A"),
+        ("b.md", "B"),
+        ("held.md", "H"),
+        ("d.md", "D"),
+        ("e.md", "E"),
+    ]);
+    let held = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(f.dir.path().join("held.md"))
+        .unwrap();
+    let names = ["a.md", "b.md", "held.md", "d.md", "e.md"].map(str::to_owned);
+    let outcome = f.ops.delete(&names);
+    drop(held);
+    let gone: Vec<(&str, &str)> = [("a.md", "A"), ("b.md", "B"), ("d.md", "D"), ("e.md", "E")]
+        .into_iter()
+        .filter(|(path, _)| !exists(&f, path))
+        .collect();
+    if gone.is_empty() {
+        eprintln!("the bin took nothing here; skipped");
+        return;
+    }
+    let outcome = outcome.expect("some went: an outcome, not an error");
+    if outcome.refused.is_empty() {
+        eprintln!("the bin took a held file here; skipped");
+        return;
+    }
+    assert_eq!(outcome.deleted.len(), 4, "{outcome:?}");
+    assert_eq!(outcome.refused, ["held.md"]);
+    assert_eq!(read(&f, "held.md"), "H");
+    let outcome = f.ops.undo().unwrap().expect("what went is journaled");
+    assert_eq!(
+        usize::try_from(outcome.restored).unwrap(),
+        gone.len(),
+        "{:?}",
+        outcome.skipped
+    );
+    for (path, text) in gone {
+        assert_eq!(read(&f, path), text);
+    }
+}
+
+/// The freedesktop bin cannot take an item out of a read-only folder; it stops there, after the items before it.
+/// (Not on macOS: the Finder may ask for a password there.)
+#[cfg(all(unix, not(target_os = "macos")))]
+#[test]
+fn the_items_the_bin_took_before_an_item_it_cannot_take_come_back_with_undo() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = fx(&[("a.md", "A"), ("locked/b.md", "B")]);
+    let locked = f.dir.path().join("locked");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+    let outcome = f.ops.delete(&["a.md".to_owned(), "locked/b.md".to_owned()]);
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    if exists(&f, "a.md") {
+        eprintln!("recycle bin not usable here; skipped");
+        return;
+    }
+    let outcome = outcome.expect("some went: an outcome, not an error");
+    if outcome.refused.is_empty() {
+        eprintln!("the bin took an item of a read-only folder here; skipped");
+        return;
+    }
+    assert_eq!(outcome.refused, ["locked/b.md"]);
+    assert_eq!(read(&f, "locked/b.md"), "B");
+    let outcome = f.ops.undo().unwrap().expect("what went is journaled");
+    assert_eq!(outcome.restored, 1, "{:?}", outcome.skipped);
+    assert_eq!(read(&f, "a.md"), "A");
+}
+
+#[test]
+fn undo_of_a_delete_brings_back_what_it_can_and_never_replaces_what_took_a_place() {
+    let f = fx(&[("a.md", "A"), ("b.md", "B"), ("c.md", "C")]);
+    if f.ops
+        .delete(&["a.md".to_owned(), "b.md".to_owned(), "c.md".to_owned()])
+        .is_err()
+    {
+        eprintln!("recycle bin not usable here; skipped");
+        return;
+    }
+    fs::write(f.dir.path().join("b.md"), "new B").unwrap();
+    let outcome = f.ops.undo().unwrap().unwrap();
+    assert_eq!(read(&f, "b.md"), "new B");
+    if !cfg!(windows) && outcome.restored == 0 {
+        // macOS (no restore API) or a bin that cannot be listed: said, not hidden
+        assert_eq!(outcome.skipped.len(), 3);
+        return;
+    }
+    assert_eq!(outcome.restored, 2);
+    assert_eq!(
+        outcome.skipped,
+        [Skip {
+            path: "b.md".to_owned(),
+            reason: SkipReason::Occupied
+        }]
+    );
+    assert_eq!(
+        (read(&f, "a.md"), read(&f, "c.md")),
+        ("A".into(), "C".into())
+    );
+}
+
+// ---- many items: the answers of the pairwise checks, in about the time of the count ----------------------------------------
+
+mod many_items {
+    use std::path::PathBuf;
+    use std::time::{Duration, Instant};
+
+    use proptest::prelude::*;
+
+    use super::super::ops::{check_together, outermost, ValidMove};
+    use super::super::plan::Mover;
+    use super::super::FileOpError;
+    use crate::paths::VaultPath;
+    use crate::tree::key_of;
+
+    /// Segments that meet in every way the checks tell apart: case, Unicode normalization, one name inside another.
+    const SEGMENTS: &[&str] = &["a", "A", "b", "ab", "\u{e9}", "e\u{301}", "x y"];
+
+    fn path() -> impl Strategy<Value = String> {
+        proptest::collection::vec(proptest::sample::select(SEGMENTS), 1..4)
+            .prop_map(|parts| parts.join("/"))
+    }
+
+    fn valid(from: &str, to: &str) -> ValidMove {
+        ValidMove {
+            from: VaultPath::parse(from).unwrap(),
+            to: VaultPath::parse(to).unwrap(),
+            abs_from: PathBuf::from(from),
+            abs_to: PathBuf::from(to),
+            is_dir: false,
+            case_only: false,
+        }
+    }
+
+    /// Every pair in order: the reference the keyed check answers like.
+    fn pairwise_check_together(moves: &[ValidMove]) -> Result<(), FileOpError> {
+        for (at, a) in moves.iter().enumerate() {
+            for b in &moves[at + 1..] {
+                if a.from.is_within(&b.from) || b.from.is_within(&a.from) {
+                    return Err(FileOpError::Overlap(a.from.to_string()));
+                }
+                let (ta, tb) = (a.to.key().to_lowercase(), b.to.key().to_lowercase());
+                if ta == tb
+                    || ta.starts_with(&format!("{tb}/"))
+                    || tb.starts_with(&format!("{ta}/"))
+                {
+                    return Err(FileOpError::Overlap(a.to.to_string()));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Every path against every other: the reference of the collapse of nested deletes.
+    fn pairwise_outermost(checked: &[(VaultPath, PathBuf)]) -> Vec<(VaultPath, PathBuf)> {
+        let keys: Vec<String> = checked.iter().map(|(p, _)| p.key()).collect();
+        let mut kept = Vec::new();
+        for (at, (path, abs)) in checked.iter().enumerate() {
+            let covered = keys.iter().enumerate().any(|(other, key)| {
+                other != at
+                    && (path.key().starts_with(&format!("{key}/"))
+                        || (path.key() == *key && other < at))
+            });
+            if !covered {
+                kept.push((path.clone(), abs.clone()));
+            }
+        }
+        kept
+    }
+
+    /// The longest `from` first (the first given among equals), compared segment by segment: the reference mover.
+    fn linear_find(moves: &[(String, String)], path: &str) -> Option<(usize, String)> {
+        let mut entries: Vec<(Vec<String>, &String, usize)> = moves
+            .iter()
+            .enumerate()
+            .map(|(at, (from, to))| (from.split('/').map(key_of).collect(), to, at))
+            .collect();
+        entries.sort_by_key(|(from, _, _)| std::cmp::Reverse(from.len()));
+        let parts: Vec<&str> = path.split('/').collect();
+        entries.into_iter().find_map(|(from, to, at)| {
+            (parts.len() >= from.len() && parts.iter().zip(&from).all(|(p, f)| key_of(p) == *f))
+                .then(|| {
+                    let mut out = to.clone();
+                    for rest in &parts[from.len()..] {
+                        out.push('/');
+                        out.push_str(rest);
+                    }
+                    (at, out)
+                })
+        })
+    }
+
+    fn debug(result: Result<(), FileOpError>) -> Result<(), String> {
+        result.map_err(|e| format!("{e:?}"))
+    }
+
+    proptest! {
+        #[test]
+        fn overlapping_moves_are_refused_naming_the_item_the_pairwise_check_named(
+            pairs in proptest::collection::vec((path(), path()), 0..10),
+        ) {
+            let moves: Vec<ValidMove> = pairs.iter().map(|(from, to)| valid(from, to)).collect();
+            prop_assert_eq!(debug(check_together(&moves)), debug(pairwise_check_together(&moves)));
+        }
+
+        #[test]
+        fn nested_and_repeated_deletes_collapse_into_the_same_paths_in_the_same_order(
+            paths in proptest::collection::vec(path(), 0..12),
+        ) {
+            let checked: Vec<(VaultPath, PathBuf)> = paths
+                .iter()
+                .enumerate()
+                .map(|(at, p)| (VaultPath::parse(p).unwrap(), PathBuf::from(at.to_string())))
+                .collect();
+            prop_assert_eq!(outermost(checked.clone()), pairwise_outermost(&checked));
+        }
+
+        #[test]
+        fn the_mover_takes_every_path_where_the_linear_search_took_it(
+            moves in proptest::collection::vec((path(), path()), 0..8),
+            paths in proptest::collection::vec(path(), 1..8),
+        ) {
+            let mover = Mover::new(&moves);
+            for path in &paths {
+                let expected = linear_find(&moves, path);
+                prop_assert_eq!(mover.move_index_of(path), expected.as_ref().map(|(at, _)| *at));
+                prop_assert_eq!(mover.map(path), expected.map(|(_, to)| to));
+            }
+        }
+    }
+
+    /// Files spread over shared folders, each moved to its own place.
+    fn many(n: usize) -> Vec<(String, String)> {
+        (0..n)
+            .map(|i| {
+                let folder = i % 40;
+                (
+                    format!("src/part{folder}/d{i}.md"),
+                    format!("dst/part{folder}/d{i}.md"),
+                )
+            })
+            .collect()
+    }
+
+    // debug builds: checking every pair took minutes for these
+    const BOUND: Duration = Duration::from_secs(2);
+
+    #[test]
+    fn the_checks_of_thousands_of_moves_and_deletes_grow_with_the_count_not_its_square() {
+        let moves: Vec<ValidMove> = many(5000).iter().map(|(a, b)| valid(a, b)).collect();
+        let started = Instant::now();
+        assert!(check_together(&moves).is_ok());
+        let checked = moves
+            .iter()
+            .map(|m| (m.from.clone(), m.abs_from.clone()))
+            .collect();
+        assert_eq!(outermost(checked).len(), moves.len());
+        let took = started.elapsed();
+        assert!(took < BOUND, "{took:?}");
+    }
+
+    #[test]
+    fn the_mover_of_thousands_of_moves_finds_each_place_without_a_search() {
+        let pairs = many(5000);
+        let mover = Mover::new(&pairs);
+        let started = Instant::now();
+        for (at, (from, to)) in pairs.iter().enumerate() {
+            assert_eq!(mover.move_index_of(from), Some(at));
+            assert_eq!(mover.map(&format!("{from}/x")), Some(format!("{to}/x")));
+            assert_eq!(mover.map(&format!("other/{from}")), None);
+        }
+        let took = started.elapsed();
+        assert!(took < BOUND, "{took:?}");
+    }
 }

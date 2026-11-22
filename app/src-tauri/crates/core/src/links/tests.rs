@@ -335,6 +335,24 @@ fn a_table_link_after_non_ascii_text_and_an_escaped_pipe_is_still_found() {
 }
 
 #[test]
+fn an_html_link_after_escaped_pipes_in_a_table_cell_is_found_where_it_is_written() {
+    // the parser counts each escaped pipe as one column, so the reported place of the tag is off to the left:
+    // two of them cut its closing quote off
+    for (text, want) in [
+        (
+            "| a | b |\n|---|---|\n| x \\| y \\| <a href=\"h.md\">t</a> | [k](k.md) |\n",
+            vec!["h.md", "k.md"],
+        ),
+        (
+            "| a | b |\n|---|---|\n| 日本 \\| <img src=\"i.png\"> \\| <a href='j.md'>j</a> | z |\n",
+            vec!["i.png", "j.md"],
+        ),
+    ] {
+        assert_eq!(raws(text), want, "{text:?}");
+    }
+}
+
+#[test]
 fn html_attributes_are_destinations_and_comments_are_not() {
     let text = "<img src=\"a/b.png\" alt='x'>\n\n<a href='c.md'>t</a> and <video src=d.mp4 poster=\"p.png\"></video>\n\n<!-- <a href=\"hidden.md\"> -->\n\n<div data-href=\"nope.md\" HREF=\"upper.md\"></div>\n";
     assert_eq!(

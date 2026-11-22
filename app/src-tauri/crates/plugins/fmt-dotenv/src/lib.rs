@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use permark_core::format::config::util::{
-    caption, comment_above, escape_double, is_number, join_index, join_key, trailing_comment,
-    unescape_double, Lines,
+    caption, comment_above, escape_double, foreign_escape, is_number, join_index, join_key,
+    trailing_comment, unescape_double, Lines,
 };
 use permark_core::format::config::{
     Group, Quote, Row, RowValue, Scalar, ScalarKind, Sheet, SheetKind,
@@ -178,7 +178,12 @@ fn value(
             } else {
                 Quote::Single
             };
-            read_only = (last != n).then_some("multiline");
+            // a shell reads `\$` and a backslash before a backquote its own way: such text stays as written
+            read_only = if last == n {
+                (open == '"' && foreign_escape(inner)).then_some("escape")
+            } else {
+                Some("multiline")
+            };
         } else {
             // never closes: the rest of the line, as it is
             kind = ScalarKind::String;

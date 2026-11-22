@@ -123,6 +123,72 @@ describe("Decorator embeds", () => {
     plain.dispose();
   });
 
+  it("an embed that throws while mounting leaves its block's text and look as they were, and nothing unhandled", async () => {
+    const unhandled: unknown[] = [];
+    const listen = (reason: unknown): void => void unhandled.push(reason);
+    process.on("unhandledRejection", listen);
+    try {
+      // a component that draws half of itself, then fails
+      function Broken(_internals: unknown, props: { source: string }): never {
+        const target = document.querySelector('[data-info="broken"]');
+        target?.append(document.createTextNode(`half of ${props.source}`));
+        target?.classList.add("is-drawn");
+        throw new Error("broken embed");
+      }
+      const decorator = new Decorator(createMockApi());
+      const told: (string | null)[] = [];
+      decorator.onMounted((element) => told.push(element.getAttribute("data-info")));
+      decorator.setEmbeds((language) =>
+        language === "broken" ? () => Promise.resolve({ default: Broken }) : probe,
+      );
+      const root = block("broken", "fine");
+      const broken = root.querySelector<HTMLElement>('[data-info="broken"]');
+      decorator.near(root);
+      await decorator.idle();
+      await new Promise((done) => setTimeout(done, 10));
+      expect(broken?.innerHTML).toBe("<pre><code>broken source</code></pre>");
+      expect(broken?.className).toBe("code-block");
+      expect(root.querySelectorAll(".embed-probe")).toHaveLength(1);
+      expect(unhandled).toEqual([]);
+      expect(told).toEqual(["fine"]);
+      // taken down later: still the text it had
+      decorator.dispose();
+      expect(broken?.innerHTML).toBe("<pre><code>broken source</code></pre>");
+    } finally {
+      process.off("unhandledRejection", listen);
+    }
+  });
+
+  it("tells each element an embed mounted in, never one whose library failed", async () => {
+    const decorator = new Decorator(createMockApi());
+    const told: (string | null)[] = [];
+    decorator.onMounted((element) => told.push(element.getAttribute("data-info")));
+    decorator.setEmbeds((language) =>
+      language === "broken" ? () => Promise.reject(new Error("no library")) : probe,
+    );
+    decorator.near(block("rust", "broken", "js"));
+    await decorator.idle();
+    expect(told.sort()).toEqual(["js", "rust"]);
+    decorator.dispose();
+  });
+
+  it("tells every listener (the reading view's and the editor's tables), none that stopped listening", async () => {
+    const decorator = new Decorator(createMockApi());
+    decorator.setEmbeds(() => probe);
+    const page: (string | null)[] = [];
+    const editor: (string | null)[] = [];
+    decorator.onMounted((element) => page.push(element.getAttribute("data-info")));
+    const off = decorator.onMounted((element) => editor.push(element.getAttribute("data-info")));
+    decorator.near(block("rust"));
+    await decorator.idle();
+    off();
+    decorator.near(block("js"));
+    await decorator.idle();
+    expect(page).toEqual(["rust", "js"]);
+    expect(editor).toEqual(["rust"]);
+    decorator.dispose();
+  });
+
   it("idle settles at once when nothing is loading", async () => {
     const decorator = new Decorator(createMockApi());
     await expect(decorator.idle()).resolves.toBeUndefined();

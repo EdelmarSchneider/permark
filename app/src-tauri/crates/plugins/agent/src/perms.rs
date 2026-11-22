@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use permark_core::fsx::FolderIdentity;
-use permark_core::state::{Loaded, StateData, StateStore};
+use permark_core::state::{Loaded, StateData, StateError, StateStore};
 use serde::{Deserialize, Serialize};
 
 /// Per-project file (profile only, `PROFILE_ONLY`).
@@ -176,18 +176,36 @@ pub fn load(store: &StateStore) -> ProjectChoice {
 /// identity, once. Only the app's project start calls it, never an agent's tool call (an agent's `open` may start the
 /// app, and that start records it); a failed write is retried at the next open.
 pub fn adopt_folder(store: &StateStore, root: &Path) {
-    let file = store.profile_file::<ProjectChoice>(PROJECT_FILE);
-    let Loaded::Found(mut choice) = file.load() else {
-        return;
-    };
-    if !choice.enabled || choice.folder.is_some() {
-        return;
-    }
     let Some(folder) = FolderIdentity::of(root) else {
         return;
     };
-    choice.folder = Some(folder);
-    let _ = file.save(&choice);
+    let _ = change(store, |choice| {
+        if !choice.enabled || choice.folder.is_some() {
+            return false;
+        }
+        choice.folder = Some(folder);
+        true
+    });
+}
+
+/// Changes the person's choices for one project: `edit` gets what the file holds now (the defaults when there is
+/// none) and answers whether to write. Read and write happen under the file's lock, and the write lands only while the
+/// file still holds what `edit` saw: two changes at once (the switch turned while the project starts | an agent's
+/// first ask) never let the later one put back what the earlier one changed.
+///
+/// # Errors
+/// The file could not be read | written.
+pub fn change(
+    store: &StateStore,
+    mut edit: impl FnMut(&mut ProjectChoice) -> bool,
+) -> Result<(), StateError> {
+    store
+        .profile_file::<ProjectChoice>(PROJECT_FILE)
+        .update(|now| {
+            let mut choice = now.cloned().unwrap_or_default();
+            edit(&mut choice).then_some(choice)
+        })
+        .map(|_| ())
 }
 
 /// Whether the profile holds a choice for the project of `store` (a project PerMark has been used on).

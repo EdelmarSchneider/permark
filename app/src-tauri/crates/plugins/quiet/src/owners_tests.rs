@@ -174,10 +174,10 @@ fn a_mark_set_while_the_owners_change_is_written_to_the_new_owner() {
     let root_file = root.join(".permark/local/quiet.json");
     assert!(std::fs::read_to_string(&root_file).unwrap().contains("/x"));
     core.projects_include(
-        &env,
         &permark_core::projects::ProjectPick::Paths {
             paths: vec![MEMBER.to_owned()],
         },
+        &|| core.initialize(&env),
     )
     .unwrap();
     // included: copied, and a new mark goes to the project's file only

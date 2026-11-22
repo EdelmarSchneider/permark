@@ -13,8 +13,9 @@
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
-  import { tick, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { t, type MessageKey } from "../../core/i18n";
+  import { rulesProblemText } from "../../core/projects/agentRules";
   import Card from "../../core/shell/settings/Card.svelte";
   import ScopeChip from "../../core/shell/settings/ScopeChip.svelte";
   import { ui } from "../../core/shell/ui.svelte";
@@ -76,6 +77,9 @@
   const moreId = $props.id();
   const groupsId = `${moreId}-groups`;
   const limitsId = `${moreId}-limits`;
+
+  // a rule file may have changed since the status was last told: read again as the section shows
+  onMount(() => void agent.refreshStatus());
 
   // the setup lines name the program by its path: asked once, when they show
   $effect(() => {
@@ -141,6 +145,13 @@
         <span>{stateText}</span>
         <ScopeChip scope="you" />
       </p>
+      {#if status.rules !== undefined}
+        <!-- standing on last good rules is a warning; nothing shared until it is fixed keeps agents out -->
+        <p class={["rules", status.rules.fallback]}>
+          <TriangleAlert size={14} class="alert" aria-hidden="true" />
+          <span>{rulesProblemText(status.rules)}</span>
+        </p>
+      {/if}
       {#if phase === "off"}
         {#if status.replaced}
           <p class="about">{t("agent.folderReplaced")}</p>
@@ -340,6 +351,24 @@
     margin: 0;
     color: var(--muted);
     font-size: var(--fs-ui-sm);
+  }
+  .rules {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-2);
+    margin: 0;
+    font-size: var(--fs-ui-sm);
+    overflow-wrap: anywhere;
+  }
+  .rules :global(.alert) {
+    flex: none;
+    margin-top: 2px;
+  }
+  .rules.lastGood {
+    color: var(--git-modified-text);
+  }
+  .rules.closed {
+    color: var(--git-deleted-text);
   }
   .failed {
     margin: 0;

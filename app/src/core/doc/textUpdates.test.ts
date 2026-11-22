@@ -23,6 +23,7 @@ function textView(path: string, text: string, partial = false): DocumentView {
     mtimeMs: 1,
     editable: { editable: "surgical" },
     notes: [],
+    opensOutside: true,
   };
 }
 

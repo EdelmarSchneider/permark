@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MOCK_AGENTS, MOCK_LOGIN_METHODS, MOCK_OPTIONS } from "../../api/mockAcp";
 import { documents } from "../../core/doc/document.svelte";
 import { t, tn } from "../../core/i18n";
-import AssistantPanel from "./AssistantPanel.svelte";
+import AssistantPanel, { OPTION_SETTLE_MS } from "./AssistantPanel.svelte";
 import { acp, PANEL_MARK } from "./store.svelte";
 
 let component: Record<string, unknown> | null = null;
@@ -96,6 +96,39 @@ afterEach(() => {
 });
 
 describe("the Assistant panel", () => {
+  it("names a rule file it could not read, why, and whether its last rules stand in or the agent is kept out", () => {
+    if (acp.status === null) throw new Error("no status");
+    acp.status = {
+      ...acp.status,
+      rules: { file: ".aiignore", why: "tooLarge", fallback: "lastGood" },
+    };
+    open();
+    const line = (): HTMLElement | null =>
+      [...root.querySelectorAll<HTMLElement>("header .note")].find((n) =>
+        n.textContent?.includes(".aiignore"),
+      ) ?? null;
+    expect(line()?.textContent).toBe(
+      "Couldn't read .aiignore: it's too large. PerMark uses the last rules from it that worked until you fix it.",
+    );
+    expect(line()?.classList.contains("warning")).toBe(true);
+    acp.status = {
+      ...acp.status,
+      rules: { file: "sub/.permark/config.toml", why: "notToml", fallback: "closed" },
+    };
+    flushSync();
+    const closed = [...root.querySelectorAll<HTMLElement>("header .note")].find((n) =>
+      n.textContent?.includes("sub/.permark/config.toml"),
+    );
+    expect(closed?.textContent).toBe(
+      "Couldn't read sub/.permark/config.toml: it isn't valid TOML. Agents get nothing it covers until you fix it.",
+    );
+    expect(closed?.classList.contains("refusal")).toBe(true);
+    const { rules: _gone, ...rest } = acp.status;
+    acp.status = rest;
+    flushSync();
+    expect(root.querySelector("header")?.textContent).not.toContain("Couldn't read");
+  });
+
   it("explains itself while the conversation is empty and names the agent", () => {
     open();
     expect(root.textContent).toContain(t("acp.empty"));
@@ -806,13 +839,76 @@ describe("the agent's settings", () => {
     const fast = control("Fast mode", HTMLInputElement);
     expect(fast.getAttribute("role")).toBe("switch");
     expect(fast.checked).toBe(false);
+    model.focus();
     model.value = "haiku";
     model.dispatchEvent(new Event("change", { bubbles: true }));
+    model.blur();
     fast.click();
     expect(set.mock.calls).toEqual([
       ["model", "haiku"],
       ["fast", true],
     ]);
+  });
+
+  it("steps through a closed list reach the agent once: the value the person stops at", () => {
+    const set = vi.spyOn(acp, "setOption").mockResolvedValue(true);
+    withOptions("ready");
+    open();
+    const model = control(t("acp.option.model"), HTMLSelectElement);
+    const step = (value: string): void => {
+      model.value = value;
+      model.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      model.focus();
+      // arrow keys on a closed list (Windows): one change per step
+      for (const value of ["opus", "sonnet", "haiku"]) {
+        step(value);
+        vi.advanceTimersByTime(OPTION_SETTLE_MS - 1);
+      }
+      expect(set).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(set.mock.calls).toEqual([["model", "haiku"]]);
+      // the keyboard leaves the list: what it shows goes at once, once
+      step("opus");
+      model.blur();
+      vi.advanceTimersByTime(OPTION_SETTLE_MS * 2);
+      expect(set.mock.calls).toEqual([
+        ["model", "haiku"],
+        ["model", "opus"],
+      ]);
+      // the panel goes while a step waits: the step still reaches the agent
+      model.focus();
+      step("sonnet");
+      if (component) void unmount(component);
+      component = null;
+      flushSync();
+      expect(set.mock.calls.at(-1)).toEqual(["model", "sonnet"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("news of the values while a step waits never sends the step early", () => {
+    const set = vi.spyOn(acp, "setOption").mockResolvedValue(true);
+    withOptions("ready");
+    open();
+    const model = control(t("acp.option.model"), HTMLSelectElement);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      model.focus();
+      model.value = "opus";
+      model.dispatchEvent(new Event("change", { bubbles: true }));
+      // the agent tells its values again (an echo, fresh objects) mid-way through the steps
+      acp.take({ type: "options", options: structuredClone([...acp.options]) });
+      flushSync();
+      expect(set).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(OPTION_SETTLE_MS);
+      expect(set.mock.calls).toEqual([["model", "opus"]]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("wait while the agent starts, and never show over the picker", () => {
@@ -833,8 +929,10 @@ describe("the agent's settings", () => {
     model.focus();
     model.value = "opus";
     model.dispatchEvent(new Event("change", { bubbles: true }));
+    model.blur();
     await settle();
     expect(model.value).toBe("default");
+    model.focus();
     // the agent tells a new model: the same control shows it, still with the keyboard
     acp.take({
       type: "options",

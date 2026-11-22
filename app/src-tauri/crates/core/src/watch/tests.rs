@@ -53,6 +53,11 @@ fn make_with(files: &[&str], native: bool, timing: Timing) -> Fx {
             fs::write(path, "x").unwrap();
         }
     }
+    watch_dir(dir, native, timing)
+}
+
+/// A watch over what `dir` holds now.
+fn watch_dir(dir: tempfile::TempDir, native: bool, timing: Timing) -> Fx {
     let root = Root::open(dir.path()).unwrap();
     let vault = Vault::new(root);
     let explorer = Explorer::new(
@@ -583,6 +588,25 @@ fn dropping_the_watcher_while_events_flow_is_prompt_and_silent_afterwards() {
     drop(dir);
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn the_watch_never_follows_a_link_out_of_the_project() {
+    let outside = tempfile::tempdir().unwrap();
+    fs::create_dir(outside.path().join("deep")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("keep.md"), "x").unwrap();
+    std::os::unix::fs::symlink(outside.path(), dir.path().join("out")).unwrap();
+    // followed, this one would have the watch walk the whole system
+    std::os::unix::fs::symlink("/", dir.path().join("top")).unwrap();
+    let f = watch_dir(dir, true, FAST);
+    assert_eq!(f.watcher.status(), LiveStatus::Available);
+    fs::write(outside.path().join("far.md"), "outside").unwrap();
+    fs::write(outside.path().join("deep/farther.md"), "outside").unwrap();
+    let all = fence(&f, "after.md");
+    assert!(!all.iter().any(|c| c.path.starts_with("out/")), "{all:?}");
+    assert_eq!(f.watcher.status(), LiveStatus::Available);
+}
+
 #[test]
 fn a_watcher_over_a_vanished_folder_starts_unavailable_and_drops_cleanly() {
     let dir = tempfile::tempdir().unwrap();
@@ -844,6 +868,43 @@ fn a_file_made_through_the_projects_own_editor_is_listed_before_the_watch_report
     assert!(told, "the window is told");
 }
 
+#[test]
+fn a_file_the_app_wrote_inside_the_project_is_listed_at_once_and_one_outside_is_ignored() {
+    let base = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    fs::write(project.path().join("a.md"), "a").unwrap();
+    fs::create_dir(project.path().join("out")).unwrap();
+    let seen: Seen = Arc::default();
+    let sink = Arc::new(Recorder::default());
+    let env = project_env(base.path(), &seen, sink.clone());
+    let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
+    tree_shown(&core, &seen);
+    sink.take();
+    // an export saved through the system's Save dialog: the tree is told with the write, not by the watch, whose
+    // report waits for a quiet moment (150 ms); as above, a stalled runner may let the watch report first
+    let inside = core.root().path().join("out").join("a.pdf");
+    fs::write(&inside, "pdf").unwrap();
+    core.announce_written(&inside);
+    assert!(
+        core.explorer().listed("out/a.pdf").is_some(),
+        "listed at once"
+    );
+    let tree_news = |sink: &Recorder| {
+        sink.take()
+            .into_iter()
+            .filter(|event| matches!(event, CoreEvent::TreeChanged(_)))
+            .count()
+    };
+    assert_eq!(tree_news(&sink), 1, "the window is told");
+    // a file outside the project (and the project folder itself) changes nothing in the tree
+    let outside = elsewhere.path().join("b.pdf");
+    fs::write(&outside, "pdf").unwrap();
+    core.announce_written(&outside);
+    core.announce_written(core.root().path());
+    assert_eq!(tree_news(&sink), 0);
+}
+
 /// The project's tree as window `w` shows it: built, and the OS watch settled (what it still tells of the time before
 /// it began is waited out and forgotten).
 fn tree_shown(core: &ProjectCore, seen: &Seen) {
@@ -1085,6 +1146,36 @@ fn a_touch_of_a_shown_picture_that_leaves_its_bytes_is_no_news() {
     fs::write(&pic, fs::read(&pic).unwrap()).unwrap();
     let all = fence(&f, "fence2.md");
     assert!(all.iter().all(|c| c.path.starts_with("fence")), "{all:?}");
+}
+
+#[test]
+fn a_big_new_file_is_read_once_a_window_shows_it_so_a_touch_that_leaves_its_bytes_is_no_news() {
+    // a new file of this size is not read when it appears; the window that shows it gives the reason to
+    let f = make(&[], true);
+    let big = f.dir.path().join("big.bin");
+    let bytes = vec![b'x'; 2 * 1024 * 1024];
+    fs::write(&big, &bytes).unwrap();
+    let all = fence(&f, "fence0.md");
+    assert!(wrote(&all, "big.bin"), "{all:?}");
+    f.seen.lock().unwrap().clear();
+    f.watcher.poll_document("w", Some(&big));
+    // a sync client | a virus scan: the same bytes, a new time
+    let later = std::time::SystemTime::now() + Duration::from_secs(90);
+    fs::File::options()
+        .write(true)
+        .open(&big)
+        .unwrap()
+        .set_modified(later)
+        .unwrap();
+    let all = fence(&f, "fence1.md");
+    assert!(all.iter().all(|c| c.path == "fence1.md"), "{all:?}");
+    // a real change after the reading is still told
+    let mut changed = bytes;
+    changed[0] = b'y';
+    fs::write(&big, &changed).unwrap();
+    wait_for(&f.seen, "the change", |c| {
+        has(c, "big.bin", &ChangeKind::Modified)
+    });
 }
 
 #[test]
@@ -1871,7 +1962,12 @@ fn an_edited_exclude_file_of_a_nested_repo_counts_at_once() {
     });
     let _ = quiet_for(&seen, 400);
     fs::write(base.join("hubs/a/.git/info/exclude"), "draft.md\n").unwrap();
-    let _ = quiet_for(&seen, 600);
+    // its subscribers hear the change too: what the tree and the index list follows the new rules
+    let heard = quiet_for(&seen, 600);
+    assert!(
+        heard.iter().any(|c| c.path == "hubs/a/.git/info/exclude"),
+        "{heard:?}"
+    );
     seen.lock().unwrap().clear();
     fs::write(base.join("hubs/a/draft.md"), "2").unwrap();
     fs::write(base.join("hubs/a/doc.md"), "an agent wrote").unwrap();
@@ -2086,4 +2182,674 @@ fn unrelated_folders_are_never_taken_for_a_project_move() {
         },
     );
     assert_eq!(got, Vec::new());
+}
+
+// ---- the reconcile pass, called directly -----------------------------------------------------------------------------
+
+/// A project folder for the reconcile pass without OS events: hints are made by the test.
+struct Direct {
+    _dir: tempfile::TempDir,
+    vault: Vault,
+    ignorers: Vec<(String, Arc<crate::tree::Ignorer>)>,
+}
+
+impl Direct {
+    fn new() -> Self {
+        Self::new_at(tempfile::tempdir().unwrap())
+    }
+
+    fn new_at(dir: tempfile::TempDir) -> Self {
+        let vault = Vault::new(Root::open(dir.path()).unwrap());
+        let ignorers = Explorer::new(
+            &vault,
+            &ProjectConfig::default(),
+            Arc::new(Recorder::default()),
+            None,
+        )
+        .ignorers();
+        Self {
+            _dir: dir,
+            vault,
+            ignorers,
+        }
+    }
+
+    fn abs(&self, rel: &str) -> PathBuf {
+        self.vault.main().path().join(rel)
+    }
+
+    fn hint(&self, rel: &str) -> Pending {
+        Pending {
+            abs: self.abs(rel),
+            created: false,
+            removed: false,
+            modified: false,
+            rename_from: None,
+            after_removal: None,
+            deferred: false,
+        }
+    }
+
+    fn pass(
+        &self,
+        sigs: &SigStore,
+        known: &dyn Fn(&str) -> Option<bool>,
+        pending: Vec<Pending>,
+    ) -> Vec<Change> {
+        let env = Env {
+            vault: &self.vault,
+            sigs,
+            ignorers: &self.ignorers,
+            known,
+            opened_ignored: &|_| false,
+            wanted: &|_| false,
+        };
+        reconcile(&env, pending).changes
+    }
+}
+
+fn renames(changes: &[Change]) -> usize {
+    changes
+        .iter()
+        .filter(|c| matches!(c.kind, ChangeKind::Renamed { .. }))
+        .count()
+}
+
+#[test]
+fn moves_reported_together_are_paired_through_the_pass() {
+    let fx = Direct::new();
+    let n = 200;
+    let left: Vec<String> = (0..n).map(|i| format!("a/f{i}.md")).collect();
+    let right: Vec<String> = (0..n).map(|i| format!("b/f{i}.md")).collect();
+    fs::create_dir_all(fx.abs("a")).unwrap();
+    fs::create_dir_all(fx.abs("b")).unwrap();
+    let sigs = SigStore::default();
+    for (i, rel) in left.iter().enumerate() {
+        fs::write(fx.abs(rel), format!("moved {i}")).unwrap();
+        let meta = fs::symlink_metadata(fx.abs(rel)).unwrap();
+        sigs.set(
+            crate::tree::key_of(rel),
+            rel,
+            sig_of(&fx.abs(rel), &meta).unwrap(),
+        );
+    }
+    // renames the OS reported (each creation names where it came from) and moves found by content
+    let mut hints = Vec::new();
+    for (i, (from, to)) in left.iter().zip(&right).enumerate() {
+        fs::rename(fx.abs(from), fx.abs(to)).unwrap();
+        hints.push(Pending {
+            removed: true,
+            ..fx.hint(from)
+        });
+        hints.push(Pending {
+            created: true,
+            rename_from: (i % 2 == 0).then(|| fx.abs(from)),
+            ..fx.hint(to)
+        });
+    }
+    let changes = fx.pass(&sigs, &|_| None, hints);
+    assert_eq!((renames(&changes), changes.len()), (n, n));
+    // moves the app announced, reported as removals + creations of files the watch never read
+    let own = OwnWrites::new();
+    let pairs: Vec<(String, String)> = right.iter().cloned().zip(left.iter().cloned()).collect();
+    own.expect_moves(&pairs);
+    let mut hints = Vec::new();
+    for (from, to) in &pairs {
+        fs::rename(fx.abs(from), fx.abs(to)).unwrap();
+        hints.push(Pending {
+            removed: true,
+            ..fx.hint(from)
+        });
+        hints.push(Pending {
+            created: true,
+            ..fx.hint(to)
+        });
+    }
+    let mut changes = fx.pass(&SigStore::default(), &|path| own.moved_from(path), hints);
+    own.pair_moves(&mut changes);
+    assert_eq!((renames(&changes), changes.len()), (n, n));
+}
+
+fn sig(len: u64, hash: u64) -> super::sigs::Sig {
+    super::sigs::Sig {
+        len,
+        mtime_ms: 1,
+        hash,
+    }
+}
+
+fn removal(path: String) -> Change {
+    Change {
+        path,
+        kind: ChangeKind::Removed,
+        is_dir: false,
+        own: false,
+    }
+}
+
+fn creation(path: String) -> Change {
+    Change {
+        path,
+        kind: ChangeKind::Created,
+        is_dir: false,
+        own: false,
+    }
+}
+
+#[test]
+fn thousands_of_moves_in_one_batch_are_paired_in_one_pass() {
+    let n = 5000;
+    // removals, then creations: half name where they came from, half hold the same content
+    let mut changes: Vec<Change> = (0..n).map(|i| removal(format!("a/f{i}.md"))).collect();
+    changes.extend((0..n).map(|i| creation(format!("b/f{i}.md"))));
+    let removed: Vec<(usize, super::sigs::Sig)> =
+        (0..n).map(|i| (i, sig(10, i as u64 + 1))).collect();
+    let created: Vec<super::reconcile::Created> = (0..n)
+        .map(|i| super::reconcile::Created {
+            at: n + i,
+            sig: sig(10, i as u64 + 1),
+            from: (i % 2 == 0).then(|| format!("a/f{i}.md")),
+            unread: None,
+        })
+        .collect();
+    let started = Instant::now();
+    super::reconcile::pair_renames(&mut changes, created, &removed, &mut |_, _| None);
+    let took = started.elapsed();
+    assert_eq!((renames(&changes), changes.len()), (n, n));
+    // moves the app announced: each removal asks whether it was one, then the pairs are made
+    let own = OwnWrites::new();
+    let pairs: Vec<(String, String)> = (0..n)
+        .map(|i| (format!("b/f{i}.md"), format!("c/f{i}.md")))
+        .collect();
+    own.expect_moves(&pairs);
+    let mut changes: Vec<Change> = pairs
+        .iter()
+        .map(|(from, _)| removal(from.clone()))
+        .collect();
+    changes.extend(pairs.iter().map(|(_, to)| creation(to.clone())));
+    let started = Instant::now();
+    for (from, _) in &pairs {
+        assert_eq!(own.moved_from(from), Some(false));
+    }
+    assert_eq!(own.moved_from("b"), Some(true));
+    own.pair_moves(&mut changes);
+    let took = took + started.elapsed();
+    assert_eq!((renames(&changes), changes.len()), (n, n));
+    assert!(took < Duration::from_secs(2), "{took:?}");
+}
+
+/// Reference for the property check: each named partner searched through every removal, paired removals taken out
+/// one at a time.
+fn pair_renames_one_by_one(
+    changes: &mut Vec<Change>,
+    created: Vec<super::reconcile::Created>,
+    removed: &[(usize, super::sigs::Sig)],
+) {
+    let key_of = crate::tree::key_of;
+    let mut by_sig: std::collections::HashMap<(u64, u64), usize> = std::collections::HashMap::new();
+    for (at, sig) in removed {
+        if sig.len > 0 && sig.hash != 0 {
+            by_sig.entry((sig.len, sig.hash)).or_insert(*at);
+        }
+    }
+    let mut dropped: Vec<usize> = Vec::new();
+    for super::reconcile::Created { at, sig, from, .. } in created {
+        let direct = from.and_then(|from| {
+            removed
+                .iter()
+                .find(|(at, _)| key_of(&changes[*at].path) == key_of(&from))
+                .map(|(at, _)| *at)
+        });
+        let partner = direct.or_else(|| {
+            (sig.len > 0 && sig.hash != 0)
+                .then(|| by_sig.get(&(sig.len, sig.hash)).copied())
+                .flatten()
+        });
+        let Some(removed_at) = partner else {
+            continue;
+        };
+        if dropped.contains(&removed_at) {
+            continue;
+        }
+        let from = changes[removed_at].path.clone();
+        if key_of(&from) == key_of(&changes[at].path) {
+            continue;
+        }
+        changes[at].kind = ChangeKind::Renamed { from };
+        dropped.push(removed_at);
+    }
+    dropped.sort_unstable();
+    for at in dropped.into_iter().rev() {
+        changes.remove(at);
+    }
+}
+
+mod pairing {
+    use proptest::prelude::*;
+
+    use super::super::reconcile::{pair_renames, Created};
+    use super::super::sigs::Sig;
+    use super::*;
+
+    const PATHS: [&str; 6] = ["a.md", "A.md", "b.md", "c/d.md", "C/d.md", "e.md"];
+
+    /// (0 removed | 1 created | 2 modified, path, len, hash, named origin, created file not read yet)
+    type Item = (u8, usize, u64, u64, Option<usize>, bool);
+
+    /// The pass's input; `unread`: creations marked not read yet keep their content to themselves (hash 0) until read.
+    fn inputs(items: &[Item], unread: bool) -> (Vec<Change>, Vec<Created>, Vec<(usize, Sig)>) {
+        let (mut changes, mut created, mut removed) = (Vec::new(), Vec::new(), Vec::new());
+        for (at, (what, path, len, hash, from, lazy)) in items.iter().enumerate() {
+            let path = PATHS[*path].to_owned();
+            match what {
+                0 => {
+                    changes.push(removal(path));
+                    removed.push((at, sig(*len, *hash)));
+                }
+                1 => {
+                    changes.push(creation(path));
+                    let lazy = unread && *lazy;
+                    created.push(Created {
+                        at,
+                        sig: sig(*len, if lazy { 0 } else { *hash }),
+                        from: from.map(|f| PATHS[f].to_owned()),
+                        unread: lazy.then(|| PathBuf::from(at.to_string())),
+                    });
+                }
+                _ => changes.push(Change {
+                    path,
+                    kind: ChangeKind::Modified,
+                    is_dir: false,
+                    own: false,
+                }),
+            }
+        }
+        (changes, created, removed)
+    }
+
+    proptest! {
+        #[test]
+        fn renames_pair_as_each_partner_searched_one_by_one(
+            items in proptest::collection::vec(
+                (
+                    0..3_u8,
+                    0..PATHS.len(),
+                    0..3_u64,
+                    0..3_u64,
+                    proptest::option::of(0..PATHS.len()),
+                    proptest::bool::ANY,
+                ),
+                0..14,
+            ),
+        ) {
+            // the files not read yet are read on demand (their content as it is): same pairs as all read at once
+            let (mut indexed, created, removed) = inputs(&items, true);
+            let mut read = |abs: &Path, _: &str| {
+                let at: usize = abs.to_str()?.parse().ok()?;
+                let (_, _, len, hash, _, _) = items[at];
+                Some(sig(len, hash))
+            };
+            pair_renames(&mut indexed, created, &removed, &mut read);
+            let (mut scanned, created, removed) = inputs(&items, false);
+            pair_renames_one_by_one(&mut scanned, created, &removed);
+            prop_assert_eq!(indexed, scanned);
+        }
+    }
+}
+
+// ---- git operations in progress ----------------------------------------------------------------------------------------
+
+/// Reports a change of the project file `rel` as the OS would.
+fn report_modified(f: &Fx, rel: &str) {
+    f.watcher.inject(Pending {
+        abs: dunce::canonicalize(f.dir.path().join(rel)).unwrap(),
+        created: false,
+        removed: false,
+        modified: true,
+        rename_from: None,
+        after_removal: None,
+        deferred: false,
+    });
+}
+
+/// Writes `text` into the project file `rel`, reports it and returns the batch that told it.
+fn told_batch(f: &Fx, rel: &str, text: &str) -> FsBatch {
+    fs::write(f.dir.path().join(rel), text).unwrap();
+    report_modified(f, rel);
+    batch_telling(f, rel)
+}
+
+/// The batch that told `rel` (taken out of what was seen).
+fn batch_telling(f: &Fx, rel: &str) -> FsBatch {
+    let started = Instant::now();
+    loop {
+        let found = {
+            let mut seen = f.seen.lock().unwrap();
+            let at = seen
+                .iter()
+                .position(|b| b.changes.iter().any(|c| c.path == rel));
+            at.map(|at| seen.remove(at))
+        };
+        if let Some(batch) = found {
+            return batch;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "no batch told {rel}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn a_git_operation_makes_a_batch_bulk_only_when_it_starts_or_moves_on() {
+    // a merge waiting for its commit (its marker stays for hours): the person's saves are plain batches
+    let f = make(&[".git/HEAD", ".git/MERGE_HEAD", "a.md", "b.md"], false);
+    let git = f.dir.path().join(".git");
+    assert!(!told_batch(&f, "a.md", "one").bulk, "a save during a merge");
+    // another operation begins (its marker appears): the batch that sees it is bulk, the next save is not
+    fs::write(git.join("CHERRY_PICK_HEAD"), "c").unwrap();
+    assert!(told_batch(&f, "b.md", "two").bulk, "an operation began");
+    assert!(!told_batch(&f, "a.md", "three").bulk, "nothing new");
+    // the operation moves on (HEAD, the index, refs change with the files): bulk while a marker is there
+    fs::write(git.join("HEAD"), "ref: refs/heads/other\n").unwrap();
+    report_modified(&f, ".git/HEAD");
+    assert!(
+        batch_telling(&f, ".git/HEAD").bulk,
+        "HEAD moved during the operation"
+    );
+    // the index lock stays a bulk reason as long as it is there
+    fs::write(git.join("index.lock"), "l").unwrap();
+    assert!(told_batch(&f, "b.md", "five").bulk, "index.lock");
+    assert!(told_batch(&f, "a.md", "six").bulk, "index.lock still there");
+    fs::remove_file(git.join("index.lock")).unwrap();
+    // the operations end: plain batches
+    fs::remove_file(git.join("MERGE_HEAD")).unwrap();
+    fs::remove_file(git.join("CHERRY_PICK_HEAD")).unwrap();
+    assert!(!told_batch(&f, "b.md", "seven").bulk, "no marker");
+}
+
+// ---- storms in ignored folders -------------------------------------------------------------------------------------------
+
+#[test]
+fn a_storm_in_an_ignored_folder_is_dropped_before_it_counts() {
+    // an install then `rm -rf node_modules`: more reports than the watch keeps before it gives up and asks for a rescan
+    let window = Timing {
+        quiet: Duration::from_millis(300),
+        max: Duration::from_secs(60),
+        ..FAST
+    };
+    let f = make_with(&["a.md", "node_modules/"], false, window);
+    let base = dunce::canonicalize(f.dir.path()).unwrap();
+    let n = 60_000;
+    for removed in [false, true] {
+        for i in 0..n {
+            // packages ship their own ignore files
+            let name = if i % 100 == 0 {
+                ".gitignore".to_owned()
+            } else {
+                format!("f{i}.js")
+            };
+            f.watcher.inject(Pending {
+                abs: base.join(format!("node_modules/pkg{}/lib/{name}", i / 100)),
+                created: !removed,
+                removed,
+                modified: false,
+                rename_from: None,
+                after_removal: None,
+                deferred: false,
+            });
+        }
+    }
+    let fence = told_batch(&f, "a.md", "after the storm");
+    assert!(!fence.rescan, "{} changes", fence.changes.len());
+    // each hint taken in is looked at on disk: the storm's files never are (the fence is)
+    assert!(f.watcher.admitted() <= 1, "{}", f.watcher.admitted());
+    let seen = f.seen.lock().unwrap();
+    assert!(seen.iter().all(|b| !b.rescan), "{} batches", seen.len());
+}
+
+#[test]
+fn only_hints_the_pass_would_drop_unseen_are_dropped_early() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join(".gitignore"), "build/\n").unwrap();
+    fs::create_dir_all(dir.path().join("build/out")).unwrap();
+    fs::create_dir_all(dir.path().join("open")).unwrap();
+    fs::create_dir_all(dir.path().join("node_modules/pkg")).unwrap();
+    let fx = Direct::new_at(dir);
+    let sigs = SigStore::default();
+    let opened = |path: &str| path == "build/out";
+    let env = Env {
+        vault: &fx.vault,
+        sigs: &sigs,
+        ignorers: &fx.ignorers,
+        known: &|_| None,
+        opened_ignored: &opened,
+        wanted: &|_| false,
+    };
+    let mut folders = std::collections::HashMap::new();
+    let mut early = |hint: Pending| env.ignored_early(&hint, &mut folders);
+    let created = |rel: &str| Pending {
+        created: true,
+        ..fx.hint(rel)
+    };
+    let removed = |rel: &str| Pending {
+        removed: true,
+        ..fx.hint(rel)
+    };
+    // deep in an ignored folder: dropped, whatever happened
+    assert!(early(created("node_modules/pkg/lib/a.js")));
+    assert!(early(removed("node_modules/pkg/lib/a.js")));
+    assert!(early(Pending {
+        modified: true,
+        ..fx.hint("build/x/y.md")
+    }));
+    assert!(early(removed("build/x")));
+    // a creation below the topmost ignored folder may be a repository moved in, within the depth the search for
+    // repositories looks; never one below `node_modules`
+    assert!(!early(created("build/x")));
+    assert!(!early(created("build/x/repo")));
+    assert!(!early(created("build/x/y/repo")));
+    assert!(early(created("build/x/y/z/repo")));
+    assert!(early(created("node_modules/new")));
+    // shown folders, `.git`, moves and children of an opened ignored folder go on to the pass
+    assert!(!early(created("open/a.md")));
+    assert!(!early(created("node_modules/pkg/sub/.git")));
+    assert!(!early(Pending {
+        modified: true,
+        ..fx.hint("build/x/.git/HEAD")
+    }));
+    assert!(!early(Pending {
+        created: true,
+        rename_from: Some(fx.abs("open/a.md")),
+        ..fx.hint("build/x/a.md")
+    }));
+    assert!(!early(created("build/out/new.md")));
+}
+
+/// The team files (the `.permark` folder, its `config.toml`, `meta.toml` and `projects.toml`, in the opened folder and
+/// in a folder below) reach their followers whatever the ignore rules say: git sharing set to private ignores
+/// everything inside `.permark`, a root `.gitignore` may name the folder itself. Other files there stay dropped.
+#[test]
+fn team_files_pass_the_ignore_rules_and_nothing_else_there_does() {
+    const TEAM: [&str; 3] = ["config.toml", "meta.toml", "projects.toml"];
+    for private in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        for folder in [".permark", "sub/.permark"] {
+            fs::create_dir_all(dir.path().join(folder)).unwrap();
+            for name in TEAM.iter().chain(&["tags.toml"]) {
+                fs::write(dir.path().join(folder).join(name), "x = 1\n").unwrap();
+            }
+            if private {
+                fs::write(dir.path().join(folder).join(".gitignore"), "*\n").unwrap();
+            }
+        }
+        if !private {
+            fs::write(dir.path().join(".gitignore"), ".permark/\n").unwrap();
+        }
+        let fx = Direct::new_at(dir);
+        let sigs = SigStore::default();
+        let env = Env {
+            vault: &fx.vault,
+            sigs: &sigs,
+            ignorers: &fx.ignorers,
+            known: &|_| None,
+            opened_ignored: &|_| false,
+            wanted: &|_| false,
+        };
+        let mut folders = std::collections::HashMap::new();
+        let modified = |rel: &str| Pending {
+            modified: true,
+            ..fx.hint(rel)
+        };
+        let mut hints = Vec::new();
+        for folder in [".permark", "sub/.permark"] {
+            for name in TEAM {
+                let hint = modified(&format!("{folder}/{name}"));
+                assert!(!env.ignored_early(&hint, &mut folders), "{folder}/{name}");
+                hints.push(hint);
+            }
+            hints.push(modified(&format!("{folder}/tags.toml")));
+        }
+        let mut told: Vec<String> = fx
+            .pass(&sigs, &|_| None, hints)
+            .into_iter()
+            .map(|c| c.path)
+            .collect();
+        told.sort();
+        assert_eq!(
+            told,
+            [
+                ".permark/config.toml",
+                ".permark/meta.toml",
+                ".permark/projects.toml",
+                "sub/.permark/config.toml",
+                "sub/.permark/meta.toml",
+                "sub/.permark/projects.toml",
+            ],
+            "private: {private}"
+        );
+        // the folder itself arriving (a checkout, a copy): told, with its team files and nothing else
+        let arrived = Pending {
+            created: true,
+            ..fx.hint(".permark")
+        };
+        assert!(!env.ignored_early(&arrived, &mut folders));
+        let mut told: Vec<String> = fx
+            .pass(&SigStore::default(), &|_| None, vec![arrived])
+            .into_iter()
+            .map(|c| c.path)
+            .collect();
+        told.sort();
+        assert_eq!(
+            told,
+            [
+                ".permark",
+                ".permark/config.toml",
+                ".permark/meta.toml",
+                ".permark/projects.toml",
+            ],
+            "private: {private}"
+        );
+    }
+}
+
+#[test]
+fn a_repository_moved_into_a_folder_inside_an_ignored_one_is_seen() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join(".gitignore"), "build/\n").unwrap();
+    fs::write(dir.path().join("a.md"), "x").unwrap();
+    fs::create_dir_all(dir.path().join("build/x")).unwrap();
+    fs::write(dir.path().join("build/x/old.md"), "x").unwrap();
+    let f = watch_dir(dir, false, FAST);
+    let base = dunce::canonicalize(f.dir.path()).unwrap();
+    // a change inside has the watch find `build` holding no repository
+    report_modified(&f, "build/x/old.md");
+    told_batch(&f, "a.md", "one");
+    // a repository moved in from outside arrives as one creation
+    let outside = tempfile::tempdir_in(base.parent().unwrap()).unwrap();
+    fs::create_dir_all(outside.path().join("repo/.git")).unwrap();
+    fs::write(
+        outside.path().join("repo/.git/HEAD"),
+        "ref: refs/heads/main\n",
+    )
+    .unwrap();
+    fs::rename(outside.path().join("repo"), base.join("build/x/repo")).unwrap();
+    f.watcher.inject(Pending {
+        abs: base.join("build/x/repo"),
+        created: true,
+        removed: false,
+        modified: false,
+        rename_from: None,
+        after_removal: None,
+        deferred: false,
+    });
+    let fence = told_batch(&f, "a.md", "two");
+    let seen = f.seen.lock().unwrap();
+    assert!(
+        fence.rescan || seen.iter().any(|b| b.rescan),
+        "the new project makes everything look again"
+    );
+}
+
+#[test]
+fn new_big_files_are_read_only_when_their_content_may_pair_them() {
+    // pictures copied in: hashing each would read every byte written on the watch thread
+    let fx = Direct::new();
+    let len = 1024 * 1024 + 4096;
+    fs::create_dir_all(fx.abs("pics")).unwrap();
+    let rels: Vec<String> = (0..20).map(|i| format!("pics/p{i}.png")).collect();
+    for (i, rel) in rels.iter().enumerate() {
+        let mut bytes = vec![b'x'; len];
+        bytes[0] = u8::try_from(i).unwrap();
+        fs::write(fx.abs(rel), bytes).unwrap();
+    }
+    let hints = rels
+        .iter()
+        .map(|rel| Pending {
+            created: true,
+            ..fx.hint(rel)
+        })
+        .collect();
+    let before = super::sigs::hashed_bytes();
+    let changes = fx.pass(&SigStore::default(), &|_| None, hints);
+    assert_eq!(changes.len(), rels.len());
+    assert_eq!(super::sigs::hashed_bytes() - before, 0, "nothing read");
+    // one of them is moved by copy + delete: the removal's size matches, that file is read and the move paired
+    let sigs = SigStore::default();
+    let meta = fs::symlink_metadata(fx.abs(&rels[3])).unwrap();
+    sigs.set(
+        crate::tree::key_of(&rels[3]),
+        &rels[3],
+        sig_of(&fx.abs(&rels[3]), &meta).unwrap(),
+    );
+    fs::rename(fx.abs(&rels[3]), fx.abs("moved.png")).unwrap();
+    let before = super::sigs::hashed_bytes();
+    let changes = fx.pass(
+        &sigs,
+        &|_| None,
+        vec![
+            Pending {
+                removed: true,
+                ..fx.hint(&rels[3])
+            },
+            Pending {
+                created: true,
+                ..fx.hint("moved.png")
+            },
+        ],
+    );
+    assert_eq!(
+        changes
+            .iter()
+            .map(|c| (c.path.as_str(), &c.kind))
+            .collect::<Vec<_>>(),
+        [(
+            "moved.png",
+            &ChangeKind::Renamed {
+                from: rels[3].clone()
+            }
+        )]
+    );
+    assert!(super::sigs::hashed_bytes() - before <= len as u64);
 }

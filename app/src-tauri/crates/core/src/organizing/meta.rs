@@ -24,10 +24,10 @@ use super::normalize::{
     known_color, known_icon, normalize_description, normalize_tag, normalize_tags,
 };
 
-/// Written at the top of a `meta.toml` this app creates.
+/// Written at the top of a `meta.toml` this app creates (a file already there keeps its own).
 pub const HEADER: &str = "\
 # PerMark metadata: tags and descriptions added in the app.
-# Safe to commit and share. PerMark rewrites this file when you edit tags.
+# Commit the .permark folder to share these settings with your team. PerMark rewrites this file when you edit tags.
 
 ";
 

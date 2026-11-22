@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
-use super::agent_view::{AI_IGNORE, MAX_IGNORE_BYTES};
+use super::agent_view::{folder_rules, LastGood};
 use super::card::{self, Card, CardChange, CardDto, CardPlace};
 use super::fsm::{
     self, AgentChoice, Candidate, Event, Found, Inputs, Membership, MissingReason, NotMoved,
@@ -32,8 +32,8 @@ use super::view::{
 use super::vocabulary::{self, TagStatus, VocabKind, VocabRead, Vocabularies};
 use crate::events::{CoreEvent, EventSink};
 use crate::fsx::FolderIdentity;
-use crate::paths::{Root, VaultPath, CASE_INSENSITIVE};
-use crate::settings::ProjectConfig;
+use crate::paths::{Root, VaultError, VaultPath, CASE_INSENSITIVE};
+use crate::settings::{ConfigRead, ConfigUnreadable, ProjectConfig, SettingsError};
 use crate::state::{AppDirs, StateFile, StateStore, PERMARK_DIR};
 use crate::tree::{Explorer, MemberRule, MemberSet};
 use crate::watch::{ChangeKind, FsBatch, OwnWrites, WatchHub};
@@ -129,8 +129,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// A link as std reports one (symlink, junction): a cloud placeholder folder (OneDrive Files On-Demand) on the way to a
+/// project, or as its `.permark/`, is the folder it is.
 fn is_link(meta: &std::fs::Metadata) -> bool {
-    crate::tree::is_link_meta(meta)
+    crate::fsx::is_link(meta)
 }
 
 fn real_dir(path: &Path) -> bool {
@@ -194,20 +196,29 @@ struct MemberRes {
     vocab: vocabulary::Vocab,
 }
 
-/// Reads what a member brings from its folder (cheap: a few small files).
-fn load_member(dirs: &AppDirs, abs: &Path) -> MemberRes {
+/// Reads what a member brings from its folder (cheap: a few small files). `at`: the folder as its rule files are named
+/// (its project path; above the opened folder `..` per level); a rule file that cannot be read stands on its last good
+/// rules in `kept`.
+fn load_member(dirs: &AppDirs, abs: &Path, at: &str, kept: &LastGood) -> MemberRes {
     probe::hit();
-    let config = Root::open(abs)
-        .map(|root| ProjectConfig::load(&root))
-        .unwrap_or_default();
-    let aiignore = crate::fsx::read_bytes(&abs.join(AI_IGNORE), MAX_IGNORE_BYTES)
-        .map(|b| {
-            String::from_utf8_lossy(&b)
-                .lines()
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default();
+    let config = match Root::open(abs) {
+        Ok(root) => ProjectConfig::load_checked(&root),
+        // gone meanwhile (a member held through a move) | no folder now: nothing of it is there to govern
+        Err(VaultError::NotFound(_) | VaultError::NotAFolder(_)) => ConfigRead::Absent,
+        // there but not opened: its team file is unknown, never "none"
+        Err(error) => ConfigRead::Unreadable(ConfigUnreadable::Read(SettingsError::Io {
+            path: abs.display().to_string(),
+            source: match error {
+                VaultError::Io { source, .. } => source,
+                other => std::io::Error::other(other.to_string()),
+            },
+        })),
+    };
+    let ignore = match &config {
+        ConfigRead::Read(_, config) => config.ignore.clone(),
+        ConfigRead::Absent | ConfigRead::Unreadable(_) => Vec::new(),
+    };
+    let agent = folder_rules(abs, at, config, Some(kept));
     let (card, place) = card::file_of(dirs, abs).map_or((Card::default(), None), |file| {
         (file.read(), Some(file.place()))
     });
@@ -224,12 +235,8 @@ fn load_member(dirs: &AppDirs, abs: &Path) -> MemberRes {
     MemberRes {
         card,
         place,
-        ignore: config.ignore,
-        agent: AgentRules {
-            aiignore,
-            deny_paths: config.agent_deny_paths,
-            deny: config.agent_deny,
-        },
+        ignore,
+        agent,
         inner,
         has_record: !matches!(read, RecordRead::Absent),
         id: FolderIdentity::of(abs),
@@ -472,6 +479,22 @@ impl std::fmt::Debug for Projects {
         f.debug_struct("Projects")
             .field("root", &self.root.path())
             .finish_non_exhaustive()
+    }
+}
+
+/// The writes for an included project held ([`Projects::hold_member`]); dropped, the followers resume with the owners
+/// worked out again (the project's new place).
+pub struct MemberHold<'a> {
+    projects: &'a Projects,
+    _turn: MutexGuard<'a, ()>,
+}
+
+impl Drop for MemberHold<'_> {
+    fn drop(&mut self) {
+        let projects = self.projects;
+        let now = projects.owners_for(&projects.snapshot(), &[]);
+        *lock(&projects.owners) = now.clone();
+        projects.tell_owners(&OwnersChange::Resume(&now));
     }
 }
 
@@ -963,6 +986,13 @@ impl Projects {
         Some(StateStore::for_project(&self.dirs, &root))
     }
 
+    /// [`Projects::store_of`] for an owner slot: the member's data place settled first, as when it is opened alone
+    /// (its row written once), so every store of the member gives one answer.
+    fn settled_store_of(&self, path: &VaultPath) -> Option<StateStore> {
+        let root = Root::open(&abs_of(self.root.path(), path)).ok()?;
+        Some(crate::state::location::settle(&self.dirs, &root))
+    }
+
     /// Writes the first commits the `git` plugin learned (`RecordOp::SetFirstCommit`, one record write for all;
     /// `projects.md` D21): only for entries without one, only while the record reads. Others are skipped quietly.
     ///
@@ -1106,6 +1136,7 @@ impl Projects {
         let live = inner.ready;
         let now = self.now();
         let mut vanished = BTreeMap::new();
+        let kept = self.last_good();
         for entry in &entries {
             let refused = all_out || declined.contains(&entry.path.key());
             let mut state = if hard.hides(&entry.path) {
@@ -1133,7 +1164,12 @@ impl Projects {
             }
             if matches!(state, Presence::Here(_)) && !refused {
                 let res = inner.res.entry(entry.uid.clone()).or_insert_with(|| {
-                    load_member(&self.dirs, &abs_of(self.root.path(), &entry.path))
+                    load_member(
+                        &self.dirs,
+                        &abs_of(self.root.path(), &entry.path),
+                        entry.path.as_str(),
+                        &kept,
+                    )
                 });
                 if let Some(rules) =
                     gitignore_of(&abs_of(self.root.path(), &entry.path), &res.ignore)
@@ -1151,6 +1187,14 @@ impl Projects {
         self.forget_answers_of_present(inner);
     }
 
+    /// The last good rules of the project's rule files (members' and ancestors' too), kept in the profile.
+    fn last_good(&self) -> LastGood {
+        LastGood::of(
+            &StateStore::profile_only(&self.dirs, &self.root),
+            self.root.path(),
+        )
+    }
+
     /// Opened alone (`projects.md` §5.2): every ancestor (<= 32 levels up) whose record lists this folder or a folder
     /// containing it adds its own agent rules + those of every listed project on this folder's chain between it and
     /// this folder (as its tab would). Read when older than [`ANCESTORS_TTL`] (`force`: now); any change of a record,
@@ -1164,7 +1208,7 @@ impl Projects {
         {
             return false;
         }
-        let found = ancestor_rules(&self.dirs, self.root.path());
+        let found = ancestor_rules(&self.dirs, self.root.path(), &self.last_good());
         let changed = found != inner.ancestors.0;
         inner.ancestors = (found, Some(Instant::now()));
         changed
@@ -1327,7 +1371,12 @@ impl Projects {
             .max_by_key(|e| e.path.key().len())
             .map(|e| (e.uid.clone(), e.path.clone()));
         if let Some((uid, member)) = owner {
-            let res = load_member(&self.dirs, &abs_of(self.root.path(), &member));
+            let res = load_member(
+                &self.dirs,
+                &abs_of(self.root.path(), &member),
+                member.as_str(),
+                &self.last_good(),
+            );
             inner.res.insert(uid, res);
             return true;
         }
@@ -1763,7 +1812,8 @@ impl Projects {
             || map.member(uid).is_some_and(|m| is_copied(&inner, m))
     }
 
-    /// The owners for `map`: members copied (or about to be: `extra`) whose folder is there.
+    /// The owners for `map`: members copied (or about to be: `extra`) whose folder is there, each member's data place
+    /// settled (under `owners_turn`: one writer of the rows at a time).
     fn owners_for(&self, map: &ProjectMap, extra: &[ProjectUid]) -> Owners {
         let root = StateStore::for_project(&self.dirs, &self.root);
         let copied: Vec<bool> = {
@@ -1777,7 +1827,7 @@ impl Projects {
             .filter(|(m, copied)| *copied || extra.contains(&m.uid))
             .map(|(m, _)| m)
             .filter_map(|m| {
-                let store = self.store_of(&m.path)?;
+                let store = self.settled_store_of(&m.path)?;
                 Some(OwnerSlot::member(m.uid.clone(), m.path.as_str(), store))
             })
             .collect();
@@ -1820,6 +1870,46 @@ impl Projects {
         let now = self.owners_for(&map, &[]);
         *lock(&self.owners) = now.clone();
         self.tell_owners(&OwnersChange::Resume(&now));
+    }
+
+    /// The opened folder's own data place moved (PerMark initialized in it, or that undone): the owners are worked out
+    /// again from what the folders hold now; followers paused and resumed only when a place changed. Before the owners
+    /// are first known, they are replaced quietly: followers wait for the worker's `Resume`, which reads them.
+    pub fn reload_owners(&self) {
+        let _turn = lock(&self.owners_turn);
+        let now = self.owners_for(&self.snapshot(), &[]);
+        if now.same(&lock(&self.owners)) {
+            return;
+        }
+        if !self.owners_known() {
+            *lock(&self.owners) = now;
+            return;
+        }
+        self.tell_owners(&OwnersChange::Pause);
+        *lock(&self.owners) = now.clone();
+        self.tell_owners(&OwnersChange::Resume(&now));
+    }
+
+    /// Holds the writes for the included project whose folder is `folder` while PerMark is initialized in it (its data
+    /// copied into its `.permark/local/`): followers paused now, resumed with the owners worked out again when the hold
+    /// goes. `None`: `folder` is no owner of this folder now (nothing to hold).
+    #[must_use]
+    pub fn hold_member(&self, folder: &Root) -> Option<MemberHold<'_>> {
+        let turn = lock(&self.owners_turn);
+        let owned = self.owners().slots().iter().skip(1).any(|slot| {
+            VaultPath::parse(&slot.path)
+                .ok()
+                .and_then(|path| Root::open(&abs_of(self.root.path(), &path)).ok())
+                .is_some_and(|member| member.key() == folder.key())
+        });
+        if !owned {
+            return None;
+        }
+        self.tell_owners(&OwnersChange::Pause);
+        Some(MemberHold {
+            projects: self,
+            _turn: turn,
+        })
     }
 
     fn tell_owners(&self, change: &OwnersChange<'_>) {
@@ -2836,7 +2926,7 @@ impl Projects {
             .path()
             .join(PERMARK_DIR)
             .join(vocabulary::VOCABULARY_FILE);
-        if crate::tree::is_link_meta_of(&path) {
+        if record::is_link(&path) {
             return Err(vocab_unavailable());
         }
         let Some(bytes) = vocabulary::write_file(&path, &self.own, edit)? else {
@@ -2910,7 +3000,7 @@ fn wait_walk(explorer: &Explorer, stopped: &AtomicBool) -> Option<Vec<crate::tre
 /// The agent rules of the folders above `root` that govern it (`projects.md` §5.2 opened alone): for each ancestor
 /// whose record lists `root` or a folder containing it, the ancestor's own rules + the rules of each listed folder on
 /// the chain (strictly above `root`). One stat per level; records + rule files read only where a record exists.
-fn ancestor_rules(dirs: &AppDirs, root: &Path) -> Vec<AncestorRules> {
+fn ancestor_rules(dirs: &AppDirs, root: &Path, kept: &LastGood) -> Vec<AncestorRules> {
     let mut found: Vec<AncestorRules> = Vec::new();
     let mut rel: Vec<String> = Vec::new();
     let mut dir = root.to_path_buf();
@@ -2918,7 +3008,9 @@ fn ancestor_rules(dirs: &AppDirs, root: &Path) -> Vec<AncestorRules> {
         if found.iter().any(|a| a.base == base) {
             return;
         }
-        let rules = load_member(dirs, &base).agent;
+        // its rule files named from the opened folder: one `..` per level up
+        let up = vec![".."; rel.split('/').count()].join("/");
+        let rules = load_member(dirs, &base, &up, kept).agent;
         found.push(AncestorRules { base, rel, rules });
     };
     for _ in 0..MAX_ANCESTORS {

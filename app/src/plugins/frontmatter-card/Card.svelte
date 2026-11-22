@@ -16,7 +16,9 @@
     <pre class="raw" data-syntax={syntax}>{raw.trim()}</pre>
   {:else}
     <dl class="grid">
-      {#each fields as field (field.key)}
+      <!-- keyed by place: keys may repeat (a key written twice, flattened nesting, lists of maps) and the rows
+           are read-only, never reordered -->
+      {#each fields as field, at (at)}
         <div class="field">
           <dt>{field.key}</dt>
           {#if field.value.type === "list"}

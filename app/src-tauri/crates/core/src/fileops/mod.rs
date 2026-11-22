@@ -25,7 +25,6 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -38,17 +37,22 @@ pub use import::{
 pub use names::{check_name, new_file_name, NameProblem};
 pub use plan::replacement_href;
 
+// crate-visible: the measurements time the delete checks without deleting anything
+pub(crate) use self::ops::check_deletes;
 use self::ops::{
-    announced_pairs, check_deletes, check_moves, execute_moves, io_error, is_protected, locate,
+    announced_pairs, check_moves, execute_moves, io_error, is_protected, locate, locate_undoable,
     ValidMove,
 };
 use self::plan::{apply_edits, invert_edits, mentions, split_root, DocPlan, Mover, Planner};
-use self::undo::{DocUndo, Entry, Journal, Op, UndoEdit, JOURNAL_FILE};
+use self::undo::{DocUndo, Entry, History, Journal, Op, UndoEdit, JOURNAL_FILE, MARKS_FILE};
 use crate::error::{ErrorKind, IpcError};
 use crate::format::{FormatRegistry, MarkdownFeatures};
-use crate::fsx::{hash, write_atomic_if_unchanged, ContentHash, IDENTITY_UNKNOWN};
+use crate::fsx::{
+    hash, now_ms, read_regular, recycle_each, write_atomic_if_unchanged, ContentHash, FsxError,
+    Unrecycled, Zone, IDENTITY_UNKNOWN,
+};
 use crate::paths::{Vault, VaultError, VaultPath};
-use crate::state::StateFile;
+use crate::state::{AppDirs, StateError};
 use crate::tree::{Explorer, Renamed};
 use crate::watch::OwnWrites;
 
@@ -226,7 +230,10 @@ pub struct MoveOutcome {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct DeleteOutcome {
+    /// Moved to the recycle bin (Undo brings them back).
     pub deleted: Vec<String>,
+    /// Still in place: the bin stopped before taking them (it may stop part way, e.g. at a file another program holds).
+    pub refused: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -277,14 +284,18 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-}
-
 fn count(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+/// The undo journal of a [`FileOps`], held ([`FileOps::hold_journal`]): nothing is journaled until it goes.
+pub(crate) struct JournalHold<'a>(std::sync::MutexGuard<'a, Option<History>>);
+
+impl JournalHold<'_> {
+    /// The journal goes on in `store` (the project's state folder moved); the hold ends.
+    pub(crate) fn use_store(mut self, store: &crate::state::StateStore) {
+        *self.0 = History::of(store);
+    }
 }
 
 /// The file operations of one project.
@@ -292,8 +303,11 @@ pub struct FileOps {
     vault: Vault,
     explorer: Arc<Explorer>,
     own: Arc<OwnWrites>,
-    /// The undo journal; locked for one read-modify-write at a time. Moves with the project's state folder.
-    journal: Mutex<StateFile<Journal>>,
+    /// The undo journal; locked for one read-modify-write at a time. Moves with the project's state folder. `None`:
+    /// no usable install key, nothing journaled.
+    journal: Mutex<Option<History>>,
+    /// The person's state roots: an undo never puts an imported item back into them.
+    roots: AppDirs,
     plans: Mutex<Plans>,
     /// Drop-into-project plans waiting and imports running.
     imports: Mutex<import::Imports>,
@@ -321,7 +335,8 @@ impl FileOps {
             vault,
             explorer,
             own,
-            journal: Mutex::new(store.file::<Journal>(JOURNAL_FILE)),
+            journal: Mutex::new(History::of(store)),
+            roots: store.app_dirs().clone(),
             plans: Mutex::new(Plans::default()),
             imports: Mutex::new(import::Imports::default()),
             activity: None,
@@ -415,23 +430,29 @@ impl FileOps {
 
     /// The project's state folder moved (PerMark was initialized): the journal goes on in the new one.
     pub fn use_store(&self, store: &crate::state::StateStore) {
-        *lock(&self.journal) = store.file::<Journal>(JOURNAL_FILE);
+        self.hold_journal().use_store(store);
     }
 
-    /// Journals an operation; its id. `None`: the journal could not be written (best effort: the operation is done all
-    /// the same, just not undoable).
+    /// The journal held until the hold goes (or moves with [`JournalHold::use_store`]): an operation that ends meanwhile
+    /// waits to be journaled. Initialize holds it around the copy of the state folder, so no entry lands in the place
+    /// the data is leaving after the copy was made.
+    pub(crate) fn hold_journal(&self) -> JournalHold<'_> {
+        JournalHold(lock(&self.journal))
+    }
+
+    /// Journals an operation; its id. `None`: the journal could not be written, or no install key is usable (best
+    /// effort: the operation is done all the same, just not undoable).
     fn record(&self, op: Op) -> Option<u64> {
         self.note(&op, false);
-        let file = lock(&self.journal);
-        let mut journal = file.load().into_value();
-        let id = journal.push(now_ms(), op);
-        file.save(&journal).ok().map(|()| id)
+        lock(&self.journal).as_ref()?.record(now_ms(), op)
     }
 
     /// Entries the next undo would take back (newest first count).
     #[must_use]
     pub fn undo_depth(&self) -> usize {
-        lock(&self.journal).load().into_value().entries.len()
+        lock(&self.journal)
+            .as_ref()
+            .map_or(0, |history| history.load().entries.len())
     }
 
     // ---- move ------------------------------------------------------------------------------------------------
@@ -630,9 +651,9 @@ impl FileOps {
             skipped.push(skip(SkipReason::Missing));
             return;
         };
-        let bytes = match fs::read(&abs) {
+        let bytes = match read_regular(&abs, u64::MAX, Zone::Anywhere) {
             Ok(bytes) => bytes,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            Err(FsxError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
                 skipped.push(skip(SkipReason::Missing));
                 return;
             }
@@ -703,11 +724,21 @@ impl FileOps {
 
     // ---- delete ----------------------------------------------------------------------------------------------
 
-    /// Sends files and folders to the recycle bin.
+    /// Sends files and folders to the recycle bin. A bin that stops part way answers what it took (journaled: Undo
+    /// brings it back) and what stayed in place.
     ///
     /// # Errors
-    /// A refusal, or `Trash` (the files stay where they are).
+    /// A refusal, or `Trash`: the bin took nothing.
     pub fn delete(&self, paths: &[String]) -> Result<DeleteOutcome, FileOpError> {
+        self.delete_with(paths, recycle_each)
+    }
+
+    /// [`FileOps::delete`] with the bin given, so a test can make it stop part way.
+    fn delete_with(
+        &self,
+        paths: &[String],
+        recycle: impl Fn(&[PathBuf]) -> Result<(), Unrecycled>,
+    ) -> Result<DeleteOutcome, FileOpError> {
         let parsed: Vec<VaultPath> = paths
             .iter()
             .map(|p| Self::parse(p))
@@ -715,18 +746,33 @@ impl FileOps {
         let checked = check_deletes(&self.vault, &parsed)?;
         let announced: Vec<String> = checked.iter().map(|(p, _)| p.to_string()).collect();
         self.own.expect_removals(&announced);
-        let result = trash::delete_all(checked.iter().map(|(_, abs)| abs));
+        let places: Vec<PathBuf> = checked.into_iter().map(|(_, abs)| abs).collect();
+        let result = recycle(&places);
         let shown: Vec<String> = announced.clone();
         // whatever the bin did, the tree shows what the disk now holds
         self.explorer.sync_paths(&shown, &[]);
-        if let Err(error) = result {
-            self.own.retract_moves(&announced);
-            return Err(FileOpError::Trash(error.to_string()));
+        if let Err(refused) = result {
+            // what the bin took before it refused is journaled, so Undo brings it back
+            let (gone, left) = refused.split(announced);
+            self.own.retract_moves(&left);
+            if gone.is_empty() {
+                return Err(FileOpError::Trash(refused.reason));
+            }
+            self.record(Op::Delete {
+                paths: gone.clone(),
+            });
+            return Ok(DeleteOutcome {
+                deleted: gone,
+                refused: left,
+            });
         }
         self.record(Op::Delete {
             paths: announced.clone(),
         });
-        Ok(DeleteOutcome { deleted: announced })
+        Ok(DeleteOutcome {
+            deleted: announced,
+            refused: Vec::new(),
+        })
     }
 
     // ---- new -------------------------------------------------------------------------------------------------
@@ -806,16 +852,27 @@ impl FileOps {
         &self,
         pick: impl FnOnce(&mut Journal) -> Option<Entry>,
     ) -> Result<Option<UndoOutcome>, FileOpError> {
+        let fail = |name: &str| {
+            let path = name.to_owned();
+            move |e: StateError| FileOpError::Io {
+                path,
+                source: io::Error::other(e.to_string()),
+            }
+        };
         let entry = {
-            let file = lock(&self.journal);
-            let mut journal = file.load().into_value();
+            let history = lock(&self.journal);
+            let Some(history) = history.as_ref() else {
+                return Ok(None);
+            };
+            let mut journal = history.load();
             let Some(entry) = pick(&mut journal) else {
                 return Ok(None);
             };
-            file.save(&journal).map_err(|e| FileOpError::Io {
-                path: JOURNAL_FILE.to_owned(),
-                source: io::Error::other(e.to_string()),
-            })?;
+            // unmarked first: whatever happens next, no copy of the journal can take this step back again
+            if !history.unmark(entry.id).map_err(fail(MARKS_FILE))? {
+                return Ok(None);
+            }
+            history.save(&journal).map_err(fail(JOURNAL_FILE))?;
             entry
         };
         self.note(&entry.op, true);
@@ -832,8 +889,13 @@ impl FileOps {
         let mut skipped = Vec::new();
         let mut back = vec![false; moves.len()];
         let mut done: Vec<(VaultPath, VaultPath)> = Vec::new();
+        let usable = |path: &str| {
+            VaultPath::parse(path)
+                .ok()
+                .filter(|p| locate_undoable(&self.vault, p).is_some())
+        };
         for (at, (from, to)) in moves.iter().enumerate().rev() {
-            let (Ok(from_p), Ok(to_p)) = (VaultPath::parse(from), VaultPath::parse(to)) else {
+            let (Some(from_p), Some(to_p)) = (usable(from), usable(to)) else {
                 continue;
             };
             // the reverse move: `to` goes back to `from`
@@ -921,14 +983,15 @@ impl FileOps {
     }
 
     fn revert_links(&self, place: &str, doc: &DocUndo) -> Result<(), SkipReason> {
-        let path = VaultPath::parse(place).map_err(|_| SkipReason::Missing)?;
-        let abs = locate(&self.vault, &path).map_err(|_| SkipReason::Missing)?;
-        let bytes = fs::read(&abs).map_err(|e| {
-            if e.kind() == io::ErrorKind::NotFound {
+        let abs = VaultPath::parse(place)
+            .ok()
+            .and_then(|path| locate_undoable(&self.vault, &path))
+            .ok_or(SkipReason::Missing)?;
+        let bytes = read_regular(&abs, u64::MAX, Zone::Anywhere).map_err(|e| match e {
+            FsxError::Io { source, .. } if source.kind() == io::ErrorKind::NotFound => {
                 SkipReason::Missing
-            } else {
-                SkipReason::Unreadable
             }
+            _ => SkipReason::Unreadable,
         })?;
         let seen = hash(&bytes);
         if seen.hex() != doc.hash_after {
@@ -968,7 +1031,7 @@ impl FileOps {
         let mut restored = 0;
         let removed = VaultPath::parse(path)
             .ok()
-            .and_then(|p| locate(&self.vault, &p).ok())
+            .and_then(|p| locate_undoable(&self.vault, &p))
             .map(|abs| match kind {
                 UndoKind::NewFile => match fs::metadata(&abs) {
                     // only a file nobody has written to is taken back
@@ -996,39 +1059,50 @@ impl FileOps {
     }
 
     fn undo_delete(&self, paths: &[String]) -> UndoOutcome {
-        let abs: Vec<PathBuf> = paths
+        let places: Vec<Option<PathBuf>> = paths
             .iter()
-            .filter_map(|p| VaultPath::parse(p).ok())
-            .filter_map(|p| locate(&self.vault, &p).ok())
+            .map(|p| {
+                VaultPath::parse(p)
+                    .ok()
+                    .and_then(|p| locate_undoable(&self.vault, &p))
+            })
             .collect();
-        let restored = restore_from_bin(&abs);
-        self.own.expect_creations(paths);
+        let outcome = restore_from_bin(&places);
+        let back: Vec<String> = paths
+            .iter()
+            .zip(&outcome)
+            .filter(|(_, why)| why.is_none())
+            .map(|(path, _)| path.clone())
+            .collect();
+        self.own.expect_creations(&back);
         self.explorer.sync_paths(paths, &[]);
-        let skipped = if restored {
-            Vec::new()
-        } else {
-            paths
-                .iter()
-                .map(|p| Skip {
-                    path: p.clone(),
-                    reason: SkipReason::Missing,
+        let skipped = paths
+            .iter()
+            .zip(outcome)
+            .filter_map(|(path, why)| {
+                why.map(|reason| Skip {
+                    path: path.clone(),
+                    reason,
                 })
-                .collect()
-        };
+            })
+            .collect();
         UndoOutcome {
             kind: UndoKind::Delete,
-            restored: if restored { count(paths.len()) } else { 0 },
+            restored: count(back.len()),
             skipped,
         }
     }
 }
 
-/// The bytes of a file; `None` when it is larger than `limit`.
+/// The bytes of a plain file (a FIFO | device named like a document is never waited on); `None` when it is larger
+/// than `limit`.
 fn read_limited(path: &std::path::Path, limit: u64) -> io::Result<Option<Vec<u8>>> {
-    if fs::metadata(path)?.len() > limit {
-        return Ok(None);
+    match read_regular(path, limit, Zone::Anywhere) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(FsxError::TooLarge { .. }) => Ok(None),
+        Err(FsxError::Io { source, .. }) => Err(source),
+        Err(FsxError::Binary(_)) => Err(io::ErrorKind::InvalidData.into()),
     }
-    fs::read(path).map(Some)
 }
 
 fn parse_moves(moves: &[MoveSpec]) -> Result<Vec<(VaultPath, VaultPath)>, FileOpError> {
@@ -1090,7 +1164,9 @@ fn build_dto(
     }
 }
 
-/// Puts deleted items back from the system's recycle bin (Windows, Linux). `false`: not possible here.
+/// Puts deleted items back from the system's recycle bin (Windows, Linux), each on its own: `None` = back, else why
+/// not. A place something else took since is `Occupied` and left as it is; an item the bin no longer holds, or a place
+/// no undo may use (`None` in `places`), is `Missing`.
 #[cfg(any(
     target_os = "windows",
     all(
@@ -1100,23 +1176,76 @@ fn build_dto(
         not(target_os = "android")
     )
 ))]
-fn restore_from_bin(paths: &[PathBuf]) -> bool {
+fn restore_from_bin(places: &[Option<PathBuf>]) -> Vec<Option<SkipReason>> {
+    let mut outcome = vec![Some(SkipReason::Missing); places.len()];
     let Ok(items) = trash::os_limited::list() else {
-        return false;
+        return outcome;
     };
-    let wanted: Vec<trash::TrashItem> = paths
-        .iter()
-        .filter_map(|path| {
-            items
-                .iter()
-                .filter(|item| item.original_path() == *path)
-                .max_by_key(|item| item.time_deleted)
-                .cloned()
-        })
-        .collect();
-    wanted.len() == paths.len()
-        && !wanted.is_empty()
-        && trash::os_limited::restore_all(wanted).is_ok()
+    let mut wanted: Vec<(usize, trash::TrashItem)> = Vec::new();
+    let mut ids: HashSet<&std::ffi::OsStr> = HashSet::new();
+    for (at, place) in places.iter().enumerate() {
+        let Some(place) = place else {
+            continue;
+        };
+        let newest = items
+            .iter()
+            .filter(|item| item.original_path() == *place)
+            .max_by_key(|item| item.time_deleted);
+        let Some(item) = newest else {
+            continue;
+        };
+        if fs::symlink_metadata(place).is_ok() {
+            outcome[at] = Some(SkipReason::Occupied);
+        } else if ids.insert(item.id.as_os_str()) {
+            wanted.push((at, item.clone()));
+        }
+    }
+    // a place taken while the bin works stops it: what it put back counts, that place is left, the rest goes again
+    while !wanted.is_empty() {
+        let batch: Vec<trash::TrashItem> = wanted.iter().map(|(_, item)| item.clone()).collect();
+        match trash::os_limited::restore_all(batch) {
+            Ok(()) => {
+                for (at, _) in &wanted {
+                    outcome[*at] = None;
+                }
+                break;
+            }
+            Err(trash::Error::RestoreCollision {
+                path,
+                remaining_items,
+            }) => {
+                let left: HashSet<&std::ffi::OsStr> = remaining_items
+                    .iter()
+                    .map(|item| item.id.as_os_str())
+                    .collect();
+                let before = wanted.len();
+                let mut again = Vec::new();
+                for (at, item) in wanted {
+                    if !left.contains(item.id.as_os_str()) {
+                        outcome[at] = None;
+                    } else if item.original_path() == path {
+                        outcome[at] = Some(SkipReason::Occupied);
+                    } else {
+                        again.push((at, item));
+                    }
+                }
+                if again.len() == before {
+                    break;
+                }
+                wanted = again;
+            }
+            Err(_) => {
+                // stopped for another reason: an item that stands at its (empty before) place again is back
+                for (at, item) in &wanted {
+                    if fs::symlink_metadata(item.original_path()).is_ok() {
+                        outcome[*at] = None;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    outcome
 }
 
 #[cfg(not(any(
@@ -1128,6 +1257,6 @@ fn restore_from_bin(paths: &[PathBuf]) -> bool {
         not(target_os = "android")
     )
 )))]
-fn restore_from_bin(_paths: &[PathBuf]) -> bool {
-    false
+fn restore_from_bin(places: &[Option<PathBuf>]) -> Vec<Option<SkipReason>> {
+    vec![Some(SkipReason::Missing); places.len()]
 }

@@ -33,6 +33,7 @@ export default {
   "welcome.noRecents": "Encara no hi ha carpetes recents.",
   "welcome.notFound": "(no s'ha trobat)",
   "welcome.remove": "Elimina",
+  "welcome.recentKeys": "Premeu Supr per treure de la llista la carpeta seleccionada.",
   "welcome.dropHint": "Deixeu anar carpetes o fitxers aquí per a obrir-los.",
   "welcome.openFailed": "No s'ha pogut obrir {path}: {message}",
 
@@ -53,9 +54,14 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Algunes dades desades del PerMark no s'han pogut llegir i s'han apartat: {file}",
+    "Algunes dades desades del PerMark no s'han pogut llegir i s'han apartat: {file}. Trobareu la còpia antiga aquí: {backup}",
   "notice.stateUnreadable":
     "Algunes dades desades del PerMark no s'han pogut llegir. S'han deixat intactes, i el PerMark no les canviarà fins que les pugui tornar a llegir, normalment després de reiniciar-lo: {file}",
+  "crash.notice":
+    "El PerMark es va tancar inesperadament l'última vegada. S'ha desat un informe en aquest ordinador i no s'ha enviat res. Si el compartiu, reviseu-lo abans: pot incloure noms de fitxers o fragments del vostre text. «Informa a GitHub» també copia l'informe perquè el pugueu enganxar allà.",
+  "crash.copy": "Copia l'informe",
+  "crash.report": "Informa a GitHub",
+  "crash.openFolder": "Obre la carpeta",
 
   // ---- settings
   "settings.title": "Configuració",
@@ -78,6 +84,10 @@ export default {
   "error.invalidPath": "{subject} no és un camí vàlid.",
   "error.denied": "No teniu permís per a accedir a {subject}.",
   "error.io": "No s'ha pogut accedir a {subject}: {detail}",
+  "error.locked":
+    "{subject} està obert en un altre programa que no permet canviar-lo. Tanqueu-lo allà i torneu-ho a provar.",
+  "error.diskFull": "El disc és ple i no s'ha pogut escriure {subject}.",
+  "error.readOnly": "{subject} és només de lectura i no es pot canviar.",
   "error.exists": "{subject} ja existeix.",
   "error.binary": "{subject} és un fitxer binari, així que no es pot mostrar com a text.",
   "error.tooLarge": "{subject} és massa gran.",
@@ -166,6 +176,8 @@ export default {
   "fileOps.summaryMoved": "Heu mogut {what}",
   "fileOps.summaryRenamed": "{from} ara es diu {to}",
   "fileOps.summaryDeleted": "Heu suprimit {what}",
+  "fileOps.partlyDeleted":
+    "Heu suprimit {what}. No s'ha pogut moure {refused} a la paperera de reciclatge.",
   "fileOps.dropInto": "Mou a {folder}",
   "fileOps.projectRoot": "la carpeta del projecte",
   "fileOps.dialogLabel": "Actualitza els enllaços",
@@ -302,6 +314,7 @@ export default {
   "doc.deleted.title": "Aquest fitxer s'ha suprimit a les {time}.",
   "doc.diagramFailed": "No s'ha pogut dibuixar el diagrama",
   "doc.diagramRendering": "S'està dibuixant el diagrama…",
+  "doc.diagramSource": "Codi font del diagrama",
   "doc.error.title": "Aquest fitxer no es pot obrir",
   "doc.footnoteBackref": "Torna a la referència {ref}",
   "doc.frontmatter": "Front matter",
@@ -408,7 +421,7 @@ export default {
   "role.copilot": "Instruccions per a Copilot",
   "role.model-card": "Fitxa del model",
   "role.dataset-card": "Fitxa del conjunt de dades",
-  "structured.mode": "Vista",
+  "structured.mode": "Visualització",
   "structured.tree": "Arbre",
   "structured.source": "Codi font",
   "structured.invalid": "No és vàlid, així que es mostra com a text.",
@@ -940,6 +953,8 @@ export default {
   "since.nothing": "No ha canviat res des de {when}.",
   "review.offer.one": "Ha canviat des de la vostra última lectura · {n} canvi",
   "review.offer.other": "Ha canviat des de la vostra última lectura · {n} canvis",
+  "review.offerCommit.one": "Ha canviat des de l'últim commit · {n} canvi",
+  "review.offerCommit.other": "Ha canviat des de l'últim commit · {n} canvis",
   "review.review": "Revisa",
   "review.reviewing.one": "Revisió: {n} canvi",
   "review.reviewing.other": "Revisió: {n} canvis",
@@ -964,6 +979,7 @@ export default {
   "review.change": "Canvi {i} de {n}, {kind}",
   "review.keptAll": "S'han conservat tots els canvis",
   "review.revertedAll": "S'han revertit tots els canvis a {name}",
+  "review.endedMixed": "Alguns canvis s'han conservat i altres s'han revertit a {name}",
   "review.undo": "Desfés",
   "review.undoStale": "No es pot desfer: {name} ha canviat des de llavors.",
   "review.allDone": "S'han revisat tots els canvis",
@@ -1017,6 +1033,15 @@ export default {
   "git.unavailableHint":
     "El Git que heu triat no està disponible. Trieu-ne un altre a la configuració.",
   "git.errorOwnership": "El Git no confia en el propietari d'aquesta carpeta.",
+  "git.why.timeout": "El Git no ha respost a temps.",
+  "git.why.tooLarge": "La resposta del Git era massa llarga per llegir-la.",
+  "git.why.spawn": "No s'ha pogut iniciar el Git.",
+  "git.why.parse": "No s'ha pogut entendre la resposta del Git.",
+  "git.why.notLocal":
+    "La carpeta git d'aquest repositori porta fora d'aquest ordinador o passa per un enllaç, així que el PerMark no l'obre.",
+  "git.why.noGit": "Aquesta carpeta no té cap .git que porti a un repositori.",
+  "git.why.stopped": "El Git s'ha aturat abans de respondre.",
+  "git.why.failed": "Detalls: {detail}",
   "git.errorHint":
     "Obriu la configuració per a triar un altre Git (l'integrat no necessita aquesta confiança).",
   "git.folderChanged.one": "{n} fitxer canviat a dins",
@@ -1104,6 +1129,8 @@ export default {
   "review.versions.list": "Versions",
   "review.versions.loading": "S'està llegint l'historial…",
   "review.versions.more": "Mostra'n més",
+  "review.versions.added.one": "{n} versió més",
+  "review.versions.added.other": "{n} versions més",
   "review.versions.same": "El mateix text que ara",
   "review.versions.authors": "{author} amb {others}",
   "review.versions.compare": "Compara",
@@ -1267,6 +1294,16 @@ export default {
   "comments.replyPlaceholder": "Escriviu una resposta…",
   "comments.deleteConfirm": "Voleu suprimir el comentari?",
   "comments.copyFailed": "No s'ha pogut copiar al porta-retalls.",
+  "comments.aside.line.one": "S'ha eliminat {n} comentari fora del PerMark.",
+  "comments.aside.line.other": "S'han eliminat {n} comentaris fora del PerMark.",
+  "comments.aside.restore": "Restaura",
+  "comments.aside.dismiss": "Descarta",
+  "comments.aside.dismissHint": "Descarta aquests comentaris. Després ja no es podran restaurar.",
+  "comments.aside.restored.one": "S'ha restaurat {n} comentari.",
+  "comments.aside.restored.other": "S'han restaurat {n} comentaris.",
+  "comments.aside.nothing": "Aquests comentaris ja tornen a ser-hi.",
+  "comments.aside.restoreFailed": "No s'han pogut restaurar els comentaris: {message}",
+  "comments.aside.dismissFailed": "No s'han pogut descartar els comentaris eliminats: {message}",
   "brokenLinks.title": "Enllaços trencats",
   "brokenLinks.checking": "S'estan revisant els documents…",
   "brokenLinks.none": "No hi ha enllaços trencats",
@@ -1456,7 +1493,7 @@ export default {
   "agent.title": "Connexió amb agents",
   "agent.switch": "Comparteix aquesta carpeta amb agents",
   "agent.switchHint":
-    "Un agent que connecteu (una eina d'IA compatible amb MCP, com ara Claude Code o Cursor) pot veure el que esteu mirant i què ha canviat, cercar i llegir els fitxers d'aquesta carpeta, llegir els vostres comentaris i les notes que compartiu, i mostrar-vos un lloc. Només en aquest ordinador. Els fitxers que llista .aiignore queden fora del seu abast. Els agents connectats d'aquesta manera només llegeixen i mai no editen fitxers a través del PerMark; per a deixar que un agent proposi edicions, feu servir l'Assistent. Això només cobreix el que els agents obtenen del PerMark: un agent encara pot obrir fitxers del vostre ordinador pel seu compte.",
+    "Un agent que connecteu (una eina d'IA compatible amb MCP, com ara Claude Code o Cursor) pot veure el que esteu mirant i què ha canviat, cercar i llegir els fitxers d'aquesta carpeta, llegir els vostres comentaris i les notes que compartiu, i mostrar-vos un lloc. Només en aquest ordinador. Els fitxers que llista .aiignore queden fora del seu abast. Els agents connectats d'aquesta manera mai no editen fitxers a través del PerMark: llegeixen, i només marquen els vostres comentaris com a fets si ho permeteu. Per a deixar que un agent proposi edicions, feu servir l'Assistent. Això només cobreix el que els agents obtenen del PerMark: un agent encara pot obrir fitxers del vostre ordinador pel seu compte.",
   "agent.folderReplaced":
     "Aquesta carpeta ha canviat des que la vau connectar. Torneu a activar la connexió per permetre-hi agents.",
   "agent.groups": "Què poden fer els agents",
@@ -1557,6 +1594,20 @@ export default {
   "agent.outcome.off": "desactivat",
   "agent.outcome.notOpen": "no obert",
   "agent.outcome.error": "ha fallat",
+  "agentRules.lastGood":
+    "No s'ha pogut llegir {file}: {why}. El PerMark fa servir les últimes regles d'aquest fitxer que funcionaven fins que el corregeixis.",
+  "agentRules.closed":
+    "No s'ha pogut llegir {file}: {why}. Els agents no reben res del que cobreix fins que el corregeixis.",
+  "agentRules.why.tooLarge": "és massa gran",
+  "agentRules.why.notText": "no és text pla",
+  "agentRules.why.notToml": "no és TOML vàlid",
+  "agentRules.why.badValue": "un dels seus paràmetres té un tipus de valor incorrecte",
+  "agentRules.why.badPattern": "un dels seus patrons no és vàlid",
+  "agentRules.why.notAFile": "no és un fitxer normal",
+  "agentRules.why.locked": "un altre programa l'està fent servir",
+  "agentRules.why.denied": "el PerMark no té permís per llegir-lo",
+  "agentRules.why.failed": "no s'ha pogut llegir",
+  "agent.outcome.rulesUnreadable": "regles il·legibles",
   "agent.open.notice": "Un agent us vol mostrar {path}.",
   "agent.open.show": "Mostra",
   "agent.ask.resolve":
@@ -1601,6 +1652,8 @@ export default {
   "agent.handoff.done.other":
     "S'han traspassat {n} accions: s'han copiat i estan a punt per a enganxar-les al prompt.",
   "agent.handoff.failed": "El traspàs no ha funcionat. Torneu-ho a provar.",
+  "agent.handoff.withheld":
+    "El PerMark no traspassa l'activitat d'aquesta carpeta als agents: el seu repositori git fa el seguiment de la carpeta privada del PerMark (.permark/local), o el PerMark no ho ha pogut comprovar.",
   "agent.handoff.copyFailed": "S'ha fet el traspàs, però no s'ha pogut copiar.",
   "config.sheet": "Paràmetres d'aquest fitxer",
   "config.root": "Nivell superior",
@@ -1627,6 +1680,8 @@ export default {
   "config.reason.noValue": "Una clau sense valor. Canvieu-la al codi font.",
   "config.reason.empty": "Un element buit. Canvieu-lo al codi font.",
   "config.reason.unterminated": "Unes cometes que no es tanquen mai. Canvieu-ho al codi font.",
+  "config.reason.escape":
+    "Un valor amb codis d'escapada que aquí no es poden conservar exactament. Canvieu-ho al codi font.",
   "config.reason.other": "Això no es pot editar exactament aquí. Feu servir el codi font.",
   "config.refused.newline": "Aquí un valor no pot contenir un salt de línia.",
   "config.refused.empty": "Escriviu alguna cosa.",
@@ -1690,6 +1745,8 @@ export default {
     "La vostra elecció per a cada connector en aquesta carpeta. «Desactivat per a tothom» es desa a .permark/config.toml i s'aplica a qui obri la carpeta.",
   "plugins.removeConfirm": "Voleu eliminar les dades de {name}?",
   "plugins.removeConfirmBytes": "Voleu eliminar les dades de {name}? Això allibera {size}.",
+  "plugins.removeScope":
+    "Les carpetes que desen les seves dades a la seva pròpia carpeta .permark només es netegen mentre estan obertes.",
   "plugins.removeData": "Elimina les dades",
   "plugins.removeYes": "Elimina",
   "plugins.turnOn": "Activa {name}",
@@ -1697,16 +1754,31 @@ export default {
   "project.ignoreHint":
     "Els fitxers que hi coincideixen no es cerquen i no apareixen mai als canvis en directe. La llista de fitxers els mostra atenuats, com els que git ignora.",
   "project.ignoreLabel": "Fora de la cerca i dels canvis en directe",
+  "project.dataAsk":
+    "Aquesta carpeta ara té una carpeta .permark. Els vostres comentaris, marques de lectura i altres dades d'aquesta carpeta continuen desats en aquest ordinador.",
+  "project.dataMove": "Mou a la carpeta",
+  "project.dataKeep": "Mantén en aquest ordinador",
+  "project.dataMissing":
+    "La carpeta .permark d'aquesta carpeta falta o no es pot fer servir. El PerMark fa servir la còpia de les vostres dades desada en aquest ordinador, que pot ser més antiga.",
+  "project.dataKeepCopy": "Continua fent servir aquesta còpia",
+  "project.dataPlace": "Les vostres dades d'aquesta carpeta",
+  "project.dataPlaceProfile": "Desades en aquest ordinador, al vostre perfil d'usuari.",
+  "project.dataMoved": "Les vostres dades d'aquesta carpeta ara són a la seva carpeta .permark.",
+  "project.dataMoveHeld":
+    "La carpeta .permark d'aquesta carpeta ja conté dades del PerMark d'un altre lloc, així que les vostres dades es queden en aquest ordinador.",
+  "project.dataMoveFailed": "No s'han pogut moure les vostres dades a la carpeta: {message}",
   "project.initButton": "Inicialitza el PerMark",
   "project.initConfig": "La configuració que aquest projecte comparteix amb el seu equip.",
   "project.initConfirm": "Inicialitza el PerMark",
   "project.initFailed": "No s'ha pogut inicialitzar el PerMark a {path}: {message}",
+  "project.initHeld":
+    "{path}/.permark/local ja conté dades del PerMark d'un altre lloc; no s'ha canviat res.",
   "project.initIgnore": "Manté les carpetes privades fora del Git.",
   "project.initIntro": "El PerMark crea aquí una carpeta .permark amb:",
   "project.initLocal":
-    "Les vostres dades privades d'aquest projecte (comentaris, marques de lectura) i la seva memòria cau.",
+    "Les vostres dades privades d'aquest projecte (comentaris, marques de lectura, historial de desfer) i una memòria cau que el PerMark pot reconstruir en qualsevol moment.",
   "project.initNote":
-    "Els vostres fitxers no es toquen. S'hi copien les etiquetes, els comentaris i les marques de lectura que ja teniu d'aquest projecte.",
+    "Els vostres fitxers no es toquen. S'hi copien les etiquetes, els comentaris i les marques de lectura que ja teniu d'aquest projecte. El que permeteu per a aquesta carpeta, com ara l'accés dels agents, es queda a les vostres pròpies dades del PerMark en aquest ordinador.",
   "project.initTitle": "Voleu inicialitzar el PerMark a {name}?",
   "project.newTitle": "Voleu convertir {name} en un projecte?",
   "project.newWhy":
@@ -1731,8 +1803,30 @@ export default {
   "project.treeUnset": "Sense definir",
   "project.scopes":
     "La configuració marcada amb Tothom es desa a .permark/config.toml d'aquesta carpeta i es comparteix amb qui l'obri. La marcada amb Només vós es queda en aquest ordinador.",
+  "project.shareGit": "Permet que el Git vegi la configuració del PerMark d'aquesta carpeta",
+  "project.shareGitCustom":
+    "El fitxer .permark/.gitignore d'aquesta carpeta l'ha escrit una altra persona, així que el PerMark el deixa tal com està.",
+  "project.shareGitFailed": "No s'ha pogut canviar què veu el Git a .permark: {message}",
+  "project.shareGitHint":
+    "Activat: el Git veu la configuració, les etiquetes, la llista de projectes i les descripcions dels projectes de .permark, de manera que en podeu fer un commit per al vostre equip. Desactivat: el Git ignora tota la carpeta .permark; els fitxers que ja són en un commit s'hi queden. Si .permark/.gitignore és en un commit, el vostre equip també rep aquest canvi. Les vostres dades privades i la memòria cau sempre queden fora del Git.",
+  "project.shareGitOff": "Desactivat",
+  "project.shareGitOn": "Activat",
   "project.shareInit": "Inicialitzeu el PerMark per compartir-ho amb tothom",
   "project.sharedFileHint": "Compartit amb qui obri aquesta carpeta.",
+  "project.sharedFileUnreadable":
+    "El PerMark no pot llegir aquest fitxer a la línia {line}, de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
+  "project.sharedLocked":
+    "El PerMark no pot llegir .permark/config.toml, de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
+  "project.sharedLocked.line":
+    "El PerMark no pot llegir .permark/config.toml a la línia {line}, de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
+  "project.sharedLocked.notText":
+    "El PerMark no pot llegir .permark/config.toml (no és text pla), de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
+  "project.sharedLocked.tooLarge":
+    "El PerMark no pot llegir .permark/config.toml (és massa gran), de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
+  "project.sharedLocked.locked":
+    "El PerMark no pot llegir .permark/config.toml (un altre programa l'està fent servir), de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
+  "project.privateTracked":
+    "Els agents no reben els comentaris ni l'activitat d'aquesta carpeta: el seu repositori git fa el seguiment de la carpeta privada del PerMark (.permark/local), o el PerMark no ho ha pogut comprovar.",
   "settings.all": "Tota la configuració",
   "settings.editorPreview": "Exemple:",
   "settings.linkUpdateHint":
@@ -1771,6 +1865,8 @@ export default {
   "settings.problem.noPath": "L'ordre necessita {path}.",
   "settings.problem.notInitialized": "Aquesta carpeta encara no té configuració del PerMark.",
   "settings.problem.tomlOnly": "Utilitzeu un nom de fitxer acabat en .toml.",
+  "settings.problem.notToml":
+    "El PerMark no pot llegir .permark/config.toml, de manera que no s'ha canviat res.",
   "settings.problem.other": "No s'ha acceptat aquest valor.",
   "welcome.newProject": "Projecte nou…",
   "welcome.newProjectHint": "Trieu una carpeta; el PerMark la configura com a projecte.",
@@ -1832,6 +1928,7 @@ export default {
   "plugin.graphviz.name": "Diagrames Graphviz",
   "plugin.graphviz.about": "Dibuixa gràfics Graphviz (DOT) a partir de blocs de codi.",
   "graphviz.tooLarge": "Aquest gràfic és massa gran per a dibuixar-lo aquí.",
+  "plantuml.tooLarge": "Aquest diagrama és massa gran per a dibuixar-lo aquí.",
   "plugin.media.name": "Imatges, àudio i vídeo",
   "plugin.media.about": "Obre imatges, so i vídeo dins de l'aplicació.",
   "plugin.json-view.name": "JSON",
@@ -1870,6 +1967,8 @@ export default {
     "Aquesta còpia del PerMark no està instal·lada, així que no pot ser l'aplicació per defecte. Trieu l'aplicació per a aquests fitxers a la configuració del sistema.",
   "defaultApp.confined": "Trieu l'aplicació per a aquests fitxers a la configuració del sistema.",
   "defaultApp.failed": "No s'ha pogut canviar l'aplicació per defecte: {message}",
+  "defaultApp.chooseInFinder":
+    "El PerMark continua sent l'aplicació per defecte d'aquests fitxers. Per a fer servir una altra aplicació, seleccioneu-ne un al Finder, trieu Fitxer > Obtenir informació i escolliu l'aplicació a «Obre amb».",
   "defaultApp.askTitle": "Voleu obrir aquests fitxers amb el PerMark?",
   "defaultApp.askBody":
     "El PerMark obrirà els fitxers que marqueu quan hi feu doble clic. Podeu canviar-ho quan vulgueu a Configuració.",
@@ -1891,6 +1990,8 @@ export default {
   "shell.newFile.row": "«Fitxer Markdown nou»",
   "shell.newFile.hint": "Al menú contextual de les carpetes: hi crea un fitxer i l'obre.",
   "shell.failed": "No s'ha pogut canviar el menú: {message}",
+  "shell.readFailed": "No s'han pogut llegir les entrades del menú. {message}",
+  "shell.retry": "Torna-ho a provar",
   "updates.section": "Actualitzacions",
   "updates.row": "Versions noves",
   "updates.notes": "Novetats",
@@ -2128,7 +2229,7 @@ export default {
     "Tokens d'un document, d'una selecció o d'una secció segons el tokenitzador que trieu; exactes quan el tokenitzador és públic, aproximats (i marcats) quan no ho és.",
   "plugin.local-ai.name": "IA local",
   "plugin.local-ai.about":
-    "Models d'IA petits que funcionen en aquest ordinador, sense connexió, perquè PerMark ajudi a corregir, traduir i trobar pel significat. No es baixa res fins que ho demaneu.",
+    "Models d'IA petits que funcionen en aquest ordinador perquè PerMark ajudi a corregir, traduir i trobar pel significat. No es baixa res fins que ho demaneu.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} fila",
   "config.table.rows.other": "{n} files",
@@ -2164,6 +2265,7 @@ export default {
   "toon.notValid": "No és TOON 4.4 vàlid",
   "convert.menu": "Converteix…",
   "convert.table": "Converteix…",
+  "convert.tableCommand": "Converteix la taula…",
   "convert.title": "Converteix {name}",
   "convert.fromPage": "text de la pàgina",
   "convert.close": "Tanca",
@@ -2285,6 +2387,21 @@ export default {
   "closeWindow.body.other": "Aquestes pestanyes tenen canvis sense desar:",
   "closeWindow.saveAll": "Desa-ho tot",
   "closeWindow.discard": "Descarta",
+  "stuck.title": "El PerMark no respon",
+  "stuck.detail":
+    "Una pàgina d'aquesta finestra no respon. Si tanqueu igualment, es poden perdre els canvis sense desar de les pestanyes d'aquesta finestra.",
+  "stuck.closeAnyway": "Tanca igualment",
+  "stuck.wait": "Espera",
+  "stuck.engineStopped":
+    "La part del PerMark que mostra les finestres ha deixat de funcionar i el PerMark s'ha de tancar. Es perdran els canvis sense desar; les pestanyes obertes tornaran la pròxima vegada que inicieu el PerMark.",
+  "stuck.reloaded": "Aquesta pestanya ha deixat de funcionar i s'ha tornat a carregar.",
+  "stuck.reloadedLost":
+    "Aquesta pestanya ha deixat de funcionar i s'ha tornat a carregar. S'han perdut els canvis sense desar de {file}.",
+  "stuck.reloadedPage": "Aquesta pàgina ha deixat de funcionar i s'ha tornat a carregar.",
+  "stuck.windowFailed":
+    "Una finestra del PerMark no ha pogut obrir la seva pàgina i s'ha tancat. Les altres finestres continuen funcionant.",
+  "stuck.viewFailedExit":
+    "El PerMark no ha pogut obrir la seva finestra i s'ha de tancar. Les pestanyes obertes tornaran la pròxima vegada que inicieu el PerMark.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Projectes interns",
@@ -2541,7 +2658,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "IA local",
   "localAi.intro":
-    "Models d'IA petits que funcionen en aquest ordinador, sense connexió. No es baixa res fins que ho demaneu.",
+    "Models d'IA petits que funcionen en aquest ordinador. No es baixa res fins que ho demaneu.",
   "localAi.command": "Obre la configuració de la IA local",
   "localAi.loadFailed": "No s'ha pogut llegir la configuració de la IA local.",
   "localAi.retry": "Torna-ho a provar",
@@ -2614,8 +2731,8 @@ export default {
   "localAi.models.details.size": "Mida de la baixada",
   "localAi.models.details.restriction": "Qui el pot fer servir",
   "localAi.models.comingSoon": "Aviat",
-  "localAi.models.needs.newer": "Necessita una versió més nova del motor d'IA.",
-  "localAi.models.needs.missing": "Necessita un motor d'IA que PerMark encara no té.",
+  "localAi.models.needs.newer": "Aquest model necessita una versió posterior del PerMark.",
+  "localAi.models.needs.missing": "El PerMark encara no pot executar aquest tipus de model.",
   "localAi.dl.waiting": "En espera…",
   "localAi.dl.cancelLabel": "Cancel·la la baixada de {name}",
   "localAi.dl.progress": "{done} de {total}",
@@ -3181,7 +3298,10 @@ export default {
   "acp.fail.tooLarge": "Aquesta carpeta és massa gran per a copiar-la per a l'agent.",
   "acp.fail.projectsNotReady":
     "El PerMark encara està llegint aquesta carpeta. Torneu-ho a provar d'aquí a un moment.",
+  "acp.fail.rulesUnreadable":
+    "No s'ha pogut llegir un fitxer que defineix què poden veure els agents. L'agent no rep res fins que es corregeixi.",
   "acp.fail.startFailed": "No s'ha pogut iniciar el programa de l'agent.",
+  "acp.fail.notAllowed": "No heu permès que s'iniciï el programa de l'agent.",
   "acp.fail.timedOut": "L'agent no ha respost a temps.",
   "acp.fail.initFailed":
     "Aquest programa no ha respost com un agent amb què el PerMark pugui parlar. Comproveu l'ordre i torneu-ho a provar.",
@@ -3195,6 +3315,7 @@ export default {
   "acp.fail.exited": "El programa de l'agent s'ha tancat inesperadament.",
   "acp.fail.sendFailed": "No s'ha pogut lliurar el missatge a l'agent.",
   "acp.error.relativeProgram": "Escriviu el camí complet del programa, o només el seu nom.",
+  "acp.error.commandTooLong": "L'ordre és massa llarga (com a màxim 1000 caràcters).",
   "acp.error.networkProgram":
     "El PerMark només inicia programes d'aquest ordinador, no des d'una carpeta de xarxa.",
   "acp.error.oneChoice": "Trieu un agent o escriviu una ordre.",

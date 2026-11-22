@@ -9,11 +9,11 @@
   import Lock from "@lucide/svelte/icons/lock";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash from "@lucide/svelte/icons/trash";
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import type { ConfigEdit, Group, NewValue, Row, Scalar, Sheet, Table } from "../../api";
   import SpreadButtons from "../doc/SpreadButtons.svelte";
   import { t, tn } from "../i18n";
-  import { cardKey, foldsOf, isHeaded } from "./folds";
+  import { cardAt, cardKey, foldsOf, isHeaded } from "./folds";
   import { reasonKey, refusalKey } from "./reasons";
   import SheetTable from "./SheetTable.svelte";
   import SheetValue from "./SheetValue.svelte";
@@ -73,6 +73,57 @@
   let newValue = $state("");
   let dataRefusal = $state<{ at: string; word: string } | null>(null);
   const headed = $derived(isHeaded(sheet));
+  let root: HTMLElement | undefined = $state();
+  let locateTimer: ReturnType<typeof setTimeout> | undefined;
+  // the tint's clock goes with the sheet
+  $effect(() => () => clearTimeout(locateTimer));
+
+  /** The rows of the sheet that name their line, in document order (rows of tables do not: they stay put). */
+  const lineRows = (): HTMLElement[] =>
+    Array.from(root?.querySelectorAll<HTMLElement>("[data-line]") ?? []);
+  const pane = (): HTMLElement | null => root?.closest<HTMLElement>("[data-scroller]") ?? null;
+
+  /**
+   * Brings the row holding `line` (else the nearest row above it) into view, its card opened first. `asked`: a place
+   * asked for (a code reference, a search hit) -> the top third of the pane, tinted a moment; else a place kept (a
+   * mode switch, a reload) -> the top of the pane, so the line at the top reads back the same.
+   */
+  export async function locate(line: number, asked: boolean): Promise<void> {
+    const card = cardAt(sheet, line);
+    if (card !== null && folded.has(card)) folded = toggle(folded, card);
+    await tick();
+    let row: HTMLElement | undefined;
+    for (const candidate of lineRows()) {
+      const at = Number(candidate.dataset["line"]);
+      if (Number.isFinite(at) && at <= line && at >= Number(row?.dataset["line"] ?? 0))
+        row = candidate;
+    }
+    const scroller = pane();
+    if (!row || !scroller) return;
+    const y =
+      row.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    scroller.scrollTop = Math.max(0, asked ? y - scroller.clientHeight / 3 : y);
+    if (!asked) return;
+    row.classList.remove("pm-located");
+    void row.offsetWidth;
+    row.classList.add("pm-located");
+    const tinted = row;
+    clearTimeout(locateTimer);
+    locateTimer = setTimeout(() => tinted.classList.remove("pm-located"), 1600);
+  }
+
+  /** Line of the first row at the top of the pane (1 at its very top); `null`: no row drawn there. */
+  export function topLine(): number | null {
+    const scroller = pane();
+    if (!scroller) return null;
+    if (scroller.scrollTop <= 0) return 1;
+    const top = scroller.getBoundingClientRect().top;
+    for (const row of lineRows()) {
+      const at = Number(row.dataset["line"]);
+      if (Number.isFinite(at) && row.getBoundingClientRect().bottom > top + 1) return at;
+    }
+    return null;
+  }
 
   function toggle(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
     const next = new Set(set);
@@ -260,7 +311,13 @@
   {/if}
 {/snippet}
 
-<div class="sheet" data-kind={sheet.kind} aria-label={t("config.sheet")} role="group">
+<div
+  class="sheet"
+  data-kind={sheet.kind}
+  aria-label={t("config.sheet")}
+  role="group"
+  bind:this={root}
+>
   {#if spread && headed}
     <div class="bar">
       <SpreadButtons onask={(open) => (folded = foldsOf(sheet, open))} />
@@ -575,6 +632,26 @@
   }
   .row:first-child {
     border-top: 0;
+  }
+  /* the row a reference asked for: the reading tint, fading out (static under reduced motion) */
+  /* `locate` tints only `[data-line]` elements, and `.row` is the only one carrying it */
+  .row:global(.pm-located) {
+    animation: sheet-locate var(--dur-locate) ease-out both;
+  }
+  @keyframes sheet-locate {
+    0%,
+    30% {
+      background: var(--mark);
+    }
+    100% {
+      background: transparent;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .row:global(.pm-located) {
+      animation: none;
+      background: color-mix(in srgb, var(--mark) 55%, transparent);
+    }
   }
   .row.ignore,
   .row.adding {

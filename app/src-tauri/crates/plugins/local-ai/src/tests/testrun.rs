@@ -1,4 +1,4 @@
-//! "Test model" (AC-7) over in-process `serve(FakeEngine)` workers + scripted downloads: phase order (chat, embed),
+//! "Test model" over in-process `serve(FakeEngine)` workers + scripted downloads: phase order (chat, embed),
 //! engine fetched on the first test only, cancel (run, engine download) -> cancelled + unloaded, guard refusal ->
 //! failed `outOfMemory`, no pin -> failed `notAvailable`, one test at a time, error codes.
 
@@ -216,7 +216,7 @@ impl Drop for Bench {
     }
 }
 
-/// AC-7: chat model, first test fetches the engine: engine -> loading -> running -> done; unloaded after; the second
+/// Chat model, first test fetches the engine: engine -> loading -> running -> done; unloaded after; the second
 /// test skips the engine phase.
 #[test]
 fn a_chat_model_test_gets_the_engine_loads_runs_and_unloads() {
@@ -257,7 +257,7 @@ fn a_chat_model_test_gets_the_engine_loads_runs_and_unloads() {
     bench.unloaded();
 }
 
-/// AC-7: embedding-only model -> one vector (dims), unloaded after.
+/// Embedding-only model -> one vector (dims), unloaded after.
 #[test]
 fn an_embedding_model_test_embeds_one_text() {
     let bench = Bench::fake(FakeEngine::new);
@@ -366,7 +366,7 @@ fn cancel_during_the_engine_download_stops_it() {
     assert_eq!(bench.workers.launched(), 0);
 }
 
-/// AC-5: too little memory -> failed `outOfMemory`, no worker started.
+/// Too little memory -> failed `outOfMemory`, no worker started.
 #[test]
 fn the_memory_guard_fails_the_test_before_a_worker_starts() {
     let bench = Bench::new(

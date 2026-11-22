@@ -40,13 +40,13 @@ import type { MarkOptions } from "../marks";
 import { clipboardPictures } from "../pictures";
 import { configLanguage } from "./configLang";
 import { lineDirection } from "./direction";
-import { fenceAround, type Fence } from "./fence";
+import { fenceIn, type Fence } from "./fence";
 import { foldedFind } from "./foldedFind";
 import { highlightTag, viewInlineSyntax } from "./inlineSyntax";
 import { completionSources, type CompletionHost } from "./complete";
 import { toggleBold } from "./bold";
 import { editsSpec, scopeIn } from "./edits";
-import { markAt, markLayers, marksEffect } from "./marks";
+import { markAt, markLayers, marksEffect, rangeAt } from "./marks";
 import type { EditScope, TextEdit, TextRange } from "../session.svelte";
 
 export type SourceHost = CompletionHost & {
@@ -229,6 +229,8 @@ export type SourceView = {
   ): void;
   /** Index of the mark of `layer` holding the caret (`ActiveEditor.markAt`). */
   markAt(layer?: string): number | null;
+  /** Index of the first of `ranges` holding the caret (`ActiveEditor.rangeAt`). */
+  rangeAt(ranges: readonly TextRange[]): number | null;
   /** Text is being composed (IME). */
   composing(): boolean;
   /** Opens the find + replace panel (as Ctrl+F in the editor does). */
@@ -324,15 +326,9 @@ export function createSource(options: {
           if (!update.docChanged && !update.selectionSet) return;
           host.selected();
           if (!options.markdown) return;
-          // a window around the caret: a long document is not split on every key
           const doc = update.state.doc;
           const line = doc.lineAt(update.state.selection.main.head).number;
-          const first = Math.max(1, line - 400);
-          const last = Math.min(doc.lines, line + 400);
-          const lines: string[] = [];
-          for (let n = first; n <= last; n++) lines.push(doc.line(n).text);
-          const fence = fenceAround(lines, line - first + 1);
-          host.fence(fence && { ...fence, from: fence.from + first - 1 });
+          host.fence(fenceIn((n) => doc.line(n).text, doc.lines, line));
         }),
         EditorView.domEventHandlers({
           paste: (event, v) => {
@@ -449,6 +445,7 @@ export function createSource(options: {
     marks: (ranges, current, pick, layer, options) =>
       view.dispatch({ effects: marksEffect(view.state, ranges, current, pick, layer, options) }),
     markAt: (layer) => markAt(view.state, layer),
+    rangeAt: (ranges) => rangeAt(view.state, ranges),
     composing: () => view.composing,
     search: () => void openSearchPanel(view),
     destroy: () => view.destroy(),

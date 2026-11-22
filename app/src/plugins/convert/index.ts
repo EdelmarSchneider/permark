@@ -1,19 +1,25 @@
 // Plugin `convert` (on by default): data from JSON, JSON Lines, YAML, XML, CSV | TSV, TOML and TOON
 // turned into TOON and other compact formats and back, with the tokens each choice takes. Reached from the Explorer
-// menu, the palette, a selection of the page, a fenced code block and a table of the page.
+// menu, the palette, a selection of the page, a fenced code block and a table of the page (its button | the palette).
 
 import ArrowLeftRight from "@lucide/svelte/icons/arrow-left-right";
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { documents } from "../../core/doc/document.svelte";
+import { selectionForCommand } from "../../core/doc/selection";
 import { definePlugin } from "../../core/plugins/registry.svelte";
 import { convertible, sourceOf } from "./model";
 import { converter } from "./store.svelte";
-import { decorateTables } from "./tables";
+import { convertTable, decorateTables, heldTable } from "./tables";
 
-/** The text selected in the page, if any. */
-function pageSelection(): string {
-  const selection = window.getSelection();
-  return selection && !selection.isCollapsed ? selection.toString() : "";
+/** The text selected in the page, if any (a selection in a panel or a field is not the page's); from the palette, the
+ *  page selection its field took the focus from. */
+function selectedText(): string {
+  return selectionForCommand()?.text ?? "";
+}
+
+/** A table of the page into the converter, read as CSV. */
+function openTable(csv: string): void {
+  converter.open({ kind: "text", text: csv, language: "csv", beside: documents.path }, "csv");
 }
 
 export default definePlugin({
@@ -45,9 +51,9 @@ export default definePlugin({
         label: "convert.menu",
         requires: NO_REQUIREMENT,
         when: () =>
-          pageSelection() !== "" || (documents.path !== null && convertible(documents.path)),
+          selectedText() !== "" || (documents.path !== null && convertible(documents.path)),
         run: () => {
-          const text = pageSelection();
+          const text = selectedText();
           if (text !== "") {
             converter.open({ kind: "text", text, language: null, beside: documents.path });
           } else if (documents.path !== null) {
@@ -84,13 +90,19 @@ export default definePlugin({
         kind: "docDecoration",
         id: "convert.tables",
         requires: NO_REQUIREMENT,
-        decorate: (root) =>
-          decorateTables(root, (csv) =>
-            converter.open(
-              { kind: "text", text: csv, language: "csv", beside: documents.path },
-              "csv",
-            ),
-          ),
+        decorate: (root) => decorateTables(root, openTable),
+      }),
+      // the keyboard's way to the table button: the table holding the selection | the focus
+      cx.contribute({
+        kind: "command",
+        id: "convert.table",
+        label: "convert.tableCommand",
+        requires: NO_REQUIREMENT,
+        when: () => heldTable() !== null,
+        run: () => {
+          const table = heldTable();
+          if (table !== null) convertTable(table, openTable);
+        },
       }),
     ];
     return () => {

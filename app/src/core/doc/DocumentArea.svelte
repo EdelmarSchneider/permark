@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  /** Areas alive in the window: a tab switch makes the next one before it takes the last one down. */
+  let alive = 0;
+</script>
+
 <script lang="ts">
   // The document area: header, the page (or the viewer of the file's kind), the notices around it, find in page.
   // Everything about what is shown lives in the document controller; this is the frame and the keys.
@@ -105,6 +110,17 @@
     scroller ? pageFinder(scroller, (again) => documents.onPainted(again)) : null,
   );
   const finder = $derived(editingNow ? editing.finder : pageFind);
+  // a save that failed or met a change on disk: the file's time would read as "saved" beside the bar saying otherwise
+  const saveFailed = $derived.by(() => {
+    if (!editingNow) return false;
+    const state = editing.state.s === "unsavedPrompt" ? editing.state.back : editing.state;
+    return state.s === "saveError" || state.s === "conflict";
+  });
+  const savedMs = $derived(saveFailed ? null : (view?.mtimeMs ?? null));
+  // the system's programs: only for files of a project; its default program never for a script, program or macro
+  // carrier (the backend refuses those opens too)
+  const canOpenSystem = $derived(workspace.kind === "project");
+  const opensOutside = $derived(canOpenSystem && view !== null && view.opensOutside);
 
   $effect(() => {
     documents.bind({
@@ -116,9 +132,14 @@
       editorSet: () => store.editor.trim() !== "",
       modKey: () => (conditions.current.platform === "mac" ? "Cmd" : "Ctrl"),
       chooseEditor,
+      editorShown: () => editingNow,
       editorHeadings: () => (editingNow ? editing.headingTops() : null),
       showEditorHeading: (index) => {
         if (editingNow) editing.showHeading(index);
+        return editingNow;
+      },
+      showEditorLine: (line) => {
+        if (editingNow) editing.showLine(line);
         return editingNow;
       },
       openFolderWith: (folder, document) => {
@@ -208,10 +229,16 @@
     untrack(() => documents.retitleRefs());
   });
 
-  // the area goes away with the workspace (the window shows the welcome again): the controller lets go of the document
+  // the area goes away with the workspace (the window shows the welcome again): the controller lets go of the document.
+  // Not while the next tab's area is there: the controllers serve it already (it set its workspace and document), and
+  // a release would take its page away under it.
+  alive += 1;
   $effect(() => () => {
-    editing.release();
-    documents.release();
+    alive -= 1;
+    if (alive === 0) {
+      editing.release();
+      documents.release();
+    }
     ui.closeFind();
   });
 
@@ -309,12 +336,13 @@
       <div class="chrome-inner">
         <DocHeader
           path={headerPath(view?.path ?? documents.path)}
-          savedMs={view?.mtimeMs ?? null}
+          {savedMs}
           role={view?.role ?? null}
           template={store.referenceTemplate}
           hasOutline={outline.length > 0}
           onFind={openFind}
-          canOpenSystem={workspace.kind === "project"}
+          {canOpenSystem}
+          {opensOutside}
           modes={view !== null && view.body.kind !== "media" ? modes : undefined}
           extra={editExtra(
             editing.mode !== "view" && editing.policy.kind === "explicit",
@@ -402,7 +430,7 @@
             notice={view.body.notice}
             name={view.name}
             path={view.path}
-            canOpenSystem={workspace.kind === "project"}
+            canOpenSystem={opensOutside}
           />
         {:else if editingNow}
           <!-- the editor shows instead -->
@@ -499,8 +527,9 @@
   .scroller:focus {
     outline: none;
   }
-  /* the keyboard sent here (a review closed, a side hidden): the page shows it holds the keyboard */
-  .scroller:focus-visible {
+  /* the keyboard sent here on purpose (a side hidden, a link followed: `paneFocus.ts`): the page shows it holds the
+     keyboard; one that fell back here (a review ended, a comment saved) draws nothing (the mark is set by script) */
+  .scroller:global([data-focus-sent]):focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
   }

@@ -15,7 +15,7 @@ use super::uid::ProjectUid;
 use crate::paths::VaultPath;
 use crate::state::StateData;
 
-pub const MEMBERSHIP_FILE: &str = "membership.json";
+pub use crate::state::MEMBERSHIP_FILE;
 /// Longest `declined` | `migrated` | `notMoved` list kept (oldest dropped).
 pub const MAX_ANSWERS: usize = 2000;
 

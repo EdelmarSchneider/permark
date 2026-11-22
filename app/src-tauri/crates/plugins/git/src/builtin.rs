@@ -12,9 +12,9 @@ use git2::{
 use permark_core::plugins::{CommitId, FileVersions};
 
 use crate::ops::{
-    below_prefix, finish, is_version, prefix_of, regular, repo_path, shallow, too_broad, version,
-    Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_RENAME_PATHS,
-    MAX_VERSIONS,
+    below_prefix, disk_aliases, finish, is_version, prefix_of, regular, repo_path, shallow,
+    too_broad, tracked_entry, version, Baseline, Discovery, GitError, GitOps, RawFile, RawStatus,
+    RepoLocation, MAX_RENAME_PATHS, MAX_VERSIONS,
 };
 use crate::types::{BackendKind, HeadInfo, Letter};
 
@@ -395,7 +395,7 @@ impl GitOps for BuiltinGit {
         let repo = match Repository::discover(root) {
             Ok(repo) => repo,
             Err(e) if e.code() == ErrorCode::NotFound => return Discovery::NoRepo,
-            Err(e) => return Discovery::Error(e.message().to_owned()),
+            Err(e) => return Discovery::Error(e.into()),
         };
         // a bare repository has no working tree
         let Some(workdir) = repo
@@ -410,15 +410,18 @@ impl GitOps for BuiltinGit {
         let Some(prefix) = prefix_of(&workdir, root) else {
             return Discovery::NoRepo;
         };
-        if !prefix.is_empty() && repo.is_path_ignored(&prefix).unwrap_or(false) {
-            return Discovery::NoRepo;
-        }
-        Discovery::Repo(RepoLocation {
+        let ignored = !prefix.is_empty() && repo.is_path_ignored(&prefix).unwrap_or(false);
+        let location = RepoLocation {
             workdir: permark_core::paths::canonicalize(&workdir).unwrap_or(workdir),
             git_dir: permark_core::paths::canonicalize(repo.path())
                 .unwrap_or_else(|_| repo.path().to_path_buf()),
             prefix,
-        })
+        };
+        if ignored {
+            Discovery::Ignored(location)
+        } else {
+            Discovery::Repo(location)
+        }
     }
 
     fn status(&self, location: &RepoLocation, baseline: &Baseline) -> Result<RawStatus, GitError> {
@@ -465,6 +468,24 @@ impl GitOps for BuiltinGit {
         limit: usize,
     ) -> Result<FileVersions, GitError> {
         versions(location, path, after, limit, WALK_BUDGET)
+    }
+
+    fn tracked_under(&self, location: &RepoLocation, path: &str) -> Result<bool, GitError> {
+        let repo = open(location)?;
+        let caseless = match repo.config()?.get_bool("core.ignorecase") {
+            Ok(on) => on,
+            Err(e) if e.code() == ErrorCode::NotFound => false,
+            // git refuses to run with such a value: the installed backend fails here too
+            Err(e) => return Err(e.into()),
+        };
+        let mut alias = disk_aliases(location, path);
+        // every entry is looked at: libgit2's prefix search compares with case even in a caseless index, the index
+        // iterator yields every stage and flag (conflicts, intent-to-add, skip-worktree), and another spelling of a
+        // name on disk is found only by looking at each
+        Ok(repo
+            .index()?
+            .iter()
+            .any(|entry| tracked_entry(&entry.path, &location.prefix, path, caseless, &mut alias)))
     }
 
     fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32> {

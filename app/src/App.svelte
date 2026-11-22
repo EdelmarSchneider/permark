@@ -36,6 +36,7 @@
   import LayoutsDialog from "./core/shell/LayoutsDialog.svelte";
   import { answerInit } from "./core/shell/initProject";
   import { layout } from "./core/shell/layout.svelte";
+  import { nativeWords } from "./core/shell/nativeWords";
   import { hasSidebar, hasToggle } from "./core/shell/sides";
   import { tabs } from "./core/shell/tabs.svelte";
   import { ui } from "./core/shell/ui.svelte";
@@ -59,9 +60,12 @@
   const bottomDrawn = $derived(arrangement.drawn("bottom").length > 0);
   /** The window has a left region: a view to draw there, or the Notes' own list. */
   const leftShown = $derived(hasSidebar(store.view));
-  /** The room the right panel takes on screen (0: none): notices keep clear of it. */
+  /** The room the right panel takes on screen (0: none), or the open Panels menu over it: notices keep clear of both. */
   const rightInset = $derived(
-    rightDrawn && !layout.rightOff && ui.focus !== "on" ? layout.right : 0,
+    Math.max(
+      rightDrawn && !layout.rightOff && ui.focus !== "on" ? layout.right : 0,
+      ui.panels ? ui.panelsRoom : 0,
+    ),
   );
 
   const openingName = $derived.by(() => {
@@ -136,8 +140,14 @@
   // this window's tabs, for the top bar chips and their keys
   $effect(() => tabs.start(store.window));
   $effect(() => look.watchSystem());
+  // the system dialogs' words in the interface language (the backend holds no translations): now and on each change
+  $effect(() => {
+    void api.nativeWords(nativeWords());
+  });
   // the backend asks this view (events for other views are theirs): the window close prompt (tabs with unsaved
-  // edits), a save before the window closes (Save all), the unsaved prompt before this tab closes
+  // edits), a save before the window closes (Save all), the unsaved prompt before this tab closes. A prompt says it
+  // heard at once: the backend times the hearing (a dead | hung page gets its not-responding dialog), never the
+  // person's answer; Save all's answer needs no step of the person's, so the answer itself is what it waits for
   $effect(() => {
     const offs: (() => void)[] = [];
     let gone = false;
@@ -147,7 +157,9 @@
     };
     void api
       .on("close-requested", (event) => {
-        if (event.window === store.label) ui.closePrompt = event.tabs;
+        if (event.window !== store.label) return;
+        void api.viewHeard();
+        ui.closePrompt = event.tabs;
       })
       .then(keep);
     void api
@@ -158,7 +170,9 @@
       .then(keep);
     void api
       .on("tab-close-requested", (event) => {
-        if (event.window === store.label) void closeHere();
+        if (event.window !== store.label) return;
+        void api.viewHeard();
+        void closeHere();
       })
       .then(keep);
     // this tab moved to another window: its chips are that window's tabs now
@@ -404,13 +418,23 @@
     gap: var(--sp-3);
     min-width: 0;
   }
+  /* an item keeps its width: squeezed, its words would wrap onto a second line of the 24 px bar, cut in half */
+  .slot > :global(*) {
+    flex-shrink: 0;
+  }
+  /* no room for every item: the ones that do not fit move to a second line the bar's height hides, whole and from
+     the end (the highest order, least important, first); one line is stretched to the bar's height: centered */
   .slot.left {
     flex: 0 1 auto;
+    flex-wrap: wrap;
+    height: var(--h-status);
     overflow: hidden;
   }
   .slot.center {
     flex: 1 1 0;
+    flex-wrap: wrap;
     justify-content: center;
+    height: var(--h-status);
     overflow: hidden;
   }
   .slot.right {

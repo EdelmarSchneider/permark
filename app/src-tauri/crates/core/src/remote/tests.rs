@@ -186,6 +186,74 @@ fn redirects_are_followed_only_to_https_and_only_three_times() {
     );
 }
 
+/// A relative `Location` is resolved against the address it came from, as browsers do (RFC 3986 section 5.2); the
+/// result passes the same check as any address.
+#[test]
+fn relative_redirects_resolve_against_the_address_they_came_from() {
+    let from = "https://a.example/x/y/p.png?old=1#top";
+    for (location, expected) in [
+        ("img.png", "https://a.example/x/y/img.png"),
+        ("./img.png", "https://a.example/x/y/img.png"),
+        ("../a.png", "https://a.example/x/a.png"),
+        ("../../../../a.png", "https://a.example/a.png"),
+        ("sub/b.png?v=1", "https://a.example/x/y/sub/b.png?v=1"),
+        ("?v=2", "https://a.example/x/y/p.png?v=2"),
+        ("#frag", "https://a.example/x/y/p.png?old=1#frag"),
+        ("/q.png", "https://a.example/q.png"),
+        ("/a/./b/../c.png", "https://a.example/a/c.png"),
+        ("//c.example/r.png", "https://c.example/r.png"),
+        ("https://d.example/s.png", "https://d.example/s.png"),
+        ("  img.png ", "https://a.example/x/y/img.png"),
+    ] {
+        assert_eq!(
+            next_url(from, location).as_deref(),
+            Ok(expected),
+            "{location}"
+        );
+    }
+    // a base without a path
+    assert_eq!(
+        next_url("https://a.example", "img.png").as_deref(),
+        Ok("https://a.example/img.png")
+    );
+    assert_eq!(
+        next_url("https://a.example?q=1", "?v=2").as_deref(),
+        Ok("https://a.example?v=2")
+    );
+    // another scheme is still refused, also when it looks relative at first sight
+    for location in [
+        "http://a.example/p.png",
+        "ftp://a.example/p.png",
+        "data:image/png;base64,AA",
+    ] {
+        assert_eq!(
+            next_url(from, location).map_err(|e| (e.kind, e.detail)),
+            Err((ErrorKind::Unsupported, Some("https".to_owned()))),
+            "{location}"
+        );
+    }
+    // the hop is followed end to end
+    let web = Web::default()
+        .page(
+            "https://a.example/x/p",
+            302,
+            Some("../img/q.png"),
+            None,
+            b"",
+        )
+        .page(
+            "https://a.example/img/q.png",
+            200,
+            None,
+            Some("image/png"),
+            PNG,
+        );
+    assert_eq!(
+        fetch_picture(&web, "https://a.example/x/p").unwrap().bytes,
+        PNG
+    );
+}
+
 #[test]
 fn what_is_not_a_picture_is_refused() {
     let cases: [(Option<&str>, &[u8]); 7] = [

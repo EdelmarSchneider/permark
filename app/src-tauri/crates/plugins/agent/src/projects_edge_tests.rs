@@ -252,7 +252,7 @@ fn not_included_project_never_readable_before_walk_ends_body() {
 }
 
 /// Person said "No thanks" (declined all); a record arriving by pull | agent edit lists the project -> it stays out
-/// and hidden from the agent (spec §2.1 + D28: the person's answer beats a later entry).
+/// and hidden from the agent (the person's answer beats a later entry).
 #[test]
 fn record_written_after_decline_keeps_project_out() {
     let (dir, root) = tmp();
@@ -296,11 +296,12 @@ fn a_map_not_ready_hides_everything() {
         &root, "a.md", "# a
 ",
     );
-    let guard = permark_core::projects::agent_view::Guard::new(&Root::open(&root).unwrap(), &[])
-        .with_projects(
-            Arc::new(permark_core::projects::ProjectMap::default()),
-            None,
-        );
+    let guard =
+        permark_core::projects::agent_view::Guard::for_tests(&Root::open(&root).unwrap(), &[])
+            .with_projects(
+                Arc::new(permark_core::projects::ProjectMap::default()),
+                None,
+            );
     assert!(guard.hidden("a.md", false));
     assert!(matches!(
         crate::guard::file(&guard, "a.md"),

@@ -40,6 +40,9 @@ export const ERROR_KINDS = [
   "editorNotSet",
   "editorFailed",
   "settingsUnreadable",
+  "locked",
+  "diskFull",
+  "readOnly",
 ] as const satisfies readonly ErrorKind[];
 
 type MissingKinds = Exclude<ErrorKind, (typeof ERROR_KINDS)[number]>;

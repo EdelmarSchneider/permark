@@ -8,6 +8,8 @@ import {
   type PluginInfo,
   type ProjectSettingChange,
   type ProjectSettings,
+  type Sharing,
+  type Unlisten,
 } from "../../../api";
 
 export type ProjectState =
@@ -23,18 +25,61 @@ export function problemOf(error: ApiError): string {
   return error.error.detail ?? "other";
 }
 
+/** The folder's shared rows can't be changed now: not read yet, no `.permark/` yet, or its `config.toml` is there but
+ *  does not read (the backend refuses every change to it until it is fixed by hand). */
+export function sharedLockedOf(settings: ProjectSettings | null): boolean {
+  return settings === null || !settings.initialized || unreadableOf(settings);
+}
+
+/** The shared file is there but does not read: not TOML, too large, not text, locked by another program. */
+function unreadableOf(settings: ProjectSettings): boolean {
+  return settings.unreadableLine !== null || settings.unreadableWhy !== null;
+}
+
 /** The shared settings of the project this window shows (`.permark/config.toml`). */
 class ProjectSettingsStore {
   state = $state.raw<ProjectState>({ status: "idle" });
   /** The last refused change: which key, and why (cleared by the next change that works). */
   problem = $state.raw<{ key: string; code: string } | null>(null);
+  /** Why the last change of what git sees of `.permark/` was refused (cleared by the next one that works). */
+  sharingError = $state.raw<ApiError | null>(null);
   #api: Api = api;
   #seq = 0;
 
   async load(backend: Api = api): Promise<void> {
+    this.state = { status: "loading" };
+    await this.#read(backend);
+  }
+
+  /** Reads the settings of the folder at `root` now and again whenever they change (a setting written in another
+   *  window, the file changed on disk: a git pull, a hand edit); returns what stops following. Listens first, then
+   *  reads: a change between the two is never lost. */
+  follow(root: string | null, backend: Api = api): () => void {
+    this.state = { status: "loading" };
+    let gone = false;
+    let off: Unlisten | null = null;
+    void backend
+      .on("project-config-changed", (e) => {
+        if (!gone && e.root === root) void this.#read(backend);
+      })
+      .then((stop) => {
+        if (gone) {
+          stop();
+          return;
+        }
+        off = stop;
+        void this.#read(backend);
+      });
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }
+
+  /** What shows stays until the answer is there (read again after a change: no flash of an empty page). */
+  async #read(backend: Api): Promise<void> {
     this.#api = backend;
     const seq = ++this.#seq;
-    this.state = { status: "loading" };
     const result = await backend.projectConfigGet();
     if (seq !== this.#seq) return;
     this.state = result.ok
@@ -54,8 +99,33 @@ class ProjectSettingsStore {
     return true;
   }
 
+  /** What git may see of `.permark/` (PerMark's own `.permark/.gitignore`). `true` when it was kept; else
+   *  `sharingError` says why and the folder is read again (the file may hold someone else's text now). */
+  async setSharing(sharing: Sharing): Promise<boolean> {
+    const result = await this.#api.projectSharingSet(sharing);
+    if (!result.ok) {
+      this.sharingError = result.error;
+      await this.load(this.#api);
+      return false;
+    }
+    this.sharingError = null;
+    this.state = { status: "ready", settings: result.value };
+    return true;
+  }
+
   clearProblem(): void {
     this.problem = null;
+    this.sharingError = null;
+  }
+
+  /** The shared rows show greyed and write nothing (`sharedLockedOf` what was read). */
+  get sharedLocked(): boolean {
+    return sharedLockedOf(this.state.status === "ready" ? this.state.settings : null);
+  }
+
+  /** The folder's shared file is there but does not read: the locked rows say so instead of offering Initialize. */
+  get unreadable(): boolean {
+    return this.state.status === "ready" && unreadableOf(this.state.settings);
   }
 
   /** The shared file sets plugin key `key` (`<id>.<key>`), which no plugin reads: the person's own value applies. */

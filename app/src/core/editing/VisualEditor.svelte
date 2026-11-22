@@ -172,25 +172,31 @@
   }
 
   function scrollToLine(line: number): void {
-    const lines = composed()?.lines;
-    if (!core || !lines) return;
+    const now = composed();
+    if (!core || !mod || !now) return;
     const view = core.view;
-    const found: { element: HTMLElement | null; index: number } = { element: null, index: -1 };
-    view.state.doc.forEach((node, offset, index) => {
-      const at = lines.get(node);
-      const dom = view.nodeDOM(offset);
-      if (at !== undefined && at <= line && dom instanceof HTMLElement) {
-        found.element = dom;
-        found.index = index;
-      }
-    });
-    const element = found.element;
+    const at = mod.blockAtLine(view.state.doc, now, line);
     // the first block is the top of the document: the page opens there, header included, as the reading view does
-    if (found.index === 0) scroller.scrollTop = 0;
-    else if (element) {
+    if (at === 0) {
+      scroller.scrollTop = 0;
+      return;
+    }
+    const element = view.nodeDOM(at);
+    if (element instanceof HTMLElement) {
       scroller.scrollTop +=
         element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 48;
     }
+  }
+
+  /** The block holding `line` at the top of the pane, the caret at its first text: a place asked (a code reference, a
+   *  search hit) for the document the editor is on. */
+  function showLine(line: number): void {
+    const now = composed();
+    if (!core || !mod || !now) return;
+    const { state } = core.view;
+    const at = mod.blockAtLine(state.doc, now, line);
+    core.view.dispatch(state.tr.setSelection(mod.startOf(state.doc, at)));
+    scrollToLine(line);
   }
 
   /** Selects `range` and scrolls it into view; not found in its block: the block scrolled into view. */
@@ -417,6 +423,7 @@
       made = await loaded.createCore({
         host: target,
         scroller,
+        embedMounted: (told) => documents.decorator.onMounted(told),
         label: t("edit.documentText"),
         locked: {
           render: (node) => book.get(node),
@@ -511,7 +518,8 @@
       if (body !== null) book.take(ticket, body, doc.doc, now);
       built = doc;
       core = editor;
-      editor.setDoc(doc.doc);
+      // the caret starts at the line the pane opens at: the first key typed would scroll the page back to it
+      editor.setDoc(doc.doc, loaded.blockAtLine(doc.doc, now, current.line));
       if (first === "late" && asked !== null) {
         void asked.then(async (late) => {
           await withCard(late);
@@ -535,6 +543,7 @@
         text: () => composed()?.text ?? current.text,
         changes: () => composed()?.changed ?? 0,
         topLine,
+        showLine,
         selection: () => {
           if (!core) return "";
           const { from, to } = core.view.state.selection;
@@ -578,6 +587,10 @@
             mod.setMarks(core.view, now, ranges, current, pick, layer, options);
         },
         markAt: (layer) => (core && mod ? mod.markAt(core.view.state, layer) : null),
+        rangeAt: (ranges) => {
+          const now = composed();
+          return core && mod && now ? mod.rangeAt(core.view.state, now, ranges) : null;
+        },
         spellcheck: (on) => core?.setSpellcheck(on),
         composing: () => core?.view.composing ?? false,
         lost: () => (composed()?.lost.length ?? 0) > 0,

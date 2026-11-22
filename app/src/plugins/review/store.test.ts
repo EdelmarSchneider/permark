@@ -179,8 +179,30 @@ async function press(notices: ReviewNotice[]): Promise<void> {
 describe("the review store", () => {
   it("offers the changes of a document that has some, and nothing for one that has none", async () => {
     const { store, shown, stop } = await setup();
-    expect(store.state).toMatchObject({ status: "offer", path: GUIDE, count: 2 });
+    expect(store.state).toMatchObject({ status: "offer", path: GUIDE, count: 2, since: "read" });
     shown.value = { path: "README.md", hash: "ff".repeat(8), kind: "blocks" };
+    await settle();
+    expect(store.state.status).toBe("idle");
+    stop();
+  });
+
+  it("a document never read is offered against what the backend compares with (the last commit)", async () => {
+    const { store, shown, canned, stop } = await setup();
+    canned["review.status"] = () => ({ state: { state: "changes", count: 3 }, basis: "commit" });
+    shown.value = { path: "docs/new.md", hash: "aa".repeat(8), kind: "blocks" };
+    await settle();
+    expect(store.state).toEqual({
+      status: "offer",
+      path: "docs/new.md",
+      count: 3,
+      since: "commit",
+    });
+    // a version is never what an offer compares with: nothing is offered rather than a wrong basis
+    canned["review.status"] = () => ({
+      state: { state: "changes", count: 1 },
+      basis: { version: "ab".repeat(20) },
+    });
+    shown.value = { path: "docs/other.md", hash: "bb".repeat(8), kind: "blocks" };
     await settle();
     expect(store.state.status).toBe("idle");
     stop();
@@ -294,6 +316,17 @@ describe("the review store", () => {
     expect(notes.at(0)).toBeDefined();
     expect(store.reviewing?.count).toBe(2);
     expect(store.undoable).toBe(0);
+    stop();
+  });
+
+  it("a failed change says why in the window's words, never the error's raw kind", async () => {
+    const { store, notes, stop } = await setup({
+      failOn: { method: "review.revert", basis: "read" },
+    });
+    await store.begin();
+    await store.revert(0);
+    await settle();
+    expect(notes).toContain("Couldn't review guide.md: This isn't available right now.");
     stop();
   });
 
@@ -438,6 +471,46 @@ describe("the review store", () => {
     expect(store.state.status).toBe("idle");
     expect(notes).toEqual(["All changes kept"]);
     expect(notices).toEqual([]);
+    stop();
+  });
+
+  it("one change kept, then the last one reverted: the line says some were kept, still with Undo", async () => {
+    const { store, notices, notes, stop } = await setup();
+    await store.begin();
+    await store.keep(0);
+    await store.revert(0);
+    expect(store.state.status).toBe("idle");
+    expect(notes).toEqual([]);
+    expect(notices.map((n) => [n.text, n.actions.map((a) => a.label)])).toEqual([
+      ["Some changes kept, others reverted in guide.md", ["Undo"]],
+    ]);
+    // Undo brings the last change back; reverting it again still tells of the one kept before
+    await press(notices);
+    expect(store.reviewing?.count).toBe(1);
+    await store.revert(0);
+    expect(notices.map((n) => n.text)).toEqual(["Some changes kept, others reverted in guide.md"]);
+    stop();
+  });
+
+  it("one change reverted, then the rest kept: the line says some were reverted", async () => {
+    const { store, notices, notes, stop } = await setup();
+    await store.begin();
+    await store.revert(0);
+    await store.keepAll();
+    expect(store.state.status).toBe("idle");
+    expect(notes).toEqual(["Some changes kept, others reverted in guide.md"]);
+    expect(notices).toEqual([]);
+    stop();
+  });
+
+  it("a keep taken back by Undo is not counted: reverting the rest says all were reverted", async () => {
+    const { store, notices, stop } = await setup();
+    await store.begin();
+    await store.keep(0);
+    await store.undo();
+    await store.revert(0);
+    await store.revert(0);
+    expect(notices.map((n) => n.text)).toEqual(["All changes reverted in guide.md"]);
     stop();
   });
 
@@ -767,6 +840,7 @@ describe("what is reviewed by lines", () => {
     mtimeMs: 1,
     editable: { editable: "surgical" },
     notes: [],
+    opensOutside: false,
   });
 
   it("is text and config files, whole; a page by blocks; a file shown in parts or a picture not at all", () => {
@@ -905,13 +979,17 @@ describe("the earlier versions of a document", () => {
     expect(first.rows).toHaveLength(50);
     expect(first.next).not.toBeNull();
     expect(first.cut).toBe(true);
+    expect(first.note).toBeNull();
     await store.moreVersions();
     const second = listOf(store);
     expect(second.rows).toHaveLength(100);
     expect(second.rows.slice(0, 50)).toEqual(first.rows);
+    // said in the list's status line: a screen reader hears that the rows grew, and by how many
+    expect(second.note).toBe("50 more versions");
     await store.moreVersions();
     const all = listOf(store);
     expect(all.rows).toHaveLength(120);
+    expect(all.note).toBe("20 more versions");
     expect(all.next).toBeNull();
     expect(new Set(all.rows.map((row) => row.commit)).size).toBe(120);
     const times = all.rows.map((row) => row.atMs);

@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type PluginInfo } from "../../../api";
 import { MOCK_MANIFESTS } from "../../../api/mockShell";
 import { conditions, neutralContext } from "../../conditions/context.svelte";
+import { t } from "../../i18n";
+import en from "../../i18n/locales/en";
 import { windowStore } from "../../window.svelte";
 import PluginsSection from "./PluginsSection.svelte";
 
@@ -75,5 +77,47 @@ describe("the Settings plugins list", () => {
       key: "pluginEnabled",
       value: { plugin: id, enabled: false },
     });
+  });
+
+  it("asks before removing data and says which folders it cannot reach now", async () => {
+    const id = projectScoped();
+    vi.spyOn(api, "pluginDataBytes").mockResolvedValue({ ok: true, value: 0 });
+    await show([info(id, false)]);
+    const remove = Array.from(root.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === t("plugins.removeData"),
+    );
+    remove?.click();
+    flushSync();
+    await tick();
+    const confirm = root.querySelector('.confirm[role="group"]');
+    expect(confirm?.textContent).toContain(t("plugins.removeScope"));
+    expect(en["plugins.removeScope"]).toBe(
+      "Folders that keep their data in their own .permark folder are cleaned only while they are open.",
+    );
+  });
+
+  it("the question takes the keyboard on its Cancel; Cancel gives it back to Remove data", async () => {
+    const id = projectScoped();
+    vi.spyOn(api, "pluginDataBytes").mockResolvedValue({ ok: true, value: 0 });
+    await show([info(id, false)]);
+    const removeButton = (): HTMLButtonElement | undefined =>
+      Array.from(root.querySelectorAll("button")).find(
+        (b) => b.textContent?.trim() === t("plugins.removeData"),
+      );
+    removeButton()?.focus();
+    removeButton()?.click();
+    flushSync();
+    await tick();
+    // the button that had the keyboard went with the question: never the page body
+    const cancel = Array.from(root.querySelectorAll<HTMLButtonElement>(".confirm button")).find(
+      (b) => b.textContent?.trim() === t("common.cancel"),
+    );
+    expect(cancel).toBeDefined();
+    expect(document.activeElement).toBe(cancel);
+    cancel?.click();
+    flushSync();
+    await tick();
+    expect(root.querySelector(".confirm")).toBeNull();
+    expect(document.activeElement).toBe(removeButton());
   });
 });

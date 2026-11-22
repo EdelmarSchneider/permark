@@ -253,23 +253,12 @@ mod tests {
     }
 
     #[cfg(windows)]
-    fn junction(link: &Path, target: &Path) -> bool {
-        std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
-            .stdout(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
-    }
-
-    #[cfg(windows)]
     #[test]
     fn junction_escape_is_refused() {
         let (d, v) = vault_with(&["a.md"]);
         let outside = tempfile::tempdir().unwrap();
         fs::write(outside.path().join("secret.md"), "s").unwrap();
-        if !junction(&d.path().join("jump"), outside.path()) {
+        if !crate::tree::tests::link_out(&d.path().join("jump"), outside.path()) {
             eprintln!("skipped: cannot create a junction here");
             return;
         }

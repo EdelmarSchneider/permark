@@ -7,6 +7,7 @@
   import { api } from "../../api";
   import { t } from "../i18n";
   import { look } from "../look.svelte";
+  import { changedRuns } from "./lines";
   import type { Content, EditingSession } from "./session.svelte";
   import type { SourceView } from "./source/cm";
   import type { Fence } from "./source/fence";
@@ -74,6 +75,7 @@
         text: () => made.text(),
         changes: (base) => changedRuns(base, made.text()),
         topLine: () => made.topLine(scroller.getBoundingClientRect().top),
+        showLine: (line) => made.scrollToLine(line),
         selection: () => made.selection(),
         focus: () => made.view.focus(),
         pictures: (files, point) => {
@@ -87,6 +89,7 @@
         marks: (ranges, current, pick, layer, options) =>
           made.marks(ranges, current, pick, layer, options),
         markAt: (layer) => made.markAt(layer),
+        rangeAt: (ranges) => made.rangeAt(ranges),
         composing: () => made.composing(),
         search: () => made.search(),
         headingTops: () => made.headingTops(scroller.getBoundingClientRect().top),
@@ -107,21 +110,6 @@
     const on = look.wrap;
     untrack(() => source?.setWrap(on));
   });
-
-  /** Runs of changed lines (save message). */
-  function changedRuns(base: string, text: string): number {
-    const a = base.split("\n");
-    const b = text.split("\n");
-    let runs = 0;
-    let inRun = false;
-    const n = Math.max(a.length, b.length);
-    for (let i = 0; i < n; i++) {
-      const differs = a[i] !== b[i];
-      if (differs && !inRun) runs += 1;
-      inRun = differs;
-    }
-    return runs;
-  }
 
   async function insertPictures(files: File[], at: number): Promise<void> {
     const paths = await pictures(pictureFiles(files));

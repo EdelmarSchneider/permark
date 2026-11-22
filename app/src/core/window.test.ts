@@ -1,14 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMockApi } from "../api/mock";
+import { createMockApi, MOCK_FOLDER } from "../api/mock";
 import { ERROR_KINDS } from "../api/error";
-import type { Api, Result, OpenOutcome } from "../api";
+import type { Api, Result, OpenOutcome, WorkspaceView } from "../api";
 import { setLeaveGuard } from "./editing/guard";
 import { errorKey } from "./errors";
+import { t } from "./i18n";
 import en from "./i18n/locales/en";
 import { tabs } from "./shell/tabs.svelte";
 import { windowTitle } from "./title";
 import { ui } from "./shell/ui.svelte";
-import { onScreen, WindowStore } from "./window.svelte";
+import { onScreen, WindowStore, type Notice } from "./window.svelte";
 
 async function started(api: Api = createMockApi()): Promise<WindowStore> {
   const store = new WindowStore(api);
@@ -165,6 +166,7 @@ describe("in-place open: what stays on screen", () => {
     name: "docs",
     root: "C:/docs",
     stateLocation: "profile" as const,
+    dataOffer: "none" as const,
   };
   const plain = { ...docs, id: 2, name: "plain", root: "C:/plain" };
 
@@ -209,6 +211,7 @@ describe("window title", () => {
       name: "docs",
       root: "C:/docs",
       stateLocation: "profile" as const,
+      dataOffer: "none" as const,
     };
     expect(windowTitle({ state: "showing", workspace: project, document: null })).toBe(
       "docs — PerMark",
@@ -398,6 +401,193 @@ describe("initializing a folder", () => {
   });
 });
 
+describe("where a folder's data is kept", () => {
+  type Shown = Extract<WorkspaceView, { kind: "project" }>;
+  const shown = (store: WindowStore): Shown => {
+    const workspace = store.screen?.workspace;
+    if (workspace?.kind !== "project") throw new Error("no project on screen");
+    return workspace;
+  };
+  const action = (store: WindowStore): Extract<Notice, { kind: "action" }> => {
+    const notice = store.notices[0];
+    if (notice?.kind !== "action") throw new Error(JSON.stringify(store.notices));
+    return notice;
+  };
+  const labels = (store: WindowStore): string[] => action(store).actions.map((a) => a.label);
+  const press = async (store: WindowStore, label: string): Promise<void> => {
+    const notice = action(store);
+    const button = notice.actions.find((a) => a.label === label);
+    if (button === undefined) throw new Error(`no ${label}`);
+    store.dismiss(notice.id, "action");
+    await button.run();
+  };
+  const refused = (kind: "conflict" | "denied", detail: string | null): Result<null> => ({
+    ok: false,
+    error: {
+      kind: "backend",
+      command: "project_init",
+      error: { kind, subject: "C:/Users/demo/permark-docs/.permark/local", detail },
+    },
+  });
+
+  it("a folder that offers nothing opens without a word", async () => {
+    const store = await started();
+    await store.openFolder();
+    expect(shown(store).dataOffer).toBe("none");
+    expect(store.notices).toEqual([]);
+  });
+
+  it("a team folder that arrived offers Move | Keep once, when the folder opens", async () => {
+    const api = createMockApi();
+    api.probe.shell.dataOffer(MOCK_FOLDER, "ask");
+    const store = await started(api);
+    await store.openFolder();
+    expect(store.notices).toHaveLength(1);
+    expect(action(store).key).toBe(`data-place:${shown(store).id}`);
+    expect(action(store).text).toBe(t("project.dataAsk"));
+    expect(labels(store)).toEqual([t("project.dataMove"), t("project.dataKeep")]);
+    // the window told again about the same folder (a tab, a setting changed): no second one, none after a dismiss
+    const view = store.view;
+    api.emit("window-changed", { window: "main", view, tab: store.tab });
+    expect(store.notices).toHaveLength(1);
+    store.dismiss(action(store).id);
+    api.emit("window-changed", { window: "main", view, tab: store.tab });
+    expect(store.notices).toEqual([]);
+  });
+
+  it("Keep tells the backend: Move alone is left, nothing shows again", async () => {
+    const api = createMockApi();
+    api.probe.shell.dataOffer(MOCK_FOLDER, "ask");
+    const kept: string[] = [];
+    const store = await started({
+      ...api,
+      projectDataKeep: (path) => {
+        kept.push(path);
+        return api.projectDataKeep(path);
+      },
+    });
+    await store.openFolder();
+    await press(store, t("project.dataKeep"));
+    expect(kept).toEqual([MOCK_FOLDER]);
+    expect(shown(store).dataOffer).toBe("movable");
+    expect(store.notices).toEqual([]);
+  });
+
+  it("Move initializes the folder: the data goes in and a note says so", async () => {
+    const api = createMockApi();
+    api.probe.shell.dataOffer(MOCK_FOLDER, "ask");
+    const store = await started(api);
+    await store.openFolder();
+    await press(store, t("project.dataMove"));
+    expect(shown(store).dataOffer).toBe("none");
+    expect(shown(store).stateLocation).toBe("project");
+    expect(store.notices.map((n) => (n.kind === "action" ? n.text : n.kind))).toEqual([
+      t("project.dataMoved"),
+    ]);
+  });
+
+  it("Move refused because both places hold data: a neutral word that shows the folder's copy", async () => {
+    const api = createMockApi();
+    api.probe.shell.dataOffer(MOCK_FOLDER, "ask");
+    const store = await started({
+      ...api,
+      projectInit: () => Promise.resolve(refused("conflict", "bothHoldData")),
+    });
+    await store.openFolder();
+    await press(store, t("project.dataMove"));
+    expect(store.notices).toHaveLength(1);
+    expect(action(store).text).toBe(t("project.dataMoveHeld"));
+    await press(store, t("menu.showInFileManager"));
+    expect(api.probe.opened).toEqual([{ path: ".permark/local", mode: "reveal" }]);
+    // Initialize of the folder on screen refused the same way says the same
+    expect(await store.initProject(MOCK_FOLDER)).toBe(false);
+    expect(action(store).text).toBe(t("project.dataMoveHeld"));
+  });
+
+  it("Initialize of another folder refused because both places hold data names that folder, not a failure", async () => {
+    const api = createMockApi();
+    const store = await started({
+      ...api,
+      projectInit: () => Promise.resolve(refused("conflict", "bothHoldData")),
+    });
+    await store.openFolder();
+    const nested = `${MOCK_FOLDER}/guides`;
+    expect(await store.initProject(nested)).toBe(false);
+    expect(store.notices).toEqual([expect.objectContaining({ kind: "initHeld", path: nested })]);
+    expect(en["project.initHeld"]).toBe(
+      "{path}/.permark/local already holds PerMark data from elsewhere; nothing was changed.",
+    );
+  });
+
+  it("Keep refused because the data is in the folder already says nothing: the offer it answered is gone", async () => {
+    const api = createMockApi();
+    api.probe.shell.dataOffer(MOCK_FOLDER, "ask");
+    const keepRefused = (detail: string | null): Result<null> => ({
+      ok: false,
+      error: {
+        kind: "backend",
+        command: "project_data_keep",
+        error: { kind: "conflict", subject: `${MOCK_FOLDER}/.permark/local`, detail },
+      },
+    });
+    let detail: string | null = "dataInProject";
+    const store = await started({
+      ...api,
+      projectDataKeep: () => Promise.resolve(keepRefused(detail)),
+    });
+    await store.openFolder();
+    await press(store, t("project.dataKeep"));
+    expect(store.notices).toEqual([]);
+    // any other refusal still says the choice was not kept
+    detail = null;
+    await store.keepData(shown(store));
+    expect(store.notices.map((n) => n.kind)).toEqual(["settingNotSaved"]);
+  });
+
+  it("another refusal of Move says why", async () => {
+    const api = createMockApi();
+    api.probe.shell.dataOffer(MOCK_FOLDER, "ask");
+    const store = await started({
+      ...api,
+      projectInit: () => Promise.resolve(refused("denied", null)),
+    });
+    await store.openFolder();
+    await press(store, t("project.dataMove"));
+    expect(action(store).text.startsWith(t("project.dataMoveFailed", { message: "" }))).toBe(true);
+  });
+
+  it("the folder's .permark gone: the copy kept on this computer is in use, and can be kept", async () => {
+    const api = createMockApi();
+    api.probe.shell.dataOffer(MOCK_FOLDER, "missing");
+    const store = await started(api);
+    await store.openFolder();
+    expect(action(store).text).toBe(t("project.dataMissing"));
+    expect(en["project.dataMissing"]).toMatch(/older/);
+    expect(labels(store)).toEqual([t("project.dataKeepCopy")]);
+    await press(store, t("project.dataKeepCopy"));
+    expect(shown(store).dataOffer).toBe("none");
+    expect(store.notices).toEqual([]);
+  });
+
+  it("both places hold data: a neutral word that shows the folder's copy, no Move", async () => {
+    const api = createMockApi();
+    api.probe.shell.dataOffer(MOCK_FOLDER, "both");
+    const store = await started(api);
+    await store.openFolder();
+    expect(action(store).text).toBe(t("project.dataMoveHeld"));
+    expect(labels(store)).toEqual([t("menu.showInFileManager")]);
+  });
+
+  it("a kept choice offers Move in the settings only: no notice", async () => {
+    const api = createMockApi();
+    api.probe.shell.dataOffer(MOCK_FOLDER, "movable");
+    const store = await started(api);
+    await store.openFolder();
+    expect(shown(store).dataOffer).toBe("movable");
+    expect(store.notices).toEqual([]);
+  });
+});
+
 describe("errors in words", () => {
   it("every backend error kind has a message key", () => {
     for (const kind of ERROR_KINDS) expect(Object.keys(en)).toContain(errorKey(kind));
@@ -474,6 +664,34 @@ describe("timed notices", () => {
       store.notifyLasting({ text: "Review closed.", actions: [], onGone: () => {} });
       vi.advanceTimersByTime(600_000);
       expect(store.notices).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a lasting notice with a key takes the place of the one with that key; others stay, and the key takes it away", () => {
+    vi.useFakeTimers();
+    try {
+      const store = new WindowStore(createMockApi());
+      const gone: string[] = [];
+      const lasting = (text: string, key?: string): number =>
+        store.notifyLasting({
+          text,
+          actions: [{ label: "Restore", run: () => {} }],
+          onGone: (how) => gone.push(`${text}:${how}`),
+          ...(key === undefined ? {} : { key }),
+        });
+      lasting("plain");
+      lasting("first", "lost");
+      lasting("second", "lost");
+      expect(gone).toEqual(["first:dismissed"]);
+      const texts = (): string[] => store.notices.map((n) => (n.kind === "action" ? n.text : ""));
+      expect(texts()).toEqual(["plain", "second"]);
+      vi.advanceTimersByTime(600_000);
+      expect(texts()).toEqual(["plain", "second"]);
+      store.dismissKey("lost");
+      expect(texts()).toEqual(["plain"]);
+      expect(gone).toEqual(["first:dismissed", "second:dismissed"]);
     } finally {
       vi.useRealTimers();
     }

@@ -24,6 +24,10 @@ import { DEFAULT_COLLAPSED } from "./model";
 /** The id of the symbols panel. */
 export const PANEL = "symbols.panel";
 
+/** Own favorite writes that landed since the window's settings read count was `since`, and the value the last one
+ *  wrote. Counted, not compared with one count: news of an earlier write may land while a later one is on its way. */
+type OwnWrites = { since: number; count: number; value: SymbolFavorites | null };
+
 export class SymbolsStore {
   query = $state("");
   /** Section keys of the groups drawn collapsed. */
@@ -93,16 +97,20 @@ export class SymbolsStore {
 
   /** The writes in flight, one after the other. */
   #queue: Promise<void> = Promise.resolve();
-  /** The last write that landed: the window's settings read count when it started, and the value it wrote. */
-  #wrote: { reads: number; value: SymbolFavorites | null } | null = null;
+  #wrote: OwnWrites | null = null;
 
-  /** The value a step starts from: what the last write wrote while no settings news came since it started (its
-   *  own `settings-changed` is still on the way), else the window's (that news, or another window's change). */
-  #latest(): SymbolFavorites | null {
+  /** The own writes whose `settings-changed` is still on the way (each brings one settings read), `null`: none. */
+  #awaiting(): OwnWrites | null {
     const wrote = this.#wrote;
-    return wrote !== null && windowStore.settingsReads === wrote.reads
-      ? wrote.value
-      : windowStore.symbolFavorites;
+    return wrote !== null && windowStore.settingsReads - wrote.since < wrote.count ? wrote : null;
+  }
+
+  /** The value a step starts from: what the last write wrote while news of an own write is still on the way (news
+   *  of an earlier one carries an older value), else the window's (that news, or another window's change). */
+  #latest(): SymbolFavorites | null {
+    const awaiting = this.#awaiting();
+    // a write may have removed the key (`null`): that is a value too
+    return awaiting === null ? windowStore.symbolFavorites : awaiting.value;
   }
 
   /** Queues one change: each step reads what the one before it wrote, so quick toggles never lose one. */
@@ -129,10 +137,13 @@ export class SymbolsStore {
       arrangement.say(t("symbols.favoriteRefused"));
       return;
     }
-    const reads = windowStore.settingsReads;
+    // decided before the write: news that lands while it is on its way may be an earlier write's, or its own
+    const awaiting = this.#awaiting();
+    const since = awaiting?.since ?? windowStore.settingsReads;
+    const count = awaiting?.count ?? 0;
     const refused = await windowStore.trySetting({ key: "symbolFavorites", value: next });
     if (refused === null) {
-      this.#wrote = { reads, value: next };
+      this.#wrote = { since, count: count + 1, value: next };
       arrangement.say(done);
     } else if (reasonCode(refused) === "symbolFavorites")
       arrangement.say(t("symbols.favoriteRefused"));

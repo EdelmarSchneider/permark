@@ -5,6 +5,8 @@ import type { Api, Block, DocumentView, Result } from "../../api";
 import type { PageBox } from "../../api/generated/PageBox";
 import { createMockApi } from "../../api/mock";
 import type { EmbedLookup } from "../../core/doc/decorate";
+import { FIT_TABLE, NATURAL_TABLE, SCREEN_TABLE } from "../../core/doc/tableColumns";
+import type { TableProbe } from "../../core/doc/tableFitter";
 import { webPictures } from "../../core/doc/webPictures.svelte";
 import { buildExport, type ExportOptions, type ExportOutcome } from "./builder";
 
@@ -241,6 +243,34 @@ describe("export page", () => {
     expect(outcome.notes).toEqual([{ kind: "video", name: "big.mp4" }]);
   });
 
+  it("stops carrying files once the page holds its limit: later ones leave their stand-in and a note", async () => {
+    serve({
+      "a.png": { bytes: 8, type: "image/png" },
+      "b.png": { bytes: 8, type: "image/png" },
+      "c.png": { bytes: 8, type: "image/png" },
+      "clip.mp4": { bytes: 10, type: "video/mp4" },
+    });
+    // each picture is a data URI of 34 characters: two fit in 80, the third and the video do not
+    const outcome = await run(
+      await apiWith(
+        '<p><img src="pm-asset:a.png" alt="A"></p>',
+        '<p><img src="pm-asset:b.png" alt="B"></p>',
+        '<p><img src="pm-asset:c.png" alt="Third"></p>',
+        '<p><video src="pm-asset:clip.mp4" controls></video></p>',
+      ),
+      { maxPageBytes: 80 },
+    );
+    if (outcome.status !== "done") throw new Error("not built");
+    expect(outcome.html.match(/<img[^>]+src="data:image\/png;base64,/g)).toHaveLength(2);
+    expect(outcome.html).toContain("Third");
+    expect(outcome.html).not.toMatch(/<video/);
+    expect(outcome.html).toContain("Video left out: clip.mp4");
+    expect(outcome.notes).toEqual([
+      { kind: "picture", name: "c.png" },
+      { kind: "video", name: "clip.mp4" },
+    ]);
+  });
+
   it("paper: a video becomes its still, a sound a note", async () => {
     serve({
       "clip.mp4": { bytes: 10, type: "video/mp4" },
@@ -299,6 +329,87 @@ describe("export page", () => {
     expect(html).toContain("@page { size: 148mm 210mm; margin: 12.7mm; }");
     expect(html).not.toContain("@bottom-center");
     expect(width).toBe(`${148 - 2 * 12.7}mm`);
+  });
+
+  it("HTML: each table keeps the reading view's layout at the reading width, as shares the browser keeps", async () => {
+    const api = await apiWith(
+      "<table><tr><td>natural</td><td>x</td></tr></table>",
+      "<table><tr><td>fill</td><td>x</td></tr></table>",
+      "<table><tr><td>scroll</td><td>x</td></tr></table>",
+      '<table><colgroup><col style="width: 9em"><col></colgroup><tr><td>own</td><td>x</td></tr></table>',
+    );
+    // measured spans by the table's first word (jsdom lays nothing out)
+    const spans: Record<string, { min: number; max: number }[]> = {
+      natural: [
+        { min: 40, max: 60 },
+        { min: 40, max: 60 },
+      ],
+      fill: [
+        { min: 50, max: 80 },
+        { min: 100, max: 900 },
+      ],
+      scroll: [
+        { min: 400, max: 900 },
+        { min: 400, max: 900 },
+      ],
+    };
+    const measured: string[] = [];
+    const tableProbe: TableProbe = {
+      measure(table) {
+        const word = table.rows[0]?.cells[0]?.textContent ?? "";
+        measured.push(word);
+        const columns = spans[word];
+        return columns ? { columns, limits: { short: 100, cap: 300 }, font: "f" } : null;
+      },
+      font: () => "f",
+      room: () => 600,
+    };
+    const html = await build(api, { target: "html", tableProbe });
+    expect(measured).toEqual(["natural", "fill", "scroll"]);
+
+    const page = new DOMParser().parseFromString(html, "text/html");
+    const tableOf = (word: string): HTMLTableElement => {
+      const cell = Array.from(page.querySelectorAll("td")).find((td) => td.textContent === word);
+      const table = cell?.closest("table");
+      if (!(table instanceof HTMLTableElement)) throw new Error(`no table ${word}`);
+      return table;
+    };
+    const shares = (table: HTMLTableElement): string[] =>
+      Array.from(table.querySelectorAll(":scope > colgroup > col"), (col) =>
+        col instanceof HTMLElement ? col.style.width : "",
+      );
+
+    const natural = tableOf("natural");
+    expect(natural.parentElement?.classList.contains(NATURAL_TABLE)).toBe(true);
+    expect(natural.querySelector("colgroup")).toBeNull();
+
+    // the short column keeps its whole line, the long one takes the rest; never the screen's fixed layout
+    const fill = tableOf("fill");
+    expect(shares(fill)).toEqual(["13.333%", "86.667%"]);
+    expect(fill.classList.contains(FIT_TABLE)).toBe(true);
+    expect(fill.classList.contains(SCREEN_TABLE)).toBe(false);
+    expect(fill.style.width).toBe("");
+
+    const scroll = tableOf("scroll");
+    expect(shares(scroll)).toEqual(["50%", "50%"]);
+    expect(scroll.style.width).toBe("800px");
+
+    const own = tableOf("own");
+    expect(shares(own)).toEqual(["9em", ""]);
+    expect(own.classList.contains(FIT_TABLE)).toBe(false);
+  });
+
+  it("paper: tables are fitted to the page, never measured as a screen", async () => {
+    const api = await apiWith("<table><tr><td>a</td><td>b</td></tr></table>");
+    const tableProbe: TableProbe = {
+      measure: () => {
+        throw new Error("paper measured as a screen");
+      },
+      font: () => "f",
+      room: () => 600,
+    };
+    const html = await build(api, { target: "paper", page: A5, tableProbe });
+    expect(html).not.toContain(NATURAL_TABLE);
   });
 
   it("HTML: each diagram twice, light and dark, the reader's preference picks one", async () => {

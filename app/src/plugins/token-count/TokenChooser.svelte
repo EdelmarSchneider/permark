@@ -1,7 +1,8 @@
 <script lang="ts">
   // The list of tokenizers to choose from: each with a badge that says whether its number is exact or only an estimate,
   // one line on why, and, for an exact one, the download of its vocabulary (never started by choosing it: the person
-  // presses Download). Up to three can be chosen; the first is the one in the status bar.
+  // presses Download). Up to three can be chosen; the first is the one in the status bar. `disabled`: the list can't be
+  // changed now (a folder's file that can't be written); downloads stay the person's, they write no setting.
   import { formatLocale, t } from "../../core/i18n";
   import { failureKey, formatMegabytes, percentOf } from "./model";
   import { tokens } from "./store.svelte";
@@ -13,8 +14,10 @@
     onchange: (ids: string[]) => void;
     /** Show "Remove" for a downloaded vocabulary (the settings card; the popover keeps it short). */
     removable?: boolean;
+    /** The choice shows as it is and can't be changed. */
+    disabled?: boolean;
   };
-  let { ids, onchange, removable = false }: Props = $props();
+  let { ids, onchange, removable = false, disabled = false }: Props = $props();
 
   const full = $derived(ids.length >= MAX_TOKENIZERS);
 
@@ -39,7 +42,7 @@
         <input
           type="checkbox"
           checked={on}
-          disabled={!on && full}
+          disabled={disabled || (!on && full)}
           onchange={(e) => toggle(info, e.currentTarget.checked)}
         />
         <span class="names">
@@ -60,7 +63,12 @@
       </label>
       <div class="actions">
         {#if on && ids[0] !== info.id}
-          <button type="button" class="btn btn--sm btn--ghost" onclick={() => makePrimary(info)}>
+          <button
+            type="button"
+            class="btn btn--sm btn--ghost"
+            {disabled}
+            onclick={() => makePrimary(info)}
+          >
             {t("tokens.makePrimary")}
           </button>
         {/if}

@@ -27,13 +27,13 @@
 <div class="structured">
   <div class="bar">
     {#if parsed.ok}
-      <div class="segments" role="radiogroup" aria-label={t("structured.mode")}>
+      <!-- two toggle buttons, as the document's mode switch: a radio group would owe arrow keys -->
+      <div class="segments" role="group" aria-label={t("structured.mode")}>
         {#each ["tree", "source"] as const as option (option)}
           <button
             type="button"
             class="segment"
-            role="radio"
-            aria-checked={mode === option}
+            aria-pressed={mode === option}
             onclick={() => (chosen = option)}
           >
             {t(option === "tree" ? "structured.tree" : "structured.source")}
@@ -58,7 +58,8 @@
     {/if}
   </div>
   {#if mode === "tree" && parsed.ok}
-    <div class="tree" role="tree" aria-label={t("structured.tree")}>
+    <!-- rows are disclosure buttons (aria-expanded), not tree items: a group, so no tree role without its items -->
+    <div class="tree" role="group" aria-label={t("structured.tree")}>
       <TreeRow node={parsed.root} depth={0} spread={spreadOf(parsed.root, ask)} {plain} />
     </div>
   {:else}
@@ -98,7 +99,7 @@
   .segment:last-child {
     border-right: 0;
   }
-  .segment[aria-checked="true"] {
+  .segment[aria-pressed="true"] {
     background: var(--accent-soft);
     color: var(--accent-text);
     font-weight: 600;

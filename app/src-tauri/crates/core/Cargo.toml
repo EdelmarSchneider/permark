@@ -18,17 +18,24 @@ dunce.workspace = true
 unicode-normalization.workspace = true
 xxhash-rust.workspace = true
 sha2.workspace = true
+ring.workspace = true
 toml_edit.workspace = true
 dirs.workspace = true
+chrono.workspace = true
 interprocess.workspace = true
 ignore.workspace = true
 notify.workspace = true
 trash.workspace = true
 comrak.workspace = true
 ammonia.workspace = true
+html5ever.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Globalization"] }
+windows-sys = { workspace = true, features = [
+    "Win32_Globalization",
+    "Win32_Storage_CloudFilters",
+    "Win32_System_LibraryLoader",
+] }
 widestring.workspace = true
 winreg.workspace = true
 

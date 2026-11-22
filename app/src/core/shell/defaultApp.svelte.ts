@@ -2,7 +2,13 @@
 // system lets PerMark set it (macOS, an installed Linux package) the rows are checks; on Windows they say who opens the
 // files now and hand the person to Windows' Default Apps page.
 
-import { api as defaultApi, type Api, type DefaultAppView, type FileGroup } from "../../api";
+import {
+  api as defaultApi,
+  type Api,
+  type ApiError,
+  type DefaultAppView,
+  type FileGroup,
+} from "../../api";
 import { apiErrorText } from "../errors";
 import { t } from "../i18n";
 
@@ -10,6 +16,16 @@ export type Question =
   | { status: "closed" }
   /** The first-run question, with the groups ticked so far (Markdown at first). */
   | { status: "asking"; view: DefaultAppView; chosen: readonly FileGroup[] };
+
+/** `detail` of a refusal to give a type back to "no choice" (mirror of Rust `desktop::NO_HANDLER_TO_RESTORE`). */
+const NO_HANDLER_TO_RESTORE = "noHandlerToRestore";
+
+/** A refused change in words: where the system cannot give a type back, where the person picks another app. */
+function refusalText(error: ApiError): string {
+  return error.kind === "backend" && error.error.detail === NO_HANDLER_TO_RESTORE
+    ? t("defaultApp.chooseInFinder")
+    : t("defaultApp.failed", { message: apiErrorText(error) });
+}
 
 export class DefaultAppStore {
   view = $state.raw<DefaultAppView | null>(null);
@@ -76,7 +92,9 @@ export class DefaultAppStore {
       this.view = result.value;
       this.problem = null;
     } else {
-      this.problem = t("defaultApp.failed", { message: apiErrorText(result.error) });
+      this.problem = refusalText(result.error);
+      // what the system holds now (a refusal may come after some types changed)
+      await this.load();
     }
   }
 

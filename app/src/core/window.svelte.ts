@@ -9,12 +9,15 @@ import {
   type AppSettings,
   type CharacterGroup,
   type CharactersStatus,
+  type CrashOffer,
   type GitBackendPref,
   type IpcError,
   type LinkUpdate,
   type OpenIn,
   type OpenPlacement,
   type RecentFolder,
+  type Reloaded,
+  type Result,
   type StartIn,
   type SettingChange,
   type StateRecovered,
@@ -25,7 +28,7 @@ import {
 } from "../api";
 import { conditions } from "./conditions/context.svelte";
 import { confirmLeave } from "./editing/guard";
-import { ipcErrorText } from "./errors";
+import { apiErrorText, ipcErrorText } from "./errors";
 import { restartPlugins, syncPlugins } from "./plugins/instance.svelte";
 import { language, parsePreference, t } from "./i18n";
 import { look } from "./look.svelte";
@@ -34,8 +37,9 @@ import { tabs } from "./shell/tabs.svelte";
 import { ui } from "./shell/ui.svelte";
 
 /** A button of a notice. `run` answers a promise when its work goes on after it returns (an Undo that asks the
- *  backend, then places the keyboard): what follows the action waits for it. */
-export type NoticeAction = { label: string; run: () => void | Promise<void> };
+ *  backend, then places the keyboard): what follows the action waits for it. `keys`: the shortcut that does the same
+ *  where the person works, in `aria-keyshortcuts` form (`Control+Z`), told to screen readers on the button. */
+export type NoticeAction = { label: string; run: () => void | Promise<void>; keys?: string };
 
 export type Notice =
   | { id: number; kind: "openFailed"; path: string; error: IpcError }
@@ -43,6 +47,8 @@ export type Notice =
   | { id: number; kind: "stateRecovered"; notice: StateRecovered }
   | { id: number; kind: "settingNotSaved"; error: ApiError }
   | { id: number; kind: "initFailed"; path: string; error: ApiError }
+  /** Initialize of a folder that is not the one on screen refused: its `.permark/local` holds data from elsewhere. */
+  | { id: number; kind: "initHeld"; path: string }
   | { id: number; kind: "fileOpFailed"; error: ApiError }
   | { id: number; kind: "note"; text: string }
   /** A quiet line with buttons (Undo, Open in project); closes by itself after `ACTION_MS` unless `lasting` (then it
@@ -88,6 +94,7 @@ function closeAfter(notice: Notice): number | null {
     case "stateRecovered":
     case "settingNotSaved":
     case "initFailed":
+    case "initHeld":
     case "fileOpFailed":
       return ACTION_MS;
     default:
@@ -112,6 +119,35 @@ type NoticeBody = Notice extends infer N ? (N extends Notice ? Omit<N, "id"> : n
 
 /** What the window has on screen: a workspace and its document. */
 export type OnScreen = { workspace: WorkspaceView; document: string | null };
+
+/** A project workspace: what the offer about the place of a folder's data belongs to. */
+export type ProjectView = Extract<WorkspaceView, { kind: "project" }>;
+
+/** `detail` of the backend's `conflict` when the profile and the folder's `.permark/local` both hold PerMark data
+ *  (mirror of Rust `state::location::BOTH_HOLD_DATA`): nothing was carried either way. */
+const BOTH_HOLD_DATA = "bothHoldData";
+/** `detail` of the backend's `conflict` when Keep is refused because the folder's data is in its own `.permark/local`
+ *  already (mirror of Rust `state::location::DATA_IN_PROJECT`): the offer it answered is gone. */
+const DATA_IN_PROJECT = "dataInProject";
+/** The folder's own copy of PerMark data, relative to the folder. */
+const FOLDER_DATA = ".permark/local";
+
+/** The one notice offering the last run's crash report. */
+const CRASH_KEY = "crash";
+/** The one notice saying this view's page was loaded again. */
+const RELOADED_KEY = "reloaded";
+
+/** One notice about the place of a folder's data per workspace (a newer one takes its place). */
+function dataKey(project: ProjectView): string {
+  return `data-place:${project.id}`;
+}
+
+/** A backend `conflict` refusal with this `detail`. */
+function conflictWith(error: ApiError, detail: string): boolean {
+  return (
+    error.kind === "backend" && error.error.kind === "conflict" && error.error.detail === detail
+  );
+}
 
 /** What is on screen after `view`. While another workspace opens, the one shown before stays as it was, its document
  *  included (`before` itself: nothing on screen changes, so nothing reloads for a folder about to go). */
@@ -238,6 +274,8 @@ export class WindowStore {
       language.region = info.region;
       await language.choose(parsePreference(info.settings.language));
       for (const notice of info.notices) this.#notify({ kind: "stateRecovered", notice });
+      if (info.crash !== null) this.#offerCrash(info.crash);
+      if (info.reloaded !== null) this.#tellReloaded(info.reloaded, info.tab !== null);
       for (const failed of info.failures) {
         this.#notify({ kind: "openFailed", path: failed.path, error: failed.error });
       }
@@ -248,6 +286,75 @@ export class WindowStore {
       this.boot = { status: "failed", error: booted.error };
     }
     return () => offs.forEach((off) => off());
+  }
+
+  /** The last run ended in a crash: one notice that waits for the person. PerMark sends nothing: the person copies
+   *  the report, or opens the issue page in the browser, pastes the report and submits it there. A button that did its work, or
+   *  Dismiss, answers the offer for good; a button that failed says why and offers the report again; pushed out by
+   *  newer notices before the person saw it, it comes back at the next start. */
+  #offerCrash(offer: CrashOffer): void {
+    const answered = (): void => void this.#api.crashDismiss();
+    const done = (worked: boolean): void => {
+      if (worked) answered();
+      else this.#offerCrash(offer);
+    };
+    this.notifyLasting({
+      key: CRASH_KEY,
+      text: t("crash.notice"),
+      actions: [
+        { label: t("crash.copy"), run: async () => done(await this.#copyReport(offer.report)) },
+        {
+          label: t("crash.report"),
+          // the link leaves the report out (it can quote document text), so the page asks to paste it: copy first;
+          // the page opens even without the copy, and then the offer stays for Copy report | Open folder
+          run: async () => {
+            const copied = await this.#copyReport(offer.report);
+            const opened = this.#worked(await this.#api.openWeb(offer.issueUrl));
+            done(copied && opened);
+          },
+        },
+        {
+          label: t("crash.openFolder"),
+          run: async () => done(this.#worked(await this.#api.crashReveal())),
+        },
+      ],
+      onGone: (how) => {
+        if (how === "dismissed") answered();
+      },
+    });
+  }
+
+  /** This view's page process ended and the backend loaded the page again. Its unsaved edits went with the page (the
+   *  backend keeps only which document had them, never the text): the notice names that document and waits for the
+   *  person; with nothing lost, a quiet note (the window's Welcome view is no tab: its note says page). */
+  #tellReloaded(reloaded: Reloaded, inTab: boolean): void {
+    if (reloaded.lost === null) {
+      this.notifyKeyed(RELOADED_KEY, t(inTab ? "stuck.reloaded" : "stuck.reloadedPage"));
+      return;
+    }
+    this.notifyLasting({
+      key: RELOADED_KEY,
+      text: t("stuck.reloadedLost", { file: reloaded.lost }),
+      actions: [],
+      onGone: () => {},
+    });
+  }
+
+  async #copyReport(report: string): Promise<boolean> {
+    try {
+      await navigator.clipboard.writeText(report);
+      this.notifyNote(t("edit.copied"));
+      return true;
+    } catch {
+      this.notifyNote(t("doc.copyFailed"));
+      return false;
+    }
+  }
+
+  /** Whether `result` went through; a refusal is said in a notice. */
+  #worked(result: Result<null>): boolean {
+    if (!result.ok) this.#notify({ kind: "apiFailed", path: null, error: result.error });
+    return result.ok;
   }
 
   /** The settings the window follows, from the boot read and from every change (the language apart: boot waits
@@ -313,7 +420,84 @@ export class WindowStore {
     ) {
       restartPlugins();
     }
+    // a folder that opens says where its data is kept when there is something to answer | know; told again about
+    // the same folder (a tab, a setting, Keep), the window says nothing again
+    if (after?.kind === "project" && after.id !== before?.id) this.#offerDataPlace(after);
     if (view.state === "welcome") void this.refreshRecent();
+  }
+
+  /** The project on screen (`null`: none). */
+  #shownProject(): ProjectView | null {
+    const workspace = this.screen?.workspace;
+    return workspace?.kind === "project" ? workspace : null;
+  }
+
+  /** What an opened folder says about the place of its data (the folder opened only, never a project inside it). */
+  #offerDataPlace(project: ProjectView): void {
+    switch (project.dataOffer) {
+      case "ask":
+        this.notifyKeyed(
+          dataKey(project),
+          t("project.dataAsk"),
+          { label: t("project.dataMove"), run: () => this.moveData(project) },
+          { label: t("project.dataKeep"), run: () => this.keepData(project) },
+        );
+        return;
+      case "missing":
+        this.notifyKeyed(dataKey(project), t("project.dataMissing"), {
+          label: t("project.dataKeepCopy"),
+          run: () => this.keepData(project),
+        });
+        return;
+      case "both":
+        this.#bothHoldData(project);
+        return;
+      // nothing to answer: the data is where the person keeps it (Move stays in the folder's settings)
+      case "none":
+      case "movable":
+        return;
+      default:
+        project.dataOffer satisfies never;
+    }
+  }
+
+  /** The profile and the folder's `.permark/local` both hold PerMark data: the person's copy stays in use, the
+   *  folder's can be looked at. */
+  #bothHoldData(project: ProjectView): void {
+    this.notifyKeyed(dataKey(project), t("project.dataMoveHeld"), {
+      label: t("menu.showInFileManager"),
+      run: () => this.revealFolderData(),
+    });
+  }
+
+  /** Shows the folder's own copy of PerMark data (`.permark/local`) in the file manager. */
+  async revealFolderData(): Promise<void> {
+    const result = await this.#api.openExternal(FOLDER_DATA, "reveal");
+    if (!result.ok) this.#notify({ kind: "apiFailed", path: null, error: result.error });
+  }
+
+  /** Keep: the folder's data stays on this computer; the window hears its offer again (Move alone is left). Refused
+   *  because the data is in the folder by now: nothing to say, the window hears the offer that is left instead. */
+  async keepData(project: ProjectView): Promise<void> {
+    this.dismissKey(dataKey(project));
+    const result = await this.#api.projectDataKeep(project.root);
+    if (!result.ok && !conflictWith(result.error, DATA_IN_PROJECT)) {
+      this.#notify({ kind: "settingNotSaved", error: result.error });
+    }
+  }
+
+  /** Move: the folder's data goes into its `.permark/local` (Initialize; the project reloads). */
+  async moveData(project: ProjectView): Promise<void> {
+    const key = dataKey(project);
+    this.dismissKey(key);
+    const result = await this.#api.projectInit(project.root);
+    if (result.ok) {
+      this.notifyKeyed(key, t("project.dataMoved"));
+    } else if (conflictWith(result.error, BOTH_HOLD_DATA)) {
+      this.#bothHoldData(project);
+    } else {
+      this.notifyKeyed(key, t("project.dataMoveFailed", { message: apiErrorText(result.error) }));
+    }
   }
 
   async refreshRecent(): Promise<void> {
@@ -400,11 +584,17 @@ export class WindowStore {
     if (tab !== null) await this.#api.tabClose(tab);
   }
 
-  /** Creates `.permark/` in a folder; a project open on it reloads at once. `true` when it worked. */
+  /** Creates `.permark/` in a folder; a project open on it reloads at once. `true` when it worked. Refused because
+   *  both places hold data: for the folder on screen the same neutral word as Move, for another one (a project inside
+   *  it) a word naming that folder, as nothing failed. */
   async initProject(path: string): Promise<boolean> {
     const result = await this.#api.projectInit(path);
     if (!result.ok) {
-      this.#notify({ kind: "initFailed", path, error: result.error });
+      const shown = this.#shownProject();
+      const held = conflictWith(result.error, BOTH_HOLD_DATA);
+      if (held && shown?.root === path) this.#bothHoldData(shown);
+      else if (held) this.#notify({ kind: "initHeld", path });
+      else this.#notify({ kind: "initFailed", path, error: result.error });
       return false;
     }
     return true;
@@ -459,12 +649,15 @@ export class WindowStore {
   }
 
   /** A quiet line with buttons that stays until the person dismisses it (no clock: a keyboard user can reach it);
-   *  `onGone` hears how it went. Returns its id (`dismiss` takes it back). */
+   *  `onGone` hears how it went; `key`: it takes the place of the one with the same key (`dismissKey` takes it
+   *  back too). Returns its id (`dismiss` takes it back). */
   notifyLasting(body: {
     text: string;
     actions: readonly NoticeAction[];
     onGone: (how: NoticeGone) => void;
+    key?: string;
   }): number {
+    if (body.key !== undefined) this.dismissKey(body.key);
     return this.#notify({ kind: "action", ...body, lasting: true });
   }
 

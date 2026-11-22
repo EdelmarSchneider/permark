@@ -91,6 +91,22 @@ describe("the list", () => {
     }
   });
 
+  it("is read again when a project's agent panel shares a note or stops sharing it, on screen or not", async () => {
+    const shown = new Box(false);
+    const { api, store } = await setup(undefined, () => shown.value);
+    const marks = (): string[] =>
+      store.entries.find((e) => e.path === FIRST)?.sharedWith.map((s) => s.label) ?? [];
+    expect(marks()).toEqual([]);
+    await api.pluginCall("agent.shareNote", { name: FIRST });
+    await settle();
+    expect(marks()).toEqual(["permark-docs"]);
+    shown.value = true;
+    await settle();
+    await api.pluginCall("agent.unshareNote", { name: FIRST });
+    await settle();
+    expect(marks()).toEqual([]);
+  });
+
   it("is read when the window attaches: pinned first, then the newest", async () => {
     const { store } = await setup();
     expect(store.list.status).toBe("ready");
@@ -172,6 +188,17 @@ describe("the note shown", () => {
     expect(editing.policy).toEqual({ kind: "auto", delayMs: 800 });
     const opened = await api.pluginCall("notes.opened", { path: null });
     expect(opened.ok).toBe(true);
+  });
+
+  it("opens its editor by itself without making that the mode the window's other tabs open in", async () => {
+    const { store, editing } = await setup();
+    // the project tab was left in View: coming back to it must show its page again, not an editor
+    editing.chooseNext("view");
+    await store.select(FIRST);
+    await settle();
+    expect(editing.path).toBe(FIRST);
+    expect(editing.mode).not.toBe("view");
+    expect(editing.chosenMode).toBe("view");
   });
 
   it("opens the note the welcome screen asked for, or a new one", async () => {
@@ -465,6 +492,129 @@ describe("loose files", () => {
     expect(store.current).toBeNull();
   });
 
+  it("keeps the typed text only over the version of the file its row shows", async () => {
+    const { store, api } = await setup();
+    await store.openFiles(["C:/Downloads/sent.md"]);
+    const path = store.current ?? "";
+    await api.pluginCall("notes.buffer", { path, baseHash: "h", text: "typed" });
+    // the file is not the one shown: its row's bar answers, not the editor
+    await store.select(FIRST);
+    await store.refresh();
+    const row = store.entries.find((e) => e.path === path);
+    if (row === undefined) throw new Error("no row");
+    const call = vi.spyOn(api, "pluginCall");
+    await store.keepMine(path);
+    const sent = call.mock.calls.find(([method]) => method === "notes.keepMine");
+    // the bytes the row was worked out from, not their size + time: other bytes can keep both
+    expect(row.hash).not.toBeNull();
+    expect(sent?.[1]).toEqual({ path, seen: row.hash });
+  });
+
+  it("a file a crash left text for opens without an editor, and Keep mine writes the text over the version shown", async () => {
+    const { store, api, editing } = await setup();
+    const path = api.probe.plugins.notes.loose({
+      name: "draft.md",
+      folder: "C:/Downloads",
+      text: "# On disk\n",
+      state: "unsaved",
+    });
+    await store.refresh();
+    await store.select(path);
+    await settle();
+    // the bar asks first: typing now would replace the text the crash left
+    expect(editing.path).toBeNull();
+    const row = store.entry;
+    if (row === null) throw new Error("no row");
+    const call = vi.spyOn(api, "pluginCall");
+    await store.keepMine(path);
+    await settle();
+    const sent = call.mock.calls.find(([method]) => method === "notes.keepMine");
+    expect(row.hash).not.toBeNull();
+    expect(sent?.[1]).toEqual({ path, seen: row.hash });
+    expect(store.entry?.state).toBe("clean");
+    // the text is written: the file is the person's to edit again
+    expect(editing.path).toBe(path);
+  });
+
+  it("holds the window's editors off a file a crash left text for while attached, until the person chooses", async () => {
+    const { store, api, editing } = await setup();
+    const crashed = api.probe.plugins.notes.loose({
+      name: "draft.md",
+      folder: "C:/Downloads",
+      text: "# On disk\n",
+      state: "unsaved",
+    });
+    const other = api.probe.plugins.notes.loose({
+      name: "later.md",
+      folder: "C:/Downloads",
+      text: "# On disk\n",
+      state: "unsaved",
+    });
+    await store.refresh();
+    expect(editing.blockedBy(crashed)).not.toBeNull();
+    expect(editing.blockedBy(FIRST)).toBeNull();
+    // Reload: the person chose, the file is editable again
+    await store.reloadFile(crashed);
+    await settle();
+    expect(editing.blockedBy(crashed)).toBeNull();
+    expect(editing.blockedBy(other)).not.toBeNull();
+    // the Notes leave the window: nothing of theirs holds an editor any more
+    for (const off of offs.splice(0)) off();
+    expect(editing.blockedBy(other)).toBeNull();
+  });
+
+  it("Keep mine on the file shown lets its editor go when the editor has no conflict of its own", async () => {
+    const { store, api, editing, documents } = await setup();
+    const path = api.probe.plugins.notes.loose({
+      name: "draft.md",
+      folder: "C:/Downloads",
+      text: "# On disk\n",
+      state: "unsaved",
+    });
+    await store.refresh();
+    await store.select(path);
+    await settle();
+    // the person chose Edit anyway (the header's mode switch)
+    await editing.enter("source", path, "markdown", documents.savePolicy);
+    await settle();
+    expect(editing.path).toBe(path);
+    expect(editing.state.s).not.toBe("conflict");
+    const row = store.entry;
+    const call = vi.spyOn(api, "pluginCall");
+    await store.keepMine(path);
+    await settle();
+    const sent = call.mock.calls.find(([method]) => method === "notes.keepMine");
+    expect(sent?.[1]).toEqual({ path, seen: row?.hash });
+    expect(store.entry?.state).toBe("clean");
+  });
+
+  it("an editor's journal never replaces the text a crash left for a file before the person chooses", async () => {
+    const bind = vi.spyOn(EditingSession.prototype, "bindJournal");
+    const { store, api } = await setup();
+    const journal = bind.mock.calls.map(([j]) => j).findLast((j) => j !== null);
+    if (journal === undefined || journal === null) throw new Error("no journal bound");
+    const crashed = api.probe.plugins.notes.loose({
+      name: "draft.md",
+      folder: "C:/Downloads",
+      text: "# On disk\n",
+      state: "unsaved",
+    });
+    api.probe.plugins.notes.journal.set(crashed, "text the crash left");
+    await store.openFiles(["C:/Downloads/sent.md"]);
+    const fresh = store.current ?? "";
+    journal(crashed, "h", "typed over it");
+    journal(crashed, "h", null);
+    journal(fresh, "h", "typed");
+    await settle();
+    expect(api.probe.plugins.notes.journal.get(crashed)).toBe("text the crash left");
+    expect(api.probe.plugins.notes.journal.get(fresh)).toBe("typed");
+    // once the person chose, the file's editor keeps its typing again
+    await store.reloadFile(crashed);
+    journal(crashed, "h", "typed after");
+    await settle();
+    expect(api.probe.plugins.notes.journal.get(crashed)).toBe("typed after");
+  });
+
   it("makes a note of the typed text", async () => {
     const { store, api } = await setup();
     await store.openFiles(["C:/Downloads/sent.md"]);
@@ -591,7 +741,7 @@ describe("wishes from other views (the Notes tab open elsewhere)", () => {
   });
 });
 
-describe("adversarial: intents (verifier)", () => {
+describe("adversarial: intents", () => {
   it("an intent for a note that is gone: list only (notes.md Intents), nothing recorded as open", async () => {
     const { api, store } = await setup({ kind: "open", path: "gone 1999.md" });
     expect(store.list.status).toBe("ready");

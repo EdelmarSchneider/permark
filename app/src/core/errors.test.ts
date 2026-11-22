@@ -6,6 +6,18 @@ function unreadable(detail: string | null): IpcError {
   return { kind: "settingsUnreadable", subject: "C:/profile/settings.toml", detail };
 }
 
+describe("a save the disk refused", () => {
+  it("says a held file, a full disk and a read-only file apart", () => {
+    const of = (kind: IpcError["kind"]): string =>
+      ipcErrorText({ kind, subject: "docs/a.md", detail: "os detail" });
+    expect(of("locked")).toBe(
+      "docs/a.md is open in another program that keeps it from being changed. Close it there, then try again.",
+    );
+    expect(of("diskFull")).toBe("The disk is full, so docs/a.md couldn't be written.");
+    expect(of("readOnly")).toBe("docs/a.md is read-only, so it can't be changed.");
+  });
+});
+
 describe("an unreadable settings file", () => {
   it("says why it can't be read and that nothing was changed", () => {
     expect(ipcErrorText(unreadable("notText"))).toBe(

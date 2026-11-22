@@ -14,17 +14,47 @@ describe("depths", () => {
 });
 
 describe("currentIndex", () => {
+  const at = (tops: readonly number[], limit: number): number =>
+    currentIndex(tops.length, (i) => tops[i] ?? Infinity, limit);
+
   it("is the last heading at or above the line", () => {
     const tops = [-500, -200, 10, 400, 900];
-    expect(currentIndex(tops, 0)).toBe(1);
-    expect(currentIndex(tops, 10)).toBe(2);
-    expect(currentIndex(tops, 399)).toBe(2);
-    expect(currentIndex(tops, 10_000)).toBe(4);
+    expect(at(tops, 0)).toBe(1);
+    expect(at(tops, 10)).toBe(2);
+    expect(at(tops, 399)).toBe(2);
+    expect(at(tops, 10_000)).toBe(4);
   });
 
   it("is -1 before the first heading and for no headings", () => {
-    expect(currentIndex([50, 100], 0)).toBe(-1);
-    expect(currentIndex([], 0)).toBe(-1);
+    expect(at([50, 100], 0)).toBe(-1);
+    expect(at([], 0)).toBe(-1);
+  });
+
+  it("finds what a scan from the first top finds, reading a handful of tops out of 10 000", () => {
+    // 10 000 places 37 px apart, some at the same top (an empty block), the ones not built yet far below
+    const tops = Array.from({ length: 10_000 }, (_, i) =>
+      i >= 9_990 ? Infinity : Math.floor(i / 3) * 37 - 50_000,
+    );
+    const linear = (limit: number): number => {
+      let found = -1;
+      tops.forEach((top, i) => {
+        if (top <= limit) found = i;
+      });
+      return found;
+    };
+    for (const limit of [-60_000, -50_000, -49_999, 0, 40, 12_345, 73_000, Infinity]) {
+      let reads = 0;
+      const found = currentIndex(
+        tops.length,
+        (i) => {
+          reads += 1;
+          return tops[i] ?? Infinity;
+        },
+        limit,
+      );
+      expect(found, `limit ${limit}`).toBe(linear(limit));
+      expect(reads, `limit ${limit}`).toBeLessThanOrEqual(20);
+    }
   });
 });
 

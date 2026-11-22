@@ -201,6 +201,34 @@ describe("BlockHost", () => {
     restore();
   });
 
+  it("finds the first block in view of a long page with a few layout reads", () => {
+    const r = rig({ first: 20_000, next: 20_000 });
+    const all = Array.from({ length: 10_000 }, (_, i) => block(`b${i}`));
+    r.host.apply(all, true);
+    // every block 100 px high in page order; counted reads (each one lays the page out)
+    const order = new Map(Array.from(r.container.children, (el, i) => [el, i]));
+    let reads = 0;
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        reads += 1;
+        if (this === r.scroller) return new DOMRect(0, 0, 100, 600);
+        return new DOMRect(0, (order.get(this) ?? 0) * 100 - r.scrollTop.value, 100, 100);
+      });
+    try {
+      r.scrollTop.value = 900_050; // b9000 is the first block in view, 50 px above the pane's top
+      r.host.apply(
+        all.map((b) => block(b.id, null)),
+        false,
+      );
+      // the block in view and the 11 above it are the marks; finding the first one takes a search, not a scan
+      expect(reads).toBeLessThanOrEqual(40);
+      expect(r.scrollTop.value).toBe(900_050);
+    } finally {
+      rect.mockRestore();
+    }
+  });
+
   it("finds anchors by id attribute, odd characters included", () => {
     const r = rig({ first: 100, next: 100 });
     r.host.apply(

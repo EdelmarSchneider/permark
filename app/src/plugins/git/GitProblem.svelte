@@ -5,6 +5,7 @@
   import { conditions } from "../../core/conditions/context.svelte";
   import { t } from "../../core/i18n";
   import { ui } from "../../core/shell/ui.svelte";
+  import { gitProblemHint } from "./facts";
 
   const problem = $derived.by(() => {
     const git = conditions.current.git;
@@ -12,10 +13,7 @@
       case "unavailable":
         return { text: t("git.unavailable"), hint: t("git.unavailableHint") };
       case "error":
-        return {
-          text: t("git.error"),
-          hint: `${git.reason === "dubious ownership" ? t("git.errorOwnership") : git.reason} ${t("git.errorHint")}`,
-        };
+        return { text: t("git.error"), hint: gitProblemHint(git.code, git.reason) };
       case "noRepo":
       case "repo":
         return null;
@@ -26,10 +24,18 @@
 </script>
 
 {#if problem}
-  <button type="button" class="problem" title={problem.hint} onclick={() => ui.openSettings()}>
+  <!-- the reason is said with the button too: a tooltip needs a hover -->
+  <button
+    type="button"
+    class="problem"
+    title={problem.hint}
+    aria-describedby="git-problem-why"
+    onclick={() => ui.openSettings()}
+  >
     <TriangleAlert size={13} aria-hidden="true" />
     {problem.text}
   </button>
+  <span id="git-problem-why" class="sr-only">{problem.hint}</span>
 {/if}
 
 <style>

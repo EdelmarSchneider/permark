@@ -1,18 +1,21 @@
 // Comments on passages. The backend keeps them and finds every passage again after an edit (`comments.json`, anchors);
 // this mirrors them for the page (a bar in the margin), the Comments tab and the field, and sends the person's edits
-// back. The text of a comment is the person's; nothing here touches the document.
+// back. Comments an outside write removed (a sync service, a copy, git) are offered back: a line in the Comments tab,
+// and a lasting notice when a large part went. Nothing here touches the document.
 
-import type { ApiError, CommentView } from "../../api";
+import { untrack } from "svelte";
+import type { ApiError, CommentAside, CommentView } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
 import { apiErrorText } from "../../core/errors";
 import { t, tn } from "../../core/i18n";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
 import type { PageSelection } from "../../core/plugins/props";
 import type { TreeBadge } from "../../core/plugins/registry.svelte";
-import { windowStore } from "../../core/window.svelte";
+import { type WindowStore, windowStore } from "../../core/window.svelte";
 import {
   agentCommentPrompt,
   agentCommentsPrompt,
+  asideLines,
   barComments,
   doneComments,
   headingPathAt,
@@ -26,6 +29,12 @@ export const RELOAD_MS = 120;
 export const MAX_CHARS = 2000;
 /** The longest reply, in characters. */
 export const MAX_REPLY_CHARS = 1000;
+
+/** Where the lasting notice of a large loss goes. */
+export type AsideNotices = Pick<WindowStore, "notifyLasting" | "dismissKey">;
+
+/** The key of the one lasting notice of a project's large loss. */
+const noticeKey = (project: string): string => `comments.aside:${project}`;
 
 /** The text an edit changes: the comment's own, or the reply at `index` under it. */
 export type EditTarget = { kind: "comment" } | { kind: "reply"; index: number };
@@ -64,8 +73,17 @@ export class CommentsStore {
   readonly #root: () => string | null;
   readonly #notify: (text: string) => void;
   readonly #copy: (text: string) => Promise<boolean>;
+  readonly #notices: AsideNotices;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #focusCount = 0;
+  /** Comments an outside write removed, per aside, while the file still lacks some of them. */
+  asides = $state.raw<readonly CommentAside[]>([]);
+  /** One line per project with removed comments (the Comments tab). */
+  lines = $derived(asideLines(this.asides));
+  /** Large asides already told in a notice (a reload never tells them again). */
+  readonly #told = new Set<string>();
+  /** Projects whose lasting notice may be on screen. */
+  readonly #noticed = new Set<string>();
   /** The Comments tab shows one project's comments (its detail card's count led here); `null`: all. */
   only = $state.raw<{ folder: string; name: string } | null>(null);
   /** What the Comments tab lists: all | the project's (documents at | below its folder). */
@@ -86,11 +104,13 @@ export class CommentsStore {
     root: () => string | null = workspaceRoot,
     notify: (text: string) => void = (text) => windowStore.notifyNote(text),
     copy: (text: string) => Promise<boolean> = copyText,
+    notices: AsideNotices = windowStore,
   ) {
     this.#client = client;
     this.#root = root;
     this.#notify = notify;
     this.#copy = copy;
+    this.#notices = notices;
   }
 
   /** Follows the project of the window until the returned teardown runs. */
@@ -101,18 +121,20 @@ export class CommentsStore {
           this.#reset();
           return;
         }
-        let off: (() => void) | null = null;
+        const offs: (() => void)[] = [];
         let gone = false;
-        void this.#client
-          .on("comments:changed", () => this.#schedule())
-          .then((stop) => {
-            if (gone) stop();
-            else off = stop;
-          });
+        for (const event of ["comments:changed", "comments:aside"] as const) {
+          void this.#client
+            .on(event, () => this.#schedule())
+            .then((stop) => {
+              if (gone) stop();
+              else offs.push(stop);
+            });
+        }
         void this.load();
         return () => {
           gone = true;
-          off?.();
+          for (const off of offs) off();
           this.#cancel();
         };
       });
@@ -127,6 +149,13 @@ export class CommentsStore {
     this.draft = null;
     this.focus = null;
     this.only = null;
+    this.asides = [];
+    this.#told.clear();
+    // the window's notices are not this effect's to follow
+    untrack(() => {
+      for (const project of this.#noticed) this.#notices.dismissKey(noticeKey(project));
+    });
+    this.#noticed.clear();
   }
 
   #cancel(): void {
@@ -144,12 +173,79 @@ export class CommentsStore {
 
   async load(): Promise<void> {
     const root = this.#root();
-    const result = await this.#client.call("comments.list", { scope: "all" });
+    const [result, asides] = await Promise.all([
+      this.#client.call("comments.list", { scope: "all" }),
+      this.#client.call("comments.asides", {}),
+    ]);
     if (this.#root() !== root) return;
     if (result.ok) {
       this.all = result.value;
       this.ready = true;
     }
+    if (asides.ok) this.#setAsides(asides.value);
+  }
+
+  // ---- removed outside the app ----------------------------------------------------------------------------------
+
+  /** The asides as the backend lists them now: a large one not told yet gets its project's lasting notice (one per
+   *  project, Restore on it); a project with nothing left to restore loses its notice. */
+  #setAsides(asides: readonly CommentAside[]): void {
+    this.asides = asides;
+    const lines = asideLines(asides);
+    const present = new Set(asides.map((a) => a.id));
+    for (const id of this.#told) if (!present.has(id)) this.#told.delete(id);
+    for (const project of this.#noticed) {
+      if (lines.some((line) => line.project === project)) continue;
+      this.#notices.dismissKey(noticeKey(project));
+      this.#noticed.delete(project);
+    }
+    for (const line of lines) {
+      const fresh = line.big.filter((id) => !this.#told.has(id));
+      if (fresh.length === 0) continue;
+      for (const id of fresh) this.#told.add(id);
+      const project = line.project;
+      this.#notices.notifyLasting({
+        key: noticeKey(project),
+        text: tn("comments.aside.line", line.count),
+        actions: [{ label: t("comments.aside.restore"), run: () => this.restore(project) }],
+        onGone: () => {},
+      });
+      this.#noticed.add(project);
+    }
+  }
+
+  /** Adds back the comments of a project's asides its file lacks (never one it holds), and says how many. */
+  async restore(project: string): Promise<void> {
+    const line = this.lines.find((l) => l.project === project);
+    if (line === undefined) return;
+    this.#notices.dismissKey(noticeKey(project));
+    let added = 0;
+    for (const id of line.ids) {
+      const result = await this.#client.call("comments.restore", { id });
+      if (!result.ok) {
+        this.#notify(t("comments.aside.restoreFailed", { message: apiErrorText(result.error) }));
+        await this.load();
+        return;
+      }
+      added += result.value;
+    }
+    this.#notify(added > 0 ? tn("comments.aside.restored", added) : t("comments.aside.nothing"));
+    await this.load();
+  }
+
+  /** Lets a project's asides go without restoring them. */
+  async dismissAside(project: string): Promise<void> {
+    const line = this.lines.find((l) => l.project === project);
+    if (line === undefined) return;
+    this.#notices.dismissKey(noticeKey(project));
+    for (const id of line.ids) {
+      const result = await this.#client.call("comments.dismissAside", { id });
+      if (!result.ok) {
+        this.#notify(t("comments.aside.dismissFailed", { message: apiErrorText(result.error) }));
+        break;
+      }
+    }
+    await this.load();
   }
 
   // ---- the page -----------------------------------------------------------------------------------------------

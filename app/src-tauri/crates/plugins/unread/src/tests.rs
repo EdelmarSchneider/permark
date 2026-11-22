@@ -475,6 +475,32 @@ fn a_damaged_read_file_is_a_project_with_no_read_state() {
     wait_until("the state is written again", || Path::new(&path).exists());
 }
 
+/// A Markdown file that is a link is never read under its name: its target is read once, under its own.
+#[test]
+fn a_document_that_is_a_link_is_never_tracked() {
+    let mut h = Harness::new();
+    h.write("far.md", "far\n");
+    let (target, alias) = (h.root().join("far.md"), h.root().join("alias.md"));
+    #[cfg(unix)]
+    let made = std::os::unix::fs::symlink(&target, &alias).is_ok();
+    #[cfg(windows)]
+    let made = std::os::windows::fs::symlink_file(&target, &alias).is_ok();
+    if !made {
+        eprintln!("skipped: no file links here");
+        return;
+    }
+    h.open();
+    wait_until("the first look", || h.ready());
+    wait_until("read.json", || h.read_json().is_some());
+    let tracked: Vec<String> = h.read_json().unwrap()["data"]["docs"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    assert_eq!(tracked, ["far.md"]);
+}
+
 #[test]
 fn a_document_in_a_nested_repo_below_an_ignored_folder_becomes_unread_when_an_agent_writes() {
     let mut h = Harness::new();

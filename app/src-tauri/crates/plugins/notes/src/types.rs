@@ -60,6 +60,9 @@ pub struct NoteEntry {
     pub state: Option<LooseState>,
     /// A loose file: text that was typed is kept and not in the file.
     pub pending: bool,
+    /// A loose file there with typed text kept: the content hash of the bytes this row was worked out from, what Keep
+    /// mine may write over (`null`: none).
+    pub hash: Option<String>,
 }
 
 /// A project a note is shared with.

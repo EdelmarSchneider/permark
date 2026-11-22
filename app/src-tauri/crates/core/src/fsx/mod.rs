@@ -2,17 +2,20 @@
 //! transient Windows locks.
 
 mod decode;
+mod regular;
 #[cfg(windows)]
 mod win;
 
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
 pub use decode::{decode, Decoded, Encoding, LineEnding, BINARY_SNIFF};
+pub(crate) use regular::{is_link, symlink_metadata_below};
+pub use regular::{read_regular, Zone};
 
 use crate::error::{ErrorKind, IpcError};
 
@@ -38,12 +41,63 @@ pub fn hash(bytes: &[u8]) -> ContentHash {
     ContentHash(xxhash_rust::xxh3::xxh3_64(bytes))
 }
 
-/// Sends files to the system recycle bin (the files stay where they are when it fails).
+/// Milliseconds since the epoch on the system clock, the stamp of saved times; a clock before the epoch reads 0.
+#[must_use]
+pub fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+
+/// Sends files to the system recycle bin. A refusal may come after the bin took some of them: [`recycle_each`] names
+/// those.
 ///
 /// # Errors
 /// The bin refused (the reason as text).
 pub fn recycle(paths: &[PathBuf]) -> Result<(), String> {
-    trash::delete_all(paths).map_err(|e| e.to_string())
+    recycle_each(paths).map_err(|refused| refused.reason)
+}
+
+/// A refusal of the recycle bin, with what it had taken before it refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unrecycled {
+    pub reason: String,
+    /// One per path given, same order: no longer there after the refusal.
+    pub gone: Vec<bool>,
+}
+
+impl Unrecycled {
+    /// `items` (one per path given, same order) split into those the bin took and those still in place.
+    #[must_use]
+    pub fn split<T>(&self, items: impl IntoIterator<Item = T>) -> (Vec<T>, Vec<T>) {
+        let (mut taken, mut left) = (Vec::new(), Vec::new());
+        for (at, item) in items.into_iter().enumerate() {
+            if self.gone.get(at).copied().unwrap_or(false) {
+                taken.push(item);
+            } else {
+                left.push(item);
+            }
+        }
+        (taken, left)
+    }
+}
+
+/// [`recycle`] with the outcome per item. The bins stop part way: the freedesktop one moves item after item and
+/// stops at the first failure, a Windows file operation goes on past an item it cannot take and then fails. So after
+/// a refusal each path is looked at again; only one that is surely absent counts as taken.
+///
+/// # Errors
+/// The bin refused; [`Unrecycled::gone`] lists the items it took all the same.
+pub fn recycle_each(paths: &[PathBuf]) -> Result<(), Unrecycled> {
+    trash::delete_all(paths).map_err(|error| Unrecycled {
+        reason: error.to_string(),
+        gone: paths
+            .iter()
+            .map(|path| {
+                std::fs::symlink_metadata(path).is_err_and(|e| e.kind() == io::ErrorKind::NotFound)
+            })
+            .collect(),
+    })
 }
 
 /// Identity of a file | folder on its volume, `(volume, file)`: kept across a rename on the same volume (unix
@@ -230,10 +284,10 @@ impl From<FsxError> for IpcError {
     }
 }
 
-/// Reads a file of at most `limit` bytes.
+/// Reads a plain file of at most `limit` bytes.
 ///
 /// # Errors
-/// `TooLarge` (checked before reading), `Io`.
+/// `TooLarge` (checked before reading), `Io` (`InvalidData`: a folder, FIFO or device, never opened | waited on).
 pub fn read_bytes(path: &Path, limit: u64) -> Result<Vec<u8>, FsxError> {
     read_limited(path, limit, false).map(|(bytes, _)| bytes)
 }
@@ -245,9 +299,18 @@ fn read_limited(
     locate: bool,
 ) -> Result<(Vec<u8>, Option<PathBuf>), FsxError> {
     let read = retry(&RETRY_DELAYS, || {
-        let file = std::fs::File::open(path)?;
+        // only a plain file is opened: a FIFO | device read can wait forever, a folder's open is answered with access
+        // denied on Windows (retried); the open itself never waits for a FIFO's writer either
+        if !std::fs::metadata(path)?.is_file() {
+            return Err(regular::refused("not a plain file"));
+        }
+        let file = regular::open(path, Zone::Anywhere)?;
         let opened = if locate { opened_path(&file) } else { None };
-        let len = file.metadata()?.len();
+        let meta = file.metadata()?;
+        if !meta.is_file() {
+            return Err(regular::refused("not a plain file"));
+        }
+        let len = meta.len();
         if len > limit {
             return Ok(None);
         }
@@ -369,6 +432,115 @@ pub(crate) fn scratch_in(dir: &Path) -> PathBuf {
     dir.join(format!(".import.{}.{n}.part", std::process::id()))
 }
 
+/// The process that made a temp of [`temp_path`] | [`scratch_in`] (`.<name>.<pid>.<n>.part`); `None`: another name.
+pub(crate) fn temp_pid(name: &str) -> Option<u32> {
+    let inner = name.strip_prefix('.')?.strip_suffix(".part")?;
+    let (rest, n) = inner.rsplit_once('.')?;
+    let (stem, pid) = rest.rsplit_once('.')?;
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    if stem.is_empty() || !digits(n) || !digits(pid) {
+        return None;
+    }
+    pid.parse().ok()
+}
+
+/// Age past which a temp of another process was left by a crash: a temp lives for one write.
+pub const STALE_TEMP_AGE: Duration = Duration::from_hours(1);
+
+/// Temps of [`write_atomic`] in `dir` that a crash left behind: a plain file with the exact temp name, made by another
+/// process, unchanged for longer than `older_than`. Never a folder ([`scratch_in`] builds | sets aside whole folders
+/// under that name, a crash may leave one as the only copy of the person's data; a repository may track one), a link
+/// or a device, and nothing directly in a `.permark` folder (its scratch names hold the person's data while it moves).
+#[must_use]
+pub fn stale_temps(dir: &Path, older_than: Duration) -> Vec<PathBuf> {
+    if dir
+        .file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case(crate::state::PERMARK_DIR))
+    {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let own = std::process::id();
+    let now = SystemTime::now();
+    entries
+        .flatten()
+        .filter(|entry| {
+            let foreign = entry
+                .file_name()
+                .to_str()
+                .and_then(temp_pid)
+                .is_some_and(|pid| pid != own);
+            // the entry's own metadata: a link is not followed, and is no plain file
+            foreign
+                && entry.metadata().is_ok_and(|meta| {
+                    meta.file_type().is_file()
+                        && meta
+                            .modified()
+                            .ok()
+                            .and_then(|at| now.duration_since(at).ok())
+                            .is_some_and(|age| age > older_than)
+                })
+        })
+        .map(|entry| entry.path())
+        .collect()
+}
+
+/// Sends the [`stale_temps`] (older than [`STALE_TEMP_AGE`]) of each folder to the recycle bin: they hold the bytes of
+/// a write a crash cut short, so they stay recoverable there. Only folders whose bin keeps them ([`bin_keeps`]).
+/// Best effort; answers how many went.
+#[must_use]
+pub fn sweep_stale_temps(dirs: &[PathBuf]) -> usize {
+    let found: Vec<PathBuf> = dirs
+        .iter()
+        .filter(|dir| bin_keeps(dir))
+        .flat_map(|dir| stale_temps(dir, STALE_TEMP_AGE))
+        .collect();
+    if found.is_empty() {
+        return 0;
+    }
+    match recycle_each(&found) {
+        Ok(()) => found.len(),
+        Err(refused) => refused.gone.iter().filter(|gone| **gone).count(),
+    }
+}
+
+/// Whether the recycle bin keeps what is sent to it from `dir`. Windows: a folder on a fixed disk only (a share, a
+/// removable | RAM disk has no bin, and the silent shell delete removes for good there). Other systems: a local path
+/// ([`is_local_path`]); their bins refuse what they cannot keep.
+fn bin_keeps(dir: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        dir.is_absolute()
+            && match dir.components().next() {
+                Some(Component::Prefix(prefix)) => match prefix.kind() {
+                    Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => win::fixed_drive(letter),
+                    _ => false,
+                },
+                _ => false,
+            }
+    }
+    #[cfg(not(windows))]
+    {
+        is_local_path(dir)
+    }
+}
+
+/// Creates the temp of a write: hidden on Windows (best effort), so one a crash leaves stays out of the file manager's
+/// sight, as its leading dot does on unix.
+fn new_temp(tmp: &Path) -> io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.attributes(win::HIDDEN);
+    }
+    options.open(tmp)
+}
+
 /// Writes `bytes` atomically + durably: temp in the same folder -> fsync -> rename over target (Windows:
 /// `MoveFileExW` replace + write-through; Unix: folder fsync). Power loss leaves old or new file, never empty.
 /// Target permissions carried over (Unix mode bits | Windows read-only). Parent folders created.
@@ -388,28 +560,44 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 pub fn write_atomic_checked(
     path: &Path,
     bytes: &[u8],
+    check: impl FnMut() -> io::Result<bool>,
+) -> io::Result<bool> {
+    write_atomic_checked_retrying(path, bytes, &RETRY_DELAYS, check)
+}
+
+/// [`write_atomic_checked`] with the waits of a locked target given (a write the person waits on may wait longer for a
+/// program that holds the file).
+///
+/// # Errors
+/// See [`write_atomic_checked`].
+pub fn write_atomic_checked_retrying(
+    path: &Path,
+    bytes: &[u8],
+    delays: &[Duration],
     mut check: impl FnMut() -> io::Result<bool>,
 ) -> io::Result<bool> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(dir)?;
     let tmp = temp_path(path);
-    let result = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&tmp)
+    let result = new_temp(&tmp)
         .and_then(|mut file| {
             file.write_all(bytes)?;
             file.sync_all()
         })
         .and_then(|()| {
-            if let Some(meta) = std::fs::metadata(path)
+            #[cfg(test)]
+            slip::fire(path);
+            let target = std::fs::metadata(path)
                 .ok()
-                .filter(std::fs::Metadata::is_file)
-            {
+                .filter(std::fs::Metadata::is_file);
+            if let Some(meta) = &target {
                 // best effort: a file system without permissions still gets the bytes
                 let _ = std::fs::set_permissions(&tmp, meta.permissions());
             }
-            retry(&RETRY_DELAYS, || {
+            // a rename keeps the temp's hidden flag: never left on the person's file
+            #[cfg(windows)]
+            win::hidden_as(&tmp, target.as_ref())?;
+            retry(delays, || {
                 if !check()? {
                     return Ok(false);
                 }
@@ -422,19 +610,86 @@ pub fn write_atomic_checked(
     result
 }
 
+/// Test seam: another writer's save landing between a write's temp and its check, the window the check exists for.
+/// Windows can hold a rename back from outside (a handle without delete sharing); other systems cannot, so tests of
+/// that window place the save here.
+#[cfg(test)]
+pub(crate) mod slip {
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    type Save = Box<dyn FnOnce() + Send>;
+
+    /// Saves waiting for a write of their file; tests run in parallel, each on files of its own.
+    static SAVES: Mutex<Vec<(PathBuf, Save)>> = Mutex::new(Vec::new());
+
+    /// The same file for both spellings of a path (a temp folder under a linked folder, the `\\?\` form).
+    fn key(path: &Path) -> Option<PathBuf> {
+        std::fs::canonicalize(path).ok()
+    }
+
+    /// Runs `save` once, at the next atomic write of `path` (it must exist), right before that write's check.
+    #[cfg_attr(windows, allow(dead_code))] // Windows tests hold the file from outside instead
+    pub(crate) fn before_check(path: &Path, save: impl FnOnce() + Send + 'static) {
+        if let (Some(key), Ok(mut saves)) = (key(path), SAVES.lock()) {
+            saves.push((key, Box::new(save)));
+        }
+    }
+
+    pub(super) fn fire(path: &Path) {
+        let save = SAVES.lock().ok().and_then(|mut saves| {
+            if saves.is_empty() {
+                return None; // the common case: no path lookup for every write of every test
+            }
+            let key = key(path)?;
+            let at = saves.iter().position(|(file, _)| *file == key)?;
+            Some(saves.swap_remove(at).1)
+        });
+        if let Some(save) = save {
+            save();
+        }
+    }
+}
+
 /// [`write_atomic_checked`] guarded by `seen`: `bytes` replace `path` only while it still holds the bytes hashed `seen`.
 /// Check, then rename: two steps, not one atomic compare-and-swap. The check runs right before each rename attempt,
 /// which narrows the window but does not close it: on Unix any writer, and on Windows a writer that does not keep the
-/// file open, can still land between the two. `Ok(false)`: the file changed or went meanwhile, untouched.
+/// file open, can still land between the two. `Ok(false)`: the file changed or went meanwhile, untouched. Only a
+/// plain file still holds what was read: a link is followed (a profile file a dotfile manager links elsewhere stays
+/// writable; the rename then puts a plain file where the link was, as a plain atomic write does), a folder, FIFO or
+/// device at the path or behind a link is a change, never read.
 ///
 /// # Errors
 /// IO failure; temp removed, target untouched.
 pub fn write_atomic_if_unchanged(path: &Path, bytes: &[u8], seen: ContentHash) -> io::Result<bool> {
-    write_atomic_checked(path, bytes, || match std::fs::read(path) {
+    write_atomic_checked(path, bytes, || still_holds(path, seen))
+}
+
+/// Whether the plain file at `path` (a link followed) holds the bytes hashed `seen`. Anything else there answers
+/// `false` without being read: a FIFO would keep the check waiting, a device (`/dev/zero`) reading, forever. The file
+/// is read no further than the size it had when looked at (one that grew since has changed).
+fn still_holds(path: &Path, seen: ContentHash) -> io::Result<bool> {
+    let meta = match std::fs::metadata(path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    if !meta.is_file() {
+        return Ok(false);
+    }
+    match read_regular(path, meta.len(), Zone::Anywhere) {
         Ok(now) => Ok(hash(&now) == seen),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(e),
-    })
+        Err(FsxError::Io { source, .. })
+            if matches!(
+                source.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::InvalidData
+            ) =>
+        {
+            Ok(false)
+        }
+        Err(FsxError::Io { source, .. }) => Err(source),
+        Err(FsxError::TooLarge { .. } | FsxError::Binary(_)) => Ok(false),
+    }
 }
 
 /// [`write_atomic_checked`] that only creates: `bytes` land at `path` only while nothing (file, folder, link) is
@@ -458,6 +713,75 @@ pub fn write_atomic_if_absent(path: &Path, bytes: &[u8]) -> io::Result<bool> {
 /// IO failure (source missing, target locked past the retries, other volume); target untouched.
 pub fn replace_file(from: &Path, to: &Path) -> io::Result<()> {
     retry(&RETRY_DELAYS, || rename_durably(from, to))
+}
+
+/// Makes `dir` (missing parents too) a real folder of this user that only this user can enter. Unix: mode 0700 (an
+/// existing folder is tightened); a link, a file or another user's folder in the way is refused. Windows: created; the
+/// per-user profile it sits in already keeps other users out.
+///
+/// # Errors
+/// Creation failed, something other than this user's folder in the way, mode change refused.
+pub fn private_dir(dir: &Path) -> io::Result<()> {
+    private_dir_as(dir, ModeRefused::Fail)
+}
+
+/// How [`private_dir_as`] takes a mode change the volume refuses (the owner may always change the mode where modes are
+/// kept: a refusal comes from a volume without them, such as FAT, exFAT, some shares).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModeRefused {
+    /// An error: what lives in the folder (a socket) relies on it being closed to others.
+    Fail,
+    /// The folder as it is: what lives in it checks its own files (the install key).
+    Accept,
+}
+
+/// [`private_dir`], a refused mode change taken as `refused` says.
+///
+/// # Errors
+/// As [`private_dir`]; a refused mode change only with [`ModeRefused::Fail`].
+pub(crate) fn private_dir_as(dir: &Path, refused: ModeRefused) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)?;
+        let meta = std::fs::symlink_metadata(dir)?;
+        if !meta.file_type().is_dir() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a folder"));
+        }
+        if meta.uid() != rustix::process::geteuid().as_raw() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "a folder of another user",
+            ));
+        }
+        if meta.mode() & 0o777 != 0o700 {
+            if let Err(e) = owner_only(dir) {
+                if e.kind() != io::ErrorKind::PermissionDenied || refused == ModeRefused::Fail {
+                    return Err(e);
+                }
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = refused;
+        std::fs::create_dir_all(dir)
+    }
+}
+
+/// Mode 0700 on `dir`.
+#[cfg(unix)]
+fn owner_only(dir: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    #[cfg(test)]
+    if tests::MODES_REFUSED.with(std::cell::Cell::get) {
+        return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+    }
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
 }
 
 /// Bytes free for this user on the volume holding `path`; a path not made yet answers for its nearest existing
@@ -488,6 +812,68 @@ pub fn free_space(path: &Path) -> io::Result<u64> {
     {
         let _ = folder;
         Err(io::Error::from(io::ErrorKind::Unsupported))
+    }
+}
+
+/// Whether looking up `path` stays on this computer: an absolute path on a local drive. Windows: a drive letter path
+/// (also its `\\?\C:\` spelling) on a fixed | removable | RAM disk; never a share, a mapped network drive, a device
+/// path, a CD drive or an unknown drive. Unix: any absolute path but one that starts with two separators (a network
+/// spelling: [`crate::process::is_network_path`]); a mount point of a network file system is not told apart. Use it
+/// before the first lookup of a path that came from file content: even a metadata lookup on a share connects to the
+/// server and offers it the person's sign-in.
+#[must_use]
+pub fn is_local_path(path: &Path) -> bool {
+    if !path.is_absolute() {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        // a drive letter path never starts with two separators: no text check needed beside the prefix
+        match path.components().next() {
+            Some(Component::Prefix(prefix)) => match prefix.kind() {
+                Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => win::local_drive(letter),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        !crate::process::is_network_path(path.as_os_str())
+    }
+}
+
+/// Whether `path` is inside a folder a cloud sync service manages. Windows: a Cloud Files sync root (OneDrive,
+/// Dropbox, iCloud, Box, ...), told by the system's registration of the root, never by attributes: a normal process
+/// runs in the default placeholder compatibility mode, where a hydrated placeholder folder looks like a plain folder
+/// (no reparse attribute, not a link). Other systems: false (their cloud folders are not told apart). Looks the path
+/// up: a path that came from file content passes [`is_local_path`] first.
+#[must_use]
+pub fn in_cloud_folder(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        win::in_sync_root(path)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        false
+    }
+}
+
+/// The 8.3 short spelling of the existing `path` (Windows: `C:\Users\ANNLON~1` for `C:\Users\Ann Longname`), which some
+/// tools print instead of the long one. `None`: not Windows, no such path, or no short name (the volume keeps none).
+#[must_use]
+pub fn short_name(path: &Path) -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        win::short_path(path).ok().filter(|short| short != path)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        None
     }
 }
 
@@ -540,9 +926,133 @@ fn discard(tmp: &Path) {
     }
 }
 
+/// Test helper: a temp folder named by its real path. The system temp path may hold another spelling of the same place
+/// (an 8.3 short name such as `RUNNER~1` on Windows, the `/var` -> `/private/var` link on macOS), while paths the app
+/// derives from an opened folder are real paths; expected paths built from this folder compare equal to them.
 #[cfg(test)]
-mod tests {
+pub(crate) fn real_tempdir() -> tempfile::TempDir {
+    let base = dunce::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
+    tempfile::tempdir_in(base).unwrap_or_else(|e| panic!("temp folder: {e}"))
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    thread_local! {
+        /// While set, a private folder's mode change on this thread is refused, as a volume without modes refuses it.
+        pub(crate) static MODES_REFUSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
+    /// Runs `body` with every private folder's mode change on this thread refused.
+    #[cfg(unix)]
+    pub(crate) fn with_modes_refused<T>(body: impl FnOnce() -> T) -> T {
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                MODES_REFUSED.with(|refused| refused.set(false));
+            }
+        }
+        MODES_REFUSED.with(|refused| refused.set(true));
+        let _reset = Reset;
+        body()
+    }
+
+    /// A refused mode change fails the private folder (a socket folder must be closed to others); only the place that
+    /// checks its own files takes the folder as it is.
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_mode_change_fails_the_private_folder_unless_accepted() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("private");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        with_modes_refused(|| {
+            let refused = private_dir(&dir).unwrap_err();
+            assert_eq!(refused.kind(), io::ErrorKind::PermissionDenied);
+            private_dir_as(&dir, ModeRefused::Accept).unwrap();
+        });
+        // modes kept again: the folder is tightened
+        private_dir(&dir).unwrap();
+        let mode = std::fs::symlink_metadata(&dir)
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+
+    /// A folder registered as a Cloud Files sync root, the way OneDrive | Dropbox register theirs, while this lives
+    /// (no provider connected: nothing is ever fetched); the registration goes on drop. Unregister before the folder
+    /// is removed: keep this after the temp folder in the test's bindings.
+    #[cfg(windows)]
+    pub(crate) struct SyncRoot(Vec<u16>);
+
+    // Documented FFI, test only: the Cloud Files registration has no std wrapper. Every pointer passed comes from a
+    // live local buffer | struct that outlives the call.
+    #[cfg(windows)]
+    #[allow(unsafe_code)]
+    impl SyncRoot {
+        /// `None` (the reason printed): the system refused, e.g. no Cloud Files service on this machine.
+        pub(crate) fn register(dir: &Path) -> Option<Self> {
+            use windows_sys::core::GUID;
+            use windows_sys::Win32::Storage::CloudFilters::{
+                CfRegisterSyncRoot, CF_HYDRATION_POLICY_FULL, CF_POPULATION_POLICY_ALWAYS_FULL,
+                CF_REGISTER_FLAG_NONE, CF_SYNC_POLICIES, CF_SYNC_REGISTRATION,
+            };
+            let path = win::wide(dir).unwrap();
+            let name: Vec<u16> = "PerMarkTest\0".encode_utf16().collect();
+            let version: Vec<u16> = "1.0\0".encode_utf16().collect();
+            let registration = CF_SYNC_REGISTRATION {
+                StructSize: u32::try_from(std::mem::size_of::<CF_SYNC_REGISTRATION>()).unwrap(),
+                ProviderName: name.as_ptr(),
+                ProviderVersion: version.as_ptr(),
+                ProviderId: GUID::from_u128(0x5f0c_2a47_9d3e_4b8a_a1c6_7e2d_9b40_f318),
+                ..CF_SYNC_REGISTRATION::default()
+            };
+            let mut policies = CF_SYNC_POLICIES {
+                StructSize: u32::try_from(std::mem::size_of::<CF_SYNC_POLICIES>()).unwrap(),
+                ..CF_SYNC_POLICIES::default()
+            };
+            policies.Hydration.Primary = CF_HYDRATION_POLICY_FULL;
+            policies.Population.Primary = CF_POPULATION_POLICY_ALWAYS_FULL;
+            // SAFETY: `path`, `name`, `version` are live NUL-terminated buffers; both structs are live locals with
+            // their sizes set; all outlive the call.
+            let result = unsafe {
+                CfRegisterSyncRoot(
+                    path.as_ptr(),
+                    &raw const registration,
+                    &raw const policies,
+                    CF_REGISTER_FLAG_NONE,
+                )
+            };
+            if result != 0 {
+                eprintln!("no Cloud Files sync root here (HRESULT {result:#010x}): skipped");
+                return None;
+            }
+            Some(Self(path))
+        }
+    }
+
+    #[cfg(windows)]
+    #[allow(unsafe_code)]
+    impl Drop for SyncRoot {
+        fn drop(&mut self) {
+            use windows_sys::Win32::Storage::CloudFilters::CfUnregisterSyncRoot;
+            // SAFETY: `self.0` is the live NUL-terminated path the root was registered with.
+            let _ = unsafe { CfUnregisterSyncRoot(self.0.as_ptr()) };
+        }
+    }
+
+    #[test]
+    fn the_clock_reads_milliseconds_since_the_epoch() {
+        // 2023-11-14 in milliseconds: a seconds | micros mix-up or the 0 of an unreadable clock lands far off
+        let before = now_ms();
+        assert!(before > 1_700_000_000_000, "{before}");
+        assert!(before < 100_000_000_000_000, "{before}");
+        assert!(now_ms() >= before);
+    }
 
     #[test]
     fn a_reused_file_id_with_another_birth_is_another_folder() {
@@ -655,6 +1165,163 @@ mod tests {
     }
 
     #[test]
+    fn temps_a_crash_left_go_to_the_bin_fresh_ones_own_ones_and_other_names_stay() {
+        let dir = tempfile::tempdir().unwrap();
+        let own = std::process::id();
+        assert_ne!(own, 999_999);
+        let hours_ago = std::time::SystemTime::now() - Duration::from_hours(2);
+        let make = |name: &str, old: bool| {
+            let file = std::fs::File::create(dir.path().join(name)).unwrap();
+            if old {
+                file.set_modified(hours_ago).unwrap();
+            }
+        };
+        make(".a.md.999999.0.part", true);
+        make(".import.999998.3.part", true);
+        make(".b.md.999999.1.part", false);
+        make(&format!(".c.md.{own}.0.part"), true);
+        make(".notes.part", true);
+        make(".a.md.x9.0.part", true);
+        make("a.md", true);
+        let mut stale: Vec<String> = stale_temps(dir.path(), STALE_TEMP_AGE)
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        stale.sort();
+        assert_eq!(stale, [".a.md.999999.0.part", ".import.999998.3.part"]);
+        let swept = sweep_stale_temps(&[dir.path().to_path_buf()]);
+        // the bin of a fixed disk takes them; a unix test machine may have no usable bin for the temp folder
+        #[cfg(windows)]
+        assert_eq!(swept, 2);
+        let mut kept = vec![
+            ".a.md.x9.0.part".to_owned(),
+            ".b.md.999999.1.part".to_owned(),
+            format!(".c.md.{own}.0.part"),
+            ".notes.part".to_owned(),
+            "a.md".to_owned(),
+        ];
+        if swept == 0 {
+            kept.extend([
+                ".a.md.999999.0.part".to_owned(),
+                ".import.999998.3.part".to_owned(),
+            ]);
+        }
+        kept.sort();
+        assert_eq!(names_in(dir.path()), kept);
+    }
+
+    /// Sets the modification time of the folder `dir` itself to `at`.
+    fn age_folder(dir: &Path, at: SystemTime) {
+        #[cfg(windows)]
+        let folder = {
+            use std::os::windows::fs::OpenOptionsExt;
+            use windows_sys::Win32::Storage::FileSystem::{
+                FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+            };
+            // a folder opens only with backup semantics; a time is set with the right to write attributes
+            std::fs::OpenOptions::new()
+                .access_mode(FILE_WRITE_ATTRIBUTES)
+                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+                .open(dir)
+                .unwrap()
+        };
+        #[cfg(not(windows))]
+        let folder = std::fs::File::open(dir).unwrap();
+        folder.set_modified(at).unwrap();
+    }
+
+    /// A crash may leave a folder under a temp name as the only copy of the person's data, a repository may track one,
+    /// and a link leads to files of their own: only plain temp files go, and nothing directly in `.permark`.
+    #[test]
+    fn a_folder_a_link_or_anything_in_permark_with_a_temp_name_is_never_swept() {
+        let dir = tempfile::tempdir().unwrap();
+        let hours_ago = SystemTime::now() - Duration::from_hours(2);
+        let docs = dir.path().join("docs");
+        let folder = docs.join(".a.md.999999.0.part");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("kept.md"), b"x").unwrap();
+        age_folder(&folder, hours_ago);
+        let permark = dir.path().join(".permark");
+        let aside = permark.join(".import.999998.0.part");
+        std::fs::create_dir_all(&aside).unwrap();
+        std::fs::write(aside.join("state.json"), b"{}").unwrap();
+        age_folder(&aside, hours_ago);
+        let beside = permark.join(".config.toml.999998.1.part");
+        let file = std::fs::File::create(&beside).unwrap();
+        file.set_modified(hours_ago).unwrap();
+        drop(file);
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("target.md"), b"t").unwrap();
+        let link = docs.join(".l.md.999999.2.part");
+        let linked = crate::tree::tests::link_out(&link, outside.path());
+        let temp = docs.join(".b.md.999999.3.part");
+        let file = std::fs::File::create(&temp).unwrap();
+        file.set_modified(hours_ago).unwrap();
+        drop(file);
+        let dirs = [docs, permark];
+        let stale: Vec<PathBuf> = dirs
+            .iter()
+            .flat_map(|dir| stale_temps(dir, STALE_TEMP_AGE))
+            .collect();
+        assert_eq!(stale, std::slice::from_ref(&temp));
+        let swept = sweep_stale_temps(&dirs);
+        #[cfg(windows)]
+        assert_eq!(swept, 1);
+        assert_eq!(temp.exists(), swept == 0);
+        assert_eq!(std::fs::read(folder.join("kept.md")).unwrap(), b"x");
+        assert_eq!(std::fs::read(aside.join("state.json")).unwrap(), b"{}");
+        assert!(beside.exists());
+        if linked {
+            assert!(std::fs::symlink_metadata(&link).is_ok());
+            assert_eq!(
+                std::fs::read(outside.path().join("target.md")).unwrap(),
+                b"t"
+            );
+        }
+    }
+
+    /// A temp a crash leaves stays out of the file manager's sight; the file it becomes shows as the one it replaced.
+    #[cfg(windows)]
+    #[test]
+    fn a_temp_is_hidden_while_written_and_the_file_it_becomes_is_not() {
+        use std::os::windows::fs::MetadataExt;
+        use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
+        const HIDDEN: u32 = 0x2;
+        let hidden = |path: &Path| std::fs::metadata(path).unwrap().file_attributes() & HIDDEN != 0;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.md");
+        std::fs::write(&path, b"one").unwrap();
+        let saw = Arc::new(AtomicBool::new(false));
+        slip::before_check(&path, {
+            let saw = Arc::clone(&saw);
+            let dir = dir.path().to_path_buf();
+            move || {
+                for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                    if entry.file_name().to_string_lossy().ends_with(".part") {
+                        let attrs = entry.metadata().unwrap().file_attributes();
+                        saw.store(attrs & HIDDEN != 0, Ordering::SeqCst);
+                    }
+                }
+            }
+        });
+        write_atomic(&path, b"two").unwrap();
+        assert!(saw.load(Ordering::SeqCst), "the temp was hidden");
+        assert!(!hidden(&path));
+        assert_eq!(std::fs::read(&path).unwrap(), b"two");
+        // a new file, and a file the person hid, keep how they show
+        let new = dir.path().join("b.md");
+        write_atomic(&new, b"x").unwrap();
+        assert!(!hidden(&new));
+        let secret = dir.path().join("c.md");
+        std::fs::write(&secret, b"x").unwrap();
+        win::set_hidden(&secret, true).unwrap();
+        write_atomic(&secret, b"y").unwrap();
+        assert!(hidden(&secret));
+        assert_eq!(std::fs::read(&secret).unwrap(), b"y");
+    }
+
+    #[test]
     fn a_name_at_the_length_limit_gets_a_short_temp_that_is_still_scratch() {
         let dir = tempfile::tempdir().unwrap();
         let name = format!("{}.md", "n".repeat(247));
@@ -686,6 +1353,98 @@ mod tests {
         assert!(write_atomic_if_unchanged(&path, b"mine", seen).unwrap());
         assert_eq!(std::fs::read(&path).unwrap(), b"mine");
         assert_eq!(names_in(dir.path()), ["a.md"]);
+    }
+
+    /// A file symlink at `link` to `target` (Windows: only with the symlink privilege, else `false`: skipped).
+    pub(crate) fn file_link(link: &Path, target: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(target, link).is_ok()
+        }
+    }
+
+    /// Only a plain file can still hold what was read: a folder or a FIFO at the path is a change, never read (a FIFO
+    /// would keep the check waiting forever); a link to a plain file is followed, so a linked file stays writable.
+    /// Nothing is written on a change and no temp stays behind.
+    #[test]
+    fn a_write_while_unchanged_takes_anything_but_a_plain_file_for_a_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let seen = hash(b"seen");
+        let folder = dir.path().join("folder.md");
+        std::fs::create_dir(&folder).unwrap();
+        assert!(!write_atomic_if_unchanged(&folder, b"mine", seen).unwrap());
+        assert!(folder.is_dir());
+        // a link to a file holding other bytes: a change, link and target stay as they are
+        let target = dir.path().join("target.md");
+        std::fs::write(&target, "other").unwrap();
+        let link = dir.path().join("link.md");
+        if file_link(&link, &target) {
+            assert!(!write_atomic_if_unchanged(&link, b"mine", seen).unwrap());
+            assert!(std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink());
+            // a link to a file holding the bytes read: the write lands where the link was, the target untouched
+            std::fs::write(&target, "seen").unwrap();
+            assert!(write_atomic_if_unchanged(&link, b"mine", seen).unwrap());
+            assert_eq!(std::fs::read(&link).unwrap(), b"mine");
+            assert_eq!(std::fs::read(&target).unwrap(), b"seen");
+        } else {
+            eprintln!("skipped the link case: no file links here");
+            std::fs::write(&link, "seen").unwrap();
+        }
+        #[cfg(unix)]
+        {
+            let fifo = dir.path().join("fifo.md");
+            let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+            assert!(made.is_ok_and(|s| s.success()));
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(write_atomic_if_unchanged(&fifo, b"mine", seen).ok());
+            });
+            let answer = rx
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .expect("the check waited on a FIFO");
+            assert_eq!(answer, Some(false));
+        }
+        let mut names = names_in(dir.path());
+        names.retain(|name| name != "fifo.md");
+        assert_eq!(names, ["folder.md", "link.md", "target.md"]);
+    }
+
+    /// A reader opens only a plain file: a folder is refused at once (Windows answers its open with access denied,
+    /// which is retried), a FIFO never makes it wait for a writer.
+    #[test]
+    fn a_read_of_what_is_not_a_plain_file_is_refused_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("folder.md");
+        std::fs::create_dir(&folder).unwrap();
+        let refusal = |result: Result<Vec<u8>, FsxError>| match result {
+            Err(FsxError::Io { source, .. }) => Some(source.kind()),
+            _ => None,
+        };
+        assert_eq!(
+            refusal(read_bytes(&folder, 1024)),
+            Some(io::ErrorKind::InvalidData)
+        );
+        #[cfg(unix)]
+        {
+            let fifo = dir.path().join("fifo.md");
+            let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+            assert!(made.is_ok_and(|s| s.success()));
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(refusal(read_bytes(&fifo, 1024)));
+            });
+            let answer = rx
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the read waited on a FIFO");
+            assert_eq!(answer, Some(io::ErrorKind::InvalidData));
+        }
     }
 
     #[test]
@@ -888,6 +1647,75 @@ mod tests {
         assert!(free_space(&folder.join("not").join("yet")).unwrap() > 0);
     }
 
+    /// Only an absolute path on a disk of this computer is local: a share, a device path, a relative path is not,
+    /// whatever its spelling.
+    #[test]
+    fn only_an_absolute_path_on_a_local_disk_is_local() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(is_local_path(dir.path()));
+        for odd in [
+            r"\\server\share\x",
+            "//server/share/x",
+            r"\\?\UNC\server\share\x",
+            r"\\.\pipe\x",
+            r"\\.\C:\x",
+            "relative",
+            "./x",
+            "../x",
+            "",
+        ] {
+            assert!(!is_local_path(Path::new(odd)), "{odd:?}");
+        }
+        #[cfg(windows)]
+        {
+            assert!(is_local_path(Path::new(r"C:\")));
+            assert!(is_local_path(Path::new(r"\\?\C:\x")));
+            for odd in [
+                r"C:x",
+                r"\x",
+                "/x",
+                r"\\?\Volume{00000000-0000-0000-0000-000000000000}\x",
+            ] {
+                assert!(!is_local_path(Path::new(odd)), "{odd:?}");
+            }
+            // a drive letter with no drive behind it tells nothing; asked of the system, not by a lookup at the letter
+            // (that would wait on a mapped network drive | an empty CD drive and take either for a free letter)
+            if let Some(letter) = (b'A'..=b'Z')
+                .rev()
+                .find(|l| win::drive_type(*l) == win::DRIVE_NO_ROOT_DIR)
+            {
+                let free = format!(r"{}:\x", char::from(letter));
+                assert!(!is_local_path(Path::new(&free)), "{free}");
+            }
+        }
+        #[cfg(unix)]
+        {
+            assert!(is_local_path(Path::new("/x")));
+            assert!(is_local_path(Path::new("/")));
+        }
+    }
+
+    /// A folder a cloud sync service registered (and anything below it) is a cloud folder; a plain folder beside it
+    /// is not.
+    #[test]
+    fn a_folder_a_sync_service_registered_is_a_cloud_folder() {
+        let outside = tempfile::tempdir().unwrap();
+        assert!(!in_cloud_folder(outside.path()));
+        #[cfg(windows)]
+        {
+            let cloud = tempfile::tempdir().unwrap();
+            let inner = cloud.path().join("notes ação");
+            std::fs::create_dir(&inner).unwrap();
+            assert!(!in_cloud_folder(cloud.path()), "not registered yet");
+            let Some(_root) = SyncRoot::register(cloud.path()) else {
+                return;
+            };
+            assert!(in_cloud_folder(cloud.path()));
+            assert!(in_cloud_folder(&inner));
+            assert!(!in_cloud_folder(outside.path()));
+        }
+    }
+
     /// The opened file's own path: a link (junction | symlink) on the way is followed to where the file really is.
     #[test]
     fn a_read_names_where_the_opened_file_really_is() {
@@ -901,16 +1729,7 @@ mod tests {
         let opened = opened.expect("the system names the opened file");
         assert_eq!(crate::paths::simplified(&opened), real.join("a.md"));
         let link = base.join("link");
-        #[cfg(windows)]
-        let made = std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(&link)
-            .arg(&real)
-            .output()
-            .is_ok_and(|o| o.status.success());
-        #[cfg(unix)]
-        let made = std::os::unix::fs::symlink(&real, &link).is_ok();
-        if made {
+        if crate::tree::tests::link_out(&link, &real) {
             let (_, opened) = read_text_opened(&link.join("a.md"), 1024).unwrap();
             assert_eq!(
                 crate::paths::simplified(&opened.unwrap()),

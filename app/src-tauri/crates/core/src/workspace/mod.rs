@@ -22,6 +22,7 @@ pub use window_fsm::{MoveTo, Resolution};
 use crate::conditions::WorkspaceKind;
 use crate::error::{ErrorKind, IpcError};
 use crate::paths::{FileScope, Root, VaultError, VaultPath};
+use crate::state::location::DataOffer;
 use crate::state::StateLocation;
 
 /// Process-unique workspace id.
@@ -211,6 +212,8 @@ pub enum WorkspaceView {
         name: String,
         root: String,
         state_location: StateLocation,
+        /// What the window offers about the place of the person's data (worked out when the folder opens).
+        data_offer: DataOffer,
     },
     #[serde(rename_all = "camelCase")]
     SingleFile {

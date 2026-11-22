@@ -2,16 +2,16 @@
 //! process, no libgit2: where it is (`.git` folder | gitfile), HEAD (branch | detached commit | no commit yet) and the
 //! repository state from marker files. A few small reads per repository.
 
-use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use permark_core::conditions::RepoState;
+use permark_core::plugins::CommitId;
 
-use crate::ops::{repo_state, RepoLocation};
+use crate::ops::{repo_state, GitError, RepoLocation, RepoRefusal};
 use crate::types::HeadInfo;
-use crate::worktrees::{common_dir, read_line};
+use crate::worktrees::{common_dir, git_dir_stays_local, named_path, read_git_file, read_line};
 
-/// Most bytes of `packed-refs` read looking for one ref (a huge file is not read to its end).
+/// Most bytes of `packed-refs` read looking for one ref (a bigger file is not read: the ref counts as missing).
 const MAX_PACKED: u64 = 8 * 1024 * 1024;
 
 #[cfg(test)]
@@ -29,46 +29,44 @@ pub struct Cheap {
 
 /// The repository whose working tree is `folder` (an included project with a `.git` marker): its `.git` folder, or
 /// the folder a gitfile names (`gitdir: <path>`, relative to `folder`; may point outside the opened folder: read
-/// only). `Err`: why it cannot be used (the sentence names the cause).
+/// only). `Err`: why it cannot be used ([`GitError::Refused`]: a code the windows word, no git call made).
 ///
 /// # Errors
-/// No `.git` | a gitfile without a `gitdir:` line | its target missing.
-pub fn member_location(folder: &Path) -> Result<RepoLocation, String> {
+/// No `.git` | a gitfile without a `gitdir:` line | its target missing | not on this computer (also a path its git
+/// folder's files name, or a link there: [`git_dir_stays_local`]).
+pub fn member_location(folder: &Path) -> Result<RepoLocation, GitError> {
     #[cfg(test)]
     LOCATIONS_READ.with(|c| c.set(c.get() + 1));
     let entry = folder.join(".git");
-    let meta = std::fs::symlink_metadata(&entry).map_err(|_| "no .git".to_owned())?;
+    let meta =
+        std::fs::symlink_metadata(&entry).map_err(|_| GitError::Refused(RepoRefusal::NoGit))?;
     let git_dir = if meta.is_dir() {
         entry
     } else if meta.is_file() {
-        let line = read_line(&entry).ok_or_else(|| "unreadable .git file".to_owned())?;
+        let line = read_line(&entry).ok_or(GitError::Refused(RepoRefusal::BadGitFile))?;
         let target = line
             .strip_prefix("gitdir:")
             .map(str::trim)
             .filter(|t| !t.is_empty())
-            .ok_or_else(|| "a .git file without gitdir".to_owned())?;
-        let target = PathBuf::from(target);
-        let target = if target.is_absolute() {
-            target
-        } else {
-            folder.join(target)
-        };
+            .ok_or(GitError::Refused(RepoRefusal::BadGitFile))?;
+        // a share | a mapped network drive named here would be looked up below, and by git on every open
+        let target = named_path(folder, target).ok_or(GitError::Refused(RepoRefusal::NotLocal))?;
         if !target.is_dir() {
-            return Err("the repository named by .git is missing".to_owned());
+            return Err(GitError::Refused(RepoRefusal::BadGitFile));
         }
         permark_core::paths::canonicalize(&target).unwrap_or(target)
     } else {
-        return Err("no .git".to_owned());
+        // a link (symlink | junction) too: a member is read from files only, never through a link
+        return Err(GitError::Refused(RepoRefusal::NoGit));
     };
+    if !git_dir_stays_local(&git_dir) {
+        return Err(GitError::Refused(RepoRefusal::NotLocal));
+    }
     Ok(RepoLocation {
         workdir: folder.to_path_buf(),
         git_dir,
         prefix: String::new(),
     })
-}
-
-fn is_hex_oid(text: &str) -> bool {
-    (4..=64).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// Whether HEAD may name `name`: a ref below `refs/` made of plain segments only. Anything else (`..`, an absolute
@@ -90,24 +88,19 @@ fn resolve_ref(common: &Path, git_dir: &Path, name: &str) -> Option<String> {
     if !valid_ref(name) {
         return None;
     }
-    for dir in [git_dir, common] {
-        if let Some(line) = read_line(&dir.join(name)) {
-            if is_hex_oid(&line) {
-                return Some(line.to_ascii_lowercase());
-            }
-        }
-    }
-    let file = std::fs::File::open(common.join("packed-refs")).ok()?;
-    let reader = BufReader::new(std::io::Read::take(file, MAX_PACKED));
-    for line in reader.lines() {
-        let Ok(line) = line else { break };
-        if let Some((oid, refname)) = line.split_once(' ') {
-            if refname.trim() == name && is_hex_oid(oid) {
-                return Some(oid.to_ascii_lowercase());
-            }
-        }
-    }
-    None
+    let loose = [git_dir, common]
+        .into_iter()
+        .find_map(|dir| CommitId::parse(&read_line(&dir.join(name))?));
+    // a plain file only, never through a link (a FIFO would hold the read forever)
+    let id = loose.or_else(|| {
+        let packed = read_git_file(&common.join("packed-refs"), MAX_PACKED)?;
+        String::from_utf8_lossy(&packed)
+            .lines()
+            .filter_map(|line| line.split_once(' '))
+            .filter(|(_, refname)| refname.trim() == name)
+            .find_map(|(oid, _)| CommitId::parse(oid))
+    })?;
+    Some(id.as_str().to_owned())
 }
 
 /// HEAD + state of the repository at `git_dir`; `None`: HEAD unreadable (not a repository any more).
@@ -132,15 +125,13 @@ pub fn cheap_facts(git_dir: &Path) -> Option<Cheap> {
             oid,
             detached: false,
         }
-    } else if is_hex_oid(&line) {
+    } else {
         HeadInfo {
             branch: None,
-            oid: Some(line.to_ascii_lowercase()),
+            oid: Some(CommitId::parse(&line)?.as_str().to_owned()),
             detached: true,
             unborn: false,
         }
-    } else {
-        return None;
     };
     Some(Cheap {
         head,
@@ -183,9 +174,18 @@ mod tests {
         let detached = cheap_facts(git).unwrap();
         assert!(detached.head.detached && detached.head.branch.is_none());
         assert_eq!(detached.head.oid.as_deref(), Some(A));
+        // only a full commit id names a commit: SHA-1 | SHA-256, never a short one
+        let sha256 = B.repeat(2)[..64].to_owned();
+        std::fs::write(git.join("HEAD"), format!("{sha256}\n")).unwrap();
+        assert_eq!(cheap_facts(git).unwrap().head.oid, Some(sha256));
+        std::fs::write(git.join("HEAD"), "0123abcd\n").unwrap();
+        assert_eq!(cheap_facts(git), None);
+        std::fs::write(git.join("refs/heads/short"), "0123abcd\n").unwrap();
+        std::fs::write(git.join("HEAD"), "ref: refs/heads/short\n").unwrap();
+        assert!(cheap_facts(git).unwrap().head.unborn, "a short id in a ref");
         std::fs::write(git.join("HEAD"), "garbage\n").unwrap();
         assert_eq!(cheap_facts(git), None);
-        // a HEAD naming anything outside the git folder is invalid: nothing read there (verifier N1)
+        // a HEAD naming anything outside the git folder is invalid: nothing read there
         let outside = dir.path().join("outside.txt");
         std::fs::write(&outside, format!("{A}\n")).unwrap();
         let drive = outside.display().to_string().replace('\\', "/");
@@ -224,12 +224,64 @@ mod tests {
         std::fs::write(sub.join(".git"), "gitdir: ../modules/x\n").unwrap();
         let loc = member_location(&sub).unwrap();
         assert_eq!(loc.git_dir, dunce::canonicalize(&modules).unwrap());
-        // gitfile to a missing folder | without the line | no marker
+        // gitfile to a missing folder | without the line | empty | no marker: each says why in its own code
+        let bad = Err(GitError::Refused(RepoRefusal::BadGitFile));
         std::fs::write(sub.join(".git"), "gitdir: ../nowhere\n").unwrap();
-        assert!(member_location(&sub).is_err());
+        assert_eq!(member_location(&sub), bad);
         std::fs::write(sub.join(".git"), "nothing\n").unwrap();
-        assert!(member_location(&sub).is_err());
-        assert!(member_location(&dir.path().join("none")).is_err());
+        assert_eq!(member_location(&sub), bad);
+        std::fs::write(sub.join(".git"), "").unwrap();
+        assert_eq!(member_location(&sub), bad);
+        assert_eq!(
+            member_location(&dir.path().join("none")),
+            Err(GitError::Refused(RepoRefusal::NoGit))
+        );
+    }
+
+    /// A gitfile whose path passes through a link, and a git folder holding a link git would follow, are refused as
+    /// leaving this computer, with that reason.
+    #[test]
+    fn a_member_whose_repository_leads_through_a_link_is_refused_as_not_local() {
+        let dir = tempfile::tempdir().unwrap();
+        let modules = dir.path().join("modules");
+        std::fs::create_dir_all(modules.join("x")).unwrap();
+        let link = dir.path().join("link");
+        if !crate::worktrees::tests::link_folder(&modules, &link) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+        let not_local = Err(GitError::Refused(RepoRefusal::NotLocal));
+        let sub = dir.path().join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join(".git"), "gitdir: ../link/x\n").unwrap();
+        assert_eq!(member_location(&sub), not_local);
+        let plain = dir.path().join("plain");
+        std::fs::create_dir_all(plain.join(".git")).unwrap();
+        assert!(crate::worktrees::tests::link_folder(
+            &modules,
+            &plain.join(".git").join("refs")
+        ));
+        assert_eq!(member_location(&plain), not_local);
+    }
+
+    /// A member's `.git` that is a link is refused wherever it leads: a member is read from files only, never through
+    /// a link.
+    #[test]
+    fn a_member_whose_git_is_a_link_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir_all(real.join(".git")).unwrap();
+        let member = dir.path().join("member");
+        std::fs::create_dir_all(&member).unwrap();
+        if !crate::worktrees::tests::link_folder(&real.join(".git"), &member.join(".git")) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+        assert!(member_location(&real).is_ok());
+        assert_eq!(
+            member_location(&member),
+            Err(GitError::Refused(RepoRefusal::NoGit))
+        );
     }
 
     #[test]

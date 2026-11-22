@@ -1,8 +1,20 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseRelease, updaterJson } from "./updater-json.mjs";
+import {
+  checkSigned,
+  parseRelease,
+  publicKeyOf,
+  updaterBundles,
+  updaterJson,
+  verifySignature,
+} from "./updater-json.mjs";
 
-// Asset names of the 0.6.1 release (unchanged since 0.6.0; `distribution.md` § Release pipeline), except the macOS
-// updater bundle: tauri-action 1.x puts the version in its name, as in every other installer.
+// Asset names of the 0.6.1 release (unchanged since 0.6.0; `distribution.md` § Release pipeline), minus the `.msi`
+// (no longer built), and with the macOS updater bundle named as tauri-action 1.x names it: with the version, as in
+// every other installer.
 const ASSETS = [
   "latest.json",
   "PerMark-0.6.1-1.x86_64.rpm",
@@ -14,8 +26,6 @@ const ASSETS = [
   "PerMark_0.6.1_universal.dmg",
   "PerMark_0.6.1_x64-setup.exe",
   "PerMark_0.6.1_x64-setup.exe.sig",
-  "PerMark_0.6.1_x64_en-US.msi",
-  "PerMark_0.6.1_x64_en-US.msi.sig",
   "PerMark_0.6.1_universal.app.tar.gz",
   "PerMark_0.6.1_universal.app.tar.gz.sig",
 ];
@@ -34,20 +44,22 @@ function build(
     pubDate: "2026-10-20T19:02:17.540Z",
     assets,
     signature: (name) => `sig of ${name}`,
+    verify: () => {},
     ...overrides,
   });
 }
 
 describe("updaterJson", () => {
-  it("writes the 0.6.1 shape: same keys, order, urls and signatures", () => {
+  it("writes the 0.6.1 shape without the .msi: same keys, order, urls and signatures", () => {
     const json = build(ASSETS);
     expect(Object.keys(json)).toEqual(["version", "notes", "pub_date", "platforms"]);
     expect(json.version).toBe("0.6.1");
     expect(json.notes).toBe("**PerMark** notes\n\n### Install");
     expect(json.pub_date).toBe("2026-10-20T19:02:17.540Z");
-    const msi = {
-      signature: "sig of PerMark_0.6.1_x64_en-US.msi.sig",
-      url: `${BASE}PerMark_0.6.1_x64_en-US.msi`,
+    // copies installed from an `.msi` look up `windows-x86_64-msi`, then `windows-x86_64`: both reach the `-setup.exe`
+    const nsis = {
+      signature: "sig of PerMark_0.6.1_x64-setup.exe.sig",
+      url: `${BASE}PerMark_0.6.1_x64-setup.exe`,
     };
     const app = {
       signature: "sig of PerMark_0.6.1_universal.app.tar.gz.sig",
@@ -58,12 +70,8 @@ describe("updaterJson", () => {
       url: `${BASE}PerMark_0.6.1_amd64.AppImage`,
     };
     expect(json.platforms).toEqual({
-      "windows-x86_64": msi,
-      "windows-x86_64-msi": msi,
-      "windows-x86_64-nsis": {
-        signature: "sig of PerMark_0.6.1_x64-setup.exe.sig",
-        url: `${BASE}PerMark_0.6.1_x64-setup.exe`,
-      },
+      "windows-x86_64": nsis,
+      "windows-x86_64-nsis": nsis,
       "darwin-aarch64": app,
       "darwin-x86_64": app,
       "darwin-aarch64-app": app,
@@ -81,7 +89,6 @@ describe("updaterJson", () => {
     });
     expect(Object.keys(json.platforms)).toEqual([
       "windows-x86_64",
-      "windows-x86_64-msi",
       "windows-x86_64-nsis",
       "darwin-aarch64",
       "darwin-x86_64",
@@ -112,7 +119,6 @@ describe("updaterJson", () => {
   });
 
   it.each([
-    ["PerMark_0.6.1_x64_en-US.msi.sig", /Windows MSI: 0 signature/],
     ["PerMark_0.6.1_x64-setup.exe.sig", /Windows NSIS: 0 signature/],
     ["PerMark_0.6.1_universal.app.tar.gz.sig", /macOS universal app: 0 signature/],
     ["PerMark_0.6.1_amd64.AppImage.sig", /Linux AppImage: 0 signature/],
@@ -138,12 +144,18 @@ describe("updaterJson", () => {
     );
   });
 
-  it("refuses two bundles for one rule (e.g. a second MSI language)", () => {
-    const assets = [...ASSETS, "PerMark_0.6.1_x64_pt-BR.msi", "PerMark_0.6.1_x64_pt-BR.msi.sig"];
-    expect(() => build(assets)).toThrow(/Windows MSI: 2 signature/);
+  it("refuses two bundles for one rule (e.g. two Windows installers)", () => {
+    const assets = [
+      ...ASSETS,
+      "PerMark_0.6.1-rc_x64-setup.exe",
+      "PerMark_0.6.1-rc_x64-setup.exe.sig",
+    ];
+    expect(() => build(assets)).toThrow(/Windows NSIS: 2 signature/);
   });
 
   it.each([
+    // the `.msi` is no longer built: one in a release is a stray bundle, not an update
+    "PerMark_0.6.1_x64_en-US.msi.sig",
     "PerMark_0.6.1_aarch64.dmg.sig",
     "PerMark_0.6.1_arm64-setup.exe.sig",
     "PerMark_0.6.1_arm64.deb.sig",
@@ -166,6 +178,231 @@ describe("updaterJson", () => {
     expect(() => build(ASSETS, { repo: "EdelmarSchneider/permark/../x y" })).toThrow(
       /not owner\/name/,
     );
+  });
+
+  it("checks every installer against its signature, once each", () => {
+    const checked: string[] = [];
+    build(ASSETS, { verify: (bundle, signature) => checked.push(`${bundle} <- ${signature}`) });
+    expect(checked).toEqual([
+      "PerMark_0.6.1_x64-setup.exe <- sig of PerMark_0.6.1_x64-setup.exe.sig",
+      "PerMark_0.6.1_universal.app.tar.gz <- sig of PerMark_0.6.1_universal.app.tar.gz.sig",
+      "PerMark_0.6.1_amd64.AppImage <- sig of PerMark_0.6.1_amd64.AppImage.sig",
+      "PerMark_0.6.1_amd64.deb <- sig of PerMark_0.6.1_amd64.deb.sig",
+      "PerMark-0.6.1-1.x86_64.rpm <- sig of PerMark-0.6.1-1.x86_64.rpm.sig",
+    ]);
+  });
+
+  it("refuses a release with one installer its signature does not match", () => {
+    const verify = (bundle: string) => {
+      if (bundle.endsWith(".rpm")) throw new Error("the signature does not match the file");
+    };
+    expect(() => build(ASSETS, { verify })).toThrow(
+      /Linux rpm: PerMark-0.6.1-1.x86_64.rpm.sig: the signature does not match the file/,
+    );
+  });
+});
+
+// A real updater signature: `tauri signer generate` made a throwaway key pair (its private key was thrown away), then
+// `tauri signer sign` signed FIXTURE_FILE with it. The texts are what the CLI writes (`.sig` file, `.key.pub` file).
+const FIXTURE_FILE = "PerMark updater signature fixture\n";
+const FIXTURE_PUBKEY =
+  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhFMjA3ODNGMzhEMTBCRjkKUldUNUM5RTRQM2dnampPVmMrWGxEZ291b3RRckRJbFBIYUR5UldjUmxuOXA3WFJPUGVNRkg2aDQK";
+const FIXTURE_SIG =
+  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUNUM5RTRQM2dnanUxRldidi9uTXdDa2tNNFhFdElyQzFKdDVBNk1RQ3UxVWd1U1o0RWxzdVJsRjdPdGw5c2hoVXpJaHJEOUtLOEZQVFN1RHpMU0p6N054aTN2c3JCdGdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MjQ2NjY3CWZpbGU6YnVuZGxlLnR4dApraDVEQnk5ODFhVzJQd1dpYkQxR1BQMlN5U0FQNkhNakdpcWdqNk8xUUxMR0tzRHBHeEFJNUhDRHoyb0MvMldBN0VTc0hyYTU2Ym4yTGZXU2hicCtCQT09Cg==";
+
+const APP_PUBKEY: string = JSON.parse(
+  readFileSync(join(import.meta.dirname, "..", "src-tauri", "tauri.conf.json"), "utf8"),
+).plugins.updater.pubkey;
+
+/** The signature text with one line changed, encoded again as the `.sig` file holds it. */
+function editedSig(edit: (text: string) => string): string {
+  return Buffer.from(edit(Buffer.from(FIXTURE_SIG, "base64").toString("utf8"))).toString("base64");
+}
+
+describe("verifySignature", () => {
+  const file = Buffer.from(FIXTURE_FILE);
+
+  it("accepts a file signed by the key, as `tauri signer sign` signs it", () => {
+    expect(() => verifySignature(FIXTURE_SIG, file, FIXTURE_PUBKEY)).not.toThrow();
+    // the `.sig` file text as downloaded, with a line end after it
+    expect(() => verifySignature(`${FIXTURE_SIG}\n`, file, FIXTURE_PUBKEY)).not.toThrow();
+  });
+
+  it("refuses a file with one byte changed", () => {
+    const tampered = Buffer.from(file);
+    tampered[0] = (tampered[0] ?? 0) ^ 1;
+    expect(() => verifySignature(FIXTURE_SIG, tampered, FIXTURE_PUBKEY)).toThrow(
+      /does not match the file/,
+    );
+  });
+
+  it("refuses a signature whose trusted comment was changed", () => {
+    const sig = editedSig((text) => text.replace("timestamp:1795246667", "timestamp:1795246668"));
+    expect(() => verifySignature(sig, file, FIXTURE_PUBKEY)).toThrow(/trusted comment/);
+  });
+
+  it("refuses a signature made by another key than the app trusts", () => {
+    expect(() => verifySignature(FIXTURE_SIG, file, APP_PUBKEY)).toThrow(
+      /key 8E20783F38D10BF9.*trusts key E5B5D80713C61885/,
+    );
+  });
+
+  it("refuses text that is not a signature", () => {
+    expect(() => verifySignature("bm90IGEgc2lnbmF0dXJl", file, FIXTURE_PUBKEY)).toThrow(
+      /not a minisign signature/,
+    );
+    const legacy = editedSig((text) => text.replace("\nRUT5", "\nRWT5"));
+    expect(() => verifySignature(legacy, file, FIXTURE_PUBKEY)).toThrow(/algorithm/);
+  });
+});
+
+// What one platform build hands to the signing job: its installers, never a signature.
+const INSTALLERS = [
+  "PerMark-0.6.1-1.x86_64.rpm",
+  "PerMark_0.6.1_amd64.AppImage",
+  "PerMark_0.6.1_amd64.deb",
+  "PerMark_0.6.1_universal.dmg",
+  "PerMark_0.6.1_x64-setup.exe",
+  "PerMark_0.6.1_universal.app.tar.gz",
+];
+
+describe("updaterBundles", () => {
+  it("picks the installers the updater downloads, in name order: not the .dmg", () => {
+    expect(updaterBundles(INSTALLERS)).toEqual([
+      "PerMark-0.6.1-1.x86_64.rpm",
+      "PerMark_0.6.1_amd64.AppImage",
+      "PerMark_0.6.1_amd64.deb",
+      "PerMark_0.6.1_universal.app.tar.gz",
+      "PerMark_0.6.1_x64-setup.exe",
+    ]);
+  });
+
+  it("takes what one rebuilt platform made", () => {
+    expect(
+      updaterBundles(["PerMark_0.6.1_universal.dmg", "PerMark_0.6.1_universal.app.tar.gz"]),
+    ).toEqual(["PerMark_0.6.1_universal.app.tar.gz"]);
+  });
+
+  it("skips signatures, the manifest and a stray .msi", () => {
+    expect(updaterBundles([...ASSETS, "PerMark_0.6.1_x64_en-US.msi"])).toEqual(
+      updaterBundles(INSTALLERS),
+    );
+  });
+});
+
+describe("checkSigned", () => {
+  const signed = [...INSTALLERS, ...updaterBundles(INSTALLERS).map((name) => `${name}.sig`)];
+
+  function check(names: readonly string[], verify = (_bundle: string, _signature: string) => {}) {
+    return checkSigned({ names, signature: (name) => `sig of ${name}`, verify });
+  }
+
+  it("checks every updater bundle against its own signature and names them", () => {
+    const checked: string[] = [];
+    const bundles = check(signed, (bundle, signature) => checked.push(`${bundle} <- ${signature}`));
+    expect(bundles).toEqual(updaterBundles(INSTALLERS));
+    expect(checked).toEqual(bundles.map((bundle) => `${bundle} <- sig of ${bundle}.sig`));
+  });
+
+  it("refuses an updater bundle left unsigned", () => {
+    expect(() => check(signed.filter((name) => name !== "PerMark_0.6.1_amd64.deb.sig"))).toThrow(
+      /PerMark_0.6.1_amd64.deb has no signature/,
+    );
+  });
+
+  it("refuses a signature of a file the updater never downloads (it would keep the release a draft)", () => {
+    expect(() => check([...signed, "PerMark_0.6.1_universal.dmg.sig"])).toThrow(
+      /PerMark_0.6.1_universal.dmg.sig signs no updater bundle/,
+    );
+  });
+
+  it("refuses an empty signature", () => {
+    expect(() =>
+      checkSigned({
+        names: signed,
+        signature: (name) => (name.endsWith(".rpm.sig") ? "\n" : "sig"),
+        verify: () => {},
+      }),
+    ).toThrow(/PerMark-0.6.1-1.x86_64.rpm.sig is empty/);
+  });
+
+  it("refuses a run with no updater bundle at all", () => {
+    expect(() => check(["PerMark_0.6.1_universal.dmg"])).toThrow(/no updater bundle/);
+  });
+
+  it("names the installer its signature does not match", () => {
+    const verify = (bundle: string) => {
+      if (bundle.endsWith(".AppImage")) throw new Error("the signature does not match the file");
+    };
+    expect(() => check(signed, verify)).toThrow(
+      /PerMark_0.6.1_amd64.AppImage.sig: the signature does not match the file/,
+    );
+  });
+
+  it("accepts a real signature and refuses the same one over a changed file", () => {
+    const file = Buffer.from(FIXTURE_FILE);
+    const names = ["PerMark_0.6.1_amd64.deb", "PerMark_0.6.1_amd64.deb.sig"];
+    const real = (data: Buffer) =>
+      checkSigned({
+        names,
+        signature: () => FIXTURE_SIG,
+        verify: (_bundle, signature) => verifySignature(signature, data, FIXTURE_PUBKEY),
+      });
+    expect(real(file)).toEqual(["PerMark_0.6.1_amd64.deb"]);
+    expect(() => real(Buffer.from(`${FIXTURE_FILE}!`))).toThrow(/does not match the file/);
+  });
+});
+
+describe("command line", () => {
+  const script = join(import.meta.dirname, "updater-json.mjs");
+
+  function run(...args: string[]) {
+    const done = spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
+    return done.status === 0 ? { ok: true, out: done.stdout } : { ok: false, out: done.stderr };
+  }
+
+  function withFolder(files: Record<string, string>, use: (dir: string) => void) {
+    const dir = mkdtempSync(join(tmpdir(), "updater-json-"));
+    try {
+      for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+      use(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("lists the updater bundles of a folder, one per line", () => {
+    withFolder(Object.fromEntries(INSTALLERS.map((name) => [name, "x"])), (dir) => {
+      expect(run("bundles", dir)).toEqual({
+        ok: true,
+        out: `${updaterBundles(INSTALLERS).join("\n")}\n`,
+      });
+    });
+  });
+
+  it("fails the check of a bundle signed with a key the app does not trust", () => {
+    const files = {
+      "PerMark_0.6.1_amd64.deb": FIXTURE_FILE,
+      "PerMark_0.6.1_amd64.deb.sig": FIXTURE_SIG,
+    };
+    withFolder(files, (dir) => {
+      const result = run("verify", dir);
+      expect(result.ok).toBe(false);
+      expect(result.out).toMatch(
+        /amd64.deb.sig: signed with key 8E20783F38D10BF9.*E5B5D80713C61885/,
+      );
+    });
+  });
+});
+
+describe("publicKeyOf", () => {
+  it("reads the key id of the app's updater key", () => {
+    expect(publicKeyOf(APP_PUBKEY).id).toBe("E5B5D80713C61885");
+    expect(publicKeyOf(FIXTURE_PUBKEY).id).toBe("8E20783F38D10BF9");
+  });
+
+  it("refuses text that is not a public key", () => {
+    expect(() => publicKeyOf("bm90IGEga2V5")).toThrow(/not a minisign public key/);
   });
 });
 

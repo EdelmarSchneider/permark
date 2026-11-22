@@ -5,7 +5,7 @@ use crate::paths::Root;
 use crate::plugins::fake::{Fake, Log};
 use crate::plugins::{Plugin, PluginId, PluginRegistry, PluginScope};
 use crate::settings::AppSettings;
-use crate::state::AppDirs;
+use crate::state::{AppDirs, StateLocation};
 
 struct Fx {
     _base: tempfile::TempDir,
@@ -299,6 +299,31 @@ fn a_superseded_open_is_dropped_and_its_core_torn_down() {
     );
     assert_eq!(f.registry.cores().len(), 1);
     assert_eq!(core_of(&f, &view).root(), &Root::open(two.path()).unwrap());
+}
+
+#[test]
+fn a_call_for_the_project_a_view_showed_before_finds_no_project() {
+    let f = fx();
+    let one = tempfile::tempdir().unwrap();
+    let two = tempfile::tempdir().unwrap();
+    let (_, view) = tab(&f, "main", &project(one.path())).unwrap();
+    let first = f.registry.workspace_of(&view).unwrap().0;
+    let shown = f.registry.project_shown(&view, first).unwrap();
+    assert_eq!(shown.root(), &Root::open(one.path()).unwrap());
+    // another folder opens in the same view: a call still on its way for the first one reaches nothing
+    let Attached::Opened(second) = f
+        .registry
+        .attach(&view, &project(two.path()), None)
+        .unwrap()
+    else {
+        panic!("a new workspace");
+    };
+    assert_ne!(first, second);
+    assert!(f.registry.project_shown(&view, first).is_none());
+    let shown = f.registry.project_shown(&view, second).unwrap();
+    assert_eq!(shown.root(), &Root::open(two.path()).unwrap());
+    // a view that shows no project, or no such view
+    assert!(f.registry.project_shown("nowhere", second).is_none());
 }
 
 #[test]
@@ -1476,6 +1501,31 @@ fn the_last_window_on_screen_counts_shown_windows_only() {
     );
 }
 
+/// Outside opens go to a window on screen before one still being made (hidden until its first view paints), however
+/// recently made or focused; with none on screen, to the one being made (it shows once its view paints).
+#[test]
+fn outside_opens_go_to_a_window_on_screen_first() {
+    let f = fx();
+    assert_eq!(
+        f.registry.last_focused_work().as_deref(),
+        Some("w-1"),
+        "none on screen: the newest"
+    );
+    f.registry.window_shown("main");
+    assert!(f.registry.is_window_shown("main"));
+    assert!(!f.registry.is_window_shown("w-1"));
+    assert!(!f.registry.is_window_shown("gone"));
+    assert_eq!(f.registry.last_focused_work().as_deref(), Some("main"));
+    f.registry.focused("w-1", 50);
+    assert_eq!(
+        f.registry.last_focused_work().as_deref(),
+        Some("main"),
+        "a hidden window focused later still waits"
+    );
+    f.registry.window_shown("w-1");
+    assert_eq!(f.registry.last_focused_work().as_deref(), Some("w-1"));
+}
+
 // ---- live reload of the project state (PerMark initialized while the project is open) ---------------------------------
 
 fn open_project(f: &Fx, dir: &Path) -> (Arc<ProjectCore>, String) {
@@ -1516,6 +1566,219 @@ fn initializing_an_open_project_moves_its_state_and_restarts_its_plugins() {
         } => assert_eq!(state_location, StateLocation::Project),
         other => panic!("{other:?}"),
     }
+}
+
+/// A project plugin that writes what it holds into its own folder when it stops (a final flush).
+struct Flushing(crate::plugins::Manifest);
+
+struct Flushed(std::path::PathBuf);
+
+impl crate::plugins::Running for Flushed {}
+
+impl Drop for Flushed {
+    fn drop(&mut self) {
+        let _ = std::fs::create_dir_all(&self.0);
+        let _ = std::fs::write(self.0.join("flushed.json"), b"{}");
+    }
+}
+
+impl Plugin for Flushing {
+    fn manifest(&self) -> &crate::plugins::Manifest {
+        &self.0
+    }
+
+    fn start(
+        &self,
+        cx: &crate::plugins::PluginCx,
+    ) -> Result<Box<dyn crate::plugins::Running>, crate::plugins::PluginError> {
+        Ok(Box::new(Flushed(cx.state_dir.clone())))
+    }
+}
+
+/// The plugins stop before the person's data is copied into `.permark/local/`: what they write last is copied with
+/// the rest, and they start again on the new place.
+#[test]
+fn initializing_an_open_project_stops_its_plugins_before_the_copy() {
+    let flushing = Flushing(crate::plugins::Manifest {
+        id: PluginId::of("flush"),
+        kind: crate::plugins::PluginKind::Feature,
+        scope: PluginScope::Project,
+        requires: crate::conditions::Requirement::NONE,
+        depends_on: std::borrow::Cow::Borrowed(&[]),
+        default_enabled: true,
+    });
+    let f = fx_with(vec![Arc::new(flushing)], Log::default());
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _) = open_project(&f, dir.path());
+    let flushed = |store: &crate::state::StateStore| {
+        store
+            .plugin_dir(&PluginId::of("flush"))
+            .join("flushed.json")
+    };
+    let before = core.store();
+    assert!(!flushed(&before).exists());
+    f.registry.init_project(core.root()).unwrap();
+    let after = core.store();
+    assert_eq!(after.location(), StateLocation::Project);
+    assert!(flushed(&after).is_file(), "the last write was copied");
+    // plugins keeping state per owner start again on the new place too
+    let owners = core.projects().owners();
+    assert_eq!(owners.root().store.location(), StateLocation::Project);
+    assert_eq!(owners.root().store.dir(), after.dir());
+}
+
+/// Initialize of a project included in an open folder: that folder's owner followers hold their writes while the
+/// project's data is copied, then go on with the project's new place.
+#[test]
+fn initializing_an_included_project_holds_its_writes_around_the_copy() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("sub").join(".git")).unwrap();
+    std::fs::create_dir_all(root.join(".permark")).unwrap();
+    std::fs::write(
+        root.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"sub\"\n",
+    )
+    .unwrap();
+    let (core, _) = open_project(&f, root);
+    let projects = Arc::clone(core.projects());
+    let start = std::time::Instant::now();
+    while projects.owners().slots().len() != 2 {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(15),
+            "owners"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let member = |owners: &crate::projects::Owners| owners.slots()[1].store.location();
+    assert_eq!(member(&projects.owners()), StateLocation::Profile);
+    let heard: Arc<Mutex<Vec<String>>> = Arc::default();
+    let _follow = projects.follow_owners({
+        let heard = Arc::clone(&heard);
+        move |change| {
+            let word = match change {
+                crate::projects::OwnersChange::Pause => "pause".to_owned(),
+                crate::projects::OwnersChange::Resume(owners) => {
+                    format!("resume:{:?}", member(owners))
+                }
+            };
+            heard.lock().unwrap().push(word);
+        }
+    });
+    let sub = Root::open(&root.join("sub")).unwrap();
+    f.registry.init_project(&sub).unwrap();
+    let heard = heard.lock().unwrap().clone();
+    assert!(
+        heard.starts_with(&["pause".to_owned(), "resume:Project".to_owned()]),
+        "{heard:?}"
+    );
+    assert_eq!(member(&projects.owners()), StateLocation::Project);
+}
+
+/// The window's `permark` condition tells whether the folder has a team folder (`.permark/` a real folder), as the
+/// folder's state was read (at open, after Initialize | a reload): also while the private state stays in the profile
+/// (here `local/` is a file); a `.permark/` that arrives while the project is open counts from the next read, and a
+/// file in its place is none. Building a context never looks at the disk.
+#[test]
+fn the_permark_condition_follows_the_team_folder_as_last_read() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let permark = dir.path().join(".permark");
+    let (core, view) = open_project(&f, dir.path());
+    let condition = || f.registry.context_of(&view).unwrap().permark;
+    assert_eq!(condition(), PermarkCondition::NotInitialized);
+    std::fs::write(&permark, "x").unwrap();
+    core.reload_state(f.registry.env());
+    assert_eq!(condition(), PermarkCondition::NotInitialized);
+    std::fs::remove_file(&permark).unwrap();
+    std::fs::create_dir(&permark).unwrap();
+    std::fs::write(permark.join("local"), "x").unwrap();
+    assert_eq!(
+        condition(),
+        PermarkCondition::NotInitialized,
+        "not read yet"
+    );
+    core.reload_state(f.registry.env());
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    assert_eq!(condition(), PermarkCondition::Initialized);
+}
+
+/// The offer about the place of the data is worked out when the folder opens (and when its state is read again | the
+/// person keeps the data); the window's view carries it, and building a view never looks at the folder again. Keep:
+/// Move alone is left, the place and the plugins unchanged. Move: nothing left to offer, the data in the project.
+#[test]
+fn the_view_carries_the_data_offer_worked_out_when_the_folder_opens() {
+    use crate::state::location::DataOffer;
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let env = f.registry.env().clone();
+    // the person's data in the profile at the first open; a team folder arrives later (a pull)
+    let first = crate::state::location::settle(&env.dirs, &Root::open(dir.path()).unwrap());
+    std::fs::create_dir_all(first.dir()).unwrap();
+    std::fs::write(first.dir().join("session.json"), b"{}").unwrap();
+    let permark = dir.path().join(".permark");
+    std::fs::create_dir(&permark).unwrap();
+    std::fs::write(permark.join("config.toml"), b"# team\n").unwrap();
+    let (core, view) = open_project(&f, dir.path());
+    let offer = || match f.registry.window_view(&view).unwrap() {
+        WindowView::Showing {
+            workspace: WorkspaceView::Project { data_offer, .. },
+            ..
+        } => data_offer,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(offer(), DataOffer::Ask);
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    assert_eq!(
+        f.registry.context_of(&view).unwrap().permark,
+        PermarkCondition::Initialized
+    );
+    // data arriving in `local/` meanwhile is seen at the next read, not by a view built again
+    std::fs::create_dir(permark.join("local")).unwrap();
+    std::fs::write(permark.join("local").join("comments.json"), b"{}").unwrap();
+    f.registry.refresh();
+    assert_eq!(offer(), DataOffer::Ask);
+    std::fs::remove_dir_all(permark.join("local")).unwrap();
+
+    f.registry.keep_data(core.root()).unwrap();
+    assert_eq!(offer(), DataOffer::Movable);
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    assert!(take(&f.log).is_empty(), "the plugins go on as they were");
+    let names: Vec<String> = f.sink.take().iter().map(|e| e.name().to_owned()).collect();
+    assert!(names.contains(&"window-changed".to_owned()), "{names:?}");
+
+    f.registry.init_project(core.root()).unwrap();
+    assert_eq!(offer(), DataOffer::None);
+    assert_eq!(core.state_location(), StateLocation::Project);
+    assert!(core.store().dir().join("session.json").is_file());
+}
+
+/// Keep of a folder whose data is in the project (open in a window, or closed) is refused as a conflict and writes
+/// nothing: the folder's row stays byte for byte.
+#[test]
+fn keep_of_a_folder_whose_data_is_in_the_project_is_refused() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, &root).unwrap();
+    let row = env
+        .dirs
+        .profile
+        .join("projects")
+        .join(crate::state::ProjectId::of(&root).as_str())
+        .join(crate::state::location::FILE);
+    let bytes = std::fs::read(&row).unwrap();
+    let refused = |result: Result<(), IpcError>| {
+        assert_eq!(result.map_err(|e| e.kind), Err(crate::ErrorKind::Conflict));
+        assert_eq!(std::fs::read(&row).unwrap(), bytes);
+    };
+    refused(f.registry.keep_data(&root));
+    let (core, _) = open_project(&f, dir.path());
+    assert_eq!(core.state_location(), StateLocation::Project);
+    refused(f.registry.keep_data(core.root()));
+    assert_eq!(core.state_location(), StateLocation::Project);
 }
 
 #[test]
@@ -1657,6 +1920,43 @@ fn the_ignore_patterns_apply_at_once_and_back() {
     assert!(shown(&core).contains(&"draft.md".to_owned()));
 }
 
+/// The sharing choice rewrites `.permark/.gitignore`, and the tree takes its rules at once (what git skips is listed
+/// as ignored), without waiting for the watcher; back to shared, the team files are listed again.
+#[test]
+fn the_sharing_choice_reaches_the_tree_at_once() {
+    use crate::state::Sharing;
+    use crate::tree::{FilterShow, TreeFilter};
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.md"), "# a\n").unwrap();
+    let (core, _) = open_project(&f, dir.path());
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, core.root()).unwrap();
+    core.reload_state(&env);
+    let shown = |core: &ProjectCore| -> Vec<String> {
+        let snapshot = core.explorer().open_view(
+            "main",
+            Some(TreeFilter {
+                show: FilterShow::Everything,
+                show_hidden: true,
+                ..TreeFilter::default()
+            }),
+        );
+        snapshot.nodes.iter().map(|n| n.path.clone()).collect()
+    };
+    let team = ".permark/config.toml".to_owned();
+    assert!(shown(&core).contains(&team), "{:?}", shown(&core));
+    assert_eq!(
+        core.set_sharing(Sharing::Private).unwrap(),
+        Sharing::Private
+    );
+    let private = shown(&core);
+    assert!(!private.contains(&team), "{private:?}");
+    assert!(private.contains(&"a.md".to_owned()));
+    assert_eq!(core.set_sharing(Sharing::Shared).unwrap(), Sharing::Shared);
+    assert!(shown(&core).contains(&team));
+}
+
 #[test]
 fn a_per_project_choice_stops_and_starts_the_plugin_and_is_kept_in_the_profile() {
     let f = fx();
@@ -1752,7 +2052,687 @@ fn off_for_everyone_stops_the_plugin_at_once_and_back_on_starts_it() {
         crate::state::DEFAULT_CONFIG_TOML
     );
 }
-// ---- move to window: adversarial (verifier) ---------------------------------------------------------------------
+
+// ---- the team file changed on disk while the folder is open --------------------------------------------------------
+
+/// A folder with `a.md` and `drafts/d.md`, open and initialized (its team file holds the commented defaults).
+fn open_team_folder(f: &Fx, dir: &Path) -> (Arc<ProjectCore>, Arc<CoreEnv>) {
+    std::fs::write(dir.join("a.md"), "# a\n").unwrap();
+    std::fs::create_dir(dir.join("drafts")).unwrap();
+    std::fs::write(dir.join("drafts/d.md"), "# d\n").unwrap();
+    let (core, _) = open_project(f, dir);
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, core.root()).unwrap();
+    core.reload_state(&env);
+    take(&f.log);
+    f.sink.take();
+    (core, env)
+}
+
+/// The team file as someone else leaves it: a git pull, a hand edit, the config sheet. Replaced whole: the OS watch
+/// also reports each write, and a read of its own must never meet a half-written file.
+fn write_team_file(dir: &Path, text: &str) {
+    crate::fsx::write_atomic(&dir.join(".permark/config.toml"), text.as_bytes()).unwrap();
+}
+
+/// What the OS watch reports for a change of the team file, without waiting for it.
+fn team_file_report() -> crate::watch::FsBatch {
+    crate::watch::FsBatch {
+        changes: vec![crate::watch::Change {
+            path: ".permark/config.toml".to_owned(),
+            kind: crate::watch::ChangeKind::Modified,
+            is_dir: false,
+            own: false,
+        }],
+        ..crate::watch::FsBatch::default()
+    }
+}
+
+/// What the Explorer lists at the top for a window that shows everything.
+fn listed(core: &ProjectCore) -> Vec<String> {
+    let snapshot = core.explorer().open_view(
+        "main",
+        Some(crate::tree::TreeFilter {
+            show: crate::tree::FilterShow::Everything,
+            ..crate::tree::TreeFilter::default()
+        }),
+    );
+    snapshot.nodes.iter().map(|n| n.path.clone()).collect()
+}
+
+#[test]
+fn a_team_file_changed_outside_applies_while_the_folder_is_open() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, env) = open_team_folder(&f, dir.path());
+    assert!(listed(&core).contains(&"drafts".to_owned()));
+    write_team_file(dir.path(), "ignore = [\"drafts/\"]\n");
+    core.hub().publish(&team_file_report());
+    let start = std::time::Instant::now();
+    while core.config().ignore.is_empty() || listed(&core).contains(&"drafts".to_owned()) {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(15),
+            "the new ignore list never applied: {:?}",
+            core.config().ignore
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    assert_eq!(core.config().ignore, ["drafts/"]);
+    assert!(listed(&core).contains(&"a.md".to_owned()));
+    // the folder page hears of it (the follower tells once it is done)
+    let start = std::time::Instant::now();
+    while config_news(&f.sink) == 0 {
+        assert!(start.elapsed() < std::time::Duration::from_secs(15));
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    // the file gone: the defaults, as at an open
+    std::fs::remove_file(dir.path().join(".permark/config.toml")).unwrap();
+    core.reread_config(&env);
+    assert_eq!(core.config().ignore, Vec::<String>::new());
+    assert!(listed(&core).contains(&"drafts".to_owned()));
+}
+
+/// The team file edited outside while git sharing is private (git ignores everything in `.permark`) or while the root
+/// `.gitignore` names `.permark/`: the watch still reports it, so the change applies without a reopen. The tree keeps
+/// leaving it out.
+#[test]
+fn a_team_file_changed_outside_applies_whatever_the_ignore_rules_say() {
+    use crate::state::Sharing;
+    let team = ".permark/config.toml".to_owned();
+    for private in [true, false] {
+        let f = fx();
+        let dir = tempfile::tempdir().unwrap();
+        let (core, _env) = open_team_folder(&f, dir.path());
+        if private {
+            assert_eq!(
+                core.set_sharing(Sharing::Private).unwrap(),
+                Sharing::Private
+            );
+        } else {
+            std::fs::write(dir.path().join(".gitignore"), ".permark/\n").unwrap();
+        }
+        let shown = || -> Vec<String> {
+            let snapshot = core.explorer().open_view(
+                "main",
+                Some(crate::tree::TreeFilter {
+                    show: crate::tree::FilterShow::Everything,
+                    show_hidden: true,
+                    ..crate::tree::TreeFilter::default()
+                }),
+            );
+            snapshot.nodes.iter().map(|n| n.path.clone()).collect()
+        };
+        let start = std::time::Instant::now();
+        while shown().contains(&team) {
+            assert!(start.elapsed() < std::time::Duration::from_secs(15));
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        // the watch's own reports of the rule change pass first: only the edit below may wake the follower
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        write_team_file(dir.path(), "ignore = [\"drafts/\"]\n");
+        let start = std::time::Instant::now();
+        while core.config().ignore.is_empty() {
+            assert!(
+                start.elapsed() < std::time::Duration::from_secs(15),
+                "the edit never applied (private: {private})"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        assert_eq!(core.config().ignore, ["drafts/"]);
+        assert!(!shown().contains(&team), "private: {private}");
+    }
+}
+
+/// How many times the windows were told the folder's shared settings changed (since the last look).
+fn config_news(sink: &Recorder) -> usize {
+    sink.take()
+        .iter()
+        .filter(|e| matches!(e, CoreEvent::ProjectConfigChanged(_)))
+        .count()
+}
+
+/// Rebuild requests the hub hears while `act` runs (a changed config reads the folder again).
+fn rescans_during(core: &ProjectCore, act: impl FnOnce()) -> usize {
+    let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let _sub = core.hub().subscribe({
+        let count = Arc::clone(&count);
+        move |batch| {
+            if batch.rescan {
+                count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+    });
+    act();
+    count.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+#[test]
+fn the_apps_own_write_and_the_same_bytes_again_do_no_work() {
+    use crate::settings::ProjectSettingChange;
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, env) = open_team_folder(&f, dir.path());
+    let written = rescans_during(&core, || {
+        core.change_config(
+            &env,
+            &ProjectSettingChange::Ignore(vec!["drafts/".to_owned()]),
+        )
+        .unwrap();
+    });
+    assert_eq!(written, 1, "a change read the folder again once");
+    assert_eq!(config_news(&f.sink), 1);
+    // the watch reports the app's own write: read, found as it applied, nothing else
+    let file = dir.path().join(".permark/config.toml");
+    let own = rescans_during(&core, || core.reread_config(&env));
+    assert_eq!(own, 0);
+    assert_eq!(config_news(&f.sink), 0);
+    // the same bytes written again, then only a comment more: what they say applied already
+    let text = std::fs::read_to_string(&file).unwrap();
+    let again = rescans_during(&core, || {
+        write_team_file(dir.path(), &text);
+        core.reread_config(&env);
+        write_team_file(dir.path(), &format!("{text}# note\n"));
+        core.reread_config(&env);
+    });
+    assert_eq!(again, 0);
+    assert_eq!(config_news(&f.sink), 0);
+    assert_eq!(take(&f.log), Vec::<String>::new());
+    assert_eq!(core.config().ignore, ["drafts/"]);
+}
+
+#[test]
+fn a_team_file_broken_outside_keeps_what_applied_and_says_where() {
+    use crate::settings::ProjectSettingChange;
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, env) = open_team_folder(&f, dir.path());
+    core.change_config(
+        &env,
+        &ProjectSettingChange::Ignore(vec!["drafts/".to_owned()]),
+    )
+    .unwrap();
+    f.sink.take();
+    // a merge left in it: what the team narrowed stays, the page learns where the file stops being TOML
+    write_team_file(dir.path(), "ignore = []\n<<<<<<< HEAD\n");
+    let broken = rescans_during(&core, || core.reread_config(&env));
+    let config = core.config();
+    assert_eq!(config.ignore, ["drafts/"]);
+    assert_eq!(config.unreadable_line, Some(2));
+    assert_eq!(broken, 0, "the rules stayed: the folder is not read again");
+    assert_eq!(config_news(&f.sink), 1);
+    assert!(!listed(&core).contains(&"drafts".to_owned()));
+    // a setting is refused while it is broken, and the same broken bytes again are no news
+    assert!(core
+        .change_config(&env, &ProjectSettingChange::Ignore(Vec::new()))
+        .is_err());
+    core.reread_config(&env);
+    assert_eq!(config_news(&f.sink), 0);
+    // fixed: what it says applies and the line goes
+    write_team_file(dir.path(), "ignore = []\n");
+    core.reread_config(&env);
+    assert_eq!(core.config().unreadable_line, None);
+    assert_eq!(core.config().ignore, Vec::<String>::new());
+    assert!(listed(&core).contains(&"drafts".to_owned()));
+}
+
+#[test]
+fn a_plugin_turned_off_in_the_team_file_outside_stops_and_the_file_never_turns_one_on() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, env) = open_team_folder(&f, dir.path());
+    let git = PluginId::of("git");
+    write_team_file(dir.path(), "[plugins.git]\nenabled = false\n");
+    core.reread_config(&env);
+    assert_eq!(take(&f.log), ["stop:unread", "stop:git"]);
+    assert!(!core.plugins_on().contains(&git));
+    assert!(f
+        .sink
+        .take()
+        .iter()
+        .any(|e| matches!(e, CoreEvent::PluginsChanged)));
+    // the person turned it off here: the team file saying `enabled = true` changes nothing
+    core.set_plugin_choice(&env, &git, Some(false)).unwrap();
+    write_team_file(dir.path(), "[plugins.git]\nenabled = true\n");
+    core.reread_config(&env);
+    assert!(!core.plugins_on().contains(&git));
+    assert_eq!(take(&f.log), Vec::<String>::new());
+    // back to the app's choice: on again
+    core.set_plugin_choice(&env, &git, None).unwrap();
+    assert_eq!(take(&f.log), ["start:git", "start:unread"]);
+}
+
+/// A read of the team file that brings the plugins along while the person turns a plugin off: the read works out
+/// which plugins are on with the settings of the moment it applies them, so it never starts the plugin again.
+#[test]
+fn a_team_file_read_never_starts_a_plugin_the_person_turned_off_meanwhile() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, env) = open_team_folder(&f, dir.path());
+    let git = PluginId::of("git");
+    write_team_file(dir.path(), "[plugins.unread]\nenabled = false\n");
+    let plugins = core.hold_plugins();
+    let reader = std::thread::spawn({
+        let (core, env) = (Arc::clone(&core), Arc::clone(&env));
+        move || core.reread_config(&env)
+    });
+    // the read is under way, waiting for the plugins, when the setting changes
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let mut settings = env.settings();
+    settings.plugins.insert(git.clone(), false);
+    env.set_settings(settings);
+    drop(plugins);
+    reader.join().unwrap();
+    assert!(core.config().plugins_off.contains(&PluginId::of("unread")));
+    assert!(
+        !core.running_plugins().contains(&git),
+        "{:?}",
+        core.running_plugins()
+    );
+}
+
+/// A change of the team file landing after the open read it but before the follower listens applies when the
+/// follower starts, not only at the next report of the file.
+#[test]
+fn a_team_file_change_between_the_open_and_the_follower_applies_at_once() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("drafts")).unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, &root).unwrap();
+    let core = ProjectCore::open(root, &env);
+    write_team_file(dir.path(), "ignore = [\"drafts/\"]\n");
+    core.follow_config(&env);
+    assert_eq!(core.config().ignore, ["drafts/"]);
+}
+
+/// Many reports of the team file while a read waits for its turn are served by that one read: one waiting read sees
+/// every change reported before it starts. The OS watch may still report the folder's own setup once more afterwards.
+#[test]
+fn a_burst_of_team_file_reports_is_read_once() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _env) = open_team_folder(&f, dir.path());
+    let before = {
+        let _turn = core.hold_config_turn();
+        let before = core.config_reads();
+        for _ in 0..50 {
+            core.hub().publish(&team_file_report());
+        }
+        before
+    };
+    let start = std::time::Instant::now();
+    while core.config_reads() == before {
+        assert!(start.elapsed() < std::time::Duration::from_secs(15));
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let reads = core.config_reads() - before;
+    assert!((1..=2).contains(&reads), "{reads} reads for 50 reports");
+}
+
+/// The team file replaced by a link to a file outside the folder while it is open: the read never goes through it,
+/// so what applied stays.
+#[test]
+fn a_team_file_turned_into_a_link_while_open_changes_nothing() {
+    use crate::settings::ProjectSettingChange;
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, env) = open_team_folder(&f, dir.path());
+    core.change_config(
+        &env,
+        &ProjectSettingChange::Ignore(vec!["drafts/".to_owned()]),
+    )
+    .unwrap();
+    take(&f.log);
+    let other = tempfile::tempdir().unwrap();
+    let outside = other.path().join("outside.toml");
+    std::fs::write(&outside, "ignore = []\n[plugins.git]\nenabled = false\n").unwrap();
+    // swapped in whole: no moment without a file
+    let link = dir.path().join(".permark/link.toml");
+    if !crate::fsx::tests::file_link(&link, &outside) {
+        eprintln!("skipped: no file links here");
+        return;
+    }
+    std::fs::rename(&link, dir.path().join(".permark/config.toml")).unwrap();
+    core.reread_config(&env);
+    assert_eq!(core.config().ignore, ["drafts/"]);
+    assert!(core.plugins_on().contains(&PluginId::of("git")));
+    assert_eq!(take(&f.log), Vec::<String>::new());
+}
+
+// ---- the config turn: plugin changes, Initialize, the team folder coming and going ------------------------------------
+
+/// Waits (at most 15 s) until `ok` holds.
+fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
+    let start = std::time::Instant::now();
+    while !ok() {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(15),
+            "timed out: {what}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+}
+
+/// An initialized folder open without a follower of its team file: only the test's own reads apply it.
+fn open_unfollowed(f: &Fx, dir: &Path) -> (Arc<ProjectCore>, Arc<CoreEnv>) {
+    let root = Root::open(dir).unwrap();
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, &root).unwrap();
+    let core = ProjectCore::open(root, &env);
+    write_team_file(dir, "ignore = [\"drafts/\"]\n");
+    core.reread_config(&env);
+    assert_eq!(core.config().ignore, ["drafts/"]);
+    take(&f.log);
+    f.sink.take();
+    (core, env)
+}
+
+/// A plugin change (the person's choice here, a setting of the app, a restart) waits while the config turn is held (an
+/// Initialize copying the data, a read of the team file): a plugin started meanwhile would write into the place the
+/// data is leaving.
+#[test]
+fn plugin_changes_wait_for_the_config_turn() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _) = open_project(&f, dir.path());
+    let env = f.registry.env().clone();
+    let git = PluginId::of("git");
+    let turn = core.hold_config_turn();
+    let changes = [
+        std::thread::spawn({
+            let (core, env, git) = (Arc::clone(&core), Arc::clone(&env), git.clone());
+            move || core.set_plugin_choice(&env, &git, Some(false)).unwrap()
+        }),
+        std::thread::spawn({
+            let (core, env) = (Arc::clone(&core), Arc::clone(&env));
+            move || core.apply_plugins(&env)
+        }),
+        std::thread::spawn({
+            let (core, env) = (Arc::clone(&core), Arc::clone(&env));
+            move || core.restart_plugin(&env, &PluginId::of("unread"))
+        }),
+    ];
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(take(&f.log), Vec::<String>::new(), "nothing moved yet");
+    assert_eq!(core.running_plugins().len(), 2);
+    drop(turn);
+    for change in changes {
+        change.join().unwrap();
+    }
+    assert!(!core.running_plugins().contains(&git));
+    assert!(take(&f.log).contains(&"stop:git".to_owned()));
+}
+
+/// An include in a folder that is itself a project of another open folder initializes it first: the other folder's
+/// owner followers hold their writes around the copy of the data, as for an Initialize from the settings.
+#[test]
+fn an_include_that_initializes_an_included_project_holds_the_other_folders_writes() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("sub/.git")).unwrap();
+    std::fs::create_dir_all(root.join("sub/child/.git")).unwrap();
+    std::fs::create_dir_all(root.join(".permark")).unwrap();
+    std::fs::write(
+        root.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"sub\"\n",
+    )
+    .unwrap();
+    let (outer, _) = open_project(&f, root);
+    let projects = Arc::clone(outer.projects());
+    wait_for("owners", || projects.owners().slots().len() == 2);
+    let member = |owners: &crate::projects::Owners| owners.slots()[1].store.location();
+    assert_eq!(member(&projects.owners()), StateLocation::Profile);
+    let heard: Arc<Mutex<Vec<String>>> = Arc::default();
+    let _follow = projects.follow_owners({
+        let heard = Arc::clone(&heard);
+        move |change| {
+            let word = match change {
+                crate::projects::OwnersChange::Pause => "pause".to_owned(),
+                crate::projects::OwnersChange::Resume(owners) => {
+                    format!("resume:{:?}", member(owners))
+                }
+            };
+            heard.lock().unwrap().push(word);
+        }
+    });
+    let (_, view) = tab(&f, "w-1", &project(&root.join("sub"))).unwrap();
+    let sub = core_of(&f, &view);
+    wait_for("child offered", || {
+        let view = sub.projects_view();
+        view.ready && view.offered.count == 1
+    });
+    // as the app's include command calls it
+    let (outcome, initialized) = sub
+        .projects_include(&crate::projects::ProjectPick::All, &|| {
+            f.registry.init_project(sub.root())
+        })
+        .unwrap();
+    assert!(initialized);
+    assert_eq!(outcome.included, 1);
+    assert_eq!(sub.state_location(), StateLocation::Project);
+    let heard = heard.lock().unwrap().clone();
+    assert!(
+        heard.starts_with(&["pause".to_owned(), "resume:Project".to_owned()]),
+        "{heard:?}"
+    );
+}
+
+/// A file operation that ends while PerMark is being initialized in the folder stays undoable: the copy of the data
+/// waits for the journal, so the entry is copied with the rest or written in the new place, never in the one left.
+#[test]
+fn a_file_operation_during_initialize_stays_undoable_in_the_new_place() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _) = open_project(&f, dir.path());
+    let env = f.registry.env().clone();
+    assert_eq!(core.fileops().undo_depth(), 0);
+    let journal = core.fileops().hold_journal();
+    let init = std::thread::spawn({
+        let (core, env) = (Arc::clone(&core), Arc::clone(&env));
+        move || core.initialize(&env)
+    });
+    let op = std::thread::spawn({
+        let core = Arc::clone(&core);
+        move || {
+            core.fileops()
+                .create("", "made.md", crate::fileops::NewKind::File)
+        }
+    });
+    wait_for("both under way", || {
+        core.running_plugins().is_empty() && dir.path().join("made.md").is_file()
+    });
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(
+        !dir.path().join(".permark").exists(),
+        "the copy waits for the journal"
+    );
+    drop(journal);
+    init.join().unwrap().unwrap();
+    assert_eq!(op.join().unwrap().unwrap(), "made.md");
+    assert_eq!(core.state_location(), StateLocation::Project);
+    assert_eq!(core.fileops().undo_depth(), 1);
+}
+
+/// A `.permark/` arriving while the folder is open (a checkout, a copy) counts at the next read of the team file: the
+/// state is read again (the data stays where the folder's row says), the offer is worked out again, the window hears
+/// the folder has a team folder and what its file says. It going away again turns all of it back.
+#[test]
+fn a_team_folder_arriving_or_leaving_while_open_is_taken_at_the_next_read() {
+    use crate::state::location::DataOffer;
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let env = f.registry.env().clone();
+    let first = crate::state::location::settle(&env.dirs, &Root::open(dir.path()).unwrap());
+    std::fs::create_dir_all(first.dir()).unwrap();
+    std::fs::write(first.dir().join("session.json"), b"{}").unwrap();
+    let (core, view) = open_project(&f, dir.path());
+    let condition = || f.registry.context_of(&view).unwrap().permark;
+    assert!(!core.has_team_folder());
+    assert_eq!(core.data_offer(), DataOffer::None);
+    assert_eq!(condition(), PermarkCondition::NotInitialized);
+
+    let permark = dir.path().join(".permark");
+    std::fs::create_dir(&permark).unwrap();
+    std::fs::write(permark.join("config.toml"), "ignore = [\"drafts/\"]\n").unwrap();
+    core.reread_config(&env);
+    assert!(core.has_team_folder());
+    assert_eq!(core.data_offer(), DataOffer::Ask);
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    assert_eq!(condition(), PermarkCondition::Initialized);
+    assert_eq!(core.config().ignore, ["drafts/"]);
+    assert!(config_news(&f.sink) >= 1);
+
+    std::fs::remove_dir_all(&permark).unwrap();
+    core.reread_config(&env);
+    assert!(!core.has_team_folder());
+    assert_eq!(core.data_offer(), DataOffer::None);
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    assert_eq!(condition(), PermarkCondition::NotInitialized);
+    assert_eq!(core.config().ignore, Vec::<String>::new());
+}
+
+/// `.permark/` swapped for a link to a folder outside while open: no team folder came or went, and nothing is read
+/// through the link, so the config and the plugins stay.
+#[test]
+fn a_team_folder_turned_into_a_link_while_open_changes_nothing() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, env) = open_unfollowed(&f, dir.path());
+    let other = tempfile::tempdir().unwrap();
+    std::fs::write(
+        other.path().join("config.toml"),
+        "ignore = []\n[plugins.git]\nenabled = false\n",
+    )
+    .unwrap();
+    let link = dir.path().join("swap");
+    if !crate::tree::tests::link_out(&link, other.path()) {
+        eprintln!("skipped: no folder links here");
+        return;
+    }
+    let permark = dir.path().join(".permark");
+    std::fs::rename(&permark, dir.path().join("old")).unwrap();
+    std::fs::rename(&link, &permark).unwrap();
+    core.reread_config(&env);
+    assert_eq!(core.config().ignore, ["drafts/"]);
+    assert!(core.has_team_folder(), "as last read");
+    assert!(core.plugins_on().contains(&PluginId::of("git")));
+    assert_eq!(take(&f.log), Vec::<String>::new());
+}
+
+/// A team file grown past the size cap, or holding bytes that are not UTF-8: it cannot be read now, so what applied
+/// stays; the windows hear why (their settings page says it), and a fixed file takes the reason away.
+#[test]
+fn a_team_file_too_large_or_not_text_keeps_what_applied_and_says_why() {
+    use crate::settings::ConfigUnreadableWhy;
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, env) = open_unfollowed(&f, dir.path());
+    let file = dir.path().join(".permark/config.toml");
+    let mut large = b"ignore = []\n".to_vec();
+    large.resize(
+        usize::try_from(crate::settings::MAX_SETTINGS_BYTES).unwrap() + 1,
+        b'\n',
+    );
+    let latin1 = b"ignore = []\n# caf\xe9\n".to_vec();
+    for (bytes, why) in [
+        (large, ConfigUnreadableWhy::TooLarge),
+        (latin1, ConfigUnreadableWhy::NotText),
+    ] {
+        crate::fsx::write_atomic(&file, &bytes).unwrap();
+        core.reread_config(&env);
+        assert_eq!(core.config().ignore, ["drafts/"]);
+        assert_eq!(core.config().unreadable_line, None);
+        assert_eq!(core.config().unreadable_why, Some(why));
+        assert_eq!(config_news(&f.sink), 1, "{why:?}");
+        assert_eq!(take(&f.log), Vec::<String>::new());
+        // the same unreadable file again is no news
+        core.reread_config(&env);
+        assert_eq!(config_news(&f.sink), 0, "{why:?}");
+    }
+    // fixed: what it says applies and the reason goes
+    write_team_file(dir.path(), "ignore = []\n");
+    core.reread_config(&env);
+    assert_eq!(core.config().unreadable_why, None);
+    assert_eq!(core.config().ignore, Vec::<String>::new());
+    assert_eq!(config_news(&f.sink), 1);
+}
+
+/// A repository reader that answers every question about the index the same way, and keeps what it was asked.
+struct Index {
+    answer: Result<bool, crate::plugins::NoTracking>,
+    asked: std::sync::Mutex<Vec<String>>,
+}
+
+impl crate::plugins::RepoReader for Index {
+    fn blob_at_head(&self, _path: &str) -> Option<Vec<u8>> {
+        None
+    }
+    fn tracked_under(&self, path: &str) -> Result<bool, crate::plugins::NoTracking> {
+        self.asked.lock().unwrap().push(path.to_owned());
+        self.answer
+    }
+}
+
+/// Whether git counts the folder's private state folder as tracked, for the settings page: asked of the repository
+/// reader the git plugin offers to the project; none offered (git off) is not tracked.
+#[test]
+fn the_folder_says_whether_git_tracks_its_private_folder() {
+    use crate::plugins::{NoTracking, RepoHandle};
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _env) = open_unfollowed(&f, dir.path());
+    assert_eq!(core.state_location(), StateLocation::Project);
+    assert!(!core.private_tracked(), "no reader: git is off");
+    for (answer, tracked) in [
+        (Ok(true), true),
+        (Err(NoTracking::Failed), true),
+        (Ok(false), false),
+        (Err(NoTracking::NoRepository), false),
+    ] {
+        let index = Arc::new(Index {
+            answer,
+            asked: std::sync::Mutex::new(Vec::new()),
+        });
+        let _lease = core
+            .services()
+            .services
+            .provide(Arc::new(RepoHandle(Arc::clone(&index) as _)));
+        assert_eq!(core.private_tracked(), tracked, "{answer:?}");
+        assert_eq!(*index.asked.lock().unwrap(), [".permark/local"]);
+    }
+}
+
+/// The team file rewritten while an Initialize waits for the config turn: the Initialize reads it after the copy, so
+/// what applies afterwards is what the file holds.
+#[test]
+fn a_team_file_rewritten_while_initialize_waits_applies_what_is_on_disk() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    let env = f.registry.env().clone();
+    // the data in the profile, a team folder already there: Initialize moves the data
+    let first = crate::state::location::settle(&env.dirs, &root);
+    std::fs::create_dir_all(first.dir()).unwrap();
+    std::fs::write(first.dir().join("session.json"), b"{}").unwrap();
+    std::fs::create_dir(dir.path().join(".permark")).unwrap();
+    write_team_file(dir.path(), "# team\n");
+    let core = ProjectCore::open(root, &env);
+    let turn = core.hold_config_turn();
+    let init = std::thread::spawn({
+        let (core, env) = (Arc::clone(&core), Arc::clone(&env));
+        move || core.initialize(&env)
+    });
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    write_team_file(dir.path(), "ignore = [\"drafts/\"]\n");
+    drop(turn);
+    init.join().unwrap().unwrap();
+    assert_eq!(core.state_location(), StateLocation::Project);
+    assert_eq!(core.config().ignore, ["drafts/"]);
+}
+// ---- move to window: adversarial ---------------------------------------------------------------------
 
 fn saved_count(f: &Fx, reference: &WorkspaceRef) -> usize {
     let dto = reference.to_dto();

@@ -5,7 +5,8 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
-use permark_core::plugins::{CommitId, FileVersions, NoVersions};
+use permark_core::conditions::GitErrorCode;
+use permark_core::plugins::{CommitId, FileVersions, NoTracking, NoVersions};
 use permark_core::state::{AppDirs, StateStore};
 
 use super::*;
@@ -23,7 +24,7 @@ fn the_repository_machine_table() {
     use RepoEvent as E;
     use RepoFsm as S;
     let failed = S::Failed {
-        reason: "x".to_owned(),
+        reason: GitError::Failed("x".to_owned()),
     };
     let cases: Vec<(RepoFsm, RepoEvent, RepoFsm, Schedule)> = vec![
         // interest: asked at once, ahead of the queue
@@ -159,7 +160,7 @@ fn the_repository_machine_table() {
                 level: Glance,
                 again: None,
             },
-            E::Done(Err("x".to_owned())),
+            E::Done(Err(GitError::Failed("x".to_owned()))),
             failed.clone(),
             Schedule::Keep,
         ),
@@ -168,7 +169,7 @@ fn the_repository_machine_table() {
                 level: Glance,
                 again: Some(Detail),
             },
-            E::Done(Err("x".to_owned())),
+            E::Done(Err(GitError::Failed("x".to_owned()))),
             S::Queued { level: Detail },
             Schedule::Debounced,
         ),
@@ -184,7 +185,7 @@ fn the_repository_machine_table() {
         (S::Cold, E::Done(Ok(())), S::Cold, Schedule::Keep),
         (
             S::Fresh { level: Glance },
-            E::Done(Err("late".to_owned())),
+            E::Done(Err(GitError::Failed("late".to_owned()))),
             S::Fresh { level: Glance },
             Schedule::Keep,
         ),
@@ -208,7 +209,7 @@ fn random_walks_keep_the_machine_whole() {
         RepoEvent::Changed(Detail),
         RepoEvent::Outdated,
         RepoEvent::Done(Ok(())),
-        RepoEvent::Done(Err("e".to_owned())),
+        RepoEvent::Done(Err(GitError::Failed("e".to_owned()))),
     ];
     let mut state = RepoFsm::Cold;
     let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
@@ -374,6 +375,11 @@ impl GitOps for FakeCall {
         Err(GitError::Timeout)
     }
 
+    /// Never answers in time.
+    fn tracked_under(&self, _: &RepoLocation, _: &str) -> Result<bool, GitError> {
+        Err(GitError::Timeout)
+    }
+
     fn commit_exists(&self, _: &RepoLocation, _: &str) -> bool {
         true
     }
@@ -421,6 +427,7 @@ fn quick() -> Timings {
         quiet: Duration::from_millis(30),
         max_wait: Duration::from_millis(200),
         lock_wait: Duration::from_millis(150),
+        ..Timings::default()
     }
 }
 
@@ -448,6 +455,7 @@ fn env(backend: Option<Arc<dyn GitOps>>, heard: &Arc<Heard>, visits: Option<Path
             let dirs = AppDirs {
                 profile: base.join(path.replace('/', "_")),
                 cache: base.join("cache"),
+                install: base.join("install"),
             };
             Some(StateStore::app(&dirs).file("visit.json"))
         }),
@@ -522,6 +530,25 @@ fn a_backend_that_times_out_on_the_versions_of_a_file_is_too_slow_for_the_reader
     // a file of another repository below this one is not asked for at all
     std::fs::create_dir_all(dir.path().join("inner").join(".git")).unwrap();
     assert_eq!(versions("inner/a.md"), Err(NoVersions::OtherRepository));
+}
+
+#[test]
+fn a_backend_that_times_out_on_the_index_is_too_slow_for_the_reader() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = RepoLocation {
+        workdir: dir.path().to_path_buf(),
+        git_dir: dir.path().join(".git"),
+        prefix: String::new(),
+    };
+    let backend = fake_backend(&Fake::new(Duration::ZERO));
+    let tracked = |path: &str| crate::ops::tracked_of(backend.as_ref(), &location, path);
+    assert_eq!(tracked(".permark/local"), Err(NoTracking::Slow));
+    // a folder of another repository below this one is not asked for at all
+    std::fs::create_dir_all(dir.path().join("inner").join(".git")).unwrap();
+    assert_eq!(
+        tracked("inner/.permark/local"),
+        Err(NoTracking::OtherRepository)
+    );
 }
 
 // ---- the pool ------------------------------------------------------------------------------------------------------
@@ -674,7 +701,7 @@ fn one_failing_repository_fails_alone() {
     for s in members.summaries() {
         if s.id == "ubad" {
             assert!(
-                matches!(&s.error, Some(RepoError::Failed { reason }) if reason.contains("dubious")),
+                matches!(&s.error, Some(RepoError::Failed { code: GitErrorCode::Failed, reason }) if reason.contains("dubious")),
                 "{s:?}"
             );
             assert_eq!(s.branch.as_deref(), Some("main"), "cheap facts stay");
@@ -870,7 +897,46 @@ fn a_stale_index_lock_delays_the_look_by_the_wait_and_no_more() {
     );
 }
 
-// ---- fix round (verifier round 3: S2, S3, N3) ------------------------------------------------------------------------
+/// `index.lock` is a plain file git writes: a link there (symlink | junction) is no lock, neither waited on nor
+/// followed, and the git folder holding it is refused at the look.
+#[test]
+fn a_link_at_the_index_lock_is_no_lock_and_the_repository_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Fake::new(Duration::ZERO);
+    let heard = Arc::new(Heard::default());
+    let mut env = env(Some(fake_backend(&fake)), &heard, None);
+    env.timings.lock_wait = Duration::from_secs(60);
+    let members = Members::new(env);
+    let list = members_in(dir.path(), &names(1, "p"));
+    members.sync(&list);
+    let elsewhere = dir.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let lock_file = list[0].folder.join(".git").join("index.lock");
+    if !crate::worktrees::tests::link_folder(&elsewhere, &lock_file) {
+        eprintln!("links could not be made here; skipped");
+        return;
+    }
+    let started = Instant::now();
+    members.interest("main", Glance, &[list[0].uid.clone()]);
+    wait_until("the refusal", || {
+        members
+            .summaries()
+            .iter()
+            .all(|s| !s.pending && s.error.is_some())
+    });
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "waited on a linked lock: {:?}",
+        started.elapsed()
+    );
+    let summary = &members.summaries()[0];
+    assert!(
+        matches!(&summary.error, Some(RepoError::Failed { code: GitErrorCode::NotLocal, reason }) if reason.is_empty()),
+        "{summary:?}"
+    );
+}
+
+// ---- fix round ------------------------------------------------------------------------
 
 /// Folders to look up (`(key, folder)`), each a repository on disk.
 fn lookups_in(root: &Path, n: usize) -> Vec<(String, PathBuf)> {
@@ -899,7 +965,7 @@ fn lookups_member_work_and_callers_reads_never_run_more_than_two_at_a_time() {
         .map(|n| {
             let members = Arc::clone(&members);
             let backend = Arc::clone(&backend);
-            let location = members.location(&list[n].uid).unwrap();
+            let location = members.location(&list[n].uid).unwrap().unwrap();
             std::thread::spawn(move || {
                 for _ in 0..5 {
                     let blob = members

@@ -16,6 +16,7 @@ import {
   type Session,
 } from "./review.svelte";
 import { pieces } from "./segment";
+import { around } from "./suggestion";
 
 describe("changed ranges", () => {
   it("prefix and suffix kept, the rest is the change", () => {
@@ -196,5 +197,48 @@ describe("one review at a time in an editor", () => {
     flushSync();
     watch.stop();
     expect(seen).toEqual([false, true, false]);
+  });
+});
+
+describe("the excerpt of a suggestion", () => {
+  /** A plugin that suggests `the` for each `teh`. */
+  const TEH: ReviewConfig = {
+    plugin: "correction",
+    prepare: pieces,
+    judge: (doc, piece) => {
+      const from = piece.from + piece.original.indexOf("teh");
+      const to = from + 3;
+      return {
+        kind: "ok",
+        suggestions: [{ from, to, original: "teh", insert: "the", ...around(doc, from, to) }],
+      };
+    },
+    runArgs: () => ({}),
+  };
+
+  it("reads as the editor on screen shows the text: Edit leaves Markdown's marks out, Source as written", async () => {
+    const text = "> This is **very** important and teh text.\n";
+    const session: Session = { ...holding(text), mode: "edit" };
+    const store = new PieceReview(TEH, mock, session);
+    await store.ask();
+    await store.runOver("document");
+    const sent = mock.probe.correction.runs.at(-1);
+    if (!sent) throw new Error("no run sent");
+    for (const { id, text: piece } of sent.pieces)
+      store.news({
+        run: sent.run,
+        phase: { kind: "piece", id, result: { kind: "output", text: piece } },
+      });
+    const current = store.review?.suggestions[0];
+    if (!current) throw new Error("no suggestion");
+    expect(store.shown(current)).toMatchObject({
+      before: "This is very important and ",
+      after: " text.\n",
+      original: "teh",
+      insert: "the",
+    });
+    session.mode = "source";
+    expect(store.shown(current)).toBe(current);
+    expect(current.before).toBe("> This is **very** important and ");
   });
 });

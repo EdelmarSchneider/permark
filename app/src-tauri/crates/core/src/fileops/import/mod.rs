@@ -23,13 +23,13 @@ pub use self::copy::copy_folder;
 use self::copy::{
     count_tree, crosses_volumes, delete_originals, is_link, place_copy, Run, Stop, TICK,
 };
-use super::ops::{is_protected, list_files, locate, os_rename, MAX_ANNOUNCED};
+use super::ops::{is_protected, list_files, locate_undoable, os_rename, MAX_ANNOUNCED};
 use super::undo::{ImportMoved, Op};
 use super::{
     check_name, count, lock, FileOpError, FileOps, Skip, SkipReason, UndoKind, UndoOutcome,
 };
 use crate::error::IpcError;
-use crate::paths::{VaultError, VaultPath};
+use crate::paths::{canonicalize_lenient, same_volume, strip_root, VaultError, VaultPath};
 
 /// Plans kept for `import_apply`.
 const KEPT_PLANS: usize = 4;
@@ -675,11 +675,15 @@ impl FileOps {
             let from = PathBuf::from(&item.from);
             let place = VaultPath::parse(&item.to)
                 .ok()
-                .and_then(|p| locate(&self.vault, &p).ok());
+                .and_then(|p| locate_undoable(&self.vault, &p));
             let Some(here) = place.filter(|p| fs::symlink_metadata(p).is_ok()) else {
                 skipped.push(skip(SkipReason::Missing));
                 continue;
             };
+            if !self.may_return_to(&from) {
+                skipped.push(skip(SkipReason::Missing));
+                continue;
+            }
             if fs::symlink_metadata(&from).is_ok() {
                 skipped.push(skip(SkipReason::Occupied));
                 continue;
@@ -702,26 +706,39 @@ impl FileOps {
         let mut bin: Vec<(String, PathBuf)> = Vec::new();
         for path in copied {
             touched.push(path.clone());
-            let abs = VaultPath::parse(path)
+            let Some(abs) = VaultPath::parse(path)
                 .ok()
-                .and_then(|p| locate(&self.vault, &p).ok());
-            match abs {
-                Some(abs) if fs::symlink_metadata(&abs).is_ok() => bin.push((path.clone(), abs)),
+                .and_then(|p| locate_undoable(&self.vault, &p))
+            else {
+                skipped.push(Skip {
+                    path: path.clone(),
+                    reason: SkipReason::Missing,
+                });
+                continue;
+            };
+            if fs::symlink_metadata(&abs).is_ok() {
+                bin.push((path.clone(), abs));
+            } else {
                 // already gone: nothing left to take back
-                _ => restored += 1,
+                restored += 1;
             }
         }
         if !bin.is_empty() {
             let shown: Vec<String> = bin.iter().map(|(p, _)| p.clone()).collect();
             self.own.expect_removals(&shown);
-            if trash::delete_all(bin.iter().map(|(_, abs)| abs)).is_ok() {
-                restored += bin.len();
-            } else {
-                self.own.retract_moves(&shown);
-                skipped.extend(bin.iter().map(|(path, _)| Skip {
-                    path: path.clone(),
-                    reason: SkipReason::Trash,
-                }));
+            let places: Vec<PathBuf> = bin.iter().map(|(_, abs)| abs.clone()).collect();
+            match crate::fsx::recycle_each(&places) {
+                Ok(()) => restored += bin.len(),
+                Err(refused) => {
+                    // what the bin took before it refused is taken back; the rest stays and is said
+                    let (gone, left) = refused.split(shown);
+                    restored += gone.len();
+                    self.own.retract_moves(&left);
+                    skipped.extend(left.into_iter().map(|path| Skip {
+                        path,
+                        reason: SkipReason::Trash,
+                    }));
+                }
             }
         }
         self.explorer.sync_paths(&touched, &[]);
@@ -731,6 +748,32 @@ impl FileOps {
             skipped,
         }
     }
+
+    /// Where an undo may put back an item an import moved in: an absolute path on a local drive (never a share, a
+    /// mapped network drive, a device or verbatim path: even a lookup there connects to a server), outside this
+    /// project and its worktrees (an import never moves an item that is already inside), and outside the person's
+    /// state folders.
+    fn may_return_to(&self, from: &Path) -> bool {
+        // a local disk also in its verbatim spelling: the text check keeps that one out too
+        if !crate::fsx::is_local_path(from) || crate::process::is_network_path(from.as_os_str()) {
+            return false;
+        }
+        let roots = &self.roots;
+        self.vault.relativize(from).is_none()
+            && ![&roots.profile, &roots.install, &roots.cache]
+                .into_iter()
+                .any(|root| within(from, root))
+    }
+}
+
+/// `path` is `root` or inside it: as spelled, else canonical (links, 8.3 names), on the root's volume only (another
+/// volume may be a network drive a lookup would wait for).
+fn within(path: &Path, root: &Path) -> bool {
+    strip_root(path, root).is_some()
+        || (same_volume(path, root)
+            && canonicalize_lenient(path)
+                .zip(canonicalize_lenient(root))
+                .is_some_and(|(path, root)| strip_root(&path, &root).is_some()))
 }
 
 /// How an item was put in place.

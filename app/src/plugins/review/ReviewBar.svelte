@@ -93,7 +93,7 @@
   <!-- the offer floats over the top of the page: appearing (a file changed outside) never pushes the text down -->
   <div class="overlay">
     <div class="bar floating" role="region" aria-label={t("review.bar")}>
-      <span>{tn("review.offer", shown.count)}</span>
+      <span>{tn(shown.since === "read" ? "review.offer" : "review.offerCommit", shown.count)}</span>
       <button type="button" class="btn btn--sm" onclick={() => void review.begin()}>
         {t("review.review")}
       </button>
@@ -160,10 +160,12 @@
       <span class="why" role="status">{review.basisNote}</span>
     {/if}
     {#if review.confirming}
-      <!-- not a window of its own: the page stays in reach, Tab leaves it; Esc on it is Cancel -->
+      <!-- not a window of its own: the page stays in reach, Tab leaves it; Esc on it (or anywhere nothing nearer
+           takes it) is Cancel -->
       <div
         class="confirm"
         role="alertdialog"
+        data-bring-back
         aria-label={t("review.bringBack")}
         aria-describedby={warningId}
         use:dialogFocus={{

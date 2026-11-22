@@ -3,6 +3,7 @@
 pub mod activity;
 pub mod app_info;
 pub mod conditions;
+pub mod crash;
 pub mod demo;
 pub mod desktop;
 pub mod document;
@@ -20,6 +21,8 @@ pub mod open;
 pub mod open_dropped;
 pub mod organizing;
 pub mod paths;
+#[cfg(test)]
+mod perf;
 pub mod plugins;
 pub mod process;
 pub mod projects;

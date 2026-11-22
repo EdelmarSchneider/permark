@@ -141,6 +141,8 @@ export class Decorator {
   #marked = new Map<HTMLAnchorElement, string | null>();
   /** Embeds whose library is still loading (each settles once mounted, cancelled or failed). */
   #loading = new Set<Promise<void>>();
+  /** Told once an embed mounted in an element (`onMounted`). */
+  readonly #listeners = new Set<(element: HTMLElement) => void>();
   /** The theme every embed draws in, whatever the page shows; undefined: embeds follow the page. */
   readonly #theme: "light" | "dark" | undefined;
 
@@ -159,12 +161,22 @@ export class Decorator {
 
   /**
    * Settles once every embed started so far is loaded and mounted (a failed library counts: its block keeps the
-   * plain text). An embed may still draw after it is mounted (a diagram, a formula): that is the embed's own state,
+   * plain text). An embed may still draw after it is mounted (a diagram): that is the embed's own state,
    * seen in its markup (a diagram's figure holds `is-pending` until drawn).
    */
   async idle(): Promise<void> {
     // embeds started while waiting count too
     while (this.#loading.size > 0) await Promise.allSettled(this.#loading);
+  }
+
+  /**
+   * `listener` is told once an embed mounted in an element (what it holds changed size: a table around it measures
+   * again). More than one listens: the reading view's tables and the editor's share this decorator's embeds. Returns
+   * what stops telling it.
+   */
+  onMounted(listener: (element: HTMLElement) => void): () => void {
+    this.#listeners.add(listener);
+    return () => void this.#listeners.delete(listener);
   }
 
   setDocument(path: string | null): void {
@@ -281,7 +293,16 @@ export class Decorator {
           if (record.cancelled) return;
           // the original content leaves in the same turn the embed arrives: no flash
           element.replaceChildren();
-          record.instance = mount(module.default, { target: element, props });
+          try {
+            record.instance = mount(module.default, { target: element, props });
+          } catch {
+            // an embed that fails while it mounts: the block keeps its plain text and look, as when the library
+            // does not load (what it drew of itself goes)
+            element.replaceChildren(...record.original);
+            element.className = record.className;
+            return;
+          }
+          for (const listener of this.#listeners) listener(element);
         },
         () => {
           // the library did not load: the plain text stays

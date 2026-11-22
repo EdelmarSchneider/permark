@@ -91,17 +91,18 @@
     width: 7px;
     cursor: col-resize;
   }
-  /* centered on the border of its panel: the frame's body carries the widths as variables */
+  /* inside its panel, centered on the panel's 1 px border on the inner edge: the offsets count from the panel's
+     padding box (inside that border), so the line drawn below covers the border */
   .splitter[data-side="sidebar"] {
-    left: calc(var(--w-sidebar) - 4px);
+    right: -4px;
   }
   .splitter[data-side="right"] {
-    right: calc(var(--w-right) - 3px);
+    left: -5px;
   }
-  /* the bottom panel's: across the center column (which carries the height), centered on the panel's top border */
+  /* the bottom panel's: across the panel, on its top border */
   .splitter[data-side="bottom"] {
+    top: -5px;
     right: 0;
-    bottom: calc(var(--h-bottom) - 3px);
     left: 0;
     height: 7px;
     cursor: row-resize;
@@ -132,5 +133,14 @@
   }
   .splitter:focus-visible::after {
     background: var(--accent);
+  }
+  /* Windows High Contrast drops fills: the line takes the system's highlight color, kept as set */
+  @media (forced-colors: active) {
+    .splitter:hover::after,
+    .splitter:focus-visible::after,
+    .splitter.is-dragging::after {
+      forced-color-adjust: none;
+      background: Highlight;
+    }
   }
 </style>

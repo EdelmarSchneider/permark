@@ -155,6 +155,14 @@ export class AgentStore {
     };
   }
 
+  /** Reads the status again (the settings section shows: a rule file may have changed since it was last told). An
+   *  answer that comes after the window turned to another project is dropped. */
+  async refreshStatus(): Promise<void> {
+    const root = this.#root();
+    const result = await this.#client.call("agent.status", {});
+    if (this.#root() === root && result.ok) this.status = result.value;
+  }
+
   /** Takes the new status; a refusal says so in a notice unless the caller shows it in place (`inline`). */
   #apply(result: Result<AgentStatus>, inline = false): boolean {
     if (result.ok) this.status = result.value;

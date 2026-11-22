@@ -2,7 +2,12 @@
 //! place) | an attached child spoken to over its standard streams, which takes every process it starts with it when
 //! stopped ([`PipedChild`]): [`spawn_piped`] (the model engine worker; ONLY pinned, sha256-verified files from the
 //! profile) | [`spawn_person_command`] (a program the person named in the app's own settings, found by
-//! [`resolve_program`]; never one named by a project file, document content or a click).
+//! [`resolve_program`]; never one named by a project file, document content or a click). A program the person set up
+//! starts only once they allowed it ([`ProgramApprovals`]).
+
+mod approvals;
+
+pub use approvals::{Approved, ProgramApprovals, ProgramCall, APPROVALS_FILE};
 
 use std::ffi::{OsStr, OsString};
 use std::io;
@@ -32,31 +37,65 @@ fn keep_std_handles_private() {
     }
 }
 
-/// Starts `program` with `args`, detached (own process group, no console, standard streams to null, no shell),
-/// and lets it go its own way.
+/// The console a program started by [`spawn_detached`] gets on Windows (elsewhere none either way).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Console {
+    /// None at all: a program with windows of its own (this app).
+    Without,
+    /// A hidden one that what it starts inherits: a `.cmd` | `.bat` program (`code.cmd`) runs in `cmd`, and each
+    /// console program it starts would otherwise open a visible console window of its own.
+    Hidden,
+}
+
+/// Windows process creation flags of a detached start: own process group, the console `console` says.
+#[cfg(any(windows, test))]
+fn detached_flags(console: Console) -> u32 {
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    CREATE_NEW_PROCESS_GROUP
+        | match console {
+            Console::Without => DETACHED_PROCESS,
+            Console::Hidden => CREATE_NO_WINDOW,
+        }
+}
+
+/// Starts `program` with `args`, detached (own process group, the `console` given, standard streams to null, no
+/// shell), in `cwd` (`None`: this process's folder), and lets it go its own way. Windows: the program and what it
+/// starts never look for programs in their working folder (`NoDefaultCurrentDirectoryInExePath`: a `.cmd` editor runs
+/// in `cmd`, which would).
 ///
 /// # Errors
 /// The program cannot be started.
-pub fn spawn_detached(program: &Path, args: &[&OsStr]) -> io::Result<()> {
+pub fn spawn_detached(
+    program: &Path,
+    args: &[&OsStr],
+    cwd: Option<&Path>,
+    console: Console,
+) -> io::Result<()> {
     let mut command = Command::new(program);
     command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         keep_std_handles_private();
-        command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        command.creation_flags(detached_flags(console));
+        command.env("NoDefaultCurrentDirectoryInExePath", "1");
     }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
+    #[cfg(not(windows))]
+    let _ = console;
     let mut child = command.spawn()?;
     // collects the exit status so the finished process is not left as a zombie
     std::thread::spawn(move || {
@@ -429,14 +468,14 @@ pub fn tool_folders() -> Vec<PathBuf> {
 
 /// Folders where people's own tools usually live that an app started from the desktop misses in its `PATH` (macOS
 /// gives an app opened from Finder `/usr/bin:/bin:/usr/sbin:/sbin`; nvm, Volta, Bun, rustup and npm's own prefix add
-/// theirs only in a shell's startup file): macOS: Homebrew's `/opt/homebrew/bin` and `/usr/local/bin`; under `home`:
-/// `.local/bin`, `.volta/bin`, `.bun/bin`, `.cargo/bin`, `.npm-global/bin`, the newest nvm Node's `bin`. Only those
-/// that exist, in that order.
+/// theirs only in a shell's startup file): macOS: Homebrew's `/opt/homebrew/bin` and `/usr/local/bin`; elsewhere
+/// `/snap/bin`; under `home`: `.local/bin`, `.volta/bin`, `.bun/bin`, `.cargo/bin`, `.npm-global/bin`, the launchers
+/// of `JetBrains` Toolbox (macOS | Linux folder), the newest nvm Node's `bin`. Only those that exist, in that order.
 fn user_tool_folders(home: Option<&Path>, macos: bool) -> Vec<PathBuf> {
     let system: &[&str] = if macos {
         &["/opt/homebrew/bin", "/usr/local/bin"]
     } else {
-        &[]
+        &["/snap/bin"]
     };
     let mut folders: Vec<PathBuf> = system.iter().map(PathBuf::from).collect();
     if let Some(home) = home {
@@ -447,6 +486,8 @@ fn user_tool_folders(home: Option<&Path>, macos: bool) -> Vec<PathBuf> {
                 ".bun/bin",
                 ".cargo/bin",
                 ".npm-global/bin",
+                "Library/Application Support/JetBrains/Toolbox/scripts",
+                ".local/share/JetBrains/Toolbox/scripts",
             ]
             .iter()
             .map(|sub| home.join(sub)),
@@ -704,6 +745,14 @@ mod tests {
     /// A relative path (with a folder in it) names a different file in each folder a program starts in: never
     /// resolved, also when it exists from this process's folder; a relative `PATH` entry is never searched either.
     /// (Tests run in the crate's folder: `src/lib.rs` is there.)
+    /// Both detached starts get a process group of their own; a script's console children inherit a hidden console
+    /// instead of each opening a visible window, while this app restarting itself keeps none at all.
+    #[test]
+    fn a_detached_start_hides_the_console_or_has_none() {
+        assert_eq!(detached_flags(Console::Hidden), 0x0800_0000 | 0x0000_0200);
+        assert_eq!(detached_flags(Console::Without), 0x0000_0008 | 0x0000_0200);
+    }
+
     #[test]
     fn relative_paths_are_never_resolved() {
         let relative = Path::new("src").join("lib.rs");
@@ -810,6 +859,7 @@ mod tests {
         for sub in [
             ".local/bin",
             ".cargo/bin",
+            ".local/share/JetBrains/Toolbox/scripts",
             ".nvm/versions/node/v9.11.2/bin",
             ".nvm/versions/node/v20.10.0/bin",
             ".nvm/versions/node/v18.19.1/bin",
@@ -817,18 +867,20 @@ mod tests {
         ] {
             std::fs::create_dir_all(home.join(sub)).unwrap();
         }
+        // the system-wide folders (only those present on this machine) come first
         let found = user_tool_folders(Some(home), false);
+        let system = user_tool_folders(None, false);
+        assert_eq!(found[..system.len()], system[..]);
         assert_eq!(
-            found,
+            found[system.len()..],
             [
                 home.join(".local/bin"),
                 home.join(".cargo/bin"),
+                home.join(".local/share/JetBrains/Toolbox/scripts"),
                 home.join(".nvm/versions/node/v20.10.0/bin"),
             ]
         );
-        assert_eq!(user_tool_folders(None, false), Vec::<PathBuf>::new());
-        // macOS: the system-wide folders only when present (never on a test machine without them)
-        for dir in user_tool_folders(None, true) {
+        for dir in system.iter().chain(&user_tool_folders(None, true)) {
             assert!(dir.is_dir(), "{dir:?}");
         }
     }

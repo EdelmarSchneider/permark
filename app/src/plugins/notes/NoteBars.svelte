@@ -1,6 +1,6 @@
 <script lang="ts">
   // The strips over the note shown: text found after a crash (Compare | Keep | Discard), and the state of a loose
-  // file (changed on disk | gone | unsaved) with its ways out.
+  // file (gone | unsaved) with its ways out.
   import { t } from "../../core/i18n";
   import { shownName } from "./model";
   import type { NotesStore } from "./store.svelte";
@@ -10,11 +10,10 @@
 
   const entry = $derived(store.entry);
   const recovered = $derived(entry !== null && entry.kind === "note" && entry.recovered);
-  /** A loose file that is not open: its state is told. An open one has the editor's own conflict view. */
+  /** The loose file shown: gone | text a crash left get a bar; a change on disk is the editor's own conflict view. */
   const file = $derived(entry !== null && entry.kind === "file" ? entry : null);
   const gone = $derived(file !== null && file.state === "gone");
   const unsaved = $derived(file !== null && file.state === "unsaved");
-  const changed = $derived(file !== null && file.state === "changedOnDisk");
 </script>
 
 {#if entry !== null && recovered}
@@ -91,10 +90,6 @@
         {t("notes.file.keepMine")}
       </button>
     </div>
-  </div>
-{:else if file !== null && changed && store.current !== file.path}
-  <div class="bar changed" role="status" data-bar="changed">
-    <p class="what"><strong>{t("notes.file.changed")}</strong></p>
   </div>
 {/if}
 

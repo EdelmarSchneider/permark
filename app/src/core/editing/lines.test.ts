@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_D, applyEdits, diff, lineEdits } from "./lines";
+import { MAX_D, applyEdits, changedRuns, diff, lineEdits } from "./lines";
 
 /** Small deterministic random (tests repeat). */
 function rng(seed: number): () => number {
@@ -77,5 +77,20 @@ describe("lineEdits", () => {
       { at: 15000, remove: 1, insert: ["x"] },
     ]);
     expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe("changedRuns", () => {
+  const base = Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n");
+
+  it("counts the changed runs the diff finds: none for equal texts", () => {
+    expect(changedRuns(base, base)).toBe(0);
+    expect(changedRuns("", "")).toBe(0);
+    expect(changedRuns(base, base.replace("line 7", "line seven"))).toBe(1);
+  });
+
+  it("a line put in at the top and one changed at the bottom are two runs, not every line after the top", () => {
+    const next = `new first\n${base.replace("line 19", "last line")}`;
+    expect(changedRuns(base, next)).toBe(2);
   });
 });

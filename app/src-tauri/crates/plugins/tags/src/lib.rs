@@ -43,6 +43,8 @@ const ID: PluginId = PluginId::of("tags");
 pub const META_PATH: &str = ".permark/meta.toml";
 /// The file's name in its folder.
 pub const META_FILE: &str = "meta.toml";
+/// Most bytes [`META_FILE`] is read with (a shared file arrives with the folder; no writer limit below this).
+pub const META_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
 struct TagsPlugin {
     manifest: Manifest,

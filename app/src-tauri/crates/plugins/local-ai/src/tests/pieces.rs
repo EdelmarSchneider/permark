@@ -336,22 +336,29 @@ fn the_next_run_reuses_the_warm_session_until_the_model_changes() {
 }
 
 /// The model source takes a warm session from under its run (the person lets models run elsewhere | removes the
-/// model: unloaded, no longer serving) -> the run ends `cancelled`, as a run that loaded the model itself does;
-/// never `failed`. The session is not kept: a source that serves again never hands the next run the unloaded one.
+/// model: unloaded between two calls, or its worker killed under a call that outlasts the unload's wait) -> the run
+/// ends `cancelled`, as a run that loaded the model itself does; never `failed`. The session is not kept: a source
+/// that serves again never hands the next run the unloaded one.
 #[test]
 fn a_run_whose_warm_session_its_source_unloads_ends_cancelled() {
-    let lab = Lab::mid_warm_run();
-    lab.fake.serving.store(false, Ordering::Relaxed);
-    lab.fake.engine.unload(FIRST);
-    let phases = lab.events.ended("r2");
-    assert_eq!(kinds(&phases).last(), Some(&"cancelled"), "{phases:?}");
-    assert!(!kinds(&phases).contains(&"loading"), "{phases:?}");
-    lab.fake.serving.store(true, Ordering::Relaxed);
-    lab.run("r3", &["Three."]);
-    let phases = lab.events.ended("r3");
-    assert_eq!(kinds(&phases)[0], "loading");
-    assert_eq!(kinds(&phases).last(), Some(&"done"));
-    assert_eq!(lab.fake.opens(), 2);
+    let losses: [fn(&Lab); 2] = [
+        |lab| lab.fake.engine.unload(FIRST),
+        |lab| lab.fake.engine.crash(),
+    ];
+    for lose in losses {
+        let lab = Lab::mid_warm_run();
+        lab.fake.serving.store(false, Ordering::Relaxed);
+        lose(&lab);
+        let phases = lab.events.ended("r2");
+        assert_eq!(kinds(&phases).last(), Some(&"cancelled"), "{phases:?}");
+        assert!(!kinds(&phases).contains(&"loading"), "{phases:?}");
+        lab.fake.serving.store(true, Ordering::Relaxed);
+        lab.run("r3", &["Three."]);
+        let phases = lab.events.ended("r3");
+        assert_eq!(kinds(&phases)[0], "loading");
+        assert_eq!(kinds(&phases).last(), Some(&"done"));
+        assert_eq!(lab.fake.opens(), 2);
+    }
 }
 
 /// A run on a warm session the engine loses by `lose` ends `failed` with engine code `code`; the session is not
@@ -371,19 +378,12 @@ fn fails_after(lose: fn(&Lab), code: &str) {
     assert_eq!(lab.fake.opens(), 2, "{code}");
 }
 
-/// A session the engine loses is the engine's failure, never read as the person's change: `failed` with the
-/// engine's code when its source still serves it, and after a crash whatever the source says (in production a
-/// crashed session no longer serves: not loaded).
+/// A session the engine loses while its source still chooses it is the engine's failure, never read as the
+/// person's change: `failed` with the engine's code.
 #[test]
 fn a_session_the_engine_loses_under_a_run_fails_it() {
     fails_after(|lab| lab.fake.engine.unload(FIRST), "notLoaded");
-    fails_after(
-        |lab| {
-            lab.fake.serving.store(false, Ordering::Relaxed);
-            lab.fake.engine.crash();
-        },
-        "crashed",
-    );
+    fails_after(|lab| lab.fake.engine.crash(), "crashed");
 }
 
 /// Person re-triggered: a new run cancels the running one; both end, the new one done.
@@ -654,6 +654,35 @@ fn a_hosted_run_on_a_warm_session_the_model_service_unloads_ends_cancelled() {
         bench.unloaded();
         runner.shutdown();
     }
+}
+
+/// Production model source: the person lets models run elsewhere while ONE long piece is answered on a warm
+/// session (the answer outlasts the unload's wait for the call, so the worker is killed under it) -> `cancelled`,
+/// never `failed{crashed}`; nothing stays loaded.
+#[test]
+fn a_hosted_run_whose_worker_the_model_service_kills_mid_piece_ends_cancelled() {
+    let bench = Bench::fake(|| FakeEngine::new().paced(PACE));
+    bench.install(E2B);
+    bench.installs.assign(Echo::TASK, Some(E2B)).unwrap();
+    let (runner, events, _offered) = hosted(&bench);
+    let start = |run: &str, texts: &[&str]| {
+        runner
+            .start(run.to_owned(), TONE.to_owned(), pieces(texts))
+            .unwrap();
+    };
+    start("r1", &["One."]);
+    events.ended("r1");
+    // 200 words paced 20 ms: about 4 s of answer, well past the unload's 2 s wait
+    let long = vec!["word"; 200].join(" ");
+    start("r2", &[&long]);
+    std::thread::sleep(Duration::from_millis(300));
+    drop(bench.installs.set_cpu_only(true).unwrap());
+    let phases = events.ended("r2");
+    assert_eq!(kinds(&phases).last(), Some(&"cancelled"), "{phases:?}");
+    assert!(!kinds(&phases).contains(&"piece"), "{phases:?}");
+    assert_eq!(bench.workers.launched(), 1);
+    bench.unloaded();
+    runner.shutdown();
 }
 
 /// Production model source (`ModelHost` service): the job's own task picks the model (another job's assignment never

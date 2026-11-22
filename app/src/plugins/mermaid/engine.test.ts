@@ -9,15 +9,34 @@ type Init = {
   gantt?: { useWidth?: number; fontSize?: number; sectionFontSize?: number };
   sankey?: { labelStyle?: string };
   themeCSS?: string;
+  arrowMarkerAbsolute?: boolean;
+  secure?: string[];
 };
 const initialized: Init[] = [];
+const XLINK = "http://www.w3.org/1999/xlink";
+/**
+ * Mermaid's links (strict level): `xlink:href` only, a target when the source asks for one, and no `xmlns:xlink` on
+ * the root (Mermaid leaves the prefix undeclared).
+ */
+const LINKED =
+  `<svg id="pm-mermaid-1" width="100%" xmlns="http://www.w3.org/2000/svg" class="flowchart" viewBox="0 0 80 40"><g>` +
+  '<a xlink:href="docs/x.md" target="_blank"><text>x</text></a>' +
+  '<a xlink:href="about:blank"><text>b</text></a><a xlink:href="tel:123"><text>t</text></a>' +
+  "</g></svg>";
 let rendered = 0;
 
 vi.mock("mermaid", () => ({
   default: {
     initialize: (config: Init) => initialized.push(config),
-    render: (id: string) => {
+    render: (id: string, source: string) => {
       rendered += 1;
+      if (source.includes("click")) return Promise.resolve({ svg: LINKED });
+      // Mermaid scopes its CSS to the root id it draws with; a drawing may name its root after a page element
+      const root = source.includes("renamed") ? "app" : id;
+      if (source.includes("styled"))
+        return Promise.resolve({
+          svg: `<svg xmlns="http://www.w3.org/2000/svg" id="${root}"><style>#${root} .node{fill:red}</style><g/></svg>`,
+        });
       const background = initialized.at(-1)?.themeVariables.background ?? "";
       return Promise.resolve({
         svg: `<svg xmlns="http://www.w3.org/2000/svg" id="${id}" data-bg="${background}"></svg>`,
@@ -121,5 +140,57 @@ describe("mermaid palette", () => {
     document.documentElement.dataset["theme"] = "dark";
     await drawMermaid("sankey\na,b,1", "dark", false);
     expect(initialized.at(-1)?.themeCSS).toMatch(/\.link\s*\{[^}]*mix-blend-mode:\s*normal/);
+  });
+});
+
+describe("mermaid security", () => {
+  it("a diagram's directive cannot turn arrow markers into absolute addresses", async () => {
+    await drawMermaid("graph TD; A-->B", "light", true);
+    const config = initialized.at(-1);
+    expect(config?.arrowMarkerAbsolute).toBe(false);
+    // Mermaid's own secure keys stay listed: a version may replace its list with this one
+    expect(config?.secure).toEqual([
+      "secure",
+      "securityLevel",
+      "startOnLoad",
+      "maxTextSize",
+      "suppressErrorRendering",
+      "maxEdges",
+      "arrowMarkerAbsolute",
+      "dompurifyConfig",
+      "htmlLabels",
+    ]);
+  });
+
+  it("the drawing keeps its CSS only at the root id it was asked to draw with", async () => {
+    const sheet = (svg: string | null): string | undefined => {
+      const template = document.createElement("template");
+      template.innerHTML = svg ?? "";
+      return template.content.querySelector("style")?.textContent ?? undefined;
+    };
+    expect(sheet(await drawMermaid("graph TD; styled", "light", true))).toMatch(
+      /^#pm-mermaid-\d+-[a-z0-9]+ \.node\{fill:red\}$/,
+    );
+    expect(sheet(await drawMermaid("graph TD; styled renamed", "light", true))).toBe("");
+  });
+});
+
+describe("mermaid links", () => {
+  it("leave as plain page links the page's link handling reads; other addresses go nowhere", async () => {
+    const svg = await drawMermaid(
+      'graph TD; A-->B; click A href "docs/x.md" _blank',
+      "light",
+      true,
+    );
+    // read as the page reads it (HTML), and by attributes: jsdom's a[href] also matches an xlink-only link
+    const template = document.createElement("template");
+    template.innerHTML = svg ?? "";
+    const links = [...template.content.querySelectorAll("*")].filter((el) => el.localName === "a");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(["docs/x.md", null, null]);
+    for (const link of links) {
+      expect(link.hasAttributeNS(XLINK, "href")).toBe(false);
+      expect(link.hasAttribute("target")).toBe(false);
+    }
+    expect(links.map((link) => link.textContent)).toEqual(["x", "b", "t"]);
   });
 });

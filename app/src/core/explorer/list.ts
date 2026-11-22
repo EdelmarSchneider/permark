@@ -4,6 +4,7 @@
 import type { Added, RootNode, TreeDelta, TreeNode } from "../../api";
 
 const WORKTREE = "@wt/";
+const SLASH = "/".charCodeAt(0);
 
 /** `a/b/c.md` -> `c.md`. */
 export function nameOf(path: string): string {
@@ -39,10 +40,6 @@ export function ancestorsOf(path: string): string[] {
   }
   // `@wt` alone is no folder
   return out.filter((p) => p !== "@wt").reverse();
-}
-
-export function isWithin(path: string, folder: string): boolean {
-  return folder === "" || path === folder || path.startsWith(`${folder}/`);
 }
 
 /** Depth of a node below its root (top level = 0). */
@@ -140,11 +137,31 @@ export function remapSet(
  * theirs.
  */
 export function inNameOrder(nodes: readonly TreeNode[], locale: string): TreeNode[] {
+  const groups = nameGroups(nodes, nameCompare(locale));
+  return flatten(groups.inFolder, groups.roots);
+}
+
+/** The order of the entries of one folder (`inNameOrder`). Makes one collator: callers keep it for a whole list. */
+export function nameCompare(locale: string): (a: TreeNode, b: TreeNode) => number {
   const collator = new Intl.Collator(locale, { numeric: true, sensitivity: "base" });
-  const compare = (a: TreeNode, b: TreeNode): number =>
+  return (a, b) =>
     Number(a.kind.type !== "dir") - Number(b.kind.type !== "dir") ||
     collator.compare(a.name, b.name) ||
     (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+}
+
+/** What the name order is made of: each folder's entries in order, the paths listed, and the roots (`""`,
+ *  `@wt/<name>`): folders no node stands for, in the order their first entry comes. */
+export type NameGroups = {
+  inFolder: Map<string, TreeNode[]>;
+  paths: Set<string>;
+  roots: string[];
+};
+
+export function nameGroups(
+  nodes: readonly TreeNode[],
+  compare: (a: TreeNode, b: TreeNode) => number,
+): NameGroups {
   const inFolder = new Map<string, TreeNode[]>();
   for (const node of nodes) {
     const folder = parentOf(node.path);
@@ -152,16 +169,26 @@ export function inNameOrder(nodes: readonly TreeNode[], locale: string): TreeNod
     if (list) list.push(node);
     else inFolder.set(folder, [node]);
   }
-  const listed = new Set(nodes.map((n) => n.path));
+  for (const list of inFolder.values()) list.sort(compare);
+  const paths = new Set(nodes.map((n) => n.path));
+  const roots = Array.from(inFolder.keys()).filter((folder) => !paths.has(folder));
+  return { inFolder, paths, roots };
+}
+
+/** The list from each folder's ordered entries: root after root, a folder's entries right after it. Entries under
+ *  a node that is no folder stay out, as do folders no root leads to. */
+export function flatten(
+  inFolder: ReadonlyMap<string, readonly TreeNode[]>,
+  roots: readonly string[],
+): TreeNode[] {
   const out: TreeNode[] = [];
   const visit = (folder: string): void => {
-    for (const node of (inFolder.get(folder) ?? []).sort(compare)) {
+    for (const node of inFolder.get(folder) ?? []) {
       out.push(node);
       if (node.kind.type === "dir") visit(node.path);
     }
   };
-  // the roots (`""`, `@wt/<name>`): folders no node stands for, in the order they come
-  for (const folder of inFolder.keys()) if (!listed.has(folder)) visit(folder);
+  for (const root of roots) visit(root);
   return out;
 }
 
@@ -186,7 +213,11 @@ export function rowsOf(
   collapsedRoots: ReadonlySet<string>,
 ): Row[] {
   const rows: Row[] = [];
-  const stack: { path: string; open: boolean }[] = [];
+  // the folders above the node, with how many of them are closed: each node costs a constant check, not a walk of
+  // its folders, and its depth comes from its folder's (no split of its path); "inside a folder" is checked without
+  // building `<folder>/` per node
+  const stack: { path: string; open: boolean; depth: number }[] = [];
+  let closed = 0;
   const worktrees = roots.filter((r) => r.kind === "worktree");
   const header = new Map(worktrees.map((r) => [r.path, r] as const));
   let current = "";
@@ -196,6 +227,7 @@ export function rowsOf(
     if (root !== current) {
       current = root;
       stack.length = 0;
+      closed = 0;
       const rootNode = header.get(root);
       if (rootNode) {
         rootOpen = !collapsedRoots.has(root);
@@ -204,18 +236,52 @@ export function rowsOf(
         rootOpen = true;
       }
     }
-    while (stack.length > 0) {
-      const top = stack[stack.length - 1];
-      if (top && node.path.startsWith(`${top.path}/`)) break;
+    let top = stack.at(-1);
+    while (
+      top !== undefined &&
+      !(node.path.charCodeAt(top.path.length) === SLASH && node.path.startsWith(top.path))
+    ) {
+      if (!top.open) closed -= 1;
       stack.pop();
+      top = stack.at(-1);
     }
-    const visible = rootOpen && stack.every((s) => s.open);
+    // a top-level node, or one whose folder is not listed (the stack falls short): the depth comes from the path
+    const depth =
+      top !== undefined && node.path.indexOf("/", top.path.length + 1) < 0
+        ? top.depth + 1
+        : depthOf(node.path);
     const isDir = node.kind.type === "dir";
     const open = isDir && expanded.has(node.path);
-    if (visible) rows.push({ type: "node", node, depth: depthOf(node.path), expanded: open });
-    if (isDir) stack.push({ path: node.path, open });
+    if (rootOpen && closed === 0) rows.push({ type: "node", node, depth, expanded: open });
+    if (isDir) {
+      if (!open) closed += 1;
+      stack.push({ path: node.path, open, depth });
+    }
   }
   return rows;
+}
+
+/** Where a row sits for a screen reader: its level (the project's top level and worktree headers = 1, a worktree's own
+ *  rows one below its header) and its place among the rows of its folder (`aria-posinset` of `aria-setsize`). */
+export type TreePlace = { level: number; pos: number; size: number };
+
+/** The place of every row, by row key. Siblings are counted among the rows shown: an open folder shows all of its. */
+export function treePlaces(rows: readonly Row[]): Map<string, TreePlace> {
+  const folderOf = (row: Row): string => (row.type === "root" ? "" : parentOf(row.node.path));
+  const sizes = new Map<string, number>();
+  for (const row of rows) sizes.set(folderOf(row), (sizes.get(folderOf(row)) ?? 0) + 1);
+  const headers = new Set(rows.flatMap((r) => (r.type === "root" ? [r.root.path] : [])));
+  const counted = new Map<string, number>();
+  const places = new Map<string, TreePlace>();
+  for (const row of rows) {
+    const folder = folderOf(row);
+    const pos = (counted.get(folder) ?? 0) + 1;
+    counted.set(folder, pos);
+    const level =
+      row.type === "root" ? 1 : row.depth + (headers.has(rootOf(row.node.path)) ? 2 : 1);
+    places.set(rowKey(row), { level, pos, size: sizes.get(folder) ?? pos });
+  }
+  return places;
 }
 
 // ---- selection -------------------------------------------------------------------------------------------------------
@@ -229,10 +295,17 @@ export function rangeBetween(rows: readonly Row[], from: string, to: string): st
   return keys.slice(Math.min(a, b), Math.max(a, b) + 1);
 }
 
-/** Selected paths without those inside another selected folder (a move or delete takes the folder along). */
+/** Selected paths without those inside another selected folder (a move or delete takes the folder along). Each path
+ *  looks up only its own ancestors (every `/` boundary, worktree roots included): 20k selected rows took seconds when
+ *  every path was checked against every other one. */
 export function topmost(paths: Iterable<string>): string[] {
-  const all = Array.from(new Set(paths));
-  return all.filter((p) => !all.some((other) => other !== p && p.startsWith(`${other}/`)));
+  const all = new Set(paths);
+  return Array.from(all).filter((p) => {
+    for (let at = p.lastIndexOf("/"); at >= 0; at = at === 0 ? -1 : p.lastIndexOf("/", at - 1)) {
+      if (all.has(p.slice(0, at))) return false;
+    }
+    return true;
+  });
 }
 
 // ---- drag and drop ---------------------------------------------------------------------------------------------------

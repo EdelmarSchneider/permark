@@ -120,17 +120,18 @@ const SPECS: readonly Spec[] = [
     run: () => ui.openSettingsPage("project"),
   },
   { id: "app.keyboard", label: "cmd.keyboard", run: () => ui.openKeyboard() },
+  // Mod+PageDown | Mod+PageUp before Mod+Alt+Arrow: Ctrl+Alt+Arrow switches workspaces on several Linux desktops
   {
     id: "tab.next",
     label: "cmd.tabNext",
-    keys: ["Ctrl+Tab", "Mod+Alt+ArrowRight"],
+    keys: ["Ctrl+Tab", "Mod+PageDown", "Mod+Alt+ArrowRight"],
     when: () => tabs.canSwitch,
     run: () => tabs.step(1),
   },
   {
     id: "tab.previous",
     label: "cmd.tabPrevious",
-    keys: ["Ctrl+Shift+Tab", "Mod+Alt+ArrowLeft"],
+    keys: ["Ctrl+Shift+Tab", "Mod+PageUp", "Mod+Alt+ArrowLeft"],
     when: () => tabs.canSwitch,
     run: () => tabs.step(-1),
   },

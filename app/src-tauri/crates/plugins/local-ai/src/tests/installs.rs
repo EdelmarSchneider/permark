@@ -1,4 +1,4 @@
-//! Installs (AC-3..AC-6, AC-8, AC-1 dormant) over scripted downloads: tiny files pinned in a test catalog.
+//! Installs (dormant start included) over scripted downloads: tiny files pinned in a test catalog.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -345,7 +345,7 @@ pub(super) fn files_in(dir: &Path) -> Vec<String> {
     names
 }
 
-/// AC-1: the state query on a fresh profile reads; nothing created, nothing asked.
+/// The state query on a fresh profile reads; nothing created, nothing asked.
 #[test]
 fn the_state_query_on_a_fresh_profile_creates_nothing() {
     let lab = Lab::new();
@@ -375,7 +375,7 @@ fn the_state_query_on_a_fresh_profile_creates_nothing() {
     assert_eq!(entries(lab.tmp.path()), Vec::<String>::new());
 }
 
-/// AC-3: Get -> files in `<store>/<lineage>/<version>/` + engine manifest; installed; told by events.
+/// Get -> files in `<store>/<lineage>/<version>/` + engine manifest; installed; told by events.
 #[test]
 fn get_downloads_every_file_into_the_version_folder() {
     let lab = Lab::new();
@@ -407,7 +407,7 @@ fn get_downloads_every_file_into_the_version_folder() {
     assert_eq!(run.model(E2B)["state"]["kind"], "installed");
 }
 
-/// AC-4: terms needing acceptance -> refused before any byte; accepted once (recorded), then Get works.
+/// Terms needing acceptance -> refused before any byte; accepted once (recorded), then Get works.
 #[test]
 fn terms_are_accepted_before_the_first_byte_and_remembered() {
     let lab = Lab::new();
@@ -445,7 +445,7 @@ fn terms_are_accepted_before_the_first_byte_and_remembered() {
     assert_eq!(run.state()["acceptedLicenses"], json!([url]));
 }
 
-/// AC-5: gated -> refused without a token; token set (never shown) -> Get sends it to Hugging Face.
+/// Gated -> refused without a token; token set (never shown) -> Get sends it to Hugging Face.
 #[test]
 fn gated_models_need_a_token_that_is_never_shown() {
     let lab = Lab::new();
@@ -482,7 +482,7 @@ fn gated_models_need_a_token_that_is_never_shown() {
     assert_eq!(after["tokenSet"], false);
 }
 
-/// AC-3: a stopped download keeps its part -> listed paused at the next start (never restarted), Get resumes.
+/// A stopped download keeps its part -> listed paused at the next start (never restarted), Get resumes.
 #[test]
 fn a_part_is_listed_paused_at_start_and_resumed_by_get() {
     let lab = Lab::new();
@@ -515,7 +515,7 @@ fn a_part_is_listed_paused_at_start_and_resumed_by_get() {
     assert_eq!(transport.asked().last().unwrap().from, Some(100));
 }
 
-/// AC-3: cancel keeps the part (paused, also after a restart); delete part drops it.
+/// Cancel keeps the part (paused, also after a restart); delete part drops it.
 #[test]
 fn cancel_keeps_the_part_and_delete_part_drops_it() {
     let lab = Lab::new();
@@ -551,7 +551,7 @@ fn cancel_keeps_the_part_and_delete_part_drops_it() {
     assert!(left.iter().all(|n| !n.contains(".part")), "{left:?}");
 }
 
-/// AC-6 + AC-8: remove deletes the files and unassigns the tasks that used it.
+/// Remove deletes the files and unassigns the tasks that used it.
 #[test]
 fn remove_deletes_the_files_and_unassigns_its_tasks() {
     let lab = Lab::new();
@@ -576,7 +576,7 @@ fn remove_deletes_the_files_and_unassigns_its_tasks() {
     assert!(!saved.contains("gemma-4-e2b-it"), "{saved}");
 }
 
-/// AC-8: only installed + compatible models are assigned.
+/// Only installed + compatible models are assigned.
 #[test]
 fn assign_refuses_incompatible_or_missing_models() {
     let lab = Lab::new();
@@ -611,7 +611,7 @@ fn assign_refuses_incompatible_or_missing_models() {
     assert!(run.assigned("semanticIndex").is_null());
 }
 
-/// AC-6: newer catalog version -> update available; update downloads beside the old one, swaps after verify, old
+/// Newer catalog version -> update available; update downloads beside the old one, swaps after verify, old
 /// removed, assignment follows the lineage. A failed update leaves the old one usable.
 #[test]
 fn update_swaps_versions_and_assignments_follow_the_lineage() {
@@ -660,7 +660,7 @@ fn update_swaps_versions_and_assignments_follow_the_lineage() {
     run.stop();
 }
 
-/// AC-8: `model_for(task)` -> the installed model assigned to it, else none.
+/// `model_for(task)` -> the installed model assigned to it, else none.
 #[test]
 fn model_for_answers_the_assigned_installed_model() {
     let lab = Lab::new();
@@ -696,7 +696,7 @@ fn model_for_answers_the_assigned_installed_model() {
     assert_eq!(model.catalog_version, 1);
     assert_eq!(model.dir, version_dir(&lab, &model.lineage, 1));
     assert!(model.dir.is_dir());
-    // AC-10: the engine finds every file of the installed version
+    // The engine finds every file of the installed version
     let files = crate::engine::model_files(&model, &cat);
     assert_eq!(files.files.len(), model.files.len());
     assert!(files.files.iter().all(|(_, path)| path.is_file()));
@@ -704,7 +704,7 @@ fn model_for_answers_the_assigned_installed_model() {
     installs.shutdown();
 }
 
-/// D-11 (Windows mmap lock): remove unloads the sessions of that model's lineage first; a store change unloads
+/// Windows mmap lock: remove unloads the sessions of that model's lineage first; a store change unloads
 /// every session. `installed_model` answers the usable version by id.
 #[test]
 fn remove_and_store_change_unload_the_engine_sessions_first() {
@@ -800,7 +800,7 @@ fn remove_and_store_change_unload_the_engine_sessions_first() {
     installs.shutdown();
 }
 
-/// D-6: acceptances + assignments survive a restart (profile state file).
+/// Acceptances + assignments survive a restart (profile state file).
 #[test]
 fn the_state_survives_a_restart() {
     let lab = Lab::new();
@@ -1034,7 +1034,7 @@ fn an_old_version_that_cannot_be_removed_goes_at_the_next_action() {
     assert_eq!(stale(), 0);
 }
 
-/// Bugfix unrunnable models AC-2/AC-3: the pinned engine (llama.cpp b11429) runs Gemma 4 only; the others are listed
+/// Unrunnable models: the pinned engine (llama.cpp b11429) runs Gemma 4 only; the others are listed
 /// with what the engine lacks, Get + assign refused (typed), nothing created.
 #[test]
 fn models_the_pinned_engine_cannot_run_are_listed_with_what_it_lacks() {
@@ -1074,7 +1074,7 @@ fn plenty() -> crate::machine::MachineProfile {
     }
 }
 
-/// Bugfix AC-6: a newer pin runs the same catalog with no other change. AC-4: a model installed under it stays
+/// A newer pin runs the same catalog with no other change; a model installed under it stays
 /// listed (installed, assignment kept) once the pin is older again, but is not assignable, not loaded, not tested.
 #[test]
 fn a_newer_pin_runs_them_and_an_earlier_install_stays_but_never_loads() {
@@ -1149,7 +1149,7 @@ fn a_newer_pin_runs_them_and_an_earlier_install_stays_but_never_loads() {
     pinned.shutdown();
 }
 
-/// AC-4: `pinned`'s assigned model needs a newer engine: open + test refuse it typed, no worker started.
+/// `pinned`'s assigned model needs a newer engine: open + test refuse it typed, no worker started.
 fn never_loads(pinned: &Arc<Installs>, cat: &Catalog, cx: &PluginCx) {
     use crate::engine::files::{WorkerFiles, PINS};
     use crate::engine::tests::Workers;

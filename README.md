@@ -196,6 +196,15 @@ sends your messages and what it reads to its own AI service. An agent that start
 tool the first time.
 The Windows installers may also download Microsoft's WebView2 component while they install, if your computer does not have it.
 
+**"Where does PerMark keep my data?"**<br>
+Your settings, recent folders and your choices about each folder (for example whether an agent may read it) stay in your user
+profile. What belongs to a project goes in a `.permark/` folder inside it: its shared settings and tags, your comments and read
+marks, and caches PerMark can rebuild. PerMark creates that folder only when you ask for it, for example with **Initialize
+PerMark**; a folder without one keeps its data in your profile, and a `.permark/` folder that arrives later does not take your
+data unless you choose **Move into the folder**. Git never sees `.permark/local` and `.permark/cache`; choose **Settings → This
+folder** to keep the whole `.permark/` folder out of git. A `.permark/` folder can only narrow what PerMark or an agent may do,
+never widen it.
+
 ## What PerMark is not
 
 - **Not a code editor.** No completion, refactoring, build, run or debug. Real code work opens in your own editor.
@@ -220,11 +229,13 @@ Installers are not code-signed, so your system shows a warning the first time yo
 
 | System | Get it |
 |---|---|
-| Windows | The [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX), which keeps PerMark up to date. Or the `-setup.exe` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest). Version 0.13 is the last one with an `.msi`: if you installed PerMark from an `.msi`, uninstall it and install the `-setup.exe`; your settings and notes stay |
+| Windows | The [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX), which keeps PerMark up to date. Or the `-setup.exe` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest). Version 0.17 is the last one with an `.msi`. A copy installed from an `.msi` moves to the `-setup.exe` at its next update in PerMark: Windows asks to remove the old copy and asks for administrator permission (if you say no, it asks again at the next update). Or uninstall it and install the `-setup.exe`. Your settings and notes stay. If you connected an AI agent, copy its connection lines again from **Settings → This folder → AI agents**: the program now runs from your user folder |
 | macOS | The universal `.dmg` (Apple silicon and Intel) from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest) |
 | Linux | The `.AppImage`, `.deb` or `.rpm` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest), or the snap (64-bit Intel and AMD): `sudo snap install permark`. To print on your printers from the snap, also install the CUPS snap: `sudo snap install cups` |
 
 Copies from GitHub check for updates when they start and once a day, and offer to download and restart. The Microsoft Store and the snap update their copies themselves.
+
+Starting with version 0.18, each installer on the Releases page has a build provenance attestation: a record, signed by GitHub, that the file was built by this repository's release workflow from the tagged commit. To check a download with the [GitHub CLI](https://cli.github.com), run `gh attestation verify <file> -R EdelmarSchneider/permark`. Each release also lists the third-party software inside the program (SBOM files in the CycloneDX format, one for the Rust crates and one for the npm packages).
 PerMark becomes your default app for Markdown only if you choose it: it asks once, with Markdown files checked and other types
 unchecked. On Windows, you confirm the choice in Windows Settings.
 
@@ -275,8 +286,13 @@ that speaks the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
 - **Off until you turn it on, per project.** Choose **Share this folder with agents** in **Settings → AI agents**,
   or run **Agent connection: turn on** from the command palette. Nothing inside a project can turn it on.
 - **Local.** It talks only to programs on your computer and opens no network port.
-- **Read, never edit.** The agent sees where you are, what you selected, what changed, your comments and the notes you shared one
+- **Read, never edit.** The agent sees where you are, what you selected, what changed, the comments and the notes you shared one
   by one. It reads, shows you a place and marks comments done. It never edits a file through this connection.
+- **Text from the folder is marked as such.** Comments, done replies, the activity list and the hand-off come from PerMark's
+  files in the folder. A folder you copied, synced or cloned can carry text that someone else wrote, so the agent is told to
+  read it as information, never as instructions. If the folder's git repository tracks PerMark's private folder
+  (`.permark/local`), or PerMark cannot check that, the agent gets none of that text, only how much was left out and why, and
+  it cannot mark those comments done.
 - **Your limits.** You choose what it may do, group by group. Files in `.aiignore` never reach an agent; everything else it reads
   as written, passwords and keys included, so list files with secrets in `.aiignore`.
 - **Visible.** While the connection is on, the status bar shows **Agent**. Click it to see what is shared and the latest requests.
@@ -286,8 +302,8 @@ that speaks the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
   <img src="docs/assets/agent.png" alt="The Agent popover in the status bar: a connected agent, what it can see, and its latest requests">
 </picture>
 
-**Connect in two lines.** Turn the connection on, then add PerMark to your agent as an MCP server. **Settings → Integration →
-Agent connection** shows these lines with the right path for your copy, and a Copy button.
+**Connect in two lines.** Turn the connection on, then add PerMark to your agent as an MCP server. **Settings → This folder →
+AI agents** shows these lines with the right path for your copy, and a Copy button.
 
 ```bash
 # Claude Code
@@ -306,18 +322,18 @@ agent asks PerMark what you did instead of rereading the project.
 
 | Tool | What it answers or does |
 |---|---|
-| `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 2,000 characters), whether there are unsaved edits, and how many of your comments are open |
+| `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 2,000 characters), whether there are unsaved edits, and how many comments are open |
 | `list_unread` | The documents that changed since you last read them, the newest at the top |
 | `map` | The files below a folder, by path: approximate size in tokens, flags (unread, changed), and the tags and descriptions you gave them. The place to start in a large project |
 | `search` | "Where is X described?": ranked sections with path, line, size, snippet and heading, from the same index as Search everywhere. `tags` narrows the search, and `budget` caps the size of the answer |
 | `list_tags` | The tags in use, with how many documents have each; or, for one tag, the documents that have it with their descriptions |
 | `outline` | The parts of one file (headings, JSON keys, parts of a config file) with line ranges and sizes, so an agent reads only the part it needs; optionally the links in and out |
 | `read` | The text of one part of a file: a heading, an anchor, a key path or a range of lines. Long parts continue with a cursor |
-| `list_comments` | Your open comments, each with the quoted passage, its section and line, and your text |
+| `list_comments` | The open comments, each with the quoted passage, its section and line, and its text |
 | `resolve_comment` | Marks a comment done, with an optional short reply that you read under the comment |
 | `list_notes` | The notes you chose to share with agents, each with its title, when it changed and its size |
 | `read_note` | The text of one shared note, by the name `list_notes` gave |
-| `activity` | What you did in PerMark since you last pressed **Hand off to agent** (checked against the disk), plus the changes made outside PerMark |
+| `activity` | What was done in PerMark since **Hand off to agent** was last pressed (checked against the disk), plus the changes made outside PerMark |
 | `open` | Shows you a place (a document, a line or a heading) without taking the focus from the agent's terminal, and offers a way back |
 
 Answers are short on purpose: a header line, then tab-separated rows, so an agent spends few tokens. A project's `.permark/` folder
@@ -349,9 +365,9 @@ In Claude Code, a `UserPromptSubmit` hook in `.claude/settings.json` (or your us
 ```
 
 When there is nothing to say (the connection is off, or PerMark is not open), the command prints nothing, so a hook never adds
-noise to a prompt. A project with a `.permark/` folder also has `.permark/local/agent-context.json` while the connection is on:
+noise to a prompt. A project that keeps its data in its `.permark/` folder also has `.permark/local/agent-context.json` while the connection is on:
 the same answer as a file, for a script or a tool without MCP. **It holds the open document, the section on screen and your
-selected text, and any program running as you can read it, as can a folder-sync tool that watches the project.** It stays out of git and is deleted when the connection is turned off.
+selected text, and any program running as you can read it, as can a folder-sync tool that watches the project.** It stays out of git and is deleted when the connection is turned off. A copy that PerMark did not write on this computer for this folder, such as one that came with a copied or synced folder, is deleted when the folder opens.
 
 </details>
 
@@ -424,7 +440,7 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 | Action | Shortcut |
 |---|---|
-| Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+Alt+→` / `Ctrl+Alt+←`) |
+| Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+PageDown` / `Ctrl+PageUp`, or `Ctrl+Alt+→` / `Ctrl+Alt+←`) |
 | Go to tab 1 to 8 / the last tab | `Ctrl+1` … `Ctrl+8` / `Ctrl+9` |
 | Close the tab | `Ctrl+W` |
 
@@ -470,6 +486,10 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 **PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
 
+- **0.18.0:** a release about trust and polish: a folder from elsewhere can no longer make PerMark act for it, where PerMark keeps
+  a folder's data is chosen once, a crash leaves a report on your computer (nothing is sent), large folders and many files at once
+  are much faster, the keyboard and screen readers reach everything, PerMark asks before it starts a program for the first time,
+  and many fixes across editing, review, git and settings.
 - **0.17.0:** the Assistant shows replies as formatted text, continues your last conversation (also after a restart), lets
   you choose the agent's model and reasoning level in the panel, and has its own settings page.
 - **0.16.0:** the experimental **Assistant**, off until you turn it on: an AI agent you choose works on a copy of your folder,

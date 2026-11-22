@@ -9,11 +9,16 @@
 
 import { closeHistory } from "@milkdown/kit/prose/history";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import { TextSelection, type EditorState, type Transaction } from "@milkdown/kit/prose/state";
+import {
+  Selection,
+  TextSelection,
+  type EditorState,
+  type Transaction,
+} from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import type { EditScope, TextEdit, TextRange } from "../session.svelte";
 import { checkEdits } from "../textEdits";
-import { blocksUsingReferences, classify } from "./classify";
+import { blocksUsingReferences, classify, mayUsePicture } from "./classify";
 import type { Composed } from "./compose";
 import { LOCKED, type Core } from "./core";
 import { pieceSources } from "./inlineSource";
@@ -22,6 +27,17 @@ import { pieceSources } from "./inlineSource";
 export function blockOf(composed: Composed, from: number, to: number): number | null {
   const index = composed.ranges.findIndex((r) => r !== null && r.from <= from && to <= r.to);
   return index < 0 ? null : index;
+}
+
+/** Document position of the top-level node holding `line` of the composed text: the last one starting at | above it
+ *  (0: none does, the start). */
+export function blockAtLine(doc: PMNode, composed: Composed, line: number): number {
+  let found = 0;
+  doc.forEach((node, offset) => {
+    const at = composed.lines.get(node);
+    if (at !== undefined && at <= line) found = offset;
+  });
+  return found;
 }
 
 /** A top-level node an edit may remake: its document index, the node and its range in the composed text. */
@@ -46,9 +62,15 @@ function editableBlock(
 const CONTEXT = 24;
 /** Markup chars left out of both sides before contexts are compared (an escaped one is shown as itself). */
 const MARKUP = /[\\*_~`[\]()#>|]/g;
+/** `MARKUP` by char code (all ASCII), for the comparisons made once per candidate. */
+const IS_MARKUP = new Uint8Array(128);
+for (const c of "\\*_~`[]()#>|") IS_MARKUP[c.charCodeAt(0)] = 1;
+
+/** A block's shown text and the document position of each of its chars. */
+type Shown = { text: string; at: number[] };
 
 /** A block's shown text (its text nodes; `\n` between textblocks and for inline leaves) and each char's position. */
-function shownText(node: PMNode, start: number): { text: string; at: number[] } {
+function shownText(node: PMNode, start: number): Shown {
   let text = "";
   const at: number[] = [];
   node.descendants((child, pos) => {
@@ -68,58 +90,146 @@ function shownText(node: PMNode, start: number): { text: string; at: number[] } 
   return { text, at };
 }
 
-function commonTail(markdown: string, shown: string): number {
-  const a = markdown.replace(MARKUP, "");
-  const b = shown.replace(MARKUP, "");
+/** Chars `context` (markup left out) ends with that the shown chars just before `at` (the `CONTEXT` before it,
+ *  markup left out) end with too. Walks the shown text in place: no copy per candidate. */
+function commonTail(context: string, text: string, at: number): number {
   let n = 0;
-  while (n < a.length && n < b.length && a[a.length - 1 - n] === b[b.length - 1 - n]) n += 1;
+  for (let i = at - 1; i >= Math.max(0, at - CONTEXT) && n < context.length; i--) {
+    const c = text.charCodeAt(i);
+    if (IS_MARKUP[c] === 1) continue;
+    if (c !== context.charCodeAt(context.length - 1 - n)) break;
+    n += 1;
+  }
   return n;
 }
 
-function commonHead(markdown: string, shown: string): number {
-  const a = markdown.replace(MARKUP, "");
-  const b = shown.replace(MARKUP, "");
+/** Chars `context` (markup left out) starts with that the shown chars from `at` on (the `CONTEXT` from there, markup
+ *  left out) start with too. */
+function commonHead(context: string, text: string, at: number): number {
   let n = 0;
-  while (n < a.length && n < b.length && a[n] === b[n]) n += 1;
+  const end = Math.min(text.length, at + CONTEXT);
+  for (let i = at; i < end && n < context.length; i++) {
+    const c = text.charCodeAt(i);
+    if (IS_MARKUP[c] === 1) continue;
+    if (c !== context.charCodeAt(n)) break;
+    n += 1;
+  }
   return n;
 }
 
-/** Document positions of `range` (offsets of `composed.text`): its text in the shown text of its block, at the place
- *  whose text before | after matches the Markdown around the range best (ties: nearest the expected spot). An empty
- *  range: an insertion point. `null`: outside | across blocks, a locked block, inside an inline piece's source, or not
- *  shown as such (markup inside). */
-export function docRange(doc: PMNode, composed: Composed, range: TextRange): TextRange | null {
-  const found = editableBlock(doc, composed, range.from, range.to);
-  if (found === null) return null;
-  const { index, node, range: block } = found;
-  let start = 0;
-  for (let i = 0; i < index; i++) start += doc.child(i).nodeSize;
-  const shown = shownText(node, start);
-  const markdown = composed.text.slice(block.from, block.to);
-  const rel = range.from - block.from;
+/** Where `range` (in the block at document index `index`, written at `block`, starting at document position `start`,
+ *  shown as `shown`) is shown: see `docRange`. Candidates are tried nearest the expected spot first (ties: the
+ *  earlier one), so the first with the best score wins and a candidate matching both contexts in full ends the
+ *  search: the same place as trying every one in text order. */
+function placeIn(
+  composed: Composed,
+  index: number,
+  block: TextRange,
+  start: number,
+  shown: Shown,
+  range: TextRange,
+): TextRange | null {
   // where the text's own reading has the pieces: a prose copy of a piece's source is prose
   const pieces = composed.pieces[index] ?? [];
   if (pieces.some((span) => range.from < span.to && range.to > span.from)) return null;
+  const markdown = composed.text.slice(block.from, block.to);
+  const rel = range.from - block.from;
   const needle = composed.text.slice(range.from, range.to);
-  const before = markdown.slice(Math.max(0, rel - CONTEXT), rel);
-  const after = markdown.slice(rel + needle.length, rel + needle.length + CONTEXT);
-  const expected = (rel * shown.text.length) / Math.max(1, markdown.length);
-  let best: { at: number; score: number; off: number } | null = null;
-  for (let at = shown.text.indexOf(needle); at >= 0; at = shown.text.indexOf(needle, at + 1)) {
-    const score =
-      commonTail(before, shown.text.slice(Math.max(0, at - CONTEXT), at)) +
-      commonHead(after, shown.text.slice(at + needle.length, at + needle.length + CONTEXT));
-    const off = Math.abs(at - expected);
-    if (best === null || score > best.score || (score === best.score && off < best.off)) {
-      best = { at, score, off };
-    }
-    if (at >= shown.text.length) break;
+  const before = markdown.slice(Math.max(0, rel - CONTEXT), rel).replace(MARKUP, "");
+  const after = markdown
+    .slice(rel + needle.length, rel + needle.length + CONTEXT)
+    .replace(MARKUP, "");
+  const text = shown.text;
+  const expected = (rel * text.length) / Math.max(1, markdown.length);
+  // every place the needle starts at (an insertion point: every place of the text, end included)
+  const places: number[] = [];
+  if (needle !== "") {
+    for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + 1)) places.push(at);
+  }
+  const count = needle === "" ? text.length + 1 : places.length;
+  const placeAt = (i: number): number => (needle === "" ? i : (places[i] ?? 0));
+  // the first place at | after the expected spot, and the last one before it
+  let lo = 0;
+  let hi = count;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (placeAt(mid) < expected) lo = mid + 1;
+    else hi = mid;
+  }
+  let right = lo;
+  let left = lo - 1;
+  const full = before.length + after.length;
+  let best: { at: number; score: number } | null = null;
+  while (left >= 0 || right < count) {
+    const offLeft = left >= 0 ? Math.abs(placeAt(left) - expected) : Infinity;
+    const offRight = right < count ? Math.abs(placeAt(right) - expected) : Infinity;
+    const at = offLeft <= offRight ? placeAt(left--) : placeAt(right++);
+    const score = commonTail(before, text, at) + commonHead(after, text, at + needle.length);
+    if (best === null || score > best.score) best = { at, score };
+    if (score === full) break;
   }
   if (best === null) return null;
   const from = shown.at[best.at] ?? (shown.at[best.at - 1] ?? start) + 1;
   if (needle === "") return { from, to: from };
   const last = shown.at[best.at + needle.length - 1];
   return last === undefined ? null : { from, to: last + 1 };
+}
+
+/** Index in `written` (document indexes of the blocks with a range, in order) of the first block whose range holds
+ *  `from..to`, as a scan in document order finds it (the ranges follow each other without overlap); `null`: none. */
+function writtenHolding(
+  composed: Composed,
+  written: readonly number[],
+  from: number,
+  to: number,
+): number | null {
+  let lo = 0;
+  let hi = written.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((composed.ranges[written[mid] ?? 0]?.to ?? 0) < to) lo = mid + 1;
+    else hi = mid;
+  }
+  const index = written[lo];
+  const range = index === undefined ? null : composed.ranges[index];
+  return index !== undefined && range && range.from <= from ? index : null;
+}
+
+/** Document positions of each of `ranges` (offsets of `composed.text`): see `docRange`. Each block is looked up by
+ *  binary search and its shown text made once, however many ranges it holds (a document's marks in one pass). */
+export function docRanges(
+  doc: PMNode,
+  composed: Composed,
+  ranges: readonly TextRange[],
+): (TextRange | null)[] {
+  const starts: number[] = [];
+  doc.forEach((_, offset) => starts.push(offset));
+  const written: number[] = [];
+  composed.ranges.forEach((range, index) => {
+    if (range !== null) written.push(index);
+  });
+  const shown = new Map<number, Shown>();
+  return ranges.map((range) => {
+    const index = writtenHolding(composed, written, range.from, range.to);
+    const block = index === null ? null : composed.ranges[index];
+    const node = index === null ? null : doc.maybeChild(index);
+    if (index === null || !block || !node || node.type.name === LOCKED) return null;
+    const start = starts[index] ?? 0;
+    let text = shown.get(index);
+    if (text === undefined) {
+      text = shownText(node, start);
+      shown.set(index, text);
+    }
+    return placeIn(composed, index, block, start, text, range);
+  });
+}
+
+/** Document positions of `range` (offsets of `composed.text`): its text in the shown text of its block, at the place
+ *  whose text before | after matches the Markdown around the range best (ties: nearest the expected spot, then the
+ *  earlier one). An empty range: an insertion point. `null`: outside | across blocks, a locked block, inside an inline
+ *  piece's source, or not shown as such (markup inside). Many ranges at once: `docRanges`. */
+export function docRange(doc: PMNode, composed: Composed, range: TextRange): TextRange | null {
+  return docRanges(doc, composed, [range])[0] ?? null;
 }
 
 /** Selects `range` (see `docRange`) and scrolls it into view; `false` (nothing done) when it is not found. */
@@ -201,7 +311,13 @@ export function editsTr(
     edited = edited.slice(0, edit.from) + edit.insert + edited.slice(edit.to);
   }
   const written = composed.ranges.flatMap((r, index) => (r === null ? [] : [index]));
-  const usesReference = blocksUsingReferences(core, edited, startsAfter(composed, sorted)).blocks;
+  const starts = startsAfter(composed, sorted);
+  // read as a whole (long in a large document with a definition) only when a touched block could use one
+  const usesReference = [...byBlock.keys()].some((index) =>
+    mayUsePicture(edited, starts, written.indexOf(index)),
+  )
+    ? blocksUsingReferences(core, edited, starts).blocks
+    : new Set<number>();
   const at: number[] = [];
   state.doc.forEach((_, offset) => at.push(offset));
   const replaced: { from: number; to: number; node: PMNode }[] = [];
@@ -231,7 +347,25 @@ export function editsTr(
   for (const { from, to, node } of replaced.sort((a, b) => b.from - a.from)) {
     tr.replaceWith(from, to, node);
   }
+  keepCaretIn(tr, state.selection, replaced);
   return closeHistory(tr);
+}
+
+/**
+ * A selection with an end inside a block `replaced` remade: the caret at the end of that block's new text. Mapped as
+ * ProseMirror maps it, a position inside a replaced range goes past it, into the next block; a block kept as written
+ * there would end up selected as a whole (its outline, the page's selection painted over what it draws).
+ */
+function keepCaretIn(
+  tr: Transaction,
+  selection: Selection,
+  replaced: readonly { from: number; to: number; node: PMNode }[],
+): void {
+  const holding = (pos: number) => replaced.find((r) => r.from < pos && pos < r.to);
+  const block = holding(selection.head) ?? holding(selection.anchor);
+  if (block === undefined) return;
+  const start = tr.mapping.map(block.from, -1);
+  tr.setSelection(Selection.near(tr.doc.resolve(start + block.node.nodeSize - 1), -1));
 }
 
 /** An edit of `range` would go in as the document stands: the range lies in one block the editor writes itself

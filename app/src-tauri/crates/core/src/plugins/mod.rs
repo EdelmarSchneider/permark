@@ -1,6 +1,7 @@
 //! Core <-> plugin boundary (deliberate design, see directives §2 exception): identity, manifest, lifecycle.
 //! Plugins get core services through [`PluginCx`] only; a running plugin = [`Running`] whose `Drop` tears it down.
 
+mod consent;
 mod enable;
 mod facts;
 mod files;
@@ -18,9 +19,11 @@ use std::sync::{Arc, PoisonError, RwLock};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub use consent::{GuardedConsent, ProgramConsent, ProgramConsentApi};
 pub use enable::{on_ids, resolve_enabled, EnableInputs, Enablement, OffReason};
 pub use facts::{
-    CommitId, FileVersion, FileVersions, NoBlob, NoVersions, ProjectFacts, RepoHandle, RepoReader,
+    CommitId, FileVersion, FileVersions, NoBlob, NoTracking, NoVersions, ProjectFacts, RepoHandle,
+    RepoReader,
 };
 pub use files::{
     is_shared_name, nesting, ChangeListener, FolderReveal, FolderRevealApi, FolderScan, Nesting,
@@ -192,6 +195,12 @@ pub trait Plugin: Send + Sync {
     /// state store) while the plugin is off. `None`: nothing worth telling (small state files only).
     fn data_bytes(&self, _app: &StateStore) -> Option<u64> {
         None
+    }
+    /// Files the plugin keeps straight in a state folder ([`StateStore::raw_file`]) instead of its namespace, in the
+    /// layout of an earlier version: "Remove data" deletes each name there too. One plain name each
+    /// ([`is_shared_name`]); any other is skipped.
+    fn root_files(&self) -> &'static [&'static str] {
+        &[]
     }
     /// "Remove data" (plugin off everywhere), before core deletes the plugin's namespaces: removes what the plugin
     /// keeps OUTSIDE them (a folder the person chose), ONLY its own files there.
@@ -527,12 +536,17 @@ impl PluginCx {
         Some(table.register(&self.id, method, handler))
     }
 
-    /// Hears the callers (`RpcCall.window`) that let go of the project (Project scope: tab closed, another folder
-    /// opened in it, window gone) until the registration is dropped: per-caller state goes with them. `None` for
-    /// App-scope instances (their callers have no project to let go of).
+    /// Hears the callers (`RpcCall.window`) that are gone until the registration is dropped: per-caller state goes
+    /// with them. Project scope: a caller let go of the project (tab closed, another folder opened in it, window
+    /// gone); App scope: the caller's view closed. `None` when the instance has neither table.
     #[must_use]
     pub fn on_caller_gone(&self, handler: GoneHandler) -> Option<RpcRegistration> {
-        Some(self.project.as_ref()?.rpc.on_caller_gone(handler))
+        let table = self
+            .project
+            .as_ref()
+            .map(|project| &project.rpc)
+            .or_else(|| self.app.as_ref().map(|app| &app.rpc))?;
+        Some(table.on_caller_gone(handler))
     }
 
     /// Gives a Project-scope instance the file watch of its project.

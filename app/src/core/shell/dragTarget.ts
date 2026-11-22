@@ -14,6 +14,7 @@ import {
   regionOf,
   REGIONS,
   type Arrangement,
+  type Present,
   type Region,
 } from "./arrangement";
 import { ACROSS, ALONG, AS_TAB } from "./moveWords";
@@ -171,7 +172,13 @@ function edgeOf(region: Region, scene: DragScene): Box | null {
 }
 
 /** What is under the pointer, whether or not a drop there would change anything. */
-function under(at: Point, scene: DragScene, id: string, arr: Arrangement): DragTarget | null {
+function under(
+  at: Point,
+  scene: DragScene,
+  id: string,
+  arr: Arrangement,
+  present: Present | undefined,
+): DragTarget | null {
   for (const { region, folded, groups } of scene.regions) {
     for (const group of groups) {
       if (group.strip !== null && holds(group.strip.box, at)) {
@@ -179,7 +186,7 @@ function under(at: Point, scene: DragScene, id: string, arr: Arrangement): DragT
       }
       if (holds(group.body, at)) {
         // a folded region cannot draw one more group, a full one cannot take it
-        return folded || !canAddGroup(arr, region, id) ? null : onBody(group, region, at);
+        return folded || !canAddGroup(arr, region, id, present) ? null : onBody(group, region, at);
       }
     }
   }
@@ -194,27 +201,34 @@ function under(at: Point, scene: DragScene, id: string, arr: Arrangement): DragT
 /**
  * The one target for the view `id` dragged to `at` (`null`: none). Over a tab strip: a place among its tabs. Over a
  * view's body: a group of its own before | after that group, by the half the pointer is in; not in a region that
- * can take no more groups (unless the view is alone in a group there: its group changes place), nor in a folded
- * one. At the edge of the frame where a region is not drawn: into that region. Over the page | anything else, and
- * where a drop would change nothing (the place the view has): none.
+ * can take no more groups (unless the view is alone in a group there: its group changes place; or a group there is
+ * not drawn: none of its views `present`), nor in a folded one. At the edge of the frame where a region is not
+ * drawn: into that region. Over the page | anything else, and where a drop would change nothing (the place the view
+ * has): none.
  */
 export function dragTarget(
   at: Point,
   scene: DragScene,
   id: string,
   arr: Arrangement,
+  present?: Present,
 ): DragTarget | null {
-  const target = under(at, scene, id, arr);
-  return target === null || dropOn(arr, id, target) === arr ? null : target;
+  const target = under(at, scene, id, arr, present);
+  return target === null || dropOn(arr, id, target, present) === arr ? null : target;
 }
 
 /** The arrangement once `id` is dropped on `target` (nothing to change: `arr` itself). */
-export function dropOn(arr: Arrangement, id: string, target: DragTarget): Arrangement {
+export function dropOn(
+  arr: Arrangement,
+  id: string,
+  target: DragTarget,
+  present?: Present,
+): Arrangement {
   switch (target.kind) {
     case "tab":
       return intoGroup(arr, id, target.region, target.group, target.index);
     case "group":
-      return asGroup(arr, id, target.region, target.at);
+      return asGroup(arr, id, target.region, target.at, present);
     case "region":
       return moveTo(arr, id, target.region);
     default:

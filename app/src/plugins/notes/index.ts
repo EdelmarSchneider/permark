@@ -104,6 +104,13 @@ export default definePlugin({
         requires: IN_NOTES,
         run: () => notes.step(1),
       }),
+      // Alt+PageDown | Alt+PageUp first: Ctrl+Alt+Arrow switches workspaces on several Linux desktops
+      cx.contribute({
+        kind: "shortcut",
+        keys: "Alt+PageDown",
+        command: "notes.next",
+        requires: IN_NOTES,
+      }),
       cx.contribute({
         kind: "shortcut",
         keys: "Mod+Alt+ArrowDown",
@@ -116,6 +123,12 @@ export default definePlugin({
         label: "cmd.notesPrevious",
         requires: IN_NOTES,
         run: () => notes.step(-1),
+      }),
+      cx.contribute({
+        kind: "shortcut",
+        keys: "Alt+PageUp",
+        command: "notes.previous",
+        requires: IN_NOTES,
       }),
       cx.contribute({
         kind: "shortcut",

@@ -2,11 +2,10 @@
   // A ```` ```toon ```` block of a page drawn as cards and tables (read by the backend, as a file would be). A block the
   // pinned spec cannot read stays a code block with the reason. Copy copies the TOON as written; "Copy as JSON" the
   // data. Read only here: in Edit the block is kept as written, Source changes it.
-  import Check from "@lucide/svelte/icons/check";
-  import Copy from "@lucide/svelte/icons/copy";
   import { api, type Body } from "../../api";
   import ConfigSheet from "../../core/config/ConfigSheet.svelte";
   import CodeActions from "../../core/doc/CodeActions.svelte";
+  import CopyButton from "../../core/doc/CopyButton.svelte";
   import { t } from "../../core/i18n";
   import type { EmbedProps } from "../../core/plugins/props";
   import CopyJson from "./CopyJson.svelte";
@@ -14,7 +13,6 @@
   let { source }: EmbedProps = $props();
 
   let body = $state.raw<Body | null>(null);
-  let copied = $state(false);
 
   // the sheet of the block: the name only picks the format, nothing is read from disk
   $effect(() => {
@@ -28,21 +26,6 @@
       stale = true;
     };
   });
-
-  $effect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => (copied = false), 1500);
-    return () => clearTimeout(timer);
-  });
-
-  async function copy(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(source);
-      copied = true;
-    } catch {
-      // the system refused the clipboard
-    }
-  }
 
   const problem = $derived(body?.kind === "text" ? (body.problem ?? null) : null);
 </script>
@@ -65,16 +48,7 @@
     <span class="lang">TOON</span>
     <CodeActions {source} language="toon" />
     {#if body?.kind === "sheet"}<CopyJson text={() => Promise.resolve(source)} compact />{/if}
-    <button
-      type="button"
-      class="icon-btn icon-btn--sm copy"
-      class:is-done={copied}
-      aria-label={t("doc.copyCode")}
-      title={t("doc.copyCode")}
-      onclick={() => void copy()}
-    >
-      {#if copied}<Check size={14} />{:else}<Copy size={14} />{/if}
-    </button>
+    <CopyButton copy={source} label={t("doc.copyCode")} class="copy" />
   </div>
 </div>
 

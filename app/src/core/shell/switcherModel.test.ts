@@ -59,6 +59,7 @@ describe("the tab strip", () => {
       name: "p",
       root: "/p",
       stateLocation: "profile",
+      dataOffer: "none",
     } as const;
     const showing: WindowView = { state: "showing", workspace: project, document: null };
     expect(shownId(showing)).toBe(5);

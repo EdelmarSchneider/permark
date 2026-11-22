@@ -50,6 +50,7 @@ function view(path: string): DocumentView {
     mtimeMs: 1,
     editable: { editable: "surgical" },
     notes: [],
+    opensOutside: true,
   };
 }
 
@@ -449,5 +450,15 @@ describe("the list of earlier versions", () => {
     shows("README.md");
     open({ path: "README.md", rows: [row(4), row(5), row(6)] });
     expect(active()).toBe(0);
+  });
+
+  it("opened while a version is picked: the keyboard starts on that version's row, also when the rows come later", () => {
+    const picked = row(3);
+    vi.spyOn(review, "picked", "get").mockReturnValue({ commit: picked.commit, atMs: picked.atMs });
+    open({ rows: [], loading: true });
+    open({ rows: [row(1), row(2), picked, row(4)] });
+    expect(active()).toBe(2);
+    key(listbox(), "ArrowDown");
+    expect(active()).toBe(3);
   });
 });

@@ -104,14 +104,6 @@ function themed(source: string, token: (name: string) => string): string {
 }
 
 /**
- * A link of the drawing as the page's own links are written (`href`, not `xlink:href`): the page's link handling
- * then takes the click (a web address opens outside the app, only when clicked), never the web view.
- */
-function pageLinks(svg: string): string {
-  return svg.replace(/<a xlink:href=/g, "<a href=");
-}
-
-/**
  * The SVG for a DOT source in this theme; a failure with the engine's words when the graph is wrong | too big.
  * `forced`: the caller fixed the theme, not the page (its plain palette, whatever the page shows).
  */
@@ -135,7 +127,7 @@ export function drawDot(
         const problem = result.errors.find((e) => e.level === "error")?.message;
         return problem === undefined ? null : { problem };
       }
-      return sanitizeSvg(pageLinks(result.output));
+      return sanitizeSvg(result.output);
     },
   );
 }

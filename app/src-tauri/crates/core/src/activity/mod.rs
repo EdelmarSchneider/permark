@@ -13,7 +13,7 @@ pub mod net;
 #[cfg(test)]
 mod tests;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError, Weak};
 use std::thread::JoinHandle;
@@ -39,6 +39,9 @@ pub const STALE_MS: u64 = 7 * DAY_MS;
 pub const OUTSIDE_DETAIL_FILES: usize = 50;
 /// The journal file (the project's private state folder).
 pub const JOURNAL_FILE: &str = "activity.json";
+/// Highest number a journal's seqs reach. Past it a number no longer survives readers that hold numbers as doubles
+/// (the app's own windows): a file holding a larger one did not come from PerMark.
+pub const MAX_SEQ: u64 = 1 << 53;
 /// How long the journal waits for more entries before it writes them.
 const FLUSH_DELAY: Duration = Duration::from_millis(500);
 
@@ -251,6 +254,7 @@ pub struct Entry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Checkpoint {
     /// Seq of the `HandOff` entry: everything up to it was handed off.
+    #[serde(deserialize_with = "seq_in_range")]
     pub seq: u64,
     pub at: u64,
     /// HEAD of the repository at the hand-off (git facts of the next one).
@@ -261,6 +265,7 @@ pub struct Checkpoint {
 /// What the person handed off, frozen at confirm: the agent reads exactly what the person saw.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Package {
+    #[serde(deserialize_with = "seq_in_range")]
     pub seq: u64,
     pub at: u64,
     /// The rows as the agent receives them (rendered by the agent connection).
@@ -272,12 +277,12 @@ pub struct Package {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Journal {
     /// The next entry's seq (from 1).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "next_in_range")]
     pub next: u64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "entries_in_range")]
     pub entries: Vec<Entry>,
     /// Highest seq retention dropped (0: none).
-    #[serde(default)]
+    #[serde(default, deserialize_with = "seq_in_range")]
     pub trimmed_through: u64,
     /// The journal on disk had this older format: its entries were kept aside, read-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -288,8 +293,48 @@ pub struct Journal {
     pub package: Option<Package>,
 }
 
+/// A seq-bearing number of the file: one above [`MAX_SEQ`] fails the whole journal's parse, so the load moves the
+/// file aside as it does another format version's journal (a fresh journal starts, the file is kept).
+fn seq_in_range<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    let seq = u64::deserialize(deserializer)?;
+    if seq > MAX_SEQ {
+        return Err(serde::de::Error::custom(
+            "a number past the highest seq a journal reaches",
+        ));
+    }
+    Ok(seq)
+}
+
+/// `next` of the file: at [`MAX_SEQ`] or above no new row fits (every push would be refused and the journal would
+/// record nothing again), so the load moves the file aside as [`seq_in_range`] does.
+fn next_in_range<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    let next = u64::deserialize(deserializer)?;
+    if next >= MAX_SEQ {
+        return Err(serde::de::Error::custom(
+            "no seq left for a new row of the journal",
+        ));
+    }
+    Ok(next)
+}
+
+/// The rows of the file: each leaves a seq for a new row (the load raises `next` past the last one, see
+/// [`next_in_range`]); a row past that fails the parse as in [`seq_in_range`].
+fn entries_in_range<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Entry>, D::Error> {
+    let entries = Vec::<Entry>::deserialize(deserializer)?;
+    if entries.iter().any(|e| e.seq.saturating_add(1) >= MAX_SEQ) {
+        return Err(serde::de::Error::custom(
+            "a row that leaves no seq for a new one",
+        ));
+    }
+    Ok(entries)
+}
+
 impl StateData for Journal {
     const VERSION: u32 = 1;
+    /// Up to [`KEEP_ENTRIES`] entries, each with its own paths and texts.
+    const MAX_BYTES: u64 = 16 * 1024 * 1024;
 }
 
 impl Journal {
@@ -301,80 +346,38 @@ impl Journal {
         &self.entries[at..]
     }
 
-    fn push(&mut self, at: u64, by: By, fact: Fact) -> u64 {
+    /// Adds a row with the next seq; `None` (nothing added) once the seqs are used up: `next` never passes
+    /// [`MAX_SEQ`] and never wraps. A journal written with no seq left is moved aside at its next load (a fresh one
+    /// starts), so it never stays one that records nothing.
+    fn push(&mut self, at: u64, by: By, fact: Fact) -> Option<u64> {
         let seq = self.next.max(1);
-        self.next = seq + 1;
+        self.next = seq.checked_add(1).filter(|next| *next <= MAX_SEQ)?;
         self.entries.push(Entry { seq, at, by, fact });
-        seq
+        Some(seq)
     }
 
-    /// A change outside merges into the one of the same path since the person's last action: created + deleted ->
-    /// nothing, created + modified -> created, deleted + created -> modified, renames chained.
-    fn push_outside(&mut self, at: u64, change: OutsideChange, path: &str, from: Option<&str>) {
-        let key = if change == OutsideChange::Renamed {
-            from.unwrap_or(path)
-        } else {
-            path
-        };
-        // only the tail of changes outside (since the last action of the person | marker) is merged
-        let tail = self
-            .entries
-            .iter()
-            .rposition(|e| e.by != By::Outside)
-            .map_or(0, |i| i + 1);
-        let found = self.entries[tail..]
-            .iter()
-            .rposition(|e| e.fact.path() == Some(key))
-            .map(|i| i + tail);
-        let Some(index) = found else {
-            self.push(
-                at,
-                By::Outside,
-                Fact::Outside {
-                    change,
-                    path: path.to_owned(),
-                    from: from.map(str::to_owned),
-                },
-            );
-            return;
-        };
-        let Fact::Outside {
-            change: before,
-            from: before_from,
-            ..
-        } = self.entries[index].fact.clone()
-        else {
-            return;
-        };
-        let merged: Option<(OutsideChange, String, Option<String>)> = match (before, change) {
-            (OutsideChange::Created, OutsideChange::Deleted) => None,
-            (OutsideChange::Created, _) => Some((OutsideChange::Created, path.to_owned(), None)),
-            (OutsideChange::Deleted, OutsideChange::Created | OutsideChange::Modified) => {
-                Some((OutsideChange::Modified, path.to_owned(), None))
-            }
-            (OutsideChange::Renamed, OutsideChange::Renamed) => {
-                let origin = before_from.unwrap_or_else(|| key.to_owned());
-                (origin != path).then(|| (OutsideChange::Renamed, path.to_owned(), Some(origin)))
-            }
-            (OutsideChange::Renamed, OutsideChange::Deleted) => Some((
-                OutsideChange::Deleted,
-                before_from.unwrap_or_else(|| path.to_owned()),
-                None,
-            )),
-            (OutsideChange::Renamed, _) => {
-                Some((OutsideChange::Renamed, path.to_owned(), before_from))
-            }
-            (OutsideChange::Modified, OutsideChange::Renamed) => Some((
-                OutsideChange::Renamed,
-                path.to_owned(),
-                Some(key.to_owned()),
-            )),
-            (_, change) => Some((change, path.to_owned(), from.map(str::to_owned))),
-        };
-        self.entries.remove(index);
-        if let Some((change, path, from)) = merged {
-            self.push(at, By::Outside, Fact::Outside { change, path, from });
+    /// Puts the numbers of a journal read from disk in order (a file from elsewhere may hold any): `next` is raised
+    /// past the last row (a new row never repeats a seq); a checkpoint | package past the last seq given is brought
+    /// back to it (else every new row would count as handed off already), and so is the trimmed mark (else every
+    /// hand-off would say older rows were dropped). Each number is at most [`MAX_SEQ`] here, `next` stays below it:
+    /// a larger one fails the parse.
+    fn order_seqs(&mut self) {
+        if let Some(last) = self.entries.iter().map(|e| e.seq).max() {
+            self.next = self.next.max(last.saturating_add(1));
         }
+        let given = self.next.saturating_sub(1);
+        self.trimmed_through = self.trimmed_through.min(given);
+        if let Some(checkpoint) = &mut self.checkpoint {
+            checkpoint.seq = checkpoint.seq.min(given);
+        }
+        if let Some(package) = &mut self.package {
+            package.seq = package.seq.min(given);
+        }
+    }
+
+    /// Changes outside about to be merged into the journal one after another: see [`OutsideRun`].
+    fn outside_run(&mut self) -> OutsideRun<'_> {
+        OutsideRun::new(self)
     }
 
     /// Retention: older than [`KEEP_MS`] goes; above [`KEEP_ENTRIES`] the changes outside go first, then the oldest.
@@ -407,6 +410,138 @@ impl Journal {
             }
         }
         self.trimmed_through = self.trimmed_through.max(dropped);
+    }
+}
+
+/// What a change outside makes of the row of the same path it merges into (`before`, `before_from`); `key` is the
+/// path the change is about (a rename's `from`): created + deleted -> nothing, created + modified -> created, deleted +
+/// created -> modified, renames chained.
+fn merged_outside(
+    (before, before_from): (OutsideChange, Option<String>),
+    change: OutsideChange,
+    key: &str,
+    path: &str,
+    from: Option<&str>,
+) -> Option<(OutsideChange, String, Option<String>)> {
+    match (before, change) {
+        (OutsideChange::Created, OutsideChange::Deleted) => None,
+        (OutsideChange::Created, _) => Some((OutsideChange::Created, path.to_owned(), None)),
+        (OutsideChange::Deleted, OutsideChange::Created | OutsideChange::Modified) => {
+            Some((OutsideChange::Modified, path.to_owned(), None))
+        }
+        (OutsideChange::Renamed, OutsideChange::Renamed) => {
+            let origin = before_from.unwrap_or_else(|| key.to_owned());
+            (origin != path).then(|| (OutsideChange::Renamed, path.to_owned(), Some(origin)))
+        }
+        (OutsideChange::Renamed, OutsideChange::Deleted) => Some((
+            OutsideChange::Deleted,
+            before_from.unwrap_or_else(|| path.to_owned()),
+            None,
+        )),
+        (OutsideChange::Renamed, _) => Some((OutsideChange::Renamed, path.to_owned(), before_from)),
+        (OutsideChange::Modified, OutsideChange::Renamed) => Some((
+            OutsideChange::Renamed,
+            path.to_owned(),
+            Some(key.to_owned()),
+        )),
+        (_, change) => Some((change, path.to_owned(), from.map(str::to_owned))),
+    }
+}
+
+/// Changes outside merged into the journal one after another (one watch batch: thousands at a checkout). A change
+/// merges into the row of the same path since the person's last action ([`merged_outside`]): that tail is looked over
+/// once, each path's row is found by its path, and the rows merged away leave together when the run ends (each one
+/// leaving alone would shift the whole tail).
+struct OutsideRun<'a> {
+    journal: &'a mut Journal,
+    /// Path -> the live tail rows about it, oldest first: a change merges into the last one.
+    rows: HashMap<String, Vec<usize>>,
+    /// Rows merged away, removed at the end of the run.
+    gone: Vec<usize>,
+}
+
+impl<'a> OutsideRun<'a> {
+    fn new(journal: &'a mut Journal) -> Self {
+        // only the tail of changes outside (since the last action of the person | marker) is merged
+        let tail = journal
+            .entries
+            .iter()
+            .rposition(|e| e.by != By::Outside)
+            .map_or(0, |i| i + 1);
+        let mut rows: HashMap<String, Vec<usize>> = HashMap::new();
+        for (at, entry) in journal.entries.iter().enumerate().skip(tail) {
+            if let Some(path) = entry.fact.path() {
+                rows.entry(path.to_owned()).or_default().push(at);
+            }
+        }
+        Self {
+            journal,
+            rows,
+            gone: Vec::new(),
+        }
+    }
+
+    /// Adds a row; `false`: out of seqs, nothing added.
+    fn add(&mut self, at: u64, change: OutsideChange, path: String, from: Option<String>) -> bool {
+        let fact = Fact::Outside {
+            change,
+            path: path.clone(),
+            from,
+        };
+        if self.journal.push(at, By::Outside, fact).is_none() {
+            return false;
+        }
+        let row = self.journal.entries.len() - 1;
+        self.rows.entry(path).or_default().push(row);
+        true
+    }
+
+    fn push(&mut self, at: u64, change: OutsideChange, path: &str, from: Option<&str>) {
+        let key = if change == OutsideChange::Renamed {
+            from.unwrap_or(path)
+        } else {
+            path
+        };
+        let Some(&index) = self.rows.get(key).and_then(|rows| rows.last()) else {
+            self.add(at, change, path.to_owned(), from.map(str::to_owned));
+            return;
+        };
+        let Fact::Outside {
+            change: before,
+            from: before_from,
+            ..
+        } = self.journal.entries[index].fact.clone()
+        else {
+            return;
+        };
+        // the merged row goes in first (out of seqs, the earlier row stays), then the row it replaces goes
+        if let Some((change, path, from)) =
+            merged_outside((before, before_from), change, key, path, from)
+        {
+            if !self.add(at, change, path, from) {
+                return;
+            }
+        }
+        if let Some(rows) = self.rows.get_mut(key) {
+            rows.retain(|row| *row != index);
+        }
+        self.gone.push(index);
+    }
+}
+
+impl Drop for OutsideRun<'_> {
+    fn drop(&mut self) {
+        if self.gone.is_empty() {
+            return;
+        }
+        self.gone.sort_unstable();
+        let mut gone = self.gone.iter().peekable();
+        let mut at = 0;
+        self.journal.entries.retain(|_| {
+            let merged_away = gone.next_if_eq(&&at).is_some();
+            at += 1;
+            !merged_away
+        });
     }
 }
 
@@ -565,9 +700,11 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The version a journal file on disk says it has (`None`: missing | unreadable).
+/// The version a journal file on disk says it has (`None`: missing | unreadable). Read as the load reads it: a plain
+/// file of at most the journal's cap, never through a link in `.permark/`, so a FIFO | link | huge file planted there
+/// never makes the open wait, read elsewhere or take it all in.
 fn version_on_disk(file: &StateFile<Journal>) -> Option<u32> {
-    let bytes = std::fs::read(file.path()).ok()?;
+    let bytes = crate::fsx::read_regular(file.path(), Journal::MAX_BYTES, file.zone()).ok()?;
     let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
     value
         .get("version")
@@ -579,7 +716,10 @@ fn version_on_disk(file: &StateFile<Journal>) -> Option<u32> {
 fn load(file: &StateFile<Journal>) -> Journal {
     let older = version_on_disk(file).filter(|v| *v != Journal::VERSION);
     match file.load() {
-        Loaded::Found(journal) => journal,
+        Loaded::Found(mut journal) => {
+            journal.order_seqs();
+            journal
+        }
         Loaded::Missing => Journal::default(),
         Loaded::Recovered { .. } => Journal {
             upgraded_from: older,
@@ -678,6 +818,7 @@ impl ActivityLog {
             } else {
                 mirror_fact(&mut state, now, by, &fact);
             }
+            // `None` once the seqs are used up: no row, nothing announced
             let seq = state.journal.push(now, by, fact);
             state.journal.trim(now);
             state.dirty = true;
@@ -686,7 +827,7 @@ impl ActivityLog {
                 .journal
                 .entries
                 .last()
-                .filter(|e| e.seq == seq)
+                .filter(|e| Some(e.seq) == seq)
                 .cloned()
         };
         if let Some(entry) = &entry {
@@ -728,38 +869,45 @@ impl ActivityLog {
     /// Changes the watch verified: the ones made outside PerMark (not the app's own writes) are noted, files only.
     pub fn outside(&self, batch: &FsBatch) {
         let now = self.now();
-        let mut noted = false;
-        {
+        let noted = {
             let mut state = lock(&self.inner.state);
-            for change in batch.changes.iter().filter(|c| !c.own && !c.is_dir) {
-                if is_private(&change.path) {
-                    continue;
-                }
-                let (kind, from) = match &change.kind {
-                    ChangeKind::Created => (OutsideChange::Created, None),
-                    ChangeKind::Modified => (OutsideChange::Modified, None),
-                    ChangeKind::Removed => (OutsideChange::Deleted, None),
-                    ChangeKind::Renamed { from } => (OutsideChange::Renamed, Some(from.as_str())),
-                };
+            let changes: Vec<(OutsideChange, &str, Option<&str>)> = batch
+                .changes
+                .iter()
+                .filter(|c| !c.own && !c.is_dir && !is_private(&c.path))
+                .map(|c| match &c.kind {
+                    ChangeKind::Created => (OutsideChange::Created, c.path.as_str(), None),
+                    ChangeKind::Modified => (OutsideChange::Modified, c.path.as_str(), None),
+                    ChangeKind::Removed => (OutsideChange::Deleted, c.path.as_str(), None),
+                    ChangeKind::Renamed { from } => {
+                        (OutsideChange::Renamed, c.path.as_str(), Some(from.as_str()))
+                    }
+                })
+                .collect();
+            for &(kind, path, from) in &changes {
                 if state.waiting.is_some() {
                     state.wait(Waiting::Outside {
                         at: now,
                         change: kind,
-                        path: change.path.clone(),
+                        path: path.to_owned(),
                         from: from.map(str::to_owned),
                     });
                 } else {
-                    mirror_outside(&mut state, now, kind, &change.path, from);
+                    mirror_outside(&mut state, now, kind, path, from);
                 }
-                state.journal.push_outside(now, kind, &change.path, from);
-                noted = true;
             }
-            if noted {
+            let mut run = state.journal.outside_run();
+            for &(kind, path, from) in &changes {
+                run.push(now, kind, path, from);
+            }
+            drop(run);
+            if !changes.is_empty() {
                 state.journal.trim(now);
                 state.dirty = true;
                 self.inner.wake.notify_all();
             }
-        }
+            !changes.is_empty()
+        };
         if noted {
             let last = lock(&self.inner.state).journal.entries.last().cloned();
             if let Some(entry) = last.filter(|e| e.by == By::Outside) {
@@ -777,15 +925,22 @@ impl ActivityLog {
     /// The person confirmed a hand-off of everything up to `upto` (the seq the preview was built from): the checkpoint
     /// and the frozen package. Entries that came after the preview stay for the next hand-off.
     ///
-    /// Returns the seq of the hand-off marker.
+    /// Returns the seq of the hand-off marker; `None`: the journal's seqs are used up, nothing is noted (a checkpoint
+    /// | package without its marker would point past the rows).
     #[must_use]
-    pub fn hand_off(&self, upto: u64, head: Option<String>, text: String, rows: u32) -> u64 {
+    pub fn hand_off(
+        &self,
+        upto: u64,
+        head: Option<String>,
+        text: String,
+        rows: u32,
+    ) -> Option<u64> {
         let now = self.now();
         let entry = {
             let mut state = lock(&self.inner.state);
             let journal = &mut state.journal;
             // the marker goes at the end: entries that came after the preview (seq > upto) stay for the next hand-off
-            let seq = journal.push(now, By::Person, Fact::HandOff { rows });
+            let seq = journal.push(now, By::Person, Fact::HandOff { rows })?;
             let entry = journal.entries.last().cloned().unwrap_or(Entry {
                 seq,
                 at: now,
@@ -811,7 +966,7 @@ impl ActivityLog {
             entry
         };
         self.announce(&entry);
-        entry.seq
+        Some(entry.seq)
     }
 
     /// Hears every new entry until the returned value is dropped.
@@ -825,7 +980,7 @@ impl ActivityLog {
         }
     }
 
-    /// Writes what is pending now (tests; Drop does it too).
+    /// Writes what is pending now (before an update install ends the process without the Drop; tests).
     pub fn flush(&self) {
         flush(&self.inner);
     }
@@ -918,10 +1073,11 @@ fn flush_mirror(mirror: Vec<(StateFile<Journal>, Mirrored)>) {
     for (file, items) in by_file {
         let mut journal = load(&file);
         let mut last = 0;
-        for item in items {
+        let mut items = items.into_iter().peekable();
+        while let Some(item) = items.next() {
             match item {
                 Mirrored::Fact { at, by, fact } => {
-                    journal.push(at, by, fact);
+                    let _ = journal.push(at, by, fact);
                     last = at;
                 }
                 Mirrored::Outside {
@@ -930,8 +1086,20 @@ fn flush_mirror(mirror: Vec<(StateFile<Journal>, Mirrored)>) {
                     path,
                     from,
                 } => {
-                    journal.push_outside(at, change, &path, from.as_deref());
+                    // the changes outside in a row merge as one run (a fact of the person ends it)
+                    let mut run = journal.outside_run();
+                    run.push(at, change, &path, from.as_deref());
                     last = at;
+                    while let Some(Mirrored::Outside {
+                        at,
+                        change,
+                        path,
+                        from,
+                    }) = items.next_if(|item| matches!(item, Mirrored::Outside { .. }))
+                    {
+                        run.push(at, change, &path, from.as_deref());
+                        last = at;
+                    }
                 }
             }
         }

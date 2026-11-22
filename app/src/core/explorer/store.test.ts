@@ -15,15 +15,19 @@ import type {
   Unlisten,
 } from "../../api";
 import { ImportFlow } from "./importFlow.svelte";
+import { conditions, neutralContext } from "../conditions/context.svelte";
 import { ancestorsOf, applyDelta } from "./list";
 import { setLeaveGuard } from "../editing/guard";
-import { language } from "../i18n";
+import { language, t, tn } from "../i18n";
 import { editing } from "../editing/session.svelte";
 import { problemText } from "./names";
 import { ExplorerStore, REFRESH_WAIT_MS, type ExplorerHost } from "./store.svelte";
 import type { NoticeAction } from "../window.svelte";
 
 type Mock = ReturnType<typeof createMockApi>;
+
+/** The workspace the Explorers of these tests are made for (the mock answers whatever is named). */
+const WORKSPACE = 1;
 
 type Fx = {
   api: Mock;
@@ -55,7 +59,7 @@ async function setup(link: LinkUpdate = "ask", wrap?: (api: Mock) => Api): Promi
     linkUpdate: () => setting,
     openProject: (path) => opened.push(path),
   };
-  const store = new ExplorerStore(wrap ? wrap(api) : api, host);
+  const store = new ExplorerStore(wrap ? wrap(api) : api, WORKSPACE, host);
   const stop = await store.start();
   return { api, store, failures, notes, acted, opened, stop, setLink: (v) => (setting = v) };
 }
@@ -77,9 +81,9 @@ function spies(): Created {
     const show = w.showDocument;
     return {
       ...w,
-      treeOpenFolder: (path) => {
+      treeOpenFolder: (workspace, path) => {
         opened.push(path);
-        return openFolder(path);
+        return openFolder(workspace, path);
       },
       showDocument: (path) => {
         if (path !== null) shown.push(path);
@@ -154,9 +158,9 @@ function closedFolders(api: Mock, later = false): Api {
   };
   return {
     ...api,
-    treeOpen: (filter) => api.treeOpen(filter).then(remember),
-    treeSetFilter: (filter) => api.treeSetFilter(filter).then(remember),
-    treeOpenFolder: (path) => {
+    treeOpen: (workspace, filter) => api.treeOpen(workspace, filter).then(remember),
+    treeSetFilter: (workspace, filter) => api.treeSetFilter(workspace, filter).then(remember),
+    treeOpenFolder: (workspace, path) => {
       openedFolders.add(path);
       if (later) {
         held.add(path);
@@ -167,7 +171,7 @@ function closedFolders(api: Mock, later = false): Api {
       } else {
         flush();
       }
-      return api.treeOpenFolder(path);
+      return api.treeOpenFolder(workspace, path);
     },
     on: <E extends EventName>(
       event: E,
@@ -211,7 +215,7 @@ describe("loading", () => {
     await vi.advanceTimersByTimeAsync(500);
     expect((await first.api.projectSessionGet("explorer.expanded")).ok).toBe(true);
     // a second Explorer of the same window starts from what was remembered
-    const again = new ExplorerStore(first.api, {
+    const again = new ExplorerStore(first.api, WORKSPACE, {
       fail: () => {},
       note: () => {},
       view: () => "main",
@@ -230,13 +234,13 @@ describe("loading", () => {
     await api.openPath(MOCK_FOLDER, "thisTab");
     const slow: Api = {
       ...api,
-      treeOpen: async (filter) => {
-        const result = await api.treeOpen(filter);
+      treeOpen: async (workspace, filter) => {
+        const result = await api.treeOpen(workspace, filter);
         await gate;
         return result;
       },
     };
-    const store = new ExplorerStore(slow, {
+    const store = new ExplorerStore(slow, WORKSPACE, {
       fail: () => {},
       note: () => {},
       view: () => "main",
@@ -293,6 +297,46 @@ describe("loading", () => {
     expect(store.nodes.length).toBe(before);
   });
 
+  it("names the project it was made for in every tree call: a late one never lands on the project after it", async () => {
+    const sent: [string, unknown][] = [];
+    const record = (mock: Mock): Api => {
+      const w = closedFolders(mock);
+      return {
+        ...w,
+        treeOpen: (workspace, filter) => {
+          sent.push(["treeOpen", workspace]);
+          return w.treeOpen(workspace, filter);
+        },
+        treeSetFilter: (workspace, filter) => {
+          sent.push(["treeSetFilter", workspace]);
+          return w.treeSetFilter(workspace, filter);
+        },
+        treeOpenFolder: (workspace, path) => {
+          sent.push(["treeOpenFolder", workspace]);
+          return w.treeOpenFolder(workspace, path);
+        },
+        treeKeep: (workspace, path) => {
+          sent.push(["treeKeep", workspace]);
+          return w.treeKeep(workspace, path);
+        },
+        treeClose: (workspace) => {
+          sent.push(["treeClose", workspace]);
+          return w.treeClose(workspace);
+        },
+      };
+    };
+    const { store, stop } = await setup("never", record);
+    await store.setFilter({ ...store.filter, show: "everything" });
+    await store.toggle("docs");
+    await store.setActive("docs/guide.md");
+    await store.resetFilter();
+    stop();
+    expect(new Set(sent.map(([call]) => call))).toEqual(
+      new Set(["treeOpen", "treeSetFilter", "treeOpenFolder", "treeKeep", "treeClose"]),
+    );
+    expect(sent.filter(([, workspace]) => workspace !== WORKSPACE)).toEqual([]);
+  });
+
   it("an Explorer closed while its list loads never touches the tree of the one after it", async () => {
     const api = createMockApi();
     await api.openPath(MOCK_FOLDER, "thisTab");
@@ -305,19 +349,19 @@ describe("loading", () => {
     // a big list: the backend answers long after it was asked
     const slow: Api = {
       ...api,
-      treeOpen: async (filter) => {
-        const result = await api.treeOpen(filter);
+      treeOpen: async (workspace, filter) => {
+        const result = await api.treeOpen(workspace, filter);
         sent();
         await gate;
         return result;
       },
-      treeKeep: (path) => {
+      treeKeep: (workspace, path) => {
         if (closed) late.push("treeKeep");
-        return api.treeKeep(path);
+        return api.treeKeep(workspace, path);
       },
-      treeClose: () => {
+      treeClose: (workspace) => {
         if (closed) late.push("treeClose");
-        return api.treeClose();
+        return api.treeClose(workspace);
       },
     };
     const host: ExplorerHost = {
@@ -327,14 +371,14 @@ describe("loading", () => {
       linkUpdate: () => "never",
       openProject: () => {},
     };
-    const first = new ExplorerStore(slow, host);
+    const first = new ExplorerStore(slow, WORKSPACE, host);
     void first.setActive("docs/guide.md");
     void first.start();
     await asked;
     // the tab shows another folder: its Explorer goes before the list came
     first.close();
     closed = true;
-    const second = new ExplorerStore(api, host);
+    const second = new ExplorerStore(api, WORKSPACE, host);
     const stop = await second.start();
     release();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -400,7 +444,7 @@ describe("loading", () => {
     const api = createMockApi();
     await api.openPath(MOCK_FOLDER, "thisTab");
     const open = vi.spyOn(api, "treeOpen");
-    const store = new ExplorerStore(api, {
+    const store = new ExplorerStore(api, WORKSPACE, {
       fail: () => {},
       note: () => {},
       view: () => "main",
@@ -422,8 +466,8 @@ describe("loading", () => {
     const waiting = new Promise<void>((resolve) => (held = resolve));
     const wrapped: Api = {
       ...api,
-      treeOpen: async (filter) => {
-        const result = await api.treeOpen(filter);
+      treeOpen: async (workspace, filter) => {
+        const result = await api.treeOpen(workspace, filter);
         if (holdNext) {
           holdNext = false;
           held();
@@ -432,7 +476,7 @@ describe("loading", () => {
         return result;
       },
     };
-    const store = new ExplorerStore(wrapped, {
+    const store = new ExplorerStore(wrapped, WORKSPACE, {
       fail: () => {},
       note: () => {},
       view: () => "main",
@@ -457,15 +501,15 @@ describe("loading", () => {
     let fail = true;
     const flaky: Api = {
       ...api,
-      treeOpen: (filter) =>
+      treeOpen: (workspace, filter) =>
         fail
           ? Promise.resolve({
               ok: false,
               error: { kind: "command", command: "tree_open", message: "no" },
             })
-          : api.treeOpen(filter),
+          : api.treeOpen(workspace, filter),
     };
-    const store = new ExplorerStore(flaky, {
+    const store = new ExplorerStore(flaky, WORKSPACE, {
       fail: () => {},
       note: () => {},
       view: () => "main",
@@ -770,8 +814,10 @@ describe("rows and selection", () => {
     let answer: ApiError | null = null;
     const { store, failures } = await setup("ask", (api) => ({
       ...api,
-      treeKeep: (path) =>
-        answer === null ? api.treeKeep(path) : Promise.resolve({ ok: false, error: answer }),
+      treeKeep: (workspace, path) =>
+        answer === null
+          ? api.treeKeep(workspace, path)
+          : Promise.resolve({ ok: false, error: answer }),
     }));
     const refusal = (kind: "unsupported" | "unavailable" | "pathEscape"): ApiError => ({
       kind: "backend",
@@ -993,9 +1039,9 @@ describe("a new file is chosen and opened", () => {
       const show = w.showDocument;
       return {
         ...w,
-        treeOpenFolder: (path) => {
+        treeOpenFolder: (workspace, path) => {
           c.opened.push(path);
-          return openFolder(path);
+          return openFolder(workspace, path);
         },
         showDocument: (path) => {
           if (path !== null) c.shown.push(path);
@@ -1082,6 +1128,8 @@ describe("delete and undo", () => {
     await f.store.remove(["README.md"]);
     expect(f.acted.at(-1)?.text).toContain("README.md");
     expect(f.acted.at(-1)?.actions.map((a) => a.label)).toEqual(["Undo"]);
+    // the shortcut that does the same in the tree, where file operations are done, told to screen readers
+    expect(f.acted.at(-1)?.actions[0]?.keys).toBe("Control+Z");
     f.acted.at(-1)?.actions[0]?.run();
     await vi.waitFor(() => expect(paths(f.store)).toContain("README.md"));
     expect(undo).toHaveBeenCalledTimes(1);
@@ -1093,11 +1141,38 @@ describe("delete and undo", () => {
     expect(undo).toHaveBeenCalledTimes(2);
   });
 
+  it("on macOS the Undo of a note tells Cmd+Z, the tree's key there", async () => {
+    conditions.set({ ...neutralContext(), platform: "mac" });
+    try {
+      const f = await setup("never");
+      await f.store.remove(["README.md"]);
+      expect(f.acted.at(-1)?.actions[0]?.keys).toBe("Meta+Z");
+    } finally {
+      conditions.set(neutralContext());
+    }
+  });
+
   it("nothing selected, nothing deleted", async () => {
     const f = await setup();
     const spy = vi.spyOn(f.api, "deleteFiles");
     await f.store.remove();
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("a bin that stopped part way says what went and what stayed, with Undo", async () => {
+    const f = await setup();
+    vi.spyOn(f.api, "deleteFiles").mockResolvedValueOnce({
+      ok: true,
+      value: { deleted: ["a.md", "b.md", "c.md", "d.md"], refused: ["notes/held.md"] },
+    });
+    await f.store.remove(["a.md", "b.md", "c.md", "d.md", "notes/held.md"]);
+    const note = f.acted.at(-1);
+    expect(note?.text).toBe(
+      t("fileOps.partlyDeleted", { what: tn("fileOps.items", 4), refused: "held.md" }),
+    );
+    expect(note?.text).toBe("Deleted 4 items. Couldn't move held.md to the recycle bin.");
+    expect(note?.actions[0]?.label).toBe(t("fileOps.undo"));
+    expect(f.failures).toHaveLength(0);
   });
 
   it("a refusal is told to the window", async () => {
@@ -1213,7 +1288,7 @@ async function codeProject(code: number) {
     openProject: () => {},
   };
   const start = async () => {
-    const store = new ExplorerStore(api, host);
+    const store = new ExplorerStore(api, WORKSPACE, host);
     const stop = await store.start();
     return { store, stop };
   };

@@ -36,6 +36,9 @@ type Handlers = Pick<
   | "comments.remove"
   | "comments.reply"
   | "comments.edit"
+  | "comments.asides"
+  | "comments.restore"
+  | "comments.dismissAside"
   | "quiet.rules"
   | "quiet.set"
   | "broken-links.list"
@@ -69,6 +72,16 @@ export type OrganizingProbe = {
   appTags(path: string): string[];
   /** Comments as they are kept (all of them). */
   comments(): CommentView[];
+  /** Sets comments aside as an outside write that removed them would (they are not kept any more); the aside's id.
+   *  `big`: a large part of the comments was removed. `project`: an included project's file lost them (its id and
+   *  folder); none: the opened folder's. */
+  setAside(
+    removed: readonly { path: string; quote: string; text: string; line: number }[],
+    big: boolean,
+    project?: { uid: string; folder: string },
+  ): string;
+  /** The comments file cannot be written now (read-only, over its size): Restore is refused, the aside stays. */
+  refuseRestore(refuse: boolean): void;
   /** The silence marks now. */
   marks(): Record<string, Interest>;
   /** Forgets everything the plugins hold (tags, looks, comments, marks, a broken file). */
@@ -192,6 +205,19 @@ export function createMockOrganizing(
   };
   const stored: Stored[] = [];
   let next = 1;
+  /** Comments an outside write removed (`setAside`), as the backend keeps them, by aside id; `folder` names an included
+   *  project's (`""`: the opened folder's). */
+  const asides: { id: string; folder: string; at: number; big: boolean; comments: Stored[] }[] = [];
+  let nextAside = 1;
+  let restoreRefused = false;
+  /** The comments of an aside the comments lack now (what a restore adds). */
+  const missing = (aside: { comments: Stored[] }): Stored[] =>
+    aside.comments.filter((c) => !stored.some((s) => s.id === c.id));
+  /** As the backend: `<digits>` | `<project id>:<digits>`, never a path. */
+  const asideOf = (id: string): number => {
+    if (!/^([^:]+:)?\d+$/.test(id)) throw new MockPluginError("invalidData", "id");
+    return asides.findIndex((a) => a.id === id);
+  };
   const view = (c: Stored): CommentView => {
     const text = project.files.get(c.path);
     const lines = text?.split("\n") ?? [];
@@ -460,6 +486,32 @@ export function createMockOrganizing(
       emit("comments:changed", null);
       return null;
     },
+    "comments.asides": () =>
+      asides.flatMap((a) => {
+        const count = missing(a).length;
+        return count === 0 ? [] : [{ id: a.id, folder: a.folder, count, at: a.at, big: a.big }];
+      }),
+    // only the comments the file lacks come back, never one it holds; the aside goes once they are in
+    "comments.restore": ({ id }) => {
+      const at = asideOf(id);
+      const aside = asides[at];
+      if (aside === undefined) return 0;
+      if (restoreRefused) throw new MockPluginError("unavailable", "comments.json");
+      const back = missing(aside);
+      stored.push(...back.map((c) => ({ ...c, replies: c.replies.map((r) => ({ ...r })) })));
+      asides.splice(at, 1);
+      if (back.length > 0) emit("comments:changed", null);
+      emit("comments:aside", null);
+      return back.length;
+    },
+    "comments.dismissAside": ({ id }) => {
+      const at = asideOf(id);
+      if (at >= 0) {
+        asides.splice(at, 1);
+        emit("comments:aside", null);
+      }
+      return null;
+    },
     "quiet.rules": () => ({ marks: { ...marks } }),
     "quiet.set": ({ paths, interest }) => {
       const next: Record<string, Interest> = { ...marks };
@@ -489,15 +541,42 @@ export function createMockOrganizing(
       },
       appTags: (path) => [...(app.get(path)?.tags ?? [])],
       comments: () => stored.map(view),
+      setAside: (removed, big, project) => {
+        const n = String(nextAside++);
+        const id = project ? `${project.uid}:${n}` : n;
+        const at = Date.now();
+        const comments = removed.map((r): Stored => ({
+          id: `c${next++}`,
+          path: r.path,
+          text: r.text,
+          quote: r.quote,
+          headingPath: [],
+          line: r.line,
+          endLine: r.line,
+          createdMs: at - 86_400_000,
+          editedMs: null,
+          doneMs: null,
+          replies: [],
+        }));
+        asides.push({ id, folder: project?.folder ?? "", at, big, comments });
+        emit("comments:aside", null);
+        return id;
+      },
+      refuseRestore: (refuse) => {
+        restoreRefused = refuse;
+      },
       marks: () => ({ ...marks }),
       reset: () => {
         app.clear();
         styles.clear();
         stored.length = 0;
+        asides.length = 0;
+        restoreRefused = false;
         marks = {};
         problem = null;
         changed();
         emit("comments:changed", null);
+        emit("comments:aside", null);
         emit("quiet:changed", { marks: {} });
       },
     },

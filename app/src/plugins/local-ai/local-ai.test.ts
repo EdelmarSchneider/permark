@@ -252,6 +252,6 @@ describe("plain words", () => {
         command: "plugin_call",
         error: { kind: "unsupported", subject: "x", detail: "newerEngine" },
       }),
-    ).toBe("Needs a newer version of the AI engine.");
+    ).toBe("This model needs a later version of PerMark.");
   });
 });

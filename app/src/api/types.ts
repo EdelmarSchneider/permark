@@ -7,6 +7,7 @@ import type { CommandName } from "./generated/CommandName";
 import type { DefaultAppView } from "./generated/DefaultAppView";
 import type { DemoOffer } from "./generated/DemoOffer";
 import type { DemoStatus } from "./generated/DemoStatus";
+import type { CrashOffer } from "./generated/CrashOffer";
 import type { FileGroup } from "./generated/FileGroup";
 import type { ShellEntry } from "./generated/ShellEntry";
 import type { ShellState } from "./generated/ShellState";
@@ -55,6 +56,7 @@ import type { PluginKind } from "./generated/PluginKind";
 import type { PluginInfo } from "./generated/PluginInfo";
 import type { ProjectSettingChange } from "./generated/ProjectSettingChange";
 import type { ProjectSettings } from "./generated/ProjectSettings";
+import type { Sharing } from "./generated/Sharing";
 import type { DeleteOutcome } from "./generated/DeleteOutcome";
 import type { Body } from "./generated/Body";
 import type { ConfigEdit } from "./generated/ConfigEdit";
@@ -97,6 +99,7 @@ import type { ProjectEvent } from "./generated/ProjectEvent";
 import type { ProjectMarker } from "./generated/ProjectMarker";
 import type { ProjectRow } from "./generated/ProjectRow";
 import type { ProjectUid } from "./generated/ProjectUid";
+import type { ProjectConfigChanged } from "./generated/ProjectConfigChanged";
 import type { ProjectsChanged } from "./generated/ProjectsChanged";
 import type { ProjectsUndone } from "./generated/ProjectsUndone";
 import type { ProjectsView } from "./generated/ProjectsView";
@@ -157,6 +160,8 @@ import type { TabId } from "./generated/TabId";
 import type { ClosingTab } from "./generated/ClosingTab";
 import type { CloseAnswer } from "./generated/CloseAnswer";
 import type { BarTheme } from "./generated/BarTheme";
+import type { NativeWords } from "./generated/NativeWords";
+import type { Reloaded } from "./generated/Reloaded";
 import type { ViewRequest } from "./generated/ViewRequest";
 import type { ViewMoved } from "./generated/ViewMoved";
 import type { Basis } from "./generated/Basis";
@@ -189,6 +194,9 @@ import type { AgentServerState } from "./generated/AgentServerState";
 import type { AgentSession } from "./generated/AgentSession";
 import type { AgentStatus } from "./generated/AgentStatus";
 import type { AgentWindowContext } from "./generated/AgentWindowContext";
+import type { RulesFallback } from "./generated/RulesFallback";
+import type { RulesProblem } from "./generated/RulesProblem";
+import type { RulesWhy } from "./generated/RulesWhy";
 import type { ActivityEntry } from "./generated/ActivityEntry";
 import type { ActivityFact } from "./generated/ActivityFact";
 import type { HandOffDone } from "./generated/HandOffDone";
@@ -202,6 +210,7 @@ import type { RepairArgs } from "./generated/RepairArgs";
 import type { RepairRefusal } from "./generated/RepairRefusal";
 import type { RepairResult } from "./generated/RepairResult";
 import type { By } from "./generated/By";
+import type { CommentAside } from "./generated/CommentAside";
 import type { CommentScope } from "./generated/CommentScope";
 import type { CommentView } from "./generated/CommentView";
 import type { FileMeta } from "./generated/FileMeta";
@@ -288,10 +297,13 @@ export type {
   PluginKind,
   ProjectSettingChange,
   ProjectSettings,
+  Sharing,
   ViewRequest,
   ClosingTab,
   CloseAnswer,
   BarTheme,
+  NativeWords,
+  Reloaded,
   ConfigEdit,
   ConfigEdited,
   EditSource,
@@ -405,6 +417,7 @@ export type {
   ProjectMarker,
   ProjectRow,
   ProjectUid,
+  ProjectConfigChanged,
   ProjectsChanged,
   ProjectsUndone,
   ProjectsView,
@@ -447,12 +460,12 @@ export interface Commands {
   characters_reveal: { args: Record<string, never>; result: null };
   project_session_get: { args: { key: string }; result: JsonValue | null };
   project_session_set: { args: { key: string; value: JsonValue | null }; result: null };
-  tree_open: { args: { filter: TreeFilter | null }; result: TreeSnapshot };
-  tree_set_filter: { args: { filter: TreeFilter }; result: TreeSnapshot };
-  tree_open_folder: { args: { path: string }; result: null };
-  tree_keep: { args: { path: string | null }; result: null };
+  tree_open: { args: { workspace: WorkspaceId; filter: TreeFilter | null }; result: TreeSnapshot };
+  tree_set_filter: { args: { workspace: WorkspaceId; filter: TreeFilter }; result: TreeSnapshot };
+  tree_open_folder: { args: { workspace: WorkspaceId; path: string }; result: null };
+  tree_keep: { args: { workspace: WorkspaceId; path: string | null }; result: null };
   tree_refresh: { args: Record<string, never>; result: null };
-  tree_close: { args: Record<string, never>; result: null };
+  tree_close: { args: { workspace: WorkspaceId }; result: null };
   projects_view: { args: Record<string, never>; result: ProjectsView };
   projects_include: { args: { pick: ProjectPick }; result: IncludeOutcome };
   projects_decline: { args: { pick: ProjectPick }; result: null };
@@ -543,9 +556,11 @@ export interface Commands {
   };
   plugin_call: { args: { plugin: string; method: string; args: JsonValue }; result: JsonValue };
   project_init: { args: { path: string }; result: null };
+  project_data_keep: { args: { path: string }; result: null };
   folder_empty: { args: { path: string }; result: boolean };
   project_config_get: { args: Record<string, never>; result: ProjectSettings };
   project_config_set: { args: { change: ProjectSettingChange }; result: ProjectSettings };
+  project_sharing_set: { args: { sharing: Sharing }; result: ProjectSettings };
   plugins_list: { args: Record<string, never>; result: PluginInfo[] };
   plugin_set_project: { args: { plugin: string; enabled: boolean | null }; result: null };
   plugin_remove_data: { args: { plugin: string }; result: null };
@@ -553,6 +568,8 @@ export interface Commands {
   window_close: { args: Record<string, never>; result: null };
   window_close_answer: { args: { answer: CloseAnswer }; result: null };
   view_saved: { args: { saved: boolean }; result: null };
+  view_heard: { args: Record<string, never>; result: null };
+  native_words: { args: { words: NativeWords }; result: null };
   view_ready: { args: Record<string, never>; result: null };
   view_set_title: { args: { title: string }; result: null };
   view_set_theme: { args: { theme: BarTheme | null }; result: null };
@@ -565,6 +582,8 @@ export interface Commands {
   demo_offer: { args: Record<string, never>; result: DemoStatus };
   demo_install: { args: Record<string, never>; result: string };
   demo_dismiss: { args: Record<string, never>; result: null };
+  crash_dismiss: { args: Record<string, never>; result: null };
+  crash_reveal: { args: Record<string, never>; result: null };
 }
 
 /**
@@ -645,6 +664,12 @@ export interface PluginMethods {
   "comments.reply": { args: { id: string; text: string }; result: null };
   /** `reply`: the index of the person's reply to change; absent: the comment's own text. */
   "comments.edit": { args: { id: string; reply?: number | null; text: string }; result: null };
+  /** Comments an outside write removed, per aside, while the file still lacks some of them. */
+  "comments.asides": { args: Record<string, never>; result: CommentAside[] };
+  /** Adds back the comments of an aside the file lacks; the number added (0: nothing left to add). Refused
+   *  `unavailable` while the file cannot be written (the aside stays). */
+  "comments.restore": { args: { id: string }; result: number };
+  "comments.dismissAside": { args: { id: string }; result: null };
   "quiet.rules": { args: Record<string, never>; result: QuietMarks };
   "quiet.set": { args: { paths: string[]; interest: Interest }; result: QuietMarks };
   "broken-links.list": { args: Record<string, never>; result: BrokenReport };
@@ -680,7 +705,9 @@ export interface PluginMethods {
   "notes.removeFile": { args: { path: string }; result: null };
   "notes.locateFile": { args: { path: string; newPath: string }; result: string };
   "notes.reloadFile": { args: { path: string }; result: null };
-  "notes.keepMine": { args: { path: string }; result: null };
+  /** Written only while the file still holds the bytes its row showed (`seen`: the row's `hash`; `null`: shown as
+   *  gone); else refused as `conflict`, the file left as it is. */
+  "notes.keepMine": { args: { path: string; seen: string | null }; result: null };
   "notes.saveAsNote": { args: { path: string }; result: string };
   "notes.suggestName": { args: { path: string; folder: string | null }; result: string };
   "notes.moveToProject": {
@@ -943,6 +970,8 @@ export interface PluginEvents {
   "unread:changed": UnreadList;
   "tags:changed": null;
   "comments:changed": null;
+  /** Comments an outside write removed were set aside, or an aside went away. */
+  "comments:aside": null;
   "quiet:changed": QuietMarks;
   "broken-links:changed": BrokenSummary;
   "agent:status": AgentStatus;
@@ -974,6 +1003,8 @@ export interface AppPluginEvents {
   "spelling:personal": string[];
   /** Something asked the Notes tab to show a note | a new note: the Notes tab takes it (`notes.takeIntent`). */
   "notes:intent": null;
+  /** A project's agent panel shared a note with the project | stopped sharing one: the Notes tab reads its list. */
+  "notes:shares": null;
   /** Local AI installs changed (a download finished | failed, terms accepted, assignment, token). */
   "local-ai:state": LocalAiState;
   /** One model's download progress (throttled). */
@@ -994,6 +1025,7 @@ export interface AppPluginEvents {
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type {
+  CrashOffer,
   DefaultAppView,
   DemoOffer,
   DemoStatus,
@@ -1096,6 +1128,9 @@ export type {
   AgentSession,
   AgentStatus,
   AgentWindowContext,
+  RulesFallback,
+  RulesProblem,
+  RulesWhy,
 };
 export type { ActivityEntry, ActivityFact, HandOffDone, HandOffPreview, HandOffSessionView };
 export type {
@@ -1125,6 +1160,7 @@ export type {
   RepairRefusal,
   RepairResult,
   By,
+  CommentAside,
   CommentScope,
   CommentView,
   FileMeta,
@@ -1167,6 +1203,9 @@ export interface Events {
   "index-progress": IndexProgress;
   /** The projects of a folder changed: the window showing `root` reads `projectsView` again. */
   "projects-changed": ProjectsChanged;
+  /** The shared settings of a folder changed (a setting written, the file changed on disk): the window showing
+   *  `root` reads `projectConfigGet` again. */
+  "project-config-changed": ProjectConfigChanged;
   "import-progress": ImportProgressEvent;
 }
 export type EventName = keyof Events;
@@ -1221,17 +1260,19 @@ export interface Api {
   charactersReveal(): Promise<Result<null>>;
   projectSessionGet(key: string): Promise<Result<JsonValue | null>>;
   projectSessionSet(key: string, value: JsonValue | null): Promise<Result<null>>;
-  /** This window's Explorer list: `null` filter = the project's default. Changes arrive as `tree-changed`. */
-  treeOpen(filter: TreeFilter | null): Promise<Result<TreeSnapshot>>;
-  treeSetFilter(filter: TreeFilter): Promise<Result<TreeSnapshot>>;
+  /** This window's Explorer list: `null` filter = the project's default. Changes arrive as `tree-changed`. Every
+   *  call on the list names the workspace the Explorer was made for: one sent for the project the window showed
+   *  before lands on nothing (`unsupported`), never on the list of the project shown now. */
+  treeOpen(workspace: WorkspaceId, filter: TreeFilter | null): Promise<Result<TreeSnapshot>>;
+  treeSetFilter(workspace: WorkspaceId, filter: TreeFilter): Promise<Result<TreeSnapshot>>;
   /** Lists a folder left unopened (large | ignored). */
-  treeOpenFolder(path: string): Promise<Result<null>>;
+  treeOpenFolder(workspace: WorkspaceId, path: string): Promise<Result<null>>;
   /** The open document stays in the list even when the filter hides it. */
-  treeKeep(path: string | null): Promise<Result<null>>;
+  treeKeep(workspace: WorkspaceId, path: string | null): Promise<Result<null>>;
   /** The person's Refresh: the backend reads the project folder again (the tree, the index, git, every plugin that
    *  keeps a picture of the disk). Answers at once; what differs arrives as `tree-changed`. */
   treeRefresh(): Promise<Result<null>>;
-  treeClose(): Promise<Result<null>>;
+  treeClose(workspace: WorkspaceId): Promise<Result<null>>;
   /** Projects inside this window's folder: Settings > Projects + the strip. Changes arrive as `projects-changed`. */
   projectsView(): Promise<Result<ProjectsView>>;
   /** Includes projects (`all` = every offered one); a folder without `.permark/` is initialized first. */
@@ -1401,13 +1442,22 @@ export interface Api {
   demoInstall(): Promise<Result<string>>;
   /** The demo pages offer was dismissed: not shown again. */
   demoDismiss(): Promise<Result<null>>;
+  /** The last run's crash report offer was answered (a button that did its work, or Dismiss): not offered again. */
+  crashDismiss(): Promise<Result<null>>;
+  /** Shows the offered crash report's file in the file manager (the path the backend read at start). */
+  crashReveal(): Promise<Result<null>>;
   /** Creates `.permark/` in a folder; a project open on it reloads its state at once. */
   projectInit(path: string): Promise<Result<null>>;
+  /** Keeps a folder's private data on this computer (its window's offer); Move is `projectInit`. */
+  projectDataKeep(path: string): Promise<Result<null>>;
   /** Whether a folder has nothing in it yet (one that cannot be read counts as not empty). */
   folderEmpty(path: string): Promise<Result<boolean>>;
   /** The shared settings (`.permark/config.toml`) of this window's project. */
   projectConfigGet(): Promise<Result<ProjectSettings>>;
   projectConfigSet(change: ProjectSettingChange): Promise<Result<ProjectSettings>>;
+  /** What git may see of `.permark/`: PerMark's own `.permark/.gitignore` rewritten (someone else's file is
+   *  refused); the shared settings as they are now. */
+  projectSharingSet(sharing: Sharing): Promise<Result<ProjectSettings>>;
   /** Every plugin with its state for this window. */
   pluginsList(): Promise<Result<PluginInfo[]>>;
   /** The person's own choice for a plugin in this project (`null`: follow the app). */
@@ -1422,6 +1472,11 @@ export interface Api {
   windowCloseAnswer(answer: CloseAnswer): Promise<Result<null>>;
   /** This view answered `save-requested`. */
   viewSaved(saved: boolean): Promise<Result<null>>;
+  /** A `close-requested` | `tab-close-requested` reached this view and its prompt is up: the backend stops timing the
+   *  view (the person's answer has no deadline). */
+  viewHeard(): Promise<Result<null>>;
+  /** The words of the app's own system dialogs, in the person's language (the backend holds no translations). */
+  nativeWords(words: NativeWords): Promise<Result<null>>;
   /** URL the webview loads a picture | sound | video of a workspace from. `version`: changes when the file does. */
   assetUrl(workspace: WorkspaceId, path: string, version: string | null): string;
   /** Listens to a backend event. Resolves to teardown. */

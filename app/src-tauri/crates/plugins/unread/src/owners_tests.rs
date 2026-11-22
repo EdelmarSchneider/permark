@@ -172,10 +172,10 @@ fn a_project_included_while_open_keeps_what_the_root_knew() {
     assert!(before.contains(&"sub/b.md".to_owned()), "{before:?}");
     assert!(core.projects().wait_ready(Duration::from_secs(10)));
     core.projects_include(
-        &env,
         &permark_core::projects::ProjectPick::Paths {
             paths: vec!["sub".to_owned()],
         },
+        &|| core.initialize(&env),
     )
     .unwrap();
     wait("owners", || core.projects().owners().slots().len() == 2);

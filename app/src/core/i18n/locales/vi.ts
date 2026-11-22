@@ -43,6 +43,7 @@ export default {
   "welcome.noRecents": "Chưa có thư mục gần đây.",
   "welcome.notFound": "(không tìm thấy)",
   "welcome.remove": "Gỡ bỏ",
+  "welcome.recentKeys": "Nhấn Delete để gỡ thư mục đã chọn khỏi danh sách.",
   "welcome.dropHint": "Thả thư mục hoặc tệp vào đây để mở.",
   "welcome.openFailed": "Không thể mở {path}: {message}",
 
@@ -63,9 +64,14 @@ export default {
 
   // ---- notices
   "notice.stateRecovered":
-    "Không đọc được một số dữ liệu đã lưu của PerMark nên đã chuyển chúng sang chỗ khác: {file}",
+    "Không đọc được một số dữ liệu đã lưu của PerMark nên đã chuyển chúng sang chỗ khác: {file}. Bản sao cũ nằm ở đây: {backup}",
   "notice.stateUnreadable":
     "Không đọc được một số dữ liệu đã lưu của PerMark. Dữ liệu được giữ nguyên và PerMark sẽ không thay đổi cho đến khi đọc lại được, thường là sau khi khởi động lại: {file}",
+  "crash.notice":
+    "Lần trước PerMark đã đóng đột ngột. Một báo cáo đã được lưu trên máy tính này và không có gì được gửi đi. Nếu chia sẻ, hãy xem lại trước: báo cáo có thể chứa tên tệp hoặc một phần văn bản của bạn. “Báo cáo trên GitHub” cũng sao chép báo cáo để bạn có thể dán vào đó.",
+  "crash.copy": "Sao chép báo cáo",
+  "crash.report": "Báo cáo trên GitHub",
+  "crash.openFolder": "Mở thư mục",
 
   // ---- settings
   "settings.title": "Cài đặt",
@@ -88,6 +94,10 @@ export default {
   "error.invalidPath": "{subject} không phải là đường dẫn hợp lệ.",
   "error.denied": "Không có quyền sử dụng {subject}.",
   "error.io": "Không thể truy cập {subject}: {detail}",
+  "error.locked":
+    "{subject} đang mở trong một chương trình khác không cho phép thay đổi. Hãy đóng nó ở đó rồi thử lại.",
+  "error.diskFull": "Ổ đĩa đã đầy nên không thể ghi {subject}.",
+  "error.readOnly": "{subject} chỉ đọc nên không thể thay đổi.",
   "error.exists": "{subject} đã tồn tại.",
   "error.binary": "{subject} là tệp nhị phân nên không thể hiển thị dưới dạng văn bản.",
   "error.tooLarge": "{subject} quá lớn.",
@@ -175,6 +185,7 @@ export default {
   "fileOps.summaryMoved": "Đã di chuyển {what}",
   "fileOps.summaryRenamed": "Đã đổi tên {from} thành {to}",
   "fileOps.summaryDeleted": "Đã xóa {what}",
+  "fileOps.partlyDeleted": "Đã xóa {what}. Không thể chuyển {refused} vào Thùng rác.",
   "fileOps.dropInto": "Di chuyển vào {folder}",
   "fileOps.projectRoot": "thư mục dự án",
   "fileOps.dialogLabel": "Cập nhật liên kết",
@@ -310,6 +321,7 @@ export default {
   "doc.deleted.title": "Tệp này đã bị xóa lúc {time}.",
   "doc.diagramFailed": "Không thể vẽ sơ đồ",
   "doc.diagramRendering": "Đang vẽ sơ đồ…",
+  "doc.diagramSource": "Mã nguồn sơ đồ",
   "doc.error.title": "Không thể mở tệp này",
   "doc.footnoteBackref": "Quay lại tham chiếu {ref}",
   "doc.frontmatter": "Front matter",
@@ -412,7 +424,7 @@ export default {
   "role.copilot": "Hướng dẫn cho Copilot",
   "role.model-card": "Thẻ mô hình",
   "role.dataset-card": "Thẻ tập dữ liệu",
-  "structured.mode": "Xem",
+  "structured.mode": "Hiển thị",
   "structured.tree": "Cây",
   "structured.source": "Nguồn",
   "structured.invalid": "Nội dung không hợp lệ nên được hiển thị dạng văn bản.",
@@ -933,6 +945,8 @@ export default {
   "since.nothing": "Không có gì thay đổi kể từ {when}.",
   "review.offer.one": "Đã thay đổi kể từ lần bạn đọc trước · {n} thay đổi",
   "review.offer.other": "Đã thay đổi kể từ lần bạn đọc trước · {n} thay đổi",
+  "review.offerCommit.one": "Đã thay đổi kể từ commit gần nhất · {n} thay đổi",
+  "review.offerCommit.other": "Đã thay đổi kể từ commit gần nhất · {n} thay đổi",
   "review.review": "Xem lại",
   "review.reviewing.one": "Đang xem lại {n} thay đổi",
   "review.reviewing.other": "Đang xem lại {n} thay đổi",
@@ -957,6 +971,7 @@ export default {
   "review.change": "Thay đổi {i}/{n}, {kind}",
   "review.keptAll": "Đã giữ tất cả thay đổi",
   "review.revertedAll": "Đã hoàn nguyên tất cả thay đổi trong {name}",
+  "review.endedMixed": "Đã giữ một số thay đổi và hoàn nguyên các thay đổi khác trong {name}",
   "review.undo": "Hoàn tác",
   "review.undoStale": "Không thể hoàn tác: {name} đã thay đổi kể từ đó.",
   "review.allDone": "Đã xem lại tất cả thay đổi",
@@ -1009,6 +1024,15 @@ export default {
   "git.stateHint.busy": "Git đang thực hiện dở một tác vụ khác chưa hoàn tất.",
   "git.unavailableHint": "Git bạn đã chọn không khả dụng. Hãy chọn git khác trong cài đặt.",
   "git.errorOwnership": "Git không tin cậy chủ sở hữu của thư mục này.",
+  "git.why.timeout": "Git không phản hồi kịp thời.",
+  "git.why.tooLarge": "Phản hồi của Git quá dài để đọc.",
+  "git.why.spawn": "Không thể khởi động Git.",
+  "git.why.parse": "Không thể hiểu phản hồi của Git.",
+  "git.why.notLocal":
+    "Thư mục git của kho lưu trữ này trỏ ra ngoài máy tính này hoặc đi qua một liên kết, nên PerMark không mở nó.",
+  "git.why.noGit": "Thư mục này không có .git nào dẫn đến một kho lưu trữ.",
+  "git.why.stopped": "Git đã bị dừng trước khi trả lời.",
+  "git.why.failed": "Chi tiết: {detail}",
   "git.errorHint": "Mở cài đặt để chọn git khác (git tích hợp không cần tin cậy).",
   "git.folderChanged.one": "{n} tệp đã thay đổi bên trong",
   "git.folderChanged.other": "{n} tệp đã thay đổi bên trong",
@@ -1095,6 +1119,8 @@ export default {
   "review.versions.list": "Phiên bản",
   "review.versions.loading": "Đang đọc lịch sử…",
   "review.versions.more": "Hiện thêm",
+  "review.versions.added.one": "Thêm {n} phiên bản",
+  "review.versions.added.other": "Thêm {n} phiên bản",
   "review.versions.same": "Giống văn bản hiện tại",
   "review.versions.authors": "{author} cùng {others}",
   "review.versions.compare": "So sánh",
@@ -1255,6 +1281,16 @@ export default {
   "comments.replyPlaceholder": "Viết câu trả lời…",
   "comments.deleteConfirm": "Xóa nhận xét?",
   "comments.copyFailed": "Không thể sao chép vào bảng nhớ tạm.",
+  "comments.aside.line.one": "{n} nhận xét đã bị xóa bên ngoài PerMark.",
+  "comments.aside.line.other": "{n} nhận xét đã bị xóa bên ngoài PerMark.",
+  "comments.aside.restore": "Khôi phục",
+  "comments.aside.dismiss": "Bỏ đi",
+  "comments.aside.dismissHint": "Bỏ các nhận xét này. Sau đó sẽ không thể khôi phục chúng nữa.",
+  "comments.aside.restored.one": "Đã khôi phục {n} nhận xét.",
+  "comments.aside.restored.other": "Đã khôi phục {n} nhận xét.",
+  "comments.aside.nothing": "Các nhận xét đó đã trở lại rồi.",
+  "comments.aside.restoreFailed": "Không thể khôi phục các nhận xét: {message}",
+  "comments.aside.dismissFailed": "Không thể bỏ các nhận xét đã bị xóa: {message}",
   "brokenLinks.title": "Liên kết hỏng",
   "brokenLinks.checking": "Đang xem qua các tài liệu…",
   "brokenLinks.none": "Không có liên kết hỏng",
@@ -1441,7 +1477,7 @@ export default {
   "agent.title": "Kết nối agent",
   "agent.switch": "Chia sẻ thư mục này với agent",
   "agent.switchHint":
-    "Agent mà bạn kết nối (một công cụ AI hỗ trợ MCP, như Claude Code hoặc Cursor) có thể thấy những gì bạn đang xem và những gì đã thay đổi, tìm kiếm và đọc các tệp của thư mục này, đọc nhận xét của bạn và các ghi chú bạn chia sẻ, và chỉ cho bạn một vị trí. Chỉ trên máy tính này. Các tệp liệt kê trong .aiignore nằm ngoài tầm với của agent. Agent kết nối theo cách này chỉ đọc và không bao giờ sửa tệp thông qua PerMark; để agent đề xuất chỉnh sửa, hãy dùng Trợ lý. Điều này chỉ áp dụng cho những gì agent nhận được từ PerMark: agent vẫn có thể tự mở các tệp trên máy tính của bạn.",
+    "Agent mà bạn kết nối (một công cụ AI hỗ trợ MCP, như Claude Code hoặc Cursor) có thể thấy những gì bạn đang xem và những gì đã thay đổi, tìm kiếm và đọc các tệp của thư mục này, đọc nhận xét của bạn và các ghi chú bạn chia sẻ, và chỉ cho bạn một vị trí. Chỉ trên máy tính này. Các tệp liệt kê trong .aiignore nằm ngoài tầm với của agent. Agent kết nối theo cách này không bao giờ sửa tệp thông qua PerMark: agent đọc, và chỉ đánh dấu nhận xét của bạn là xong khi bạn cho phép. Để agent đề xuất chỉnh sửa, hãy dùng Trợ lý. Điều này chỉ áp dụng cho những gì agent nhận được từ PerMark: agent vẫn có thể tự mở các tệp trên máy tính của bạn.",
   "agent.folderReplaced":
     "Thư mục này đã thay đổi kể từ khi bạn kết nối. Hãy bật lại kết nối để cho phép agent ở đây.",
   "agent.groups": "Những gì agent được phép làm",
@@ -1540,6 +1576,20 @@ export default {
   "agent.outcome.off": "tắt",
   "agent.outcome.notOpen": "chưa mở",
   "agent.outcome.error": "thất bại",
+  "agentRules.lastGood":
+    "Không đọc được {file}: {why}. PerMark dùng các quy tắc gần nhất còn hoạt động của tệp đó cho đến khi bạn sửa nó.",
+  "agentRules.closed":
+    "Không đọc được {file}: {why}. Agent không nhận được gì mà tệp đó bao quát cho đến khi bạn sửa nó.",
+  "agentRules.why.tooLarge": "tệp quá lớn",
+  "agentRules.why.notText": "không phải văn bản thuần",
+  "agentRules.why.notToml": "không phải TOML hợp lệ",
+  "agentRules.why.badValue": "một thiết lập trong đó có kiểu giá trị sai",
+  "agentRules.why.badPattern": "một mẫu trong đó không hợp lệ",
+  "agentRules.why.notAFile": "không phải tệp thông thường",
+  "agentRules.why.locked": "một chương trình khác đang dùng nó",
+  "agentRules.why.denied": "PerMark không có quyền đọc nó",
+  "agentRules.why.failed": "đọc không thành công",
+  "agent.outcome.rulesUnreadable": "không đọc được quy tắc",
   "agent.open.notice": "Một agent muốn chỉ cho bạn {path}.",
   "agent.open.show": "Hiện",
   "agent.ask.resolve":
@@ -1583,6 +1633,8 @@ export default {
   "agent.handoff.done.other":
     "Đã chuyển giao {n} thao tác — đã sao chép, sẵn sàng để dán vào lời nhắc của bạn.",
   "agent.handoff.failed": "Chuyển giao không thành công. Hãy thử lại.",
+  "agent.handoff.withheld":
+    "PerMark không chuyển giao hoạt động của thư mục này cho agent: kho git của thư mục đang theo dõi thư mục riêng của PerMark (.permark/local), hoặc PerMark không thể kiểm tra điều đó.",
   "agent.handoff.copyFailed": "Đã chuyển giao, nhưng không sao chép được.",
   "config.sheet": "Các cài đặt trong tệp này",
   "config.root": "Cấp trên cùng",
@@ -1611,6 +1663,8 @@ export default {
   "config.reason.empty": "Mục trống. Hãy thay đổi trong chế độ Mã nguồn.",
   "config.reason.unterminated":
     "Dấu ngoặc kép không bao giờ đóng. Hãy thay đổi trong chế độ Mã nguồn.",
+  "config.reason.escape":
+    "Giá trị chứa mã thoát không thể giữ nguyên chính xác ở đây. Hãy thay đổi trong chế độ Mã nguồn.",
   "config.reason.other": "Không thể sửa chính xác mục này ở đây. Hãy dùng chế độ Mã nguồn.",
   "config.refused.newline": "Giá trị ở đây không được chứa ngắt dòng.",
   "config.refused.empty": "Hãy nhập nội dung.",
@@ -1674,6 +1728,8 @@ export default {
     'Lựa chọn của bạn cho từng plugin trong thư mục này. "Tắt cho mọi người" được lưu trong .permark/config.toml và áp dụng cho bất kỳ ai mở thư mục.',
   "plugins.removeConfirm": "Xóa dữ liệu của {name}?",
   "plugins.removeConfirmBytes": "Xóa dữ liệu của {name}? Việc này giải phóng {size}.",
+  "plugins.removeScope":
+    "Các thư mục lưu dữ liệu trong thư mục .permark riêng của chúng chỉ được dọn khi đang mở.",
   "plugins.removeData": "Xóa dữ liệu",
   "plugins.removeYes": "Xóa",
   "plugins.turnOn": "Bật {name}",
@@ -1681,16 +1737,31 @@ export default {
   "project.ignoreHint":
     "Các tệp khớp mẫu không được tìm kiếm và không bao giờ xuất hiện trong bảng tin trực tiếp. Danh sách tệp hiển thị chúng mờ đi, giống các tệp mà git bỏ qua.",
   "project.ignoreLabel": "Loại khỏi tìm kiếm và bảng tin trực tiếp",
+  "project.dataAsk":
+    "Thư mục này giờ có một thư mục .permark. Nhận xét, dấu đã đọc và dữ liệu khác của bạn cho thư mục này vẫn được giữ trên máy tính này.",
+  "project.dataMove": "Chuyển vào thư mục",
+  "project.dataKeep": "Giữ trên máy tính này",
+  "project.dataMissing":
+    "Thư mục .permark của thư mục này bị thiếu hoặc không dùng được. PerMark đang dùng bản sao dữ liệu của bạn được giữ trên máy tính này, bản sao này có thể cũ hơn.",
+  "project.dataKeepCopy": "Tiếp tục dùng bản sao này",
+  "project.dataPlace": "Dữ liệu của bạn cho thư mục này",
+  "project.dataPlaceProfile": "Được giữ trên máy tính này, trong hồ sơ người dùng của bạn.",
+  "project.dataMoved": "Dữ liệu của bạn cho thư mục này giờ nằm trong thư mục .permark của nó.",
+  "project.dataMoveHeld":
+    "Thư mục .permark của thư mục này đã chứa dữ liệu PerMark từ nơi khác, nên dữ liệu của bạn vẫn ở trên máy tính này.",
+  "project.dataMoveFailed": "Không thể chuyển dữ liệu của bạn vào thư mục: {message}",
   "project.initButton": "Khởi tạo PerMark",
   "project.initConfig": "Các cài đặt dự án này dùng chung với nhóm.",
   "project.initConfirm": "Khởi tạo PerMark",
   "project.initFailed": "Không thể khởi tạo PerMark trong {path}: {message}",
+  "project.initHeld":
+    "{path}/.permark/local đã chứa dữ liệu PerMark từ nơi khác; không có gì bị thay đổi.",
   "project.initIgnore": "Giữ các thư mục riêng tư ngoài git.",
   "project.initIntro": "PerMark tạo một thư mục .permark ở đây, gồm:",
   "project.initLocal":
-    "Dữ liệu riêng tư của bạn cho dự án này (nhận xét, dấu đã đọc) và bộ nhớ đệm.",
+    "Dữ liệu riêng tư của bạn cho dự án này (nhận xét, dấu đã đọc, lịch sử hoàn tác) và bộ nhớ đệm mà PerMark có thể dựng lại bất cứ lúc nào.",
   "project.initNote":
-    "Các tệp của bạn không bị động đến. Nhãn, nhận xét và dấu đã đọc bạn đã có cho dự án này sẽ được sao chép vào.",
+    "Các tệp của bạn không bị động đến. Nhãn, nhận xét và dấu đã đọc bạn đã có cho dự án này sẽ được sao chép vào. Những gì bạn cho phép với thư mục này, chẳng hạn quyền truy cập của agent, vẫn nằm trong dữ liệu PerMark của riêng bạn trên máy tính này.",
   "project.initTitle": "Khởi tạo PerMark trong {name}?",
   "project.newTitle": "Biến {name} thành một dự án?",
   "project.newWhy":
@@ -1714,8 +1785,30 @@ export default {
   "project.treeUnset": "Chưa đặt",
   "project.scopes":
     "Các cài đặt đánh dấu Mọi người được lưu trong .permark/config.toml của thư mục này và dùng chung với bất kỳ ai mở nó. Các cài đặt đánh dấu Chỉ bạn chỉ nằm trên máy tính này.",
+  "project.shareGit": "Cho git thấy cài đặt PerMark của thư mục này",
+  "project.shareGitCustom":
+    "Tệp .permark/.gitignore của thư mục này do người khác viết, nên PerMark giữ nguyên tệp đó.",
+  "project.shareGitFailed": "Không thể thay đổi những gì git thấy trong .permark: {message}",
+  "project.shareGitHint":
+    "Bật: git thấy các cài đặt, nhãn, danh sách dự án và mô tả dự án trong .permark, nên bạn có thể commit chúng cho nhóm của mình. Tắt: git bỏ qua toàn bộ thư mục .permark; các tệp đã được commit vẫn nằm trong commit. Nếu .permark/.gitignore đã được commit, nhóm của bạn cũng nhận thay đổi này. Dữ liệu riêng tư và bộ nhớ đệm của bạn luôn nằm ngoài git.",
+  "project.shareGitOff": "Tắt",
+  "project.shareGitOn": "Bật",
   "project.shareInit": "Khởi tạo PerMark để chia sẻ mục này với mọi người",
   "project.sharedFileHint": "Được chia sẻ với bất kỳ ai mở thư mục này.",
+  "project.sharedFileUnreadable":
+    "PerMark không đọc được tệp này ở dòng {line}, nên không thể đổi các cài đặt được đánh dấu Mọi người cho đến khi tệp được sửa.",
+  "project.sharedLocked":
+    "PerMark không đọc được tệp .permark/config.toml, nên không thể đổi các cài đặt được đánh dấu Mọi người cho đến khi tệp được sửa.",
+  "project.sharedLocked.line":
+    "PerMark không đọc được tệp .permark/config.toml ở dòng {line}, nên không thể đổi các cài đặt được đánh dấu Mọi người cho đến khi tệp được sửa.",
+  "project.sharedLocked.notText":
+    "PerMark không đọc được tệp .permark/config.toml (đây không phải văn bản thuần), nên không thể đổi các cài đặt được đánh dấu Mọi người cho đến khi tệp được sửa.",
+  "project.sharedLocked.tooLarge":
+    "PerMark không đọc được tệp .permark/config.toml (tệp quá lớn), nên không thể đổi các cài đặt được đánh dấu Mọi người cho đến khi tệp được sửa.",
+  "project.sharedLocked.locked":
+    "PerMark không đọc được tệp .permark/config.toml (một chương trình khác đang dùng tệp), nên không thể đổi các cài đặt được đánh dấu Mọi người cho đến khi tệp được sửa.",
+  "project.privateTracked":
+    "Agent không nhận được nhận xét hay hoạt động của thư mục này: kho git của thư mục đang theo dõi thư mục riêng của PerMark (.permark/local), hoặc PerMark không thể kiểm tra điều đó.",
   "settings.all": "Toàn bộ cài đặt",
   "settings.editorPreview": "Ví dụ:",
   "settings.linkUpdateHint": "Điều gì xảy ra với liên kết khi một tệp bị di chuyển hoặc đổi tên.",
@@ -1753,6 +1846,8 @@ export default {
   "settings.problem.noPath": "Lệnh cần có {path}.",
   "settings.problem.notInitialized": "Thư mục này chưa có cài đặt PerMark.",
   "settings.problem.tomlOnly": "Hãy dùng tên tệp kết thúc bằng .toml.",
+  "settings.problem.notToml":
+    "PerMark không đọc được .permark/config.toml, nên không có gì được thay đổi.",
   "settings.problem.other": "Giá trị này không được chấp nhận.",
   "welcome.newProject": "Dự án mới…",
   "welcome.newProjectHint": "Chọn một thư mục; PerMark sẽ thiết lập thư mục đó thành dự án.",
@@ -1809,6 +1904,7 @@ export default {
   "plugin.graphviz.name": "Sơ đồ Graphviz",
   "plugin.graphviz.about": "Vẽ đồ thị Graphviz (DOT) từ khối mã.",
   "graphviz.tooLarge": "Đồ thị này quá lớn để vẽ ở đây.",
+  "plantuml.tooLarge": "Sơ đồ này quá lớn để vẽ ở đây.",
   "plugin.media.name": "Hình ảnh, âm thanh và video",
   "plugin.media.about": "Mở hình ảnh, âm thanh và video ngay tại chỗ.",
   "plugin.json-view.name": "JSON",
@@ -1846,6 +1942,8 @@ export default {
     "Bản PerMark này chưa được cài đặt nên không thể trở thành ứng dụng mặc định. Hãy chọn ứng dụng cho các tệp này trong cài đặt hệ thống.",
   "defaultApp.confined": "Hãy chọn ứng dụng cho các tệp này trong cài đặt hệ thống.",
   "defaultApp.failed": "Không thể thay đổi ứng dụng mặc định: {message}",
+  "defaultApp.chooseInFinder":
+    "PerMark vẫn là ứng dụng mặc định cho các tệp này. Để dùng ứng dụng khác, hãy chọn một tệp trong Finder, chọn Tệp > Lấy thông tin, rồi chọn ứng dụng ở mục “Mở bằng”.",
   "defaultApp.askTitle": "Mở các tệp này bằng PerMark?",
   "defaultApp.askBody":
     "PerMark sẽ mở các tệp bạn chọn khi bạn bấm đúp vào chúng. Bạn có thể thay đổi bất cứ lúc nào trong Cài đặt.",
@@ -1867,6 +1965,8 @@ export default {
   "shell.newFile.row": "“Tệp Markdown mới”",
   "shell.newFile.hint": "Trong menu chuột phải của thư mục: tạo một tệp tại đó và mở tệp.",
   "shell.failed": "Không thể thay đổi menu: {message}",
+  "shell.readFailed": "Không thể đọc các mục menu. {message}",
+  "shell.retry": "Thử lại",
   "updates.section": "Cập nhật",
   "updates.row": "Phiên bản mới",
   "updates.notes": "Có gì mới",
@@ -2100,7 +2200,7 @@ export default {
     "Số token của tài liệu, vùng chọn hoặc một mục theo tokenizer bạn chọn; chính xác khi tokenizer công khai, gần đúng (và có đánh dấu) khi không công khai.",
   "plugin.local-ai.name": "AI cục bộ",
   "plugin.local-ai.about":
-    "Các mô hình AI nhỏ chạy trên máy tính này, không cần mạng, giúp PerMark sửa lỗi, dịch và tìm theo ý nghĩa. Không có gì được tải xuống cho đến khi bạn yêu cầu.",
+    "Các mô hình AI nhỏ chạy trên máy tính này, giúp PerMark sửa lỗi, dịch và tìm theo ý nghĩa. Không có gì được tải xuống cho đến khi bạn yêu cầu.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} hàng",
   "config.table.rows.other": "{n} hàng",
@@ -2137,6 +2237,7 @@ export default {
   "toon.notValid": "Không phải TOON 4.4 hợp lệ",
   "convert.menu": "Chuyển đổi…",
   "convert.table": "Chuyển đổi…",
+  "convert.tableCommand": "Chuyển đổi bảng…",
   "convert.title": "Chuyển đổi {name}",
   "convert.fromPage": "văn bản từ trang",
   "convert.close": "Đóng",
@@ -2256,6 +2357,21 @@ export default {
   "closeWindow.body.other": "Các thẻ này có thay đổi chưa lưu:",
   "closeWindow.saveAll": "Lưu tất cả",
   "closeWindow.discard": "Bỏ thay đổi",
+  "stuck.title": "PerMark không phản hồi",
+  "stuck.detail":
+    "Một trang trong cửa sổ này không phản hồi. Nếu vẫn đóng, các thay đổi chưa lưu trong các thẻ của cửa sổ này có thể bị mất.",
+  "stuck.closeAnyway": "Vẫn đóng",
+  "stuck.wait": "Chờ",
+  "stuck.engineStopped":
+    "Phần hiển thị cửa sổ của PerMark đã ngừng hoạt động nên PerMark phải đóng. Các thay đổi chưa lưu sẽ bị mất; các thẻ đang mở sẽ trở lại vào lần tới PerMark khởi động.",
+  "stuck.reloaded": "Thẻ này đã ngừng hoạt động và đã được tải lại.",
+  "stuck.reloadedLost":
+    "Thẻ này đã ngừng hoạt động và đã được tải lại. Các thay đổi chưa lưu trong {file} đã bị mất.",
+  "stuck.reloadedPage": "Trang này đã ngừng hoạt động và đã được tải lại.",
+  "stuck.windowFailed":
+    "Một cửa sổ PerMark không mở được trang của nó và đã bị đóng. Các cửa sổ khác vẫn hoạt động bình thường.",
+  "stuck.viewFailedExit":
+    "PerMark không mở được cửa sổ nên phải đóng. Các thẻ đang mở sẽ trở lại vào lần tới PerMark khởi động.",
 
   // ---- projects inside the folder (`projects.md` §12)
   "settings.section.projects": "Dự án bên trong",
@@ -2507,7 +2623,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "AI cục bộ",
   "localAi.intro":
-    "Các mô hình AI nhỏ chạy trên máy tính này, không cần mạng. Không có gì được tải xuống cho đến khi bạn yêu cầu.",
+    "Các mô hình AI nhỏ chạy trên máy tính này. Không có gì được tải xuống cho đến khi bạn yêu cầu.",
   "localAi.command": "Mở cài đặt AI cục bộ",
   "localAi.loadFailed": "Không thể đọc cài đặt AI cục bộ.",
   "localAi.retry": "Thử lại",
@@ -2580,8 +2696,8 @@ export default {
   "localAi.models.details.size": "Dung lượng tải xuống",
   "localAi.models.details.restriction": "Ai được phép sử dụng",
   "localAi.models.comingSoon": "Sắp ra mắt",
-  "localAi.models.needs.newer": "Cần phiên bản mới hơn của bộ máy AI.",
-  "localAi.models.needs.missing": "Cần một bộ máy AI mà PerMark chưa có.",
+  "localAi.models.needs.newer": "Mô hình này cần phiên bản PerMark mới hơn.",
+  "localAi.models.needs.missing": "PerMark chưa chạy được loại mô hình này.",
   "localAi.dl.waiting": "Đang chờ…",
   "localAi.dl.cancelLabel": "Hủy tải về {name}",
   "localAi.dl.progress": "{done}/{total}",
@@ -3130,7 +3246,10 @@ export default {
   "acp.fail.copyFailed": "PerMark không thể chuẩn bị bản sao của thư mục này cho agent.",
   "acp.fail.tooLarge": "Thư mục này quá lớn để sao chép cho agent.",
   "acp.fail.projectsNotReady": "PerMark vẫn đang đọc thư mục này. Hãy thử lại sau giây lát.",
+  "acp.fail.rulesUnreadable":
+    "Không đọc được một tệp quy định những gì agent được xem. Agent không nhận được gì cho đến khi tệp được sửa.",
   "acp.fail.startFailed": "Không thể khởi động chương trình của agent.",
+  "acp.fail.notAllowed": "Bạn đã không cho phép khởi động chương trình của agent.",
   "acp.fail.timedOut": "Agent không trả lời kịp thời.",
   "acp.fail.initFailed":
     "Chương trình này không trả lời như một agent mà PerMark có thể giao tiếp. Hãy kiểm tra lệnh và thử lại.",
@@ -3143,6 +3262,7 @@ export default {
   "acp.fail.exited": "Chương trình của agent đã đóng bất ngờ.",
   "acp.fail.sendFailed": "Không thể chuyển tin nhắn cho agent.",
   "acp.error.relativeProgram": "Hãy viết đường dẫn đầy đủ của chương trình, hoặc chỉ tên của nó.",
+  "acp.error.commandTooLong": "Lệnh quá dài (tối đa 1000 ký tự).",
   "acp.error.networkProgram":
     "PerMark chỉ chạy các chương trình trên máy tính này, không chạy từ thư mục mạng.",
   "acp.error.oneChoice": "Hãy chọn một agent hoặc nhập một lệnh.",

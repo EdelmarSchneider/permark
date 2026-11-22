@@ -32,6 +32,7 @@ const { defaultArrangement, FILES, moveTo, OUTLINE, REGIONS, SEARCH } =
   await import("./arrangement");
 const { ui } = await import("./ui.svelte");
 const { registerViewCommands, viewsEntries } = await import("./viewsMenu.svelte");
+const { selectView } = await import("./sides");
 
 const LEFT = "unread.panel";
 const LIVE = "live-feed.panel";
@@ -52,7 +53,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   stop();
-  windowStore.dismissKey("view-closed");
+  for (const notice of closedNotices()) windowStore.dismiss(notice.id);
   windowStore.dismissKey("layout");
   for (const remove of removals.splice(0)) remove();
   conditions.set(neutralContext());
@@ -98,6 +99,7 @@ function showOutline(): void {
     mtimeMs: 1,
     editable: { editable: "surgical" },
     notes: [],
+    opensOutside: true,
   };
   documents.state = { status: "ready", view: shown, deleted: null, fresh: true };
   flushSync();
@@ -129,8 +131,11 @@ function row(label: string) {
   return found;
 }
 
-const closedNotices = () =>
-  windowStore.notices.flatMap((n) => (n.kind === "action" && n.key === "view-closed" ? [n] : []));
+function closedNotices() {
+  return windowStore.notices.flatMap((n) =>
+    n.kind === "action" && n.key?.startsWith("view-closed") === true ? [n] : [],
+  );
+}
 
 /** What the status line holds once it settled (it is emptied first and filled a tick later). */
 async function said(): Promise<string> {
@@ -220,7 +225,7 @@ describe("the Panels menu", () => {
     expect(await said()).toBe("Live changes shown");
   });
 
-  it("a pick on an open view closes it, with one notice whose Undo brings it back", async () => {
+  it("a pick on an open view closes it, with a notice of its own whose Undo brings it back", async () => {
     panel(LEFT, "left");
     panel(LIVE, "right");
     layout.setOpen(LIVE, true);
@@ -228,14 +233,15 @@ describe("the Panels menu", () => {
     flushSync();
     expect(arrangement.isPresent(LIVE)).toBe(false);
     expect(await said()).toBe("Live changes closed");
-    // a sidebar tab closes the same way: the newer notice takes the place of the older one
+    // a sidebar tab closes the same way, with its own notice: the first one keeps its Undo
     row("Unread").run(false);
     flushSync();
     expect(arrangement.isPresent(LEFT)).toBe(false);
     expect(closedNotices().map((n) => [n.text, n.actions.map((a) => a.label)])).toEqual([
+      ["Live changes closed", [en["fileOps.undo"]]],
       ["Unread closed", [en["fileOps.undo"]]],
     ]);
-    void closedNotices()[0]?.actions[0]?.run();
+    void closedNotices()[1]?.actions[0]?.run();
     flushSync();
     expect(arrangement.isPresent(LEFT)).toBe(true);
     expect(arrangement.isSelected(LEFT)).toBe(true);
@@ -272,8 +278,11 @@ describe("the palette's Show entries", () => {
     panel(LEFT, "left");
     panel(LIVE, "right");
     expect(shows().sort()).toEqual(["Show Live changes", "Show Unread"]);
-    // the outline: once the document shown has one
+    // the outline: once the document shown has one, while it is not on screen (its region hidden)
     showOutline();
+    expect(shows().sort()).toEqual(["Show Live changes", "Show Unread"]);
+    layout.setRightHidden(true);
+    flushSync();
     expect(shows().sort()).toEqual(["Show Live changes", "Show Outline", "Show Unread"]);
     const ids = registry.of("command").map((c) => c.id);
     expect(ids).not.toContain(`view.show.${FILES}`);
@@ -291,6 +300,21 @@ describe("the palette's Show entries", () => {
     for (const remove of removals.splice(0)) remove();
     flushSync();
     expect(registry.of("command").map((c) => c.id)).not.toContain(`view.show.${LIVE}`);
+  });
+
+  it("a view on screen has none; a tab its group does not show, or a view of a hidden region, has one", () => {
+    panel(LEFT, "left");
+    panel(LIVE, "right");
+    expect(shows().sort()).toEqual(["Show Live changes", "Show Unread"]);
+    selectView(LEFT);
+    layout.setOpen(LIVE, true);
+    flushSync();
+    expect(arrangement.onScreen(LEFT)).toBe(true);
+    expect(shows()).toEqual([]);
+    selectView(FILES);
+    layout.setRightHidden(true);
+    flushSync();
+    expect(shows().sort()).toEqual(["Show Live changes", "Show Unread"]);
   });
 
   it("a sidebar tab's entry needs a project", () => {

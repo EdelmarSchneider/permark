@@ -680,6 +680,64 @@ fn refusals_come_back_as_answers() {
 }
 
 #[test]
+fn a_cancel_after_the_work_s_last_check_keeps_nothing() {
+    let shared = Shared::default();
+    let key = ("main".to_owned(), 1);
+    let cancel = Cancel::default();
+    shared.lock_running().insert(key.clone(), cancel.clone());
+    let outcome = analyze("[1, 2]", Source::Json, &cancel, &estimate_counter);
+    assert!(outcome.is_ok(), "the work ended before the cancel came");
+    cancel.cancel();
+    assert_eq!(
+        shared.finish(&key, &cancel, outcome, None),
+        Answer::Cancelled
+    );
+    assert!(shared.lock_jobs().is_empty());
+    assert!(shared.lock_running().is_empty());
+}
+
+#[test]
+fn a_cancel_after_the_answer_and_a_gone_window_let_go_of_the_job() {
+    let h = Harness::start();
+    let analyze = |job: u64| {
+        h.call(
+            "analyze",
+            json!({ "job": job, "source": { "kind": "text", "text": "[1, 2]" } }),
+        )
+        .unwrap()
+    };
+    let result = |job: u64| h.call("result", json!({ "job": job, "target": "yaml" }));
+    assert_eq!(analyze(1)["status"], "ready");
+    // the window stopped waiting just as the answer came: it never asks to close that job
+    h.call("cancel", json!({ "job": 1 })).unwrap();
+    assert_eq!(result(1).unwrap_err().kind, ErrorKind::NotFound);
+    // a window that is gone keeps nothing either
+    assert_eq!(analyze(2)["status"], "ready");
+    assert!(result(2).is_ok());
+    h.rpc.caller_gone("main");
+    assert_eq!(result(2).unwrap_err().kind, ErrorKind::NotFound);
+}
+
+#[test]
+fn a_target_written_on_demand_is_written_outside_the_jobs_lock() {
+    let shared = Shared::default();
+    let value = Arc::new(json!([{ "a": 1 }, { "a": 2 }]));
+    shared.lock_jobs().push(Job {
+        window: "a".to_owned(),
+        id: 1,
+        value: Arc::clone(&value),
+        outputs: HashMap::from([(Target::Json, "[kept]".to_owned())]),
+        path: None,
+    });
+    // the look-up hands out the shared data: the write that follows holds no lock another window waits on
+    let (kept, _) = shared.kept("a", 1, Target::Yaml).unwrap();
+    assert!(matches!(kept, Kept::Data(data) if Arc::ptr_eq(&data, &value)));
+    assert!(matches!(shared.kept("a", 1, Target::Json).unwrap().0, Kept::Text(t) if t == "[kept]"));
+    let (yaml, _) = shared.output("a", 1, Target::Yaml).unwrap();
+    assert_eq!(yaml, write_as(Target::Yaml, &value));
+}
+
+#[test]
 fn the_plugin_is_on_by_default_and_needs_the_toon_format() {
     let p = plugin();
     let m = p.manifest();

@@ -1,5 +1,5 @@
-//! Prompt data (D-2): one set for every model (engine renders the chat markup per prompt profile). Plain text out, no
-//! JSON (D-1). Tuned on the eval set (U6): change these consts only with an eval run.
+//! Prompt data: one set for every model (engine renders the chat markup per prompt profile). Plain text out, no
+//! JSON. Tuned on the eval set: change these consts only with an eval run.
 //!
 //! - [`messages`]: system rules + 2 few-shot turns + the raw piece as last user turn.
 //! - [`max_tokens`]: answer cap = ceil(1.3 x piece tokens) + 32 (a correction is about as long as its input).

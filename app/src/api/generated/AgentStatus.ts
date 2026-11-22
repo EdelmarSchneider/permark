@@ -2,6 +2,7 @@
 import type { AgentRequest } from "./AgentRequest";
 import type { AgentServerState } from "./AgentServerState";
 import type { AgentSession } from "./AgentSession";
+import type { RulesProblem } from "./RulesProblem";
 
 /**
  * What the status item, its popover and the settings show.
@@ -24,6 +25,12 @@ sessions: Array<AgentSession>,
  */
 groups: { [key in string]: boolean }, 
 /**
- * Groups the project's `.permark/config.toml` denies.
+ * Groups the project's `.permark/config.toml` denies (as read checked: its last good ones while it cannot be
+ * read).
  */
-denied: Array<string>, recent: Array<AgentRequest>, };
+denied: Array<string>, recent: Array<AgentRequest>, 
+/**
+ * A rule file on what agents may see that cannot be read now (absent: every one reads well): it stands on its
+ * last good rules, or keeps agents out of what it governs until the person fixes it.
+ */
+rules?: RulesProblem, };

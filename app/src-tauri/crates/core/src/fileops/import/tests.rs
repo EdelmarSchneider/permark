@@ -11,13 +11,14 @@ use crate::events::Recorder;
 use crate::paths::{Root, Vault};
 use crate::settings::ProjectConfig;
 use crate::state::{AppDirs, StateStore};
+use crate::tree::tests::link_out;
 use crate::tree::{Explorer, TreeFilter};
 use crate::watch::{Change, ChangeKind, OwnWrites};
 
 struct Fx {
     dir: tempfile::TempDir,
     outside: tempfile::TempDir,
-    _state: tempfile::TempDir,
+    state: tempfile::TempDir,
     ops: FileOps,
     own: Arc<OwnWrites>,
 }
@@ -56,7 +57,7 @@ fn fx(inside: &[(&str, &str)], outside: &[(&str, &str)]) -> Fx {
     Fx {
         dir,
         outside: out,
-        _state: state,
+        state,
         ops,
         own,
     }
@@ -1026,29 +1027,12 @@ fn a_file_another_program_holds_open_fails_its_item_and_the_rest_come_in() {
     no_temps(f.dir.path());
 }
 
-/// Makes `link` point at `target` (a folder): a symbolic link, or a junction on Windows. `false`: not possible here.
-fn make_link(link: &Path, target: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(target, link).is_ok()
-    }
-    #[cfg(windows)]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
-}
-
 #[test]
 fn a_link_inside_a_dropped_folder_is_neither_followed_nor_copied() {
     let f = fx(&[], &[("dir/own.md", "mine")]);
     let secret = tempfile::tempdir().unwrap();
     fs::write(secret.path().join("secret.txt"), "private").unwrap();
-    if !make_link(&f.outside.path().join("dir/jump"), secret.path()) {
+    if !link_out(&f.outside.path().join("dir/jump"), secret.path()) {
         eprintln!("skipped: cannot create a link here");
         return;
     }
@@ -1065,7 +1049,7 @@ fn a_link_inside_a_dropped_folder_is_neither_followed_nor_copied() {
 #[test]
 fn a_link_dropped_itself_is_refused() {
     let f = fx(&[], &[("real/x.md", "x")]);
-    if !make_link(
+    if !link_out(
         &f.outside.path().join("alias"),
         &f.outside.path().join("real"),
     ) {
@@ -1262,6 +1246,59 @@ fn the_undo_of_an_import_takes_back_that_import_not_the_newest_operation() {
     assert_eq!(read(&f, "b.md"), "b", "the newer one stays");
     assert!(f.ops.undo_entry(one).unwrap().is_none(), "once only");
     assert!(f.ops.undo_entry(two).unwrap().is_some());
+}
+
+#[test]
+fn undo_of_a_middle_import_leaves_the_newest_and_the_oldest_undoable() {
+    let f = fx(&[], &[("a.md", "a"), ("b.md", "b"), ("c.md", "c")]);
+    let ids: Vec<u64> = ["a.md", "b.md", "c.md"]
+        .iter()
+        .map(|name| copy_all(&f, "", &[name]).undo.unwrap())
+        .collect();
+    assert!(f.ops.undo_entry(ids[1]).unwrap().is_some());
+    assert!(!exists(f.dir.path(), "b.md"));
+    assert_eq!(f.ops.undo_depth(), 2);
+    assert!(f.ops.undo().unwrap().is_some());
+    assert!(!exists(f.dir.path(), "c.md"));
+    assert!(f.ops.undo().unwrap().is_some());
+    assert!(!exists(f.dir.path(), "a.md"));
+    assert!(f.ops.undo().unwrap().is_none());
+}
+
+/// A second service on the same project and state folders: the app started again.
+fn restarted(f: &Fx) -> FileOps {
+    let root = Root::open(f.dir.path()).unwrap();
+    let vault = Vault::new(root.clone());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        Arc::new(Recorder::default()),
+        None,
+    ));
+    explorer.open_view("w", Some(TreeFilter::default()));
+    let store = StateStore::for_project(&AppDirs::under(f.state.path()), &root);
+    FileOps::new(vault, explorer, Arc::clone(&f.own), &store)
+}
+
+#[test]
+fn copies_and_moves_are_undone_after_a_restart() {
+    let f = fx(&[], &[("a.md", "a"), ("note.md", "n")]);
+    copy_all(&f, "", &["a.md"]);
+    let p = plan(&f, "", &["note.md"]);
+    apply(&f, &p, ImportMode::Move, ConflictChoice::Skip);
+    assert!(!exists(f.outside.path(), "note.md"));
+    let again = restarted(&f);
+    assert_eq!(again.undo_depth(), 2);
+    let moved = again.undo().unwrap().unwrap();
+    assert_eq!((moved.kind, moved.restored), (UndoKind::Import, 1));
+    assert_eq!(
+        fs::read_to_string(f.outside.path().join("note.md")).unwrap(),
+        "n"
+    );
+    let copied = again.undo().unwrap().unwrap();
+    assert_eq!((copied.kind, copied.restored), (UndoKind::Import, 1));
+    assert!(!exists(f.dir.path(), "a.md") && exists(f.outside.path(), "a.md"));
+    assert!(again.undo().unwrap().is_none());
 }
 
 #[test]
@@ -1506,7 +1543,7 @@ fn copy_folder_refuses_a_link_inside_and_leaves_nothing_behind() {
     let secret = tempfile::tempdir().unwrap();
     fs::write(secret.path().join("secret.txt"), "private").unwrap();
     // one kind of separator: `mklink` refuses a mixed path
-    if !make_link(&src.path().join("b").join("jump"), secret.path()) {
+    if !link_out(&src.path().join("b").join("jump"), secret.path()) {
         eprintln!("skipped: cannot create a link here");
         return;
     }
@@ -1530,7 +1567,7 @@ fn copy_folder_refuses_a_source_that_is_a_link_or_a_file() {
     let file = holder.path().join("file.md");
     fs::write(&file, "x").unwrap();
     assert!(copy_folder(&file, &parent.path().join("one")).is_err());
-    if make_link(&holder.path().join("link"), real.path()) {
+    if link_out(&holder.path().join("link"), real.path()) {
         assert!(copy_folder(&holder.path().join("link"), &parent.path().join("two")).is_err());
     }
     assert!(copy_folder(&holder.path().join("missing"), &parent.path().join("three")).is_err());
@@ -1539,4 +1576,13 @@ fn copy_folder_refuses_a_source_that_is_a_link_or_a_file() {
         "{:?}",
         names(parent.path())
     );
+}
+
+/// A mapped network drive cannot be made on a test machine: only the local answer of the drive check is pinned here.
+#[cfg(windows)]
+#[test]
+fn a_local_drive_is_never_taken_for_a_network_drive() {
+    assert!(crate::fsx::is_local_path(Path::new(r"C:\")));
+    let temp = std::env::temp_dir();
+    assert!(crate::fsx::is_local_path(&temp), "{}", temp.display());
 }

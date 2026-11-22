@@ -213,10 +213,10 @@ pub fn parse(bytes: &[u8]) -> VocabRead {
 pub fn read(folder: &Path) -> VocabRead {
     let permark = folder.join(crate::state::PERMARK_DIR);
     let path = permark.join(VOCABULARY_FILE);
-    if crate::tree::is_link_meta_of(&permark) || crate::tree::is_link_meta_of(&path) {
+    if super::record::is_link(&permark) || super::record::is_link(&path) {
         return VocabRead::Absent;
     }
-    match crate::fsx::read_bytes(&path, MAX_BYTES) {
+    match crate::fsx::read_regular(&path, MAX_BYTES, crate::fsx::Zone::Inside(&permark)) {
         Ok(bytes) => parse(&bytes),
         Err(crate::fsx::FsxError::Io { source, .. })
             if source.kind() == std::io::ErrorKind::NotFound =>

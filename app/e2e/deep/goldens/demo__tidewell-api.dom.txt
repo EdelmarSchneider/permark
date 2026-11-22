@@ -67,6 +67,7 @@ div.reading
               "Bash"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         h2 id="authentication" dir="auto"
           a.anchor href="#authentication" aria-label="Link to Authentication"
             "#"
@@ -265,6 +266,7 @@ div.reading
               icon lucide-arrow-left-right
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         p dir="auto"
           "Line 3 is your bookmark for the next page. Lines 7 to 9 show a flagged reading: oxygen jumped 1.5 mg/L in ten minutes, more than the spike rule allows, so the v…"
         h2 id="client-examples" dir="auto"
@@ -306,6 +308,7 @@ div.reading
               "Rust"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         p dir="auto"
           code
             "error_for_status"
@@ -326,6 +329,7 @@ div.reading
               "Python"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
+            span.sr-only
         details
           summary
             "TypeScript, with fetch"
@@ -341,6 +345,7 @@ div.reading
                 "TypeScript"
               button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
                 icon lucide-copy
+              span.sr-only
         h2 id="data-model" dir="auto"
           a.anchor href="#data-model" aria-label="Link to Data model"
             "#"

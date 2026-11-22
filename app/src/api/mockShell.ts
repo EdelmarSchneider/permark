@@ -1,12 +1,16 @@
 // What the shell's backend half answers in the mock backend: the plugin list with its switches, the project's shared
-// settings, the other windows of the process. In memory; same shapes as the real commands.
+// settings, where a folder's data is kept, the other windows of the process. In memory; same shapes as the real
+// commands.
 
+import type { ConfigUnreadableWhy } from "./generated/ConfigUnreadableWhy";
 import type { Context } from "./generated/Context";
+import type { DataOffer } from "./generated/DataOffer";
 import type { Manifest } from "./generated/Manifest";
 import type { PluginInfo } from "./generated/PluginInfo";
 import type { PluginKind } from "./generated/PluginKind";
 import type { ProjectSettingChange } from "./generated/ProjectSettingChange";
 import type { ProjectSettings } from "./generated/ProjectSettings";
+import type { Sharing } from "./generated/Sharing";
 import type { WindowSummary } from "./generated/WindowSummary";
 import type { AppSettings, Result } from "./types";
 
@@ -95,8 +99,13 @@ export const MOCK_MANIFESTS: readonly Manifest[] = [
 const ok = <T>(value: T): Promise<Result<T>> => Promise.resolve({ ok: true, value });
 
 function refusal<T>(
-  command: "project_config_set" | "plugin_remove_data" | "plugin_data_bytes" | "plugin_set_project",
-  kind: "unavailable" | "invalidData" | "unsupported",
+  command:
+    | "project_config_set"
+    | "project_sharing_set"
+    | "plugin_remove_data"
+    | "plugin_data_bytes"
+    | "plugin_set_project",
+  kind: "unavailable" | "invalidData" | "unsupported" | "conflict" | "settingsUnreadable",
   subject: string,
   detail: string | null = null,
 ): Promise<Result<T>> {
@@ -109,12 +118,16 @@ function refusal<T>(
 function emptyProject(): ProjectSettings {
   return {
     initialized: false,
+    sharing: "shared",
     tree: { show: null, include: [], exclude: [] },
     ignore: [],
     agentDeny: [],
     agentDenyPaths: [],
     tokenizers: [],
     ignoredPluginKeys: [],
+    unreadableLine: null,
+    unreadableWhy: null,
+    privateTracked: false,
   };
 }
 
@@ -158,6 +171,12 @@ export function createMockShell(deps: {
   let project = emptyProject();
   /** The folders PerMark was initialized in (the real thing is a `.permark/` folder on disk). */
   const initializedPaths = new Set<string>();
+  /** What a folder's window offers about the place of its data (none listed: nothing). */
+  const offers = new Map<string, DataOffer>();
+  /** Folders whose shared file is not TOML: the line where it stops being TOML. */
+  const brokenTeamFiles = new Map<string, number>();
+  /** Folders whose shared file can't be read as text: why. */
+  const unreadableTeamFiles = new Map<string, ConfigUnreadableWhy>();
   let currentPath = "";
   const choices = new Map<string, boolean>();
   /** Plugins the project's shared file turns off for everyone (`enabled = false`). */
@@ -189,7 +208,13 @@ export function createMockShell(deps: {
     /** A project is shown: its settings are what its folder holds (nothing set, unless initialized before). */
     reset(path: string): void {
       currentPath = path;
-      project = { ...emptyProject(), initialized: initializedPaths.has(path) };
+      project = {
+        ...emptyProject(),
+        initialized: initializedPaths.has(path),
+        unreadableLine: brokenTeamFiles.get(path) ?? null,
+        unreadableWhy: unreadableTeamFiles.get(path) ?? null,
+        privateTracked: project.privateTracked,
+      };
       choices.clear();
       teamOff.clear();
     },
@@ -207,22 +232,66 @@ export function createMockShell(deps: {
         deps.changed();
       },
       project: (): ProjectSettings => project,
+      /** What the folder's `.permark/.gitignore` says (`custom`: someone else wrote it). */
+      sharing(sharing: Sharing): void {
+        project = { ...project, sharing };
+      },
       /** The project's shared file holds plugin keys no plugin reads (`<id>.<key>`). */
       ignorePluginKeys(keys: string[]): void {
         project = { ...project, ignoredPluginKeys: keys };
       },
+      /** The shared file of the folder at `path` is not TOML from `line` on: the folder is set up, its settings page
+       *  says so and every change of a shared setting is refused (the file stays as it is). */
+      teamFileBroken(path: string, line: number): void {
+        brokenTeamFiles.set(path, line);
+        initializedPaths.add(path);
+        if (path === currentPath) project = { ...project, initialized: true, unreadableLine: line };
+      },
+      /** The shared file of the folder at `path` can't be read as text (`why`): the folder is set up, its settings
+       *  page says why and every change of a shared setting is refused. */
+      teamFileUnreadable(path: string, why: ConfigUnreadableWhy): void {
+        unreadableTeamFiles.set(path, why);
+        initializedPaths.add(path);
+        if (path === currentPath) project = { ...project, initialized: true, unreadableWhy: why };
+      },
+      /** Git tracks the folder's private folder (`.permark/local`), or can't tell: agents get none of what it keeps. */
+      privateTracked(tracked: boolean): void {
+        project = { ...project, privateTracked: tracked };
+      },
       /** Every folder is as new: nothing is initialized. */
       forgetInit(): void {
         initializedPaths.clear();
+        offers.clear();
+        brokenTeamFiles.clear();
+        unreadableTeamFiles.clear();
         project = emptyProject();
       },
+      /** The folder at `path` offers `offer` about its data when it opens; with Move | Keep and both places holding
+       *  data it has a team folder (a `.permark/` that arrived while the data stayed on this computer). */
+      dataOffer(path: string, offer: DataOffer): void {
+        offers.set(path, offer);
+        if (offer === "ask" || offer === "movable" || offer === "both") initializedPaths.add(path);
+        if (path === currentPath) project = { ...project, initialized: initializedPaths.has(path) };
+      },
     },
-    /** `.permark/` was created in `path`; `true` when that is the folder shown. */
+    /** What the window of the folder at `path` offers about the place of its data. */
+    offerOf: (path: string): DataOffer => offers.get(path) ?? "none",
+    /** `.permark/` was created in `path` (the data moved in: nothing left to offer); `true` when that is the folder
+     *  shown. */
     initProject(path: string): boolean {
       initializedPaths.add(path);
+      offers.delete(path);
       if (path !== currentPath) return false;
       project = { ...project, initialized: true };
       return true;
+    },
+    /** The person keeps the data of the folder at `path` on this computer: Move alone is left after Move | Keep; the
+     *  copy in use is kept as the place; `true` when that is the folder shown. */
+    keepData(path: string): boolean {
+      const offer = offers.get(path);
+      if (offer === "ask") offers.set(path, "movable");
+      if (offer === "missing") offers.delete(path);
+      return path === currentPath;
     },
     api: {
       focusWorkspace: (id: number) => {
@@ -236,6 +305,14 @@ export function createMockShell(deps: {
         }
         if (!project.initialized)
           return refusal<ProjectSettings>("project_config_set", "unavailable", "permark");
+        if (project.unreadableLine !== null || project.unreadableWhy !== null) {
+          return refusal<ProjectSettings>(
+            "project_config_set",
+            "settingsUnreadable",
+            ".permark/config.toml",
+            project.unreadableWhy ?? "notToml",
+          );
+        }
         const problem = listProblem(change);
         if (problem !== null) {
           return refusal<ProjectSettings>("project_config_set", "invalidData", change.key, problem);
@@ -271,6 +348,15 @@ export function createMockShell(deps: {
           default:
             change satisfies never;
         }
+        return ok(project);
+      },
+      /** Only PerMark's own two forms are written, never over someone else's file. */
+      projectSharingSet: (sharing: Sharing) => {
+        if (!project.initialized)
+          return refusal<ProjectSettings>("project_sharing_set", "unavailable", "permark");
+        if (project.sharing === "custom" || sharing === "custom")
+          return refusal<ProjectSettings>("project_sharing_set", "conflict", ".permark/.gitignore");
+        project = { ...project, sharing };
         return ok(project);
       },
       pluginsList: (inProject: boolean): Promise<Result<PluginInfo[]>> => {

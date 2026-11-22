@@ -13,21 +13,26 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use toml_edit::{DocumentMut, Item, Table, Value};
+use toml_edit::{DocumentMut, InlineTable, Item, RawString, Table, TableLike, Value};
 use ts_rs::TS;
 
 pub use characters::{
-    is_unsafe_char, CharacterEntry, CharacterGroup, CharactersError, CharactersStatus,
+    is_format_char, is_unsafe_char, CharacterEntry, CharacterGroup, CharactersError,
+    CharactersStatus,
 };
 pub use installer::installer_language;
 pub use project::{
-    ProjectConfig, ProjectConfigFile, ProjectSettingChange, ProjectSettings, TreeConfig, TreeShow,
+    ConfigRead, ConfigUnreadable, ConfigUnreadableWhy, ProjectConfig, ProjectConfigFile,
+    ProjectSettingChange, ProjectSettings, TreeConfig, TreeShow,
 };
-pub use region::system_region;
+pub use region::{system_languages, system_region};
 
 use crate::error::IpcError;
 use crate::fileops::{check_name, NameProblem};
-use crate::fsx::{read_bytes, write_atomic, FsxError};
+use crate::fsx::{
+    hash, read_bytes, read_regular, write_atomic_if_absent, write_atomic_if_unchanged, FsxError,
+    Zone,
+};
 use crate::plugins::PluginId;
 use crate::state::AppDirs;
 use crate::tree::extension_of;
@@ -710,6 +715,9 @@ pub enum SettingsError {
     /// The settings file is there but cannot be read as text: it stays as it is and nothing is changed.
     #[error("cannot read {path}: {}", why.code())]
     Unreadable { path: String, why: Unreadable },
+    /// Another program kept changing the file between this change's read and its write: nothing was written.
+    #[error("{path} changed while it was being written")]
+    Conflict { path: String },
 }
 
 /// Why a settings file cannot be read as text.
@@ -719,6 +727,10 @@ pub enum Unreadable {
     TooLarge,
     /// Another program holds it, past the retries.
     Locked,
+    /// Text, but not TOML (a merge conflict left in it); `line`: where the parser stopped (1-based).
+    NotToml {
+        line: usize,
+    },
 }
 
 impl Unreadable {
@@ -729,8 +741,16 @@ impl Unreadable {
             Self::NotText => "notText",
             Self::TooLarge => "tooLarge",
             Self::Locked => "locked",
+            Self::NotToml { .. } => "notToml",
         }
     }
+}
+
+/// The line (1-based) of `text` where the TOML parser stopped (`error` came from parsing `text`).
+pub(crate) fn toml_error_line(text: &str, error: &toml_edit::TomlError) -> usize {
+    let at = error.span().map_or(0, |span| span.start.min(text.len()));
+    // the pieces between line breaks before the error: one more than the breaks
+    text.as_bytes()[..at].split(|&b| b == b'\n').count()
 }
 
 impl From<SettingsError> for IpcError {
@@ -749,6 +769,9 @@ impl From<SettingsError> for IpcError {
             }
             SettingsError::NotInitialized => {
                 IpcError::new(crate::error::ErrorKind::Unavailable).subject("permark")
+            }
+            SettingsError::Conflict { path } => {
+                IpcError::new(crate::error::ErrorKind::Conflict).subject(path)
             }
         }
     }
@@ -868,17 +891,46 @@ pub(crate) fn read_doc(path: &Path) -> Option<DocumentMut> {
     read_settings_text(path).ok()??.parse::<DocumentMut>().ok()
 }
 
+/// The text of the settings file `name` the team shares in `permark` (a project's `.permark/`, which arrives with the
+/// folder): only a plain file there is read, never through a link, and a FIFO never makes the read wait. `None`:
+/// there is none.
+///
+/// # Errors
+/// See [`read_settings_text`]; `Io` `InvalidData` for a link | folder | FIFO.
+pub(crate) fn read_team_text(permark: &Path, name: &str) -> Result<Option<String>, SettingsError> {
+    read_team_file(permark, &permark.join(name))
+}
+
+/// [`read_team_text`] of the file at `path` below `permark`.
+fn read_team_file(permark: &Path, path: &Path) -> Result<Option<String>, SettingsError> {
+    settings_text(
+        path,
+        read_regular(path, MAX_SETTINGS_BYTES, Zone::Inside(permark)),
+    )
+}
+
 /// The text of a settings file; `None`: there is none.
 ///
 /// # Errors
 /// `Unreadable`: larger than [`MAX_SETTINGS_BYTES`] | not UTF-8 | locked past the retries; `Io`: denied, any other
 /// failure.
 fn read_settings_text(path: &Path) -> Result<Option<String>, SettingsError> {
+    settings_text(path, read_bytes(path, MAX_SETTINGS_BYTES))
+}
+
+/// The text of a settings file from the outcome of its `read`; `None`: there is none.
+///
+/// # Errors
+/// See [`read_settings_text`].
+fn settings_text(
+    path: &Path,
+    read: Result<Vec<u8>, FsxError>,
+) -> Result<Option<String>, SettingsError> {
     let unreadable = |why| SettingsError::Unreadable {
         path: path.display().to_string(),
         why,
     };
-    let bytes = match read_bytes(path, MAX_SETTINGS_BYTES) {
+    let bytes = match read {
         Ok(bytes) => bytes,
         Err(FsxError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
             return Ok(None);
@@ -1020,8 +1072,118 @@ impl AppSettings {
     }
 }
 
+/// A table reached by [`table_at`]; `inline` = written `{ ... }` (a value, not a `[table]`).
+struct TableAt<'a> {
+    table: &'a mut dyn TableLike,
+    inline: bool,
+}
+
+impl TableAt<'_> {
+    /// [`set_keeping_decor`]. A new key of an inline table goes last: the space before `}`, parsed as the last
+    /// value's suffix, moves onto the new value (else `{ a = 1 , b = 2 }`).
+    fn set(&mut self, key: &str, mut value: Value) {
+        if self.inline && !self.table.contains_key(key) {
+            if let Some(trailing) = self.take_trailing() {
+                value.decor_mut().set_suffix(trailing);
+            }
+            self.table.insert(key, Item::Value(value));
+        } else {
+            set_keeping_decor(&mut *self.table, key, value);
+        }
+    }
+
+    /// Removes `key`. The last key of an inline table hands the space before `}` to the value now last (else
+    /// `{ a = 1}`).
+    fn remove(&mut self, key: &str) {
+        let last = self.inline
+            && self
+                .table
+                .iter()
+                .last()
+                .is_some_and(|(name, _)| name == key);
+        let trailing = self
+            .table
+            .remove(key)
+            .and_then(|item| item.as_value().and_then(|v| v.decor().suffix().cloned()));
+        if let (true, Some(trailing)) = (last, trailing) {
+            if let Some(value) = self.last_value() {
+                value.decor_mut().set_suffix(trailing);
+            }
+        }
+    }
+
+    fn last_value(&mut self) -> Option<&mut Value> {
+        self.table
+            .iter_mut()
+            .last()
+            .and_then(|(_, item)| item.as_value_mut())
+    }
+
+    /// The written suffix of the last value (the space before `}`), left empty: a `,` follows it now.
+    fn take_trailing(&mut self) -> Option<RawString> {
+        let decor = self.last_value()?.decor_mut();
+        let trailing = decor.suffix().cloned();
+        if trailing.is_some() {
+            decor.set_suffix("");
+        }
+        trailing
+    }
+}
+
+/// The table at `path` below `root`, walked in place: a table written inline stays inline, its other keys and the
+/// author's spelling untouched (`Item::is_table` is false for an inline table: a walk on it would replace it). A
+/// missing step (or a value that is no table) with `create`: a new table, inline inside an inline one (TOML allows
+/// nothing else there), else a normal implicit one (no `[header]` of its own while it holds only tables). `None`:
+/// missing and not `create`.
+fn table_at<'a>(root: &'a mut Table, path: &[&str], create: bool) -> Option<TableAt<'a>> {
+    let mut at = TableAt {
+        table: root,
+        inline: false,
+    };
+    for &name in path {
+        if !at.table.get(name).is_some_and(Item::is_table_like) {
+            if !create {
+                return None;
+            }
+            if at.inline {
+                at.set(name, Value::InlineTable(InlineTable::new()));
+            } else {
+                let mut fresh = Table::new();
+                fresh.set_implicit(true);
+                at.table.insert(name, Item::Table(fresh));
+            }
+        }
+        let item = at.table.get_mut(name)?;
+        at = TableAt {
+            inline: item.is_inline_table(),
+            table: item.as_table_like_mut()?,
+        };
+    }
+    Some(at)
+}
+
+/// Sets | removes (`None`) `key` of the table at `path` ([`table_at`]: inline tables edited in place). The table a
+/// removal leaves empty goes with it; a removal from a missing table writes nothing.
+fn set_key_at(root: &mut Table, path: &[&str], key: &str, value: Option<Value>) {
+    let Some(value) = value else {
+        let emptied = table_at(root, path, false).is_some_and(|mut at| {
+            at.remove(key);
+            at.table.is_empty()
+        });
+        if let (true, Some((last, parents))) = (emptied, path.split_last()) {
+            if let Some(mut parent) = table_at(root, parents, false) {
+                parent.remove(last);
+            }
+        }
+        return;
+    };
+    if let Some(mut at) = table_at(root, path, true) {
+        at.set(key, value);
+    }
+}
+
 /// Sets `table[key] = value`, keeping the old value's decor (inline comment, spacing) and the key's position.
-fn set_keeping_decor(table: &mut Table, key: &str, value: Value) {
+fn set_keeping_decor(table: &mut dyn TableLike, key: &str, value: Value) {
     match table.get_mut(key) {
         Some(Item::Value(old)) => {
             let decor = old.decor().clone();
@@ -1201,29 +1363,15 @@ fn set_versioned_table(root: &mut Table, key: &str, written: u32, fresh: Option<
 }
 
 fn set_keymap(root: &mut Table, command: &str, combo: Option<&str>) {
-    if !root.get("keymap").is_some_and(Item::is_table) {
-        if combo.is_none() {
-            return;
-        }
-        root.insert("keymap", Item::Table(Table::new()));
-    }
-    let Some(Item::Table(map)) = root.get_mut("keymap") else {
-        return;
-    };
     // the entry under its 0.6.0 name goes when the person changes it
-    for (old, new) in RENAMED_COMMANDS {
-        if *new == command {
-            map.remove(old);
+    if let Some(mut map) = table_at(root, &["keymap"], false) {
+        for (old, new) in RENAMED_COMMANDS {
+            if *new == command {
+                map.remove(old);
+            }
         }
     }
-    if let Some(combo) = combo {
-        set_keeping_decor(map, command, combo.into());
-    } else {
-        map.remove(command);
-        if map.is_empty() {
-            root.remove("keymap");
-        }
-    }
+    set_key_at(root, &["keymap"], command, combo.map(Value::from));
 }
 
 /// A text key: empty text removes the key (back to the default).
@@ -1237,41 +1385,7 @@ fn set_text(table: &mut Table, key: &str, value: &str) {
 
 /// Sets | removes `[plugins.<id>] <key>`; an emptied table goes with its last key.
 fn set_plugin_key(root: &mut Table, plugin: &PluginId, key: &str, value: Option<Value>) {
-    let id = plugin.as_str();
-    if !root.get("plugins").is_some_and(Item::is_table) {
-        if value.is_none() {
-            return;
-        }
-        let mut plugins = Table::new();
-        plugins.set_implicit(true);
-        root.insert("plugins", Item::Table(plugins));
-    }
-    let Some(Item::Table(plugins)) = root.get_mut("plugins") else {
-        return;
-    };
-    // an inline table `[plugins] git = { enabled = true }` becomes a normal table (rare; still surgical elsewhere)
-    if let Some(Item::Value(Value::InlineTable(inline))) = plugins.get(id) {
-        let table = inline.clone().into_table();
-        plugins.insert(id, Item::Table(table));
-    }
-    match value {
-        Some(value) => {
-            if !plugins.get(id).is_some_and(Item::is_table) {
-                plugins.insert(id, Item::Table(Table::new()));
-            }
-            if let Some(Item::Table(table)) = plugins.get_mut(id) {
-                set_keeping_decor(table, key, value);
-            }
-        }
-        None => {
-            if let Some(Item::Table(table)) = plugins.get_mut(id) {
-                table.remove(key);
-                if table.is_empty() {
-                    plugins.remove(id);
-                }
-            }
-        }
-    }
+    set_key_at(root, &["plugins", plugin.as_str()], key, value);
 }
 
 /// Document text in the line endings of `original` (`toml_edit` writes LF): an all-CRLF file stays CRLF.
@@ -1372,29 +1486,49 @@ impl SettingsFile {
         )
     }
 
-    /// Why the file is there but cannot be read (`load` gave the defaults then); `None`: read, or there is none.
-    #[must_use]
-    pub fn read_failure(&self) -> Option<SettingsError> {
-        read_settings_text(&self.path).err()
+    /// The start's look at the file (`load` gives the defaults for a file it cannot use): one that is not TOML is
+    /// moved to `settings.toml.broken-<ms>` now, as the next change would do, so the person can be told where it went
+    /// (the backup). `Ok(None)`: read, or there is none.
+    ///
+    /// # Errors
+    /// `Unreadable`: there but not text | too large | locked (left in place, never set aside: it may be fine and only
+    /// unreadable now), or not TOML and could not be moved; `Io`: denied, any other failure.
+    pub fn set_aside_if_broken(&self) -> Result<Option<PathBuf>, SettingsError> {
+        let Some(text) = read_settings_text(&self.path)? else {
+            return Ok(None);
+        };
+        match text.parse::<DocumentMut>() {
+            Ok(_) => Ok(None),
+            Err(error) => crate::state::move_aside(&self.path)
+                .map(Some)
+                .ok_or_else(|| SettingsError::Unreadable {
+                    path: self.path.display().to_string(),
+                    why: Unreadable::NotToml {
+                        line: toml_error_line(&text, &error),
+                    },
+                }),
+        }
     }
 
     /// Applies one change to the file on disk (read fresh: hand edits kept) and returns the new settings.
     /// A file that is not TOML is moved to `settings.toml.broken-<ms>` first (never silently overwritten).
     ///
     /// # Errors
-    /// `Invalid` value; IO failure writing the file.
+    /// `Invalid` value; IO failure writing the file; `Conflict`: another program kept changing it meanwhile.
     pub fn apply(&self, change: &SettingChange) -> Result<AppSettings, SettingsError> {
         change.validate()?;
-        let doc = edit_file(&self.path, |doc| apply_change(doc, change))?;
+        let doc = edit_file(&self.path, Kept::Own, |doc| apply_change(doc, change))?;
         Ok(self.attach_characters(AppSettings::from_doc(&doc)))
     }
 
-    /// First start: the language the installer recorded becomes the `language` setting, once. Nothing happens when
-    /// the file already has a `language` key (the person's own pick, `system` included, always wins: a reinstall in
-    /// another language never replaces it) or when nothing was recorded. Returns the settings when it wrote.
+    /// First start: the language the installer recorded becomes the `language` setting, once. Only while there is no
+    /// file or the file reads as TOML without a `language` key: the person's own pick (`system` included) always wins,
+    /// so a reinstall in another language never replaces it, and a file that is not TOML is the person's to fix,
+    /// never replaced | set aside for the installer's choice. Nothing happens when nothing was recorded. Returns the
+    /// settings when it wrote.
     ///
     /// # Errors
-    /// IO failure writing the file.
+    /// The file cannot be read as text; IO failure writing it.
     pub fn adopt_language(
         &self,
         recorded: Option<LanguagePref>,
@@ -1402,8 +1536,13 @@ impl SettingsFile {
         let Some(language) = recorded else {
             return Ok(None);
         };
-        if read_doc(&self.path).is_some_and(|doc| doc.contains_key("language")) {
-            return Ok(None);
+        if let Some(text) = read_settings_text(&self.path)? {
+            if text
+                .parse::<DocumentMut>()
+                .map_or(true, |doc| doc.contains_key("language"))
+            {
+                return Ok(None);
+            }
         }
         self.apply(&SettingChange::Language(language)).map(Some)
     }
@@ -1446,7 +1585,7 @@ impl SettingsFile {
         if changes.is_empty() {
             return Ok(None);
         }
-        let doc = edit_file(&self.path, |doc| {
+        let doc = edit_file(&self.path, Kept::Own, |doc| {
             changes
                 .iter()
                 .try_for_each(|change| apply_change(doc, change))
@@ -1455,39 +1594,104 @@ impl SettingsFile {
     }
 }
 
-/// Reads a settings file fresh (hand edits kept; a file that is not TOML is moved to `<name>.broken-<ms>` first),
-/// lets `change` edit the document, writes it back atomically (line endings of an all-CRLF file kept). A change
-/// that refuses what it read is an error and nothing is written. A file that cannot be read as text (too large,
-/// not UTF-8, locked) is an error and stays as it is: it may be fine and only unreadable now, so it is never set
-/// aside or reset.
+/// Whose settings file [`edit_file`] changes: how it is read, and what happens to one that is text but not TOML.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Kept<'a> {
+    /// The person's own file (the profile, which dotfile managers may link elsewhere): a link stays a link, the file it
+    /// leads to is read and written; not TOML -> moved to `<name>.broken-<ms>`, the change starts a fresh one.
+    Own,
+    /// A file shared with whoever opens the folder, below its `permark` folder: every pass reads only a plain file
+    /// there, never through a link (one swapped in between two passes would copy an outside file's text into it); not
+    /// TOML -> the change is refused and the file stays as it is (setting it aside would drop everyone's settings, and
+    /// the backup would sit untracked beside it).
+    Team { permark: &'a Path },
+}
+
+impl Kept<'_> {
+    fn read(self, path: &Path) -> Result<Option<String>, SettingsError> {
+        match self {
+            Self::Own => read_settings_text(path),
+            Self::Team { permark } => read_team_file(permark, path),
+        }
+    }
+
+    /// Where a change of the file at `path` is read and written: the person's own file that is a link -> the file the
+    /// link leads to (an atomic write replaces the name it renames over, which would turn the link into a plain file);
+    /// else `path` (a dangling link included: its write is refused as something in the way).
+    fn place(self, path: &Path) -> PathBuf {
+        let linked = matches!(self, Self::Own)
+            && std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink());
+        linked
+            .then(|| crate::paths::canonicalize(path).ok())
+            .flatten()
+            .unwrap_or_else(|| path.to_path_buf())
+    }
+}
+
+/// Reads a settings file fresh (hand edits kept; how, and a file that is not TOML: see [`Kept`]), lets `change` edit the
+/// document, writes it back atomically (line endings of an all-CRLF file kept). A change that refuses what it read is
+/// an error and nothing is written. A file that cannot be read as text (too large, not UTF-8, locked) is an error and
+/// stays as it is: it may be fine and only unreadable now, so it is never set aside or reset.
+///
+/// The write lands only while the file still holds what was read (none: while there is still none), so a save by
+/// another program in between is never written over: the change is made once more on what that save left, and a file
+/// changed again under that second write is a `Conflict`, nothing written.
 pub(crate) fn edit_file(
     path: &Path,
-    change: impl FnOnce(&mut DocumentMut) -> Result<(), SettingsError>,
+    kept: Kept<'_>,
+    mut change: impl FnMut(&mut DocumentMut) -> Result<(), SettingsError>,
 ) -> Result<DocumentMut, SettingsError> {
-    let io = |source: io::Error| SettingsError::Io {
+    for _ in 0..2 {
+        if let Some(doc) = edit_once(path, kept, &mut change)? {
+            return Ok(doc);
+        }
+    }
+    Err(SettingsError::Conflict {
         path: path.display().to_string(),
-        source,
-    };
-    let original = read_settings_text(path)?;
+    })
+}
+
+/// One read, change and guarded write of [`edit_file`]. `Ok(None)`: the file changed between the read and the write,
+/// untouched.
+fn edit_once(
+    path: &Path,
+    kept: Kept<'_>,
+    change: &mut impl FnMut(&mut DocumentMut) -> Result<(), SettingsError>,
+) -> Result<Option<DocumentMut>, SettingsError> {
+    let place = kept.place(path);
+    let path = place.as_path();
+    let original = kept.read(path)?;
+    // what must still be at the path for the write to land: the bytes read, or nothing
+    let mut seen = original.as_deref().map(|text| hash(text.as_bytes()));
     let mut doc = match original.as_deref().map(str::parse::<DocumentMut>) {
         None => DocumentMut::new(),
         Some(Ok(doc)) => doc,
-        Some(Err(_)) => {
-            let ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_millis());
-            let name = path
-                .file_name()
-                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-            std::fs::rename(path, path.with_file_name(format!("{name}.broken-{ms}")))
-                .map_err(io)?;
+        Some(Err(error)) => {
+            let line = original
+                .as_deref()
+                .map_or(1, |text| toml_error_line(text, &error));
+            if matches!(kept, Kept::Team { .. }) || crate::state::move_aside(path).is_none() {
+                return Err(SettingsError::Unreadable {
+                    path: path.display().to_string(),
+                    why: Unreadable::NotToml { line },
+                });
+            }
+            seen = None;
             DocumentMut::new()
         }
     };
     change(&mut doc)?;
     let original = original.unwrap_or_default();
-    write_atomic(path, render(&doc, &original).as_bytes()).map_err(io)?;
-    Ok(doc)
+    let bytes = render(&doc, &original);
+    let written = match seen {
+        Some(seen) => write_atomic_if_unchanged(path, bytes.as_bytes(), seen),
+        None => write_atomic_if_absent(path, bytes.as_bytes()),
+    }
+    .map_err(|source| SettingsError::Io {
+        path: path.display().to_string(),
+        source,
+    })?;
+    Ok(written.then_some(doc))
 }
 
 #[cfg(test)]

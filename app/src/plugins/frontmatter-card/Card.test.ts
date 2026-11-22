@@ -206,6 +206,62 @@ describe("the front matter card", () => {
     expect(toml.querySelector(".field, .grid")).toBeNull();
   });
 
+  it("shows every row when keys repeat", () => {
+    // A key written twice, and `a:` + `  b:` next to `a.b:`, give rows with the same key.
+    const root = mountCard({
+      syntax: "yaml",
+      raw: "a: 1\na: 2\nb:\n  c: 3\nb.c: 4",
+      fields: [
+        { key: "a", value: { type: "text", text: "1" } },
+        { key: "a", value: { type: "text", text: "2" } },
+        { key: "b.c", value: { type: "text", text: "3" } },
+        { key: "b.c", value: { type: "text", text: "4" } },
+      ],
+    });
+    const rows = [...root.querySelectorAll(".field")].map((row) => [
+      row.querySelector("dt")?.textContent,
+      row.querySelector("dd")?.textContent,
+    ]);
+    expect(rows).toEqual([
+      ["a", "1"],
+      ["a", "2"],
+      ["b.c", "3"],
+      ["b.c", "4"],
+    ]);
+  });
+
+  it("shows a model card's list of maps as one chip per map", () => {
+    // Hugging Face model card front matter: `authors` is a list of name + email maps; the backend gives one
+    // `key: value; key: value` item per map.
+    const fields: FrontMatterProps["fields"] = [
+      { key: "license", value: { type: "text", text: "apache-2.0" } },
+      { key: "language", value: { type: "list", items: ["en", "pt"] } },
+      {
+        key: "authors",
+        value: {
+          type: "list",
+          items: ["name: Ana Lima; email: ana@example.com", "name: Bo Chen; email: bo@example.com"],
+        },
+      },
+      { key: "pipeline_tag", value: { type: "text", text: "text-generation" } },
+    ];
+    const root = mountCard({
+      syntax: "yaml",
+      raw: "license: apache-2.0\nlanguage:\n- en\n- pt\nauthors:\n- name: Ana Lima\n  email: ana@example.com\n- name: Bo Chen\n  email: bo@example.com\npipeline_tag: text-generation",
+      fields,
+    });
+    expect([...root.querySelectorAll(".field dt")].map((node) => node.textContent)).toEqual([
+      "license",
+      "language",
+      "authors",
+      "pipeline_tag",
+    ]);
+    expect(
+      [...field(root, "authors").querySelectorAll(".chip")].map((chip) => chip.textContent),
+    ).toEqual(["name: Ana Lima; email: ana@example.com", "name: Bo Chen; email: bo@example.com"]);
+    expect(root.querySelector("pre.raw")).toBeNull();
+  });
+
   it("stays read-only", () => {
     const root = mountCard(PROPS);
     expect(

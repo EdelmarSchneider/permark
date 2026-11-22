@@ -26,13 +26,20 @@
 
   let dialog: HTMLElement | undefined = $state();
   let listbox: HTMLElement | undefined = $state();
-  /** Index of the row the keyboard was put on. */
-  let active = $state(0);
+  /** Index of the row the keyboard was put on (`null`: not moved yet). */
+  let active = $state<number | null>(null);
 
   const rows = $derived(list.rows);
   const name = $derived(list.path.split("/").at(-1) ?? list.path);
+  /** The row of the version compared with now: where the keyboard starts (else on the newest). */
+  const pickedRow = $derived(
+    Math.max(
+      0,
+      rows.findIndex((r) => r.commit === review.picked?.commit),
+    ),
+  );
   /** The row the keyboard is on, in the rows there are now (a list read again may be shorter). */
-  const at = $derived(Math.max(0, Math.min(active, rows.length - 1)));
+  const at = $derived(Math.max(0, Math.min(active ?? pickedRow, rows.length - 1)));
   /** A pick is for the document on screen: while the window is on its way to this file, the page shows another. */
   const ready = $derived(documents.view?.path === list.path);
   /** Reading again can help: "Try again" reads what "Show more" would. */

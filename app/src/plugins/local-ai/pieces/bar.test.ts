@@ -2,6 +2,8 @@
 // The piece review bar as a frame: its words and its excerpt come from the plugin (here: words of other features and
 // an excerpt of two stacked lines), nothing of one plugin is built in. The bar through a run, its keys and its focus
 // are driven where a plugin configures it: `plugins/correction/bar.test.ts`.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createRawSnippet, flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiError } from "../../../api";
@@ -141,6 +143,32 @@ describe("the piece review bar", () => {
     // no marks of its own around what the plugin drew
     expect(target.querySelector("del, ins")).toBeNull();
     expect(target.querySelector("[aria-live]")?.textContent).toContain("1/1: has > have");
+  });
+
+  it("draws the excerpt as the review says the editor on screen shows it", () => {
+    const shown = vi
+      .spyOn(review, "shown")
+      .mockImplementation((s) => ({ ...s, original: "as shown" }));
+    show(state({ suggestions: [S1] }));
+    expect(shown).toHaveBeenCalledWith(S1);
+    const lines = button("show")?.querySelectorAll(".stack > span") ?? [];
+    expect([...lines].map((line) => line.textContent)).toEqual(["as shown", "have"]);
+    shown.mockRestore();
+  });
+
+  it("the excerpt holds as many lines as it may show, whatever the current suggestion needs: the text under the bar stays put", () => {
+    const css = readFileSync(
+      resolve(process.cwd(), "src/plugins/local-ai/pieces/ReviewBar.svelte"),
+      "utf8",
+    );
+    // on the button's content, which then fills the button: a button centers what is shorter than itself
+    const rule = css.slice(css.indexOf("  .excerpt > span {")).split("}")[0] ?? "";
+    expect(rule).toMatch(/^\s*display: -webkit-box;/m);
+    const lines = /-webkit-line-clamp: (\d+);/.exec(rule)?.[1];
+    const height = /line-height: ([\d.]+);/.exec(rule)?.[1];
+    expect(lines).toBe("3");
+    expect(rule).toMatch(/^\s*line-clamp: 3;/m);
+    expect(rule).toContain(`min-height: calc(${lines} * ${height}em);`);
   });
 
   it("answers that said the same as their piece: a note of its own, only from a plugin with words for it", () => {

@@ -8,6 +8,47 @@ use std::path::{Component, Path, PathBuf, Prefix};
 /// Paths of this many UTF-16 units or more get `\\?\` (Win32 reads at most 259 + NUL without it).
 const SHORT_PATH_UNITS: usize = 240;
 
+/// `FILE_ATTRIBUTE_HIDDEN`.
+pub(super) const HIDDEN: u32 = windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_HIDDEN;
+
+/// Gives `tmp` the hidden flag of `target` (shown when there is none): a write's temp is made hidden, and the file it
+/// becomes shows as the one it replaces.
+pub(super) fn hidden_as(tmp: &Path, target: Option<&std::fs::Metadata>) -> io::Result<()> {
+    use std::os::windows::fs::MetadataExt;
+    set_hidden(
+        tmp,
+        target.is_some_and(|meta| meta.file_attributes() & HIDDEN != 0),
+    )
+}
+
+/// Sets | clears the hidden flag of `path`, its other attributes kept.
+// Documented FFI: std sets attributes only through `set_permissions`, which cannot clear the hidden flag. The argument
+// is a NUL-terminated wide string owned by this function and alive for the whole call.
+#[allow(unsafe_code)]
+pub(super) fn set_hidden(path: &Path, hidden: bool) -> io::Result<()> {
+    use std::os::windows::fs::MetadataExt;
+    use windows_sys::Win32::Storage::FileSystem::{SetFileAttributesW, FILE_ATTRIBUTE_NORMAL};
+    let attrs = std::fs::metadata(path)?.file_attributes();
+    if (attrs & HIDDEN != 0) == hidden {
+        return Ok(());
+    }
+    // NORMAL is valid only alone
+    let rest = attrs & !HIDDEN & !FILE_ATTRIBUTE_NORMAL;
+    let wanted = match (hidden, rest) {
+        (true, rest) => rest | HIDDEN,
+        (false, 0) => FILE_ATTRIBUTE_NORMAL,
+        (false, rest) => rest,
+    };
+    let path = wide(&extended(path))?;
+    // SAFETY: the pointer comes from a live NUL-terminated buffer that outlives the call.
+    let set = unsafe { SetFileAttributesW(path.as_ptr(), wanted) };
+    if set == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
 /// `MoveFileExW(from, to, REPLACE_EXISTING | WRITE_THROUGH)`.
 // Documented FFI: MoveFileExW has no safe std wrapper with WRITE_THROUGH. Both arguments are NUL-terminated wide
 // strings owned by this function and alive for the whole call.
@@ -56,6 +97,111 @@ pub(super) fn free_space(folder: &Path) -> io::Result<u64> {
     }
 }
 
+// drive types of `GetDriveTypeW` (WinBase.h)
+#[cfg(test)]
+pub(super) const DRIVE_NO_ROOT_DIR: u32 = 1;
+const DRIVE_REMOVABLE: u32 = 2;
+const DRIVE_FIXED: u32 = 3;
+const DRIVE_RAMDISK: u32 = 6;
+
+/// `GetDriveTypeW` of the root of drive `letter`.
+// Documented FFI: no std wrapper tells the drive type. The argument is a NUL-terminated wide string owned by this
+// function and alive for the whole call.
+#[allow(unsafe_code)]
+pub(super) fn drive_type(letter: u8) -> u32 {
+    use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
+    let root = [u16::from(letter), u16::from(b':'), u16::from(b'\\'), 0];
+    // SAFETY: `root` is a live NUL-terminated buffer that outlives the call.
+    unsafe { GetDriveTypeW(root.as_ptr()) }
+}
+
+/// Whether the drive `letter` is a disk of this computer: `GetDriveTypeW` of its root answers fixed | removable | RAM
+/// disk. A network drive (a mapped `Z:`, a `subst` of a share) connects to a server on any lookup; a CD drive may wait
+/// for media; an unknown drive | one without a root folder tells nothing.
+pub(super) fn local_drive(letter: u8) -> bool {
+    matches!(
+        drive_type(letter),
+        DRIVE_REMOVABLE | DRIVE_FIXED | DRIVE_RAMDISK
+    )
+}
+
+/// Whether the drive `letter` is a fixed disk: the only kind the recycle bin serves. On a removable | RAM disk the
+/// shell's silent delete removes for good.
+pub(super) fn fixed_drive(letter: u8) -> bool {
+    drive_type(letter) == DRIVE_FIXED
+}
+
+/// `CfGetSyncRootInfoByPath` (cldapi.dll), looked up at the first call.
+type SyncRootInfo = unsafe extern "system" fn(
+    windows_sys::core::PCWSTR,
+    windows_sys::Win32::Storage::CloudFilters::CF_SYNC_ROOT_INFO_CLASS,
+    *mut std::ffi::c_void,
+    u32,
+    *mut u32,
+) -> windows_sys::core::HRESULT;
+
+/// Whether `path` is inside a Cloud Files sync root (the folder a sync service such as OneDrive, Dropbox, iCloud or
+/// Box registers with Windows): `CfGetSyncRootInfoByPath` answers `S_OK` there, or `ERROR_MORE_DATA` for a buffer
+/// too small; anything else (not inside one, no such path, no Cloud Files service) -> false. cldapi.dll is loaded on
+/// first use instead of linked: Windows 10 before 1709 lacks it, and a linked import would keep the app from starting
+/// there.
+// Documented FFI: no std wrapper for the Cloud Files API. The library comes from System32 only; the function pointer
+// is the documented export cast to its documented signature; `path` is a NUL-terminated wide string owned by this
+// function, `info` and `returned` live writable locals of the sizes passed; all outlive the call.
+#[allow(unsafe_code)]
+pub(super) fn in_sync_root(path: &Path) -> bool {
+    use std::sync::OnceLock;
+    use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
+    use windows_sys::Win32::Storage::CloudFilters::{
+        CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC,
+    };
+    use windows_sys::Win32::System::LibraryLoader::{
+        GetProcAddress, LoadLibraryExW, LOAD_LIBRARY_SEARCH_SYSTEM32,
+    };
+    static FUNCTION: OnceLock<Option<SyncRootInfo>> = OnceLock::new();
+    let function = FUNCTION.get_or_init(|| {
+        let library: Vec<u16> = "cldapi.dll\0".encode_utf16().collect();
+        // SAFETY: `library` is a live NUL-terminated buffer; a null file handle is documented; the module stays
+        // loaded for the life of the process (never freed), so the function pointer below stays valid.
+        let module = unsafe {
+            LoadLibraryExW(
+                library.as_ptr(),
+                std::ptr::null_mut(),
+                LOAD_LIBRARY_SEARCH_SYSTEM32,
+            )
+        };
+        if module.is_null() {
+            return None;
+        }
+        // SAFETY: `module` is a loaded module; the name is a NUL-terminated C string literal.
+        let found = unsafe { GetProcAddress(module, c"CfGetSyncRootInfoByPath".as_ptr().cast()) }?;
+        // SAFETY: the export's documented signature is `SyncRootInfo` (cfapi.h).
+        Some(unsafe {
+            std::mem::transmute::<unsafe extern "system" fn() -> isize, SyncRootInfo>(found)
+        })
+    });
+    let (Some(function), Ok(path)) = (*function, wide(&extended(path))) else {
+        return false;
+    };
+    let mut info = CF_SYNC_ROOT_BASIC_INFO::default();
+    let size = u32::try_from(std::mem::size_of::<CF_SYNC_ROOT_BASIC_INFO>()).unwrap_or(0);
+    let mut returned = 0u32;
+    // SAFETY: see above; `info` holds `size` writable bytes.
+    let result = unsafe {
+        function(
+            path.as_ptr(),
+            CF_SYNC_ROOT_INFO_BASIC,
+            (&raw mut info).cast(),
+            size,
+            &raw mut returned,
+        )
+    };
+    // HRESULT_FROM_WIN32(ERROR_MORE_DATA): the bit pattern 0x800700EA as the signed HRESULT
+    #[allow(clippy::cast_possible_wrap)]
+    let more_data = (0x8007_0000 | ERROR_MORE_DATA) as i32;
+    result == 0 || result == more_data
+}
+
 /// `(volume serial, file index)` of `path`; a link | junction is opened itself (`OPEN_REPARSE_POINT`). The handle
 /// (no access asked, every share mode) lives for this call only: never in the way of a rename.
 // Documented FFI: GetFileInformationByHandle has no stable std wrapper (`MetadataExt::file_index` is unstable). The
@@ -90,25 +236,44 @@ pub(super) fn file_identity(path: &Path) -> io::Result<(u64, u64)> {
 // live writable buffer whose length in UTF-16 units is the size passed.
 #[allow(unsafe_code)]
 pub(super) fn final_path(file: &std::fs::File) -> io::Result<PathBuf> {
-    use std::os::windows::ffi::OsStringExt;
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
         GetFinalPathNameByHandleW, FILE_NAME_NORMALIZED, VOLUME_NAME_DOS,
     };
-    let mut buf: Vec<u16> = vec![0; 512];
-    // a buffer too small answers the size needed: one retry with that size
-    for _ in 0..2 {
-        let size = u32::try_from(buf.len()).unwrap_or(u32::MAX);
+    path_answer(|buf, size| {
         // SAFETY: `file` keeps the handle open for the call; `buf` holds `size` writable units.
-        let n = unsafe {
+        unsafe {
             GetFinalPathNameByHandleW(
                 file.as_raw_handle(),
-                buf.as_mut_ptr(),
+                buf,
                 size,
                 FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
             )
-        };
-        let n = usize::try_from(n).unwrap_or(usize::MAX);
+        }
+    })
+}
+
+/// The 8.3 spelling of the existing `path` (`GetShortPathNameW`); a name with no short one stays long.
+// Documented FFI: std has no short-name lookup. `path` is a NUL-terminated wide string owned by this function and
+// alive for the whole call; `buf` is a live writable buffer whose length in UTF-16 units is the size passed.
+#[allow(unsafe_code)]
+pub(super) fn short_path(path: &Path) -> io::Result<PathBuf> {
+    use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+    let path = wide(path)?;
+    path_answer(|buf, size| {
+        // SAFETY: `path` is a live NUL-terminated buffer; `buf` holds `size` writable units.
+        unsafe { GetShortPathNameW(path.as_ptr(), buf, size) }
+    })
+}
+
+/// A path a system call writes into a buffer of `size` units, answering its length, the size needed when the buffer
+/// is too small (one retry with that size), or 0 on failure.
+fn path_answer(mut call: impl FnMut(*mut u16, u32) -> u32) -> io::Result<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    let mut buf: Vec<u16> = vec![0; 512];
+    for _ in 0..2 {
+        let size = u32::try_from(buf.len()).unwrap_or(u32::MAX);
+        let n = usize::try_from(call(buf.as_mut_ptr(), size)).unwrap_or(usize::MAX);
         if n == 0 {
             return Err(io::Error::last_os_error());
         }
@@ -118,10 +283,10 @@ pub(super) fn final_path(file: &std::fs::File) -> io::Result<PathBuf> {
         }
         buf.resize(n, 0);
     }
-    Err(io::Error::other("path of the open file keeps growing"))
+    Err(io::Error::other("the path keeps growing"))
 }
 
-fn wide(path: &Path) -> io::Result<Vec<u16>> {
+pub(super) fn wide(path: &Path) -> io::Result<Vec<u16>> {
     let mut units: Vec<u16> = path.as_os_str().encode_wide().collect();
     if units.contains(&0) {
         return Err(io::Error::new(

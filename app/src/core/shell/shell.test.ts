@@ -570,6 +570,8 @@ describe("plugins here", () => {
   async function herePage(): Promise<void> {
     mountPage("pluginsHere");
     await until(() => pluginsStore.state.status === "ready", "the list");
+    // Off for everyone waits for the folder's file to be read: it may be one that can't be written
+    await until(() => projectSettings.state.status === "ready", "the folder's settings");
     await tick();
   }
   const select = (id: string): HTMLSelectElement | null =>
@@ -636,6 +638,25 @@ describe("plugins here", () => {
       expect(await info("comments")).toEqual({ choice: null, teamOff: false }),
     );
     await until(() => chipOf("comments") === null, "no chip: follows the app");
+  });
+
+  it("Off for everyone can't be picked while the folder's file does not read", async () => {
+    mock.probe.shell.teamFileBroken(MOCK_FOLDER, 3);
+    await open();
+    await until(() => conditions.current.permark === "initialized", "set up");
+    await herePage();
+    const options = Array.from(select("comments")!.options).map((o) => [
+      o.textContent?.trim(),
+      o.disabled,
+    ]);
+    expect(options).toEqual([
+      ["Same as the app", false],
+      ["On here", false],
+      ["Off here (only you)", false],
+      ["Off for everyone", true],
+    ]);
+    expect(target.textContent).not.toContain("Initialize PerMark to share this with everyone");
+    expect(target.textContent).toContain("PerMark can't read .permark/config.toml");
   });
 
   it("a refused Off for everyone says why and the box shows the choice still in force", async () => {
@@ -749,6 +770,38 @@ describe("the project settings and Initialize PerMark", () => {
     );
   });
 
+  it("Overview, set up: whether git sees the folder's PerMark settings is chosen there for everyone; a file someone else wrote is only described", async () => {
+    const label = "Let git see this folder's PerMark settings";
+    await open();
+    mountPage("project");
+    await tick();
+    expect(target.textContent).not.toContain(label);
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    await until(() => target.textContent?.includes(label) ?? false, "the row");
+    const row = (): HTMLElement => byText(".row", label);
+    expect(row().querySelector(".name")?.textContent).toContain("Everyone");
+    expect(row().textContent).toContain("Your private data and caches always stay out of git.");
+    const radio = (name: string): HTMLButtonElement | undefined =>
+      Array.from(row().querySelectorAll<HTMLButtonElement>("button[role=radio]")).find(
+        (b) => b.textContent?.trim() === name,
+      );
+    expect(radio("On")?.getAttribute("aria-checked")).toBe("true");
+    radio("Off")?.click();
+    await until(() => mock.probe.shell.project().sharing === "private", "kept");
+    await until(() => radio("Off")?.getAttribute("aria-checked") === "true", "shown");
+    // someone else rewrote the file meanwhile: the change is refused, says why, and the row describes the file
+    mock.probe.shell.sharing("custom");
+    radio("On")?.click();
+    await until(
+      () => target.textContent?.includes("Couldn't change what git sees in .permark") ?? false,
+      "why",
+    );
+    await until(() => row().querySelector("button[role=radio]") === null, "no choice left");
+    expect(row().textContent).toContain("was written by someone else");
+    expect(mock.probe.shell.project().sharing).toBe("custom");
+  });
+
   it("Files, not initialized: the shared rows show greyed and do nothing until the person sets PerMark up", async () => {
     await open();
     mountPage("files");
@@ -777,6 +830,46 @@ describe("the project settings and Initialize PerMark", () => {
     await until(() => fields().every((f) => !f.disabled), "the rows work");
     expect(target.textContent).not.toContain("Initialize PerMark to share this with everyone");
     expect(target.querySelector(".shared.off")).toBeNull();
+  });
+
+  it("Files, shared file not readable: the shared rows show greyed, do nothing, and say where to look", async () => {
+    mock.probe.shell.teamFileBroken(MOCK_FOLDER, 3);
+    await open();
+    await until(() => conditions.current.permark === "initialized", "set up");
+    mountPage("files");
+    await until(() => projectSettings.state.status === "ready", "loaded");
+    await tick();
+    const fields = Array.from(target.querySelectorAll<HTMLInputElement>(".list input"));
+    expect(fields.length).toBe(3);
+    expect(fields.every((f) => f.disabled)).toBe(true);
+    const radios = Array.from(target.querySelectorAll<HTMLButtonElement>("button[role=radio]"));
+    expect(radios.length).toBeGreaterThan(0);
+    expect(radios.every((b) => b.disabled)).toBe(true);
+    expect(target.querySelector(".shared.off")).not.toBeNull();
+    // not the offer to set PerMark up: it is set up, its file needs fixing by hand
+    expect(target.textContent).not.toContain("Initialize PerMark to share this with everyone");
+    expect(target.textContent).toContain(
+      "PerMark can't read .permark/config.toml at line 3, so settings marked Everyone can't be changed until it's fixed.",
+    );
+    byText("button", "Overview").click();
+    await until(() => target.querySelector("h3.title")?.textContent === "Overview", "Overview");
+    expect(target.textContent).toContain("PerMark can't read this file at line 3");
+  });
+
+  it("Files, set up with a file that reads: no line about a file to fix", async () => {
+    await open();
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    mountPage("files");
+    await until(() => projectSettings.state.status === "ready", "loaded");
+    await tick();
+    expect(target.querySelector(".share-init")).toBeNull();
+    expect(Array.from(target.querySelectorAll<HTMLInputElement>(".list input")).length).toBe(3);
+    expect(
+      Array.from(target.querySelectorAll<HTMLInputElement>(".list input")).every(
+        (f) => !f.disabled,
+      ),
+    ).toBe(true);
   });
 
   it("patterns are added and removed one by one, kept at once; a refused value says why", async () => {
@@ -899,6 +992,11 @@ describe("the project settings and Initialize PerMark", () => {
     expect(target.textContent).toContain("Initialize PerMark in permark-docs?");
     expect(target.textContent).toContain(".permark/config.toml");
     expect(target.textContent).toContain("Your files are not touched.");
+    // the undo history moves with the private data; what the person allows for the folder stays behind
+    expect(target.textContent).toContain("(comments, read marks, undo history)");
+    expect(target.textContent).toContain(
+      "such as agent access, stays in your own PerMark data on this computer.",
+    );
     press(target.querySelector(".dialog")!, "Escape");
     byText("button", "Cancel").click();
     byText("button.btn--primary", "Initialize PerMark").click();
@@ -1506,8 +1604,10 @@ describe("the top bar", () => {
       .map((k) => [k.command, k.keys]);
     expect(keys).toEqual([
       ["tab.next", "Ctrl+Tab"],
+      ["tab.next", "Mod+PageDown"],
       ["tab.next", "Mod+Alt+ArrowRight"],
       ["tab.previous", "Ctrl+Shift+Tab"],
+      ["tab.previous", "Mod+PageUp"],
       ["tab.previous", "Mod+Alt+ArrowLeft"],
       ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => [`tab.select${n}`, `Mod+${n}`]),
       ["tab.selectLast", "Mod+9"],
@@ -1759,10 +1859,88 @@ describe("the welcome screen", () => {
     const rows = Array.from(target.querySelectorAll('[role="option"]'));
     const docs = rows.find((r) => r.textContent?.includes(MOCK_FOLDER));
     expect(docs?.querySelector(".age")?.textContent).toMatch(/now|hour/);
-    // a folder that is gone is marked and removable, and does not open
+    // a folder that is gone is marked and removable, and does not open; its Remove sits beside the option, not in it
+    // (an option's content is one name to a screen reader: a button inside it is never reached)
     const gone = rows.find((r) => r.textContent?.includes("(not found)"));
-    expect(gone?.querySelector("button")?.textContent).toBe("Remove");
+    expect(gone).toBeDefined();
+    expect(gone?.querySelector("button")).toBeNull();
+    const list = target.querySelector<HTMLElement>('[role="listbox"]');
+    const remove = Array.from(target.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Remove",
+    );
+    expect(remove).toBeDefined();
+    expect(remove?.closest('[role="option"]')).toBeNull();
+    // and outside the list box, which holds options only
+    expect(list?.contains(remove ?? null)).toBe(false);
+    // which folder it removes, told with the button
+    const about = remove?.getAttribute("aria-describedby") ?? "";
+    expect(document.getElementById(about)?.textContent).toBe("specs");
     expect(target.textContent).toContain("Drop folders or files here to open them.");
+  });
+
+  it("a removed recent folder leaves the keyboard on the list; the last one, on Open folder", async () => {
+    await store.start().catch(() => {});
+    started = true;
+    await toWelcome();
+    await until(
+      () => store.view.state === "welcome" && store.recent.some((r) => r.missing),
+      "a missing folder listed",
+    );
+    component = mount(Welcome, { target, props: { store } });
+    flushSync();
+    const list = (): HTMLElement => {
+      const found = target.querySelector<HTMLElement>('[role="listbox"]');
+      if (!found) throw new Error("no list box");
+      return found;
+    };
+    const remove = Array.from(target.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Remove",
+    );
+    if (!remove) throw new Error("no Remove button");
+    // the button leaves the page with its row: the keyboard goes to the entry now in its place, not to the body
+    remove.focus();
+    remove.click();
+    await until(() => !store.recent.some((r) => r.missing), "removed");
+    await until(() => document.activeElement === list(), "the list has the keyboard");
+    const named = list().getAttribute("aria-activedescendant") ?? "";
+    expect(document.getElementById(named)?.getAttribute("role")).toBe("option");
+    // Delete keeps the keyboard on the list; with the last entry gone (no list), Open folder takes it
+    while (store.recent.length > 0) {
+      const count = store.recent.length;
+      expect(document.activeElement).toBe(list());
+      press(list(), "Delete");
+      await until(() => store.recent.length < count, "one removed");
+    }
+    await until(
+      () => document.activeElement === byText("button", "Open folder"),
+      "Open folder has the keyboard",
+    );
+    // the next test starts with a recent folder again
+    await mock.openPath(MOCK_FOLDER, "thisTab");
+    await until(() => store.view.state === "showing", "reopened");
+  });
+
+  it("the recent folders list says its Delete key; with none, there is no list to land on", async () => {
+    await store.start().catch(() => {});
+    started = true;
+    await toWelcome();
+    await until(() => store.view.state === "welcome" && store.recent.length > 0, "welcome");
+    component = mount(Welcome, { target, props: { store } });
+    flushSync();
+    const list = target.querySelector<HTMLElement>('[role="listbox"]');
+    if (!list) throw new Error("no list box");
+    expect(list.tabIndex).toBe(0);
+    expect(list.getAttribute("aria-keyshortcuts")).toBe("Delete");
+    const described = list.getAttribute("aria-describedby");
+    const hint = described === null ? null : document.getElementById(described);
+    expect(hint?.textContent).toContain("Delete");
+    for (const recent of [...store.recent]) await store.removeRecent(recent.path);
+    await until(() => store.recent.length === 0, "no recent folders");
+    flushSync();
+    expect(target.querySelector('[role="listbox"]')).toBeNull();
+    expect(target.querySelector('.column [tabindex="0"]')).toBeNull();
+    const empty = byText("p", "No recent folders yet.");
+    expect(empty.closest("[role]")).toBeNull();
   });
 
   it("New project picks a folder, initializes it and opens it as a project", async () => {

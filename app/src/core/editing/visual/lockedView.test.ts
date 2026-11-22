@@ -601,6 +601,26 @@ describe("a block opened in place", () => {
     expect(after.from).toBe(lockedAt(1));
   });
 
+  it("Tab | Shift+Tab closes it and moves the caret after | before the block, not to a link far below", async () => {
+    await openMath();
+    let field = openBox(0);
+    expect(key(field, "Tab", { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(blocks()[0]?.querySelector("textarea")).toBeNull();
+    const before = core.view.state.selection;
+    expect(before).toBeInstanceOf(TextSelection);
+    expect(before.$from.parent.textContent).toBe("Intro words.");
+    field = openBox(0);
+    expect(key(field, "Tab").defaultPrevented).toBe(true);
+    expect(blocks()[0]?.querySelector("textarea")).toBeNull();
+    const after = core.view.state.selection;
+    expect(after).toBeInstanceOf(NodeSelection);
+    expect(after.from).toBe(lockedAt(1));
+    // a chord with Tab (the window's tab switch) is not the box's
+    field = openBox(0);
+    expect(key(field, "Tab", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(blocks()[0]?.querySelector("textarea")).toBe(field);
+  });
+
   it("an emptied block is removed on close; one undo brings it back byte for byte", async () => {
     const built = await openMath();
     const field = openBox(0);
@@ -1153,6 +1173,52 @@ describe("typing while a block is selected", () => {
     typeChar("x");
     expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "x"]);
     expect(compose(core, built, core.view.state.doc).text).toBe(`${LAST_TEXT}\nx\n`);
+  });
+
+  it("Ctrl | Cmd+End with a block last selects that block (the browser cannot put the caret in it); typing goes after it", async () => {
+    const built = await build(LAST_TEXT, LAST_SEGMENTS);
+    core.setDoc(built.doc);
+    const view = core.view;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1)));
+    expect(key(view.dom, "End", { ctrlKey: true }).defaultPrevented).toBe(true);
+    const selection = view.state.selection;
+    expect(selection).toBeInstanceOf(NodeSelection);
+    expect(selection.from).toBe(lockedAt(0));
+    typeChar("x");
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "x"]);
+  });
+
+  it("Ctrl | Cmd+End with text last puts the caret at its end; with Shift | Alt the key is the browser's", async () => {
+    await openMath();
+    const view = core.view;
+    const start = (): void =>
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1)));
+    start();
+    expect(key(view.dom, "End", { metaKey: true }).defaultPrevented).toBe(true);
+    const selection = view.state.selection;
+    expect(selection).toBeInstanceOf(TextSelection);
+    expect(selection.$from.parent.textContent).toBe("End words.");
+    expect(selection.$from.parentOffset).toBe("End words.".length);
+    for (const init of [{ ctrlKey: true, shiftKey: true }, { ctrlKey: true, altKey: true }, {}]) {
+      start();
+      expect(key(view.dom, "End", init).defaultPrevented).toBe(false);
+      expect(view.state.selection.from).toBe(1);
+    }
+  });
+
+  it("Ctrl | Cmd+Home puts the caret at the first text, past the front matter and blocks kept as written", async () => {
+    await open();
+    const view = core.view;
+    caretInText();
+    expect(key(view.dom, "Home", { ctrlKey: true }).defaultPrevented).toBe(true);
+    const selection = view.state.selection;
+    expect(selection).toBeInstanceOf(TextSelection);
+    expect(selection.$from.parent.textContent).toBe("Body words here.");
+    expect(selection.$from.parentOffset).toBe(0);
+    caretInText();
+    const end = view.state.selection.from;
+    key(view.dom, "Home", { ctrlKey: true, shiftKey: true });
+    expect(view.state.selection.from).toBe(end);
   });
 
   it("a plain key moves the caret after the block before the browser types; a chord leaves the selection", async () => {

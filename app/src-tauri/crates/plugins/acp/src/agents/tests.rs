@@ -190,6 +190,303 @@ fn the_snapshot_pins_every_package_and_sets_no_loader_variable() {
     }
 }
 
+/// What each agent of the snapshot reads in its working folder as its own settings (permissions, tools, servers,
+/// hooks; subagents | skills | commands | workflows that grant tools or run commands), one sample file per place, as
+/// its public documentation describes it. Empty: it reads none there that is known (settings in the user's profile,
+/// instructions only, which are documents). The copy keeps every listed file out; an agent new in the snapshot fails
+/// the test below until it has a row here.
+const AGENT_SETTINGS_OF: &[(&str, &[&str])] = &[
+    ("amp-acp", &[".amp/settings.json"]),
+    // a workflow step marked `// turbo` runs its command without asking
+    (
+        "antigravity-acp",
+        &[".agent/workflows/deploy.md", ".agent/skills/x/SKILL.md"],
+    ),
+    ("auggie", &[".augment/settings.json"]),
+    // https://github.com/autohandai/code-cli/blob/main/docs/config-reference.md
+    (
+        "autohand",
+        &[
+            ".autohand/config.json",
+            ".autohand/config.toml",
+            ".autohand/config.yaml",
+            ".autohand/config.yml",
+            ".autohand/settings.local.json",
+            ".autohand/skills/x/SKILL.md",
+        ],
+    ),
+    // its rules folders are instructions and stay
+    // https://bob.ibm.com/docs/shell/configuration/lifecycle-hooks
+    // https://bob.ibm.com/docs/shell/configuration/mcp/mcp-bobshell
+    // https://bob.ibm.com/docs/shell/configuration/custom-modes-bobshell
+    // https://bob.ibm.com/docs/shell/features/skills
+    (
+        "bob",
+        &[
+            ".bob/settings.json",
+            ".bob/mcp.json",
+            ".bob/custom_modes.yaml",
+            ".bob/skills/x/SKILL.md",
+        ],
+    ),
+    (
+        "claude-acp",
+        &[
+            ".claude/settings.json",
+            ".claude/settings.local.json",
+            ".claude/agents/a.md",
+            ".claude/skills/x/SKILL.md",
+            ".claude/commands/c.md",
+            ".claude/hooks/h.sh",
+            ".mcp.json",
+        ],
+    ),
+    (
+        "cline",
+        &[".cline/settings.json", ".clinerules/hooks/pre.sh"],
+    ),
+    (
+        "codebuddy-code",
+        &[
+            ".codebuddy/settings.json",
+            ".codebuddy/settings.local.json",
+            ".codebuddy/agents/a.md",
+            ".codebuddy/skills/x/SKILL.md",
+            ".codebuddy/commands/c.md",
+            ".mcp.json",
+        ],
+    ),
+    ("codex-acp", &[".codex/config.toml"]),
+    // https://docs.snowflake.com/en/user-guide/cortex-code/extensibility
+    // https://docs.snowflake.com/en/user-guide/cortex-code/settings
+    (
+        "cortex-code",
+        &[
+            ".cortex/settings.json",
+            ".cortex/settings.local.json",
+            ".cortex/skills/x/SKILL.md",
+            ".cortex/agents/a.md",
+            ".claude/settings.json",
+            ".claude/settings.local.json",
+            ".claude/skills/x/SKILL.md",
+            ".claude/agents/a.md",
+        ],
+    ),
+    ("cursor", &[".cursor/cli.json", ".cursor/mcp.json"]),
+    // the registry's build loads skills | memory only when started with them; the command line agent of the same name
+    // reads these from the working folder (extensions are code it loads)
+    // https://unpkg.com/deepagents-acp@0.1.7/README.md
+    // https://docs.langchain.com/oss/javascript/deepagents/cli/configuration.md
+    (
+        "deepagents",
+        &[
+            ".deepagents/skills/x/SKILL.md",
+            ".deepagents/agents/a/AGENTS.md",
+            ".deepagents/extensions/e.py",
+            ".agents/skills/x/SKILL.md",
+        ],
+    ),
+    // it also imports the settings of other agents' folders, Zed's servers included
+    // https://docs.devin.ai/cli/extensibility/index.md
+    // https://docs.devin.ai/cli/reference/configuration/read-config-from.md
+    (
+        "devin",
+        &[
+            ".devin/config.json",
+            ".devin/config.local.json",
+            ".devin/mcp_config.json",
+            ".devin/mcp_config.local.json",
+            ".devin/hooks.v1.json",
+            ".devin/skills/x/SKILL.md",
+            ".devin/agents/a.md",
+            ".claude/commands/c.md",
+            ".claude/agents/a.md",
+            ".claude/hooks/h.sh",
+            ".github/skills/x/SKILL.md",
+            ".codex/skills/x/SKILL.md",
+            ".kiro/skills/x/SKILL.md",
+            "opencode.json",
+            ".zed/settings.json",
+        ],
+    ),
+    (
+        "factory-droid",
+        &[
+            ".factory/settings.json",
+            ".factory/mcp.json",
+            ".factory/hooks/h.sh",
+            ".factory/droids/d.md",
+            ".factory/commands/c.md",
+        ],
+    ),
+    // MCP servers (commands it starts) and their keys, read from the working folder
+    (
+        "fast-agent",
+        &["fastagent.config.yaml", "fastagent.secrets.yaml"],
+    ),
+    (
+        "gemini",
+        &[".gemini/settings.json", ".gemini/commands/c.toml"],
+    ),
+    (
+        "github-copilot-cli",
+        &[
+            ".github/agents/a.agent.md",
+            ".github/hooks/h.json",
+            ".github/skills/x/SKILL.md",
+        ],
+    ),
+    // https://github.com/stefandevo/glm-acp-agent
+    (
+        "glm-acp-agent",
+        &[".claude/commands/c.md", ".claude/skills/x/SKILL.md"],
+    ),
+    ("goose", &[".goose/config.yaml"]),
+    // https://docs.x.ai/build/settings
+    // https://docs.x.ai/build/features/hooks
+    // https://docs.x.ai/build/features/skills-plugins-marketplaces
+    (
+        "grok-build",
+        &[
+            ".grok/config.toml",
+            ".grok/hooks/h.json",
+            ".grok/skills/x/SKILL.md",
+            ".grok/plugins/p/plugin.json",
+            ".claude/settings.json",
+            ".cursor/hooks.json",
+            ".cursor/mcp.json",
+            ".mcp.json",
+        ],
+    ),
+    // MCP servers and the capability policy; its own folder holds sessions and state
+    // https://github.com/burin-labs/harn/blob/main/docs/src/mcp-and-acp.md
+    ("harn", &["harn.toml", ".harn/state.json"]),
+    ("junie", &[".junie/mcp/mcp.json"]),
+    ("kilo", &[".kilo/kilo.json", ".kilocode/mcp.json"]),
+    // hooks are scripts; its folder holds state, no documents; the workspace file is a template it applies
+    // https://github.com/getkimchi/kimchi
+    (
+        "kimchi",
+        &[".kimchi/hooks/bash/h.sh", "kimchi_workspace.yaml"],
+    ),
+    // https://moonshotai.github.io/kimi-cli/en/customization/skills.html
+    (
+        "kimi",
+        &[
+            ".kimi/skills/x/SKILL.md",
+            ".claude/skills/x/SKILL.md",
+            ".codex/skills/x/SKILL.md",
+            ".agents/skills/x/SKILL.md",
+        ],
+    ),
+    // https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files.html
+    // https://moonshotai.github.io/kimi-code/en/configuration/data-locations.html
+    (
+        "kimi-code",
+        &[
+            ".kimi-code/local.toml",
+            ".kimi-code/mcp.json",
+            ".kimi-code/skills/x/SKILL.md",
+            ".agents/skills/x/SKILL.md",
+        ],
+    ),
+    (
+        "kiro",
+        &[
+            ".kiro/settings/mcp.json",
+            ".kiro/hooks/h.kiro.hook",
+            ".kiro/agents/a.json",
+        ],
+    ),
+    ("mistral-vibe", &[".vibe/config.toml"]),
+    // https://dev.meta.ai/docs/muse-code/extending
+    (
+        "muse-code",
+        &[
+            ".muse/hooks.json",
+            ".agents/skills/x/SKILL.md",
+            ".claude/skills/x/SKILL.md",
+            ".codex/skills/x/SKILL.md",
+        ],
+    ),
+    // its rules folder is instructions and stays; `.compass` is its earlier folder name
+    // https://unpkg.com/@compass-ai/nova@1.1.66/README.md
+    ("nova", &[".nova/commands/c.md", ".compass/commands/c.md"]),
+    (
+        "opencode",
+        &[".opencode/agent/a.md", "opencode.json", "opencode.jsonc"],
+    ),
+    (
+        "opencode-v2",
+        &[".opencode/agent/a.md", "opencode.json", "opencode.jsonc"],
+    ),
+    // extensions are code it loads
+    ("pi-acp", &[".pi/settings.json", ".pi/extensions/e.ts"]),
+    // servers, permissions and hooks; the hook scripts the settings name live beside them
+    // https://docs.poolside.ai/settings-file-reference.md
+    // https://docs.poolside.ai/mcp-servers
+    (
+        "poolside",
+        &[
+            ".poolside/settings.yaml",
+            ".poolside/settings.local.yaml",
+            ".poolside/hooks/x.sh",
+        ],
+    ),
+    (
+        "qoder",
+        &[
+            ".qoder/settings.json",
+            ".qoder/settings.local.json",
+            ".qoder/agents/a.md",
+            ".qoder/skills/x/SKILL.md",
+            ".qoder/commands/c.md",
+        ],
+    ),
+    ("qwen-code", &[".qwen/settings.json"]),
+    // `mcp.toml` | `mcp.json` at the folder's top are read too: names too common to keep out (they could be anyone's)
+    // https://github.com/stakpak/agent
+    ("stakpak", &[".stakpak/mcp.toml", ".stakpak/mcp.json"]),
+    // tool policies and MCP servers
+    ("vtcode", &["vtcode.toml"]),
+    // none in the working folder from their public documentation (settings in the user's profile, if any): look
+    // again when one documents project settings
+    ("agoragentic-acp", &[]),
+    ("corust-agent", &[]),
+    ("crow-cli", &[]),
+    ("dimcode", &[]),
+    ("dirac", &[]),
+    ("minimax-code", &[]),
+    ("minion-code", &[]),
+    ("sigit", &[]),
+];
+
+/// Every agent the snapshot offers has its project settings classified, and each one it reads stays out of the copy:
+/// a refreshed snapshot with a new agent fails here until someone looks up what that agent loads from its folder.
+#[test]
+fn every_agent_of_the_snapshot_has_its_project_settings_kept_out() {
+    let classified = |id: &str| AGENT_SETTINGS_OF.iter().filter(|(c, _)| *c == id).count();
+    let unclassified: Vec<&str> = snapshot()
+        .iter()
+        .map(|listed| listed.id.as_str())
+        .filter(|id| classified(id) != 1)
+        .collect();
+    assert!(
+        unclassified.is_empty(),
+        "classify the project settings of {unclassified:?} in AGENT_SETTINGS_OF (one row each) and keep them out of \
+         the copy (work.rs)"
+    );
+    for (id, files) in AGENT_SETTINGS_OF {
+        for file in *files {
+            assert!(crate::work::kept_out(file), "{id}: {file}");
+            assert!(
+                crate::work::kept_out(&format!("sub/{file}")),
+                "{id}: sub/{file}"
+            );
+        }
+    }
+}
+
 #[test]
 fn agents_without_a_way_to_run_here_are_left_out() {
     let ids = |platforms: &[&str]| -> Vec<String> {
@@ -303,6 +600,7 @@ fn the_choice_lives_in_the_profile_folder_never_in_the_project() {
     let dirs = AppDirs {
         profile: profile.path().to_path_buf(),
         cache: profile.path().join("cache"),
+        install: profile.path().join("install"),
     };
     let store = StateStore::for_project(&dirs, &Root::open(project.path()).unwrap());
     assert_eq!(store.location(), StateLocation::Project);
@@ -530,6 +828,30 @@ fn an_own_command_with_a_relative_program_path_is_refused() {
     assert!(!profile.path().join(CHOICE_FILE).exists());
 }
 
+/// An own command longer than the cap is refused by the preview and by a choice; one at the cap is kept.
+#[test]
+fn an_own_command_longer_than_the_cap_is_refused() {
+    let profile = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let agents = testing::agents(profile.path(), bin.path());
+    let at_cap = format!("agent {}", "x".repeat(MAX_COMMAND - "agent ".len()));
+    let over = format!("{at_cap}x");
+    assert_eq!(
+        agents.preview(&over),
+        ResolvedCommand {
+            program: None,
+            error: Some("tooLong".to_owned())
+        }
+    );
+    let error = agents.choose(&command(&over)).unwrap_err();
+    assert_eq!(
+        (error.kind, error.detail.as_deref()),
+        (ErrorKind::InvalidData, Some("tooLong"))
+    );
+    assert!(!profile.path().join(CHOICE_FILE).exists());
+    agents.choose(&command(&at_cap)).unwrap();
+}
+
 /// A program on a share | device path: even a lookup of it would connect to the server (Windows sends the person's
 /// sign-in to whoever answers). Refused by the preview and by a choice before the program is looked up at all.
 #[test]
@@ -682,4 +1004,29 @@ fn inside_a_snap_no_agent_can_start() {
         (error.kind, error.detail.as_deref()),
         (ErrorKind::Unavailable, Some("snap"))
     );
+}
+
+/// What an update takes as already allowed: the own command chosen, as it would start (a registry agent | nothing
+/// chosen | a program not found: nothing).
+#[test]
+fn the_own_command_chosen_is_what_an_update_adopts() {
+    let profile = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let program = testing::program(bin.path(), "my-agent");
+    let store = testing::app_store(profile.path());
+    assert_eq!(own_command(&store), None);
+    let file = store.app_file::<Choice>(CHOICE_FILE);
+    file.save(&Choice::Command(format!("\"{}\" --acp", program.display())))
+        .unwrap();
+    let call = own_command(&store).unwrap();
+    same_file(&call.program, &program);
+    assert_eq!(call.args, ["--acp"]);
+    assert_eq!(call.env, []);
+    file.save(&Choice::Agent("claude-acp".to_owned())).unwrap();
+    assert_eq!(own_command(&store), None);
+    file.save(&Choice::Command(
+        "definitely-not-a-program-xyz --acp".to_owned(),
+    ))
+    .unwrap();
+    assert_eq!(own_command(&store), None);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PluginInfo, Result } from "./types";
+import type { PluginInfo, ProjectSettingChange, Result } from "./types";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -32,6 +32,95 @@ describe("mock project settings", () => {
     value(await api.projectConfigSet(off("comments", false)));
     expect((await comments())?.projectConfigOff).toBe(false);
     expect((await comments())?.state).toEqual({ state: "on" });
+  });
+
+  it("a project's view carries where its data is kept: Keep and Move change it as the backend does", async () => {
+    const api = createMockApi();
+    const shownOffer = async (): Promise<string | null> => {
+      const view = value(await api.windowBoot()).view;
+      return view.state === "showing" && view.workspace.kind === "project"
+        ? view.workspace.dataOffer
+        : null;
+    };
+    await api.openPath("C:/plain", "tab");
+    expect(await shownOffer()).toBe("none");
+    api.probe.shell.dataOffer(MOCK_FOLDER, "ask");
+    await api.openPath(MOCK_FOLDER, "tab");
+    expect(await shownOffer()).toBe("ask");
+    // a team folder is there: its shared settings can be written
+    expect(value(await api.projectConfigGet()).initialized).toBe(true);
+    value(await api.projectDataKeep(MOCK_FOLDER));
+    expect(await shownOffer()).toBe("movable");
+    value(await api.projectInit(MOCK_FOLDER));
+    expect(await shownOffer()).toBe("none");
+  });
+
+  it("sets what git sees of .permark only in a set-up folder and never over someone else's file", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "tab");
+    expect(value(await api.projectConfigGet()).sharing).toBe("shared");
+    // no `.permark/` yet: nothing to write into
+    expect((await api.projectSharingSet("private")).ok).toBe(false);
+    value(await api.projectInit(MOCK_FOLDER));
+    expect(value(await api.projectSharingSet("private")).sharing).toBe("private");
+    expect(value(await api.projectConfigGet()).sharing).toBe("private");
+    expect(value(await api.projectSharingSet("shared")).sharing).toBe("shared");
+    // a file someone else wrote: left as it is, whatever is asked
+    api.probe.shell.sharing("custom");
+    for (const ask of ["shared", "private", "custom"] as const) {
+      const refused = await api.projectSharingSet(ask);
+      expect(refused.ok).toBe(false);
+      if (!refused.ok && refused.error.kind === "backend") {
+        expect(refused.error.error.kind).toBe("conflict");
+      }
+    }
+    expect(value(await api.projectConfigGet()).sharing).toBe("custom");
+  });
+
+  it("a shared file that is not TOML says where it stops being TOML and refuses every change", async () => {
+    const api = createMockApi();
+    api.probe.shell.teamFileBroken(MOCK_FOLDER, 7);
+    await api.openPath(MOCK_FOLDER, "tab");
+    const settings = value(await api.projectConfigGet());
+    expect(settings.initialized).toBe(true);
+    expect(settings.unreadableLine).toBe(7);
+    const changes: ProjectSettingChange[] = [
+      off("comments", true),
+      { key: "ignore", value: ["x/"] },
+    ];
+    for (const change of changes) {
+      const refused = await api.projectConfigSet(change);
+      expect(refused.ok).toBe(false);
+      if (!refused.ok && refused.error.kind === "backend") {
+        expect(refused.error.error.kind).toBe("settingsUnreadable");
+        expect(refused.error.error.detail).toBe("notToml");
+      }
+    }
+    expect(value(await api.projectConfigGet()).ignore).toEqual([]);
+  });
+
+  it("a shared file that can't be read as text says why and refuses every change", async () => {
+    const api = createMockApi();
+    api.probe.shell.teamFileUnreadable(MOCK_FOLDER, "tooLarge");
+    await api.openPath(MOCK_FOLDER, "tab");
+    const settings = value(await api.projectConfigGet());
+    expect(settings.initialized).toBe(true);
+    expect(settings.unreadableWhy).toBe("tooLarge");
+    expect(settings.unreadableLine).toBeNull();
+    const refused = await api.projectConfigSet({ key: "ignore", value: ["x/"] });
+    expect(refused.ok).toBe(false);
+    if (!refused.ok && refused.error.kind === "backend") {
+      expect(refused.error.error.kind).toBe("settingsUnreadable");
+      expect(refused.error.error.detail).toBe("tooLarge");
+    }
+  });
+
+  it("says whether git tracks the folder's private folder", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "tab");
+    expect(value(await api.projectConfigGet()).privateTracked).toBe(false);
+    api.probe.shell.privateTracked(true);
+    expect(value(await api.projectConfigGet()).privateTracked).toBe(true);
   });
 
   it("refuses a plugin of the app or one that does not exist", async () => {

@@ -159,7 +159,9 @@ fn found_projects_are_offered_then_included_all_and_undone() {
     assert!(map.closed_to_agent("notes/n.md"));
     assert!(!map.closed_to_agent("top.md"));
 
-    let (outcome, initialized) = core.projects_include(&env, &ProjectPick::All).unwrap();
+    let (outcome, initialized) = core
+        .projects_include(&ProjectPick::All, &|| core.initialize(&env))
+        .unwrap();
     assert!(initialized, "no .permark/: PerMark initialized first");
     assert_eq!(outcome.included, 3);
     assert!(root.join(".permark/config.toml").is_file());
@@ -186,6 +188,38 @@ fn found_projects_are_offered_then_included_all_and_undone() {
     assert!(!again.undone);
 }
 
+/// The owners follow the opened folder's own data place: an include that initializes PerMark puts the folder's slot
+/// where the core's store is, its undo puts it back in the profile (the row names the profile), so the plugins started
+/// again write where the data is.
+#[test]
+fn the_owners_follow_the_opened_folder_initialized_and_undone() {
+    use crate::state::StateLocation::{Profile, Project};
+    let base = tempfile::tempdir().unwrap();
+    let dir = sample_root();
+    let root = dir.path();
+    let (env, _sink) = env(base.path());
+    let core = ProjectCore::open(Root::open(root).unwrap(), &env);
+    ready(&core);
+    let slot = |core: &ProjectCore| answer(&core.projects().owners().root().store);
+    assert_eq!(slot(&core).0, Profile);
+    let (outcome, initialized) = core
+        .projects_include(&paths(&["notes"]), &|| core.initialize(&env))
+        .unwrap();
+    assert!(initialized);
+    assert_eq!(core.store().location(), Project);
+    assert_eq!(slot(&core), answer(&core.store()));
+    let (undone, moved) = core.projects_undo(&env, outcome.undo.unwrap()).unwrap();
+    assert!(undone.undone && moved);
+    assert_eq!(core.store().location(), Profile);
+    assert_eq!(slot(&core), answer(&core.store()));
+    // a `.permark/` arriving later never takes the data back into the folder by itself
+    permark(root, "");
+    assert_eq!(
+        StateStore::for_project(&env.dirs, core.root()).location(),
+        Profile
+    );
+}
+
 #[test]
 fn undo_keeps_a_permark_folder_that_changed_and_a_record_that_existed() {
     let base = tempfile::tempdir().unwrap();
@@ -194,7 +228,9 @@ fn undo_keeps_a_permark_folder_that_changed_and_a_record_that_existed() {
     let (env, _sink) = env(base.path());
     let core = ProjectCore::open(Root::open(root).unwrap(), &env);
     ready(&core);
-    let (outcome, _) = core.projects_include(&env, &paths(&["notes"])).unwrap();
+    let (outcome, _) = core
+        .projects_include(&paths(&["notes"]), &|| core.initialize(&env))
+        .unwrap();
     fs::write(root.join(".permark/meta.toml"), "x = 1\n").unwrap();
     let (undone, moved) = core.projects_undo(&env, outcome.undo.unwrap()).unwrap();
     assert!(undone.undone && undone.permark_kept && !moved);
@@ -208,7 +244,9 @@ fn undo_keeps_a_permark_folder_that_changed_and_a_record_that_existed() {
     wait("record read", || {
         core.projects_view().record == RecordStatus::Ok
     });
-    let (outcome, _) = core.projects_include(&env, &paths(&["tools/b"])).unwrap();
+    let (outcome, _) = core
+        .projects_include(&paths(&["tools/b"]), &|| core.initialize(&env))
+        .unwrap();
     core.projects_undo(&env, outcome.undo.unwrap()).unwrap();
     assert_eq!(
         fs::read_to_string(root.join(".permark/projects.toml")).unwrap(),
@@ -248,7 +286,7 @@ fn leave_out_and_include_storm_keeps_one_record_state_and_no_leaks() {
     let (env, _sink) = env(base.path());
     let core = ProjectCore::open(Root::open(root).unwrap(), &env);
     ready(&core);
-    core.projects_include(&env, &paths(&["tools/b", "notes"]))
+    core.projects_include(&paths(&["tools/b", "notes"]), &|| core.initialize(&env))
         .unwrap();
     for i in 0..50 {
         let view = core.projects_view();
@@ -258,7 +296,8 @@ fn leave_out_and_include_storm_keeps_one_record_state_and_no_leaks() {
                 .leave_out(&[b.uid.clone().unwrap()])
                 .unwrap();
         } else {
-            core.projects_include(&env, &paths(&["tools/b"])).unwrap();
+            core.projects_include(&paths(&["tools/b"]), &|| core.initialize(&env))
+                .unwrap();
         }
         let view = core.projects_view();
         let want = if i % 2 == 0 {
@@ -504,7 +543,8 @@ fn an_inner_root_offers_its_projects_and_its_record_stays_byte_identical() {
     );
     assert_eq!(view.offered.inner.len(), 1);
     assert_eq!(view.offered.inner[0].count, 1);
-    core.projects_include(&env, &ProjectPick::All).unwrap();
+    core.projects_include(&ProjectPick::All, &|| core.initialize(&env))
+        .unwrap();
     let view = core.projects_view();
     let spec = row(&view, "hub/deep/spec").unwrap();
     assert_eq!(
@@ -535,7 +575,7 @@ fn cards_locate_and_agent_choice() {
     let (env, _sink) = env(base.path());
     let core = ProjectCore::open(Root::open(root).unwrap(), &env);
     ready(&core);
-    core.projects_include(&env, &paths(&["tools/b", "notes"]))
+    core.projects_include(&paths(&["tools/b", "notes"]), &|| core.initialize(&env))
         .unwrap();
     let view = core.projects_view();
     let notes = row(&view, "notes").unwrap().uid.clone().unwrap();
@@ -617,7 +657,9 @@ fn unreadable_and_newer_records_refuse_writes_and_keep_their_bytes() {
             view.record,
             RecordStatus::Unreadable { line: 1, .. } | RecordStatus::Newer
         ));
-        let err = core.projects_include(&env, &paths(&["notes"])).unwrap_err();
+        let err = core
+            .projects_include(&paths(&["notes"]), &|| core.initialize(&env))
+            .unwrap_err();
         assert_eq!(err.kind, ErrorKind::Unavailable);
         assert_eq!(
             fs::read_to_string(root.join(".permark/projects.toml")).unwrap(),
@@ -663,7 +705,8 @@ fn unicode_and_space_paths_round_trip() {
     let (env, _sink) = env(base.path());
     let core = ProjectCore::open(Root::open(root).unwrap(), &env);
     ready(&core);
-    core.projects_include(&env, &ProjectPick::All).unwrap();
+    core.projects_include(&ProjectPick::All, &|| core.initialize(&env))
+        .unwrap();
     let view = core.projects_view();
     assert_eq!(view.rows.len(), 2);
     assert!(
@@ -678,16 +721,6 @@ fn unicode_and_space_paths_round_trip() {
 }
 
 #[cfg(windows)]
-fn junction(link: &Path, target: &Path) -> bool {
-    std::process::Command::new("cmd")
-        .args(["/C", "mklink", "/J"])
-        .arg(link)
-        .arg(target)
-        .output()
-        .is_ok_and(|o| o.status.success())
-}
-
-#[cfg(windows)]
 #[test]
 fn junctions_are_never_projects_and_a_listed_path_through_one_is_skipped() {
     let base = tempfile::tempdir().unwrap();
@@ -697,7 +730,7 @@ fn junctions_are_never_projects_and_a_listed_path_through_one_is_skipped() {
     git(outside.path(), "repo");
     fs::write(outside.path().join("repo/secret.md"), "# s").unwrap();
     mkdirs(root, "links");
-    if !junction(&root.join("links/repo"), &outside.path().join("repo")) {
+    if !crate::tree::tests::link_out(&root.join("links/repo"), &outside.path().join("repo")) {
         eprintln!("junction could not be made here; skipped");
         return;
     }
@@ -740,7 +773,8 @@ fn case_twins_and_a_long_root_path() {
     let view = ready(&core);
     let want = if crate::paths::CASE_INSENSITIVE { 1 } else { 2 };
     assert_eq!(view.rows.len(), want, "{view:#?}");
-    core.projects_include(&env, &ProjectPick::All).unwrap();
+    core.projects_include(&ProjectPick::All, &|| core.initialize(&env))
+        .unwrap();
     let view = core.projects_view();
     assert!(view.rows.iter().all(|r| r.state == MemberState::Included));
     assert_eq!(core.projects().held_members(), want);
@@ -800,7 +834,7 @@ fn a_plain_folder_costs_no_disk_touch_after_open() {
     assert!(map.ready && map.is_plain());
 }
 
-/// Concept §2b + spec §5.2 (S1): opened alone, every chain level's rules apply and a change of any of them (record,
+/// Opened alone, every chain level's rules apply and a change of any of them (record,
 /// `.aiignore`, config) shows at the next read once the 5 s cache is old.
 #[test]
 fn opened_alone_rules_follow_every_chain_level() {
@@ -928,7 +962,9 @@ fn a_refused_project_listed_later_stays_out_until_included() {
     assert!(core.projects().snapshot().closed_to_agent("hubs/x/doc.md"));
     assert_eq!(core.projects().held_members(), 0);
     // included in Settings: the entry as written, no record write
-    let (outcome, _) = core.projects_include(&env, &paths(&["hubs/x"])).unwrap();
+    let (outcome, _) = core
+        .projects_include(&paths(&["hubs/x"]), &|| core.initialize(&env))
+        .unwrap();
     assert_eq!(outcome.included, 1);
     assert_eq!(
         fs::read_to_string(root.join(".permark/projects.toml")).unwrap(),
@@ -976,7 +1012,7 @@ fn a_segment_turned_into_a_junction_later_makes_the_member_gone() {
     let real = base.path().join("real-hubs");
     fs::rename(root.join("hubs"), &real).unwrap();
     wait("held", || core.projects().vanished_count() == 1);
-    if !junction(&root.join("hubs"), &real) {
+    if !crate::tree::tests::link_out(&root.join("hubs"), &real) {
         eprintln!("junction could not be made here; skipped");
         return;
     }
@@ -1147,6 +1183,343 @@ fn members_asked_from_many_threads_are_read_once() {
             assert_eq!(projects.held_members(), 20);
         });
     });
+}
+
+/// The readers of a folder's team files (project list, tag vocabulary, card place, project marker) take only a real
+/// `.permark/` folder: a folder link (junction | symlink) or a file in its place counts as none, nothing is read
+/// through it, and the card stays in the profile.
+#[test]
+fn team_readers_take_only_a_real_permark_folder() {
+    fn fill(permark: &Path) -> bool {
+        fs::create_dir_all(permark).is_ok()
+            && fs::write(permark.join(record::RECORD_FILE), "version = 1\n").is_ok()
+            && fs::write(
+                permark.join(vocabulary::VOCABULARY_FILE),
+                "version = 1\n\n[tags.spec]\n",
+            )
+            .is_ok()
+            && fs::write(permark.join(card::CARD_FILE), "version = 1\n").is_ok()
+    }
+    // (layout of `<folder>/.permark` given an outside folder, read as a real `.permark/`; `false` from the maker ->
+    // cannot be made here, skipped)
+    type Make = fn(&Path, &Path) -> bool;
+    let base = tempfile::tempdir().unwrap();
+    let dirs = AppDirs::under(base.path());
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut layouts: Vec<(&str, Make, bool)> = vec![
+        ("missing", |_, _| true, false),
+        ("plain folder", |permark, _| fill(permark), true),
+        (
+            "junction | symlink",
+            |permark, out| fill(out) && crate::tree::tests::link_out(permark, out),
+            false,
+        ),
+        ("file", |permark, _| fs::write(permark, "x").is_ok(), false),
+    ];
+    // Windows makes directory symlinks only with the privilege (developer mode): skipped without it
+    #[cfg(windows)]
+    layouts.push((
+        "directory symlink",
+        |permark, out| fill(out) && std::os::windows::fs::symlink_dir(out, permark).is_ok(),
+        false,
+    ));
+    for (name, make, real) in layouts {
+        let folder = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let team = outside.path().join("team");
+        let permark = folder.path().join(PERMARK_DIR);
+        if !make(&permark, &team) {
+            eprintln!("skipped {name}: cannot be made here");
+            continue;
+        }
+        assert_eq!(real_dir(&permark), real, "{name}: marker");
+        let place = card::file_of(&dirs, folder.path()).map(|file| file.place());
+        if real {
+            assert!(
+                matches!(record::read(folder.path()), RecordRead::Read(_)),
+                "{name}"
+            );
+            let vocab = vocabulary::read(folder.path());
+            assert!(
+                vocab.vocab().is_some_and(|v| v.tags.contains_key("spec")),
+                "{name}: {vocab:?}"
+            );
+            assert_eq!(place, Some(CardPlace::Project), "{name}");
+        } else {
+            assert_eq!(record::read(folder.path()), RecordRead::Absent, "{name}");
+            let vocab = vocabulary::read(folder.path());
+            // a file in place of `.permark/`: Linux | macOS report the read as failed (not a folder), Windows finds no
+            // file there; neither reads tags
+            if cfg!(unix) && name == "file" {
+                assert!(
+                    matches!(vocab, VocabRead::Unreadable { .. }),
+                    "{name}: {vocab:?}"
+                );
+            } else {
+                assert_eq!(vocab, VocabRead::Absent, "{name}");
+            }
+            assert_eq!(place, Some(CardPlace::Profile), "{name}");
+        }
+    }
+}
+
+/// The owners rebuilt twice over unchanged folders are the same places (followers read nothing again). A `.permark/`
+/// arriving in a member moves that member's state into it, so the next rebuild differs once; the rebuilds after it
+/// agree again.
+#[test]
+fn owners_rebuilt_over_the_same_folders_are_the_same() {
+    use crate::state::StateLocation::{self, Profile, Project};
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    permark(root, "");
+    git(root, "sub");
+    fs::write(
+        root.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"sub\"\n",
+    )
+    .unwrap();
+    let (env, _sink) = env(base.path());
+    let core = ProjectCore::open(Root::open(root).unwrap(), &env);
+    let projects = core.projects();
+    wait("owners", || projects.owners().slots().len() == 2);
+    // one map for every rebuild: only what is on disk changes between them
+    let map = projects.snapshot();
+    let first = projects.owners_for(&map, &[]);
+    assert!(first.same(&projects.owners_for(&map, &[])));
+    assert!(first.same(&projects.owners()));
+    let location = |owners: &Owners| -> Vec<StateLocation> {
+        owners.slots().iter().map(|s| s.store.location()).collect()
+    };
+    assert_eq!(location(&first), [Project, Profile]);
+    // the member's data stays where its first open put it; only its team folder arrives
+    permark(root, "sub");
+    let moved = projects.owners_for(&map, &[]);
+    assert_eq!(location(&moved), [Project, Profile]);
+    assert!(!moved.same(&first));
+    assert!(moved.same(&projects.owners_for(&map, &[])));
+}
+
+/// What a store says about where a folder's data sits.
+type Answer = (
+    crate::state::StateLocation,
+    std::path::PathBuf,
+    std::path::PathBuf,
+    bool,
+);
+
+fn answer(store: &StateStore) -> Answer {
+    (
+        store.location(),
+        store.dir().to_path_buf(),
+        store.cache_dir().to_path_buf(),
+        store.has_team_folder(),
+    )
+}
+
+/// Every store of one folder gives one answer: the opened folder's own store, the store after a reload, its owner
+/// slot, a member's owner slot and the member opened alone. Layouts: an initialized folder whose profile still holds
+/// an older copy, and a `.permark/` that arrived with nothing private in it while the profile holds the state.
+#[test]
+fn every_store_of_a_folder_gives_one_answer() {
+    use crate::state::StateLocation::{Profile, Project};
+    // (layout, the private state in `.permark/local/` too, where every store puts it)
+    let layouts = [
+        ("initialized, older profile copy", true, Project),
+        ("team folder arrived, state in the profile", false, Profile),
+    ];
+    for (name, local_state, place) in layouts {
+        let base = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        git(root, "sub");
+        let (env, _sink) = env(base.path());
+        for folder in [root.to_path_buf(), root.join("sub")] {
+            let id = crate::state::ProjectId::of(&Root::open(&folder).unwrap());
+            let profile = env.dirs.profile.join("projects").join(id.as_str());
+            fs::create_dir_all(&profile).unwrap();
+            fs::write(profile.join("session.json"), b"{}").unwrap();
+            fs::create_dir_all(folder.join(".permark")).unwrap();
+            if local_state {
+                let local = folder.join(".permark/local");
+                fs::create_dir_all(&local).unwrap();
+                fs::write(local.join("session.json"), b"{}").unwrap();
+            }
+        }
+        fs::write(
+            root.join(".permark/projects.toml"),
+            "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"sub\"\n",
+        )
+        .unwrap();
+        let core = ProjectCore::open(Root::open(root).unwrap(), &env);
+        let projects = core.projects();
+        wait("owners", || projects.owners().slots().len() == 2);
+        let opened = answer(&core.store());
+        assert_eq!(opened.0, place, "{name}");
+        let owners = projects.owners();
+        assert_eq!(
+            answer(&owners.slots()[0].store),
+            opened,
+            "{name}: root slot"
+        );
+        core.reload_state(&env);
+        assert_eq!(answer(&core.store()), opened, "{name}: reloaded");
+        let member = answer(&owners.slots()[1].store);
+        assert_eq!(member.0, place, "{name}: member");
+        let alone = ProjectCore::open(Root::open(&root.join("sub")).unwrap(), &env);
+        assert_eq!(
+            answer(&alone.store()),
+            member,
+            "{name}: member opened alone"
+        );
+        drop(alone);
+    }
+}
+
+/// A member's `.aiignore` saved as UTF-16 (PowerShell's `>`) hides what it lists; turned unreadable later (a folder
+/// in its place), the member stands on the rules last read well, kept in the profile.
+#[test]
+fn a_member_rule_file_reads_in_utf16_and_stands_on_its_last_good_rules() {
+    use crate::edit::lines::encode;
+    use crate::fsx::Encoding;
+    use crate::projects::agent_view::{Guard, RulesFallback, RulesProblem, RulesWhy};
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let r = dunce::canonicalize(dir.path()).unwrap();
+    permark(&r, "");
+    fs::write(
+        r.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"hubs/a\"\n",
+    )
+    .unwrap();
+    git(&r, "hubs/a");
+    mkdirs(&r, "hubs/a/private");
+    fs::write(r.join("hubs/a/private/x.md"), "# x").unwrap();
+    fs::write(
+        r.join("hubs/a/.aiignore"),
+        encode("private/\n", Encoding::Utf16Le),
+    )
+    .unwrap();
+    let (env, _sink) = env(base.path());
+    let root = Root::open(&r).unwrap();
+    let core = ProjectCore::open(root.clone(), &env);
+    ready(&core);
+    let projects = core.projects();
+    let member_rules = |p: &Projects| {
+        let map = p.agent_map(Duration::from_secs(5)).unwrap();
+        map.members()
+            .iter()
+            .find(|m| m.path.as_str() == "hubs/a")
+            .map(|m| m.agent.clone())
+            .unwrap()
+    };
+    assert_eq!(member_rules(projects).aiignore, ["private/"]);
+    let guard = |p: &Projects| {
+        Guard::for_tests(&root, &[])
+            .with_projects(p.agent_map(Duration::from_secs(5)).unwrap(), None)
+    };
+    assert!(guard(projects).hidden("hubs/a/private/x.md", false));
+    fs::remove_file(r.join("hubs/a/.aiignore")).unwrap();
+    fs::create_dir(r.join("hubs/a/.aiignore")).unwrap();
+    wait("the member reads its rules again", || {
+        !member_rules(projects).problems.is_empty()
+    });
+    assert_eq!(
+        member_rules(projects).problems,
+        [RulesProblem {
+            file: "hubs/a/.aiignore".to_owned(),
+            why: RulesWhy::NotAFile,
+            fallback: RulesFallback::LastGood,
+        }]
+    );
+    let guard = guard(projects);
+    assert!(
+        guard.hidden("hubs/a/private/x.md", false),
+        "last good rules"
+    );
+    assert!(!guard.closed() && !guard.hidden("hubs/a/README.md", false));
+    assert!(!r
+        .join(".permark/local")
+        .join(crate::projects::agent_view::LAST_GOOD_FILE)
+        .exists());
+}
+
+/// Opened alone below a listing ancestor: the ancestor's `.aiignore` in UTF-16 BE hides for the opened folder; turned
+/// unreadable, its last good rules stand, named from the opened folder.
+#[test]
+fn an_ancestor_rule_file_reads_in_utf16_and_stands_on_its_last_good_rules() {
+    use crate::edit::lines::encode;
+    use crate::fsx::Encoding;
+    use crate::projects::agent_view::{Guard, RulesFallback, RulesProblem, RulesWhy};
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let r = dunce::canonicalize(dir.path()).unwrap();
+    permark(&r, "");
+    fs::write(
+        r.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"hubs/a\"\n",
+    )
+    .unwrap();
+    git(&r, "hubs/a");
+    mkdirs(&r, "hubs/a/sub/docs/private");
+    fs::write(r.join(".aiignore"), encode("private/\n", Encoding::Utf16Be)).unwrap();
+    let (env, _sink) = env(base.path());
+    let opened = Root::open(&r.join("hubs/a/sub/docs")).unwrap();
+    let core = ProjectCore::open(opened.clone(), &env);
+    ready(&core);
+    let projects = core.projects();
+    let guard = || {
+        Guard::for_tests(&opened, &[])
+            .with_projects(projects.agent_map(Duration::from_secs(5)).unwrap(), None)
+    };
+    assert!(guard().hidden("private/x.md", false));
+    assert_eq!(guard().rules_problems(), []);
+    fs::remove_file(r.join(".aiignore")).unwrap();
+    fs::create_dir(r.join(".aiignore")).unwrap();
+    lock(&projects.inner).ancestors.1 =
+        Instant::now().checked_sub(ANCESTORS_TTL + Duration::from_secs(1));
+    let guard = guard();
+    assert_eq!(
+        guard.rules_problems(),
+        [RulesProblem {
+            file: "../../../../.aiignore".to_owned(),
+            why: RulesWhy::NotAFile,
+            fallback: RulesFallback::LastGood,
+        }]
+    );
+    assert!(!guard.closed() && guard.hidden("private/x.md", false));
+    assert!(!guard.hidden("notes.md", false));
+}
+
+/// A member folder that cannot be opened (a link loop in its place, a folder above it no one may enter) has rule files
+/// that are unknown, never "none": closed to agents.
+#[cfg(unix)]
+#[test]
+fn a_member_folder_that_cannot_be_opened_is_closed_to_agents() {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+    let dir = tempfile::tempdir().unwrap();
+    let r = dunce::canonicalize(dir.path()).unwrap();
+    let profile = tempfile::tempdir().unwrap();
+    let dirs = AppDirs::under(profile.path());
+    let store = crate::state::StateStore::for_project(&dirs, &Root::open(&r).unwrap());
+    let kept = LastGood::of(&store, &r);
+    symlink(r.join("loop-b"), r.join("loop-a")).unwrap();
+    symlink(r.join("loop-a"), r.join("loop-b")).unwrap();
+    let looped = load_member(&dirs, &r.join("loop-a"), "loop-a", &kept);
+    assert!(looped.agent.closed(), "{:?}", looped.agent.problems);
+
+    mkdirs(&r, "locked/sub");
+    let locked = r.join("locked");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read_dir(&locked).is_ok() {
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        eprintln!("skipped: modes do not keep this user out (root)");
+        return;
+    }
+    let denied = load_member(&dirs, &locked.join("sub"), "locked/sub", &kept);
+    // the temporary folder can be removed again
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(denied.agent.closed(), "{:?}", denied.agent.problems);
 }
 
 /// Live moves (real fs renames under the real watch).

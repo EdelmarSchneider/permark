@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { overlayShown } from "../../core/doc/escape";
-import { closesReview, type EscapeEnv, type EscapeEvent } from "./keys";
+import { QUESTION, closesReview, type EscapeEnv, type EscapeEvent } from "./keys";
 
 const env = (over: Partial<EscapeEnv> = {}): EscapeEnv => ({
   reviewing: true,
@@ -84,5 +84,15 @@ describe("an overlay is shown", () => {
     expect(overlayShown()).toBe(false);
     document.body.innerHTML = "<dialog open></dialog>";
     expect(overlayShown()).toBe(true);
+  });
+
+  it("the bring-back question in the bar is left out when asked: Esc closes it, unless another overlay is up", () => {
+    document.body.innerHTML = `<div class="rv-bar"><div role="alertdialog" data-bring-back></div></div>`;
+    const question = document.querySelector(QUESTION);
+    expect(question).not.toBeNull();
+    expect(overlayShown()).toBe(true);
+    expect(overlayShown(document, question)).toBe(false);
+    document.body.insertAdjacentHTML("beforeend", '<div role="menu"></div>');
+    expect(overlayShown(document, question)).toBe(true);
   });
 });

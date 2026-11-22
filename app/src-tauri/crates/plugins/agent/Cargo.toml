@@ -15,7 +15,6 @@ serde.workspace = true
 serde_json.workspace = true
 ts-rs.workspace = true
 thiserror.workspace = true
-ignore.workspace = true
 chrono.workspace = true
 rmcp.workspace = true
 tokio.workspace = true

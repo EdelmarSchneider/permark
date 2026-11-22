@@ -13,17 +13,18 @@ export function depths(items: readonly Pick<OutlineItem, "level">[]): number[] {
 }
 
 /**
- * The heading the reader is at: the last one whose top is at or above the line `limit` (tops in document order).
- * `-1` before the first heading.
+ * The heading the reader is at: the last of `count` places in document order whose top (`topAt`) is at or above the
+ * line `limit`; `-1` before the first one. Tops are read only where the search looks (about log2(count) reads: each
+ * one may lay the page out), so a long page costs a handful of reads per scroll frame.
  */
-export function currentIndex(tops: readonly number[], limit: number): number {
+export function currentIndex(count: number, topAt: (at: number) => number, limit: number): number {
   let low = 0;
-  let high = tops.length - 1;
+  let high = count - 1;
   let found = -1;
   // tops are in document order, so they only grow: the last one at or above the limit
   while (low <= high) {
     const middle = (low + high) >> 1;
-    if ((tops[middle] ?? Infinity) <= limit) {
+    if (topAt(middle) <= limit) {
       found = middle;
       low = middle + 1;
     } else {

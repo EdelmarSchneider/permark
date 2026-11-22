@@ -6,7 +6,19 @@ use serde::{Deserialize, Serialize};
 
 use super::FileGroup;
 use crate::state::StateData;
-use crate::IpcError;
+use crate::{ErrorKind, IpcError};
+
+/// `detail` of a refusal to give a type back to "no choice" where the system cannot record that (macOS): the person
+/// picks another app there (Finder: Get Info, Open with).
+pub const NO_HANDLER_TO_RESTORE: &str = "noHandlerToRestore";
+
+/// The refusal of a system that cannot give `key` back to "no choice".
+#[must_use]
+pub fn no_handler_to_restore(key: &str) -> IpcError {
+    IpcError::new(ErrorKind::Unsupported)
+        .subject(key)
+        .detail(NO_HANDLER_TO_RESTORE)
+}
 
 /// Where the system records the default handler of a file type (a MIME type on Linux, a UTI on macOS).
 pub trait Handlers {
@@ -74,8 +86,10 @@ pub fn choose(
             state.previous.entry(key.clone()).or_insert(now);
             handlers.set(&key, Some(handlers.me()))?;
         } else if held {
-            let before = state.previous.remove(&key).flatten();
+            // the record goes only once the type is given back: a refusal keeps it for the next try
+            let before = state.previous.get(&key).cloned().flatten();
             handlers.set(&key, before.as_deref())?;
+            state.previous.remove(&key);
         } else {
             // the person chose another app elsewhere: nothing to give back
             state.previous.remove(&key);
