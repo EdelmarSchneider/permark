@@ -708,15 +708,15 @@ impl WorkerFiles {
             })
     }
 
-    /// Queues the worker unit (listener: progress, `Done` | `Failed`; already installed: `Done`).
+    /// Queues the worker unit (listener: progress, `Done` | `Failed`; already installed: `Done`). `false`: the
+    /// downloads shut down, no news comes ([`Downloads::enqueue`]).
     ///
     /// # Errors
     /// [`FilesError::NotAvailable`] | [`FilesError::BadPin`] | [`FilesError::NoDownloads`].
-    pub fn enqueue(&self) -> Result<(), FilesError> {
+    pub fn enqueue(&self) -> Result<bool, FilesError> {
         let unit = self.unit()?;
         let downloads = self.downloads.as_ref().ok_or(FilesError::NoDownloads)?;
-        downloads.enqueue(unit);
-        Ok(())
+        Ok(downloads.enqueue(unit))
     }
 
     /// Stops the worker unit's download (part kept for resume).

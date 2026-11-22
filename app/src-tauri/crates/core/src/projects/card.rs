@@ -13,7 +13,7 @@ use super::uid::ProjectUid;
 use crate::state::{AppDirs, StateData, StateFile, PERMARK_DIR};
 
 pub const CARD_FILE: &str = "project.toml";
-pub const PROFILE_CARD: &str = "card.json";
+pub use crate::state::PROFILE_CARD;
 /// Largest card read; a bigger one -> defaults + warning.
 const MAX_CARD_BYTES: u64 = 4 * 1024;
 const HEADER: &str = "# This project's card. PerMark changes only the lines it needs.";

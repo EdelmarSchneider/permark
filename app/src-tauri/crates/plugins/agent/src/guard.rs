@@ -67,7 +67,7 @@ mod tests {
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();
             std::fs::write(file, text).unwrap();
         }
-        let guard = Guard::new(&Root::open(dir.path()).unwrap(), &[]);
+        let guard = Guard::for_tests(&Root::open(dir.path()).unwrap(), &[]);
         assert_eq!(
             text(&guard, "docs/a.md").unwrap(),
             ("docs/a.md".to_owned(), "# A\n".to_owned())

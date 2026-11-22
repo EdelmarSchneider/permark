@@ -2,18 +2,20 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use permark_core::conditions::{Context, Distribution};
 use permark_core::document::{DocScope, Documents};
 use permark_core::events::{EventSink, NoEvents};
 use permark_core::fsx;
 use permark_core::paths::{Root, Vault};
-use permark_core::plugins::{CxWorkspace, PluginCx, PluginEvents};
+use permark_core::plugins::{CxWorkspace, PluginCx, PluginEvents, PluginRegistry};
 use permark_core::process;
-use permark_core::settings::ProjectConfig;
+use permark_core::settings::{AppSettings, ProjectConfig};
 use permark_core::state::{AppDirs, StateStore};
 use permark_core::tree::Explorer;
 use permark_core::watch::OwnWrites;
+use permark_core::workspace::{CoreEnv, ProjectCore};
 
 use crate::agents::{platforms, Agents, Find, CHOICE_FILE};
 use crate::work::Project;
@@ -40,6 +42,23 @@ pub(crate) fn project(vault: &Vault, documents: &Arc<Documents>) -> Project {
         Arc::new(explorer),
         Arc::new(OwnWrites::new()),
     )
+}
+
+/// The folder `root` opened as the app opens it (state in `profile`, no plugin on), with the projects inside it known:
+/// what the work copy needs of a folder holding projects, their rules included. Keep the core while the project is
+/// used.
+pub(crate) fn project_with_members(root: &Path, profile: &Path) -> (Arc<ProjectCore>, Project) {
+    let env = CoreEnv::new(
+        AppDirs::under(profile),
+        Arc::new(PluginRegistry::new(Vec::new()).unwrap()),
+        Arc::new(NoEvents),
+        Distribution::Direct,
+        AppSettings::default(),
+    );
+    let core = ProjectCore::open(Root::open(root).unwrap(), &env);
+    assert!(core.projects().wait_ready(Duration::from_secs(20)));
+    let project = Project::of(core.vault(), &core.services()).with_store(core.store());
+    (core, project)
 }
 
 /// The plugin's event sender into `sink` (payloads without a project wrapper).

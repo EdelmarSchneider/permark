@@ -2,6 +2,7 @@
 //! the project before it is built. `<common>/worktrees/<name>/gitdir` names each linked working tree, which names
 //! that admin folder back in its `.git` file.
 
+use std::ffi::OsStr;
 use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
 
@@ -9,7 +10,7 @@ use permark_core::fsx::{is_local_path, read_regular, Zone};
 use permark_core::paths::canonicalize;
 
 use crate::config_scan::Scan;
-use crate::ops::too_broad;
+use crate::ops::{too_broad, RepoLocation};
 
 /// Most worktrees offered.
 const MAX_WORKTREES: usize = 32;
@@ -109,6 +110,14 @@ enum Dot {
     Link,
 }
 
+/// Where the link `entry` (the `.git` of `dir`) leads, read from the link itself; `None`: a target that may not be
+/// looked up ([`named_path`]).
+fn link_target(dir: &Path, entry: &Path) -> Option<PathBuf> {
+    std::fs::read_link(entry)
+        .ok()
+        .and_then(|target| named_path(dir, target.to_str()?))
+}
+
 /// What `<dir>/.git` is; `None`: no `.git`, or something there that is neither folder, file nor link.
 fn git_entry(dir: &Path) -> Option<Dot> {
     let entry = dir.join(".git");
@@ -117,10 +126,7 @@ fn git_entry(dir: &Path) -> Option<Dot> {
         return dot_at(dir, entry, &meta);
     }
     // one step, read from the link itself: git and libgit2 follow it on every open
-    let target = std::fs::read_link(&entry)
-        .ok()
-        .and_then(|target| named_path(dir, target.to_str()?));
-    let Some(target) = target else {
+    let Some(target) = link_target(dir, &entry) else {
         return Some(Dot::Link);
     };
     match std::fs::symlink_metadata(&target) {
@@ -169,15 +175,16 @@ const READ_ON_OPEN: [&str; 13] = [
 
 /// Folders of a git folder whose every entry git | libgit2 may open at some look (the git folder itself, a ref folder,
 /// an info file, a loose objects folder, a pack): a link (symlink | junction) among them would lead them anywhere, a
-/// share too. Each folder is noted: an entry added | removed changes its stamp. With each, the most entries looked at;
-/// a fuller folder is refused.
-const LISTED: [(&str, usize); 6] = [
-    ("", MAX_ENTRIES),
-    ("info", MAX_ENTRIES),
-    ("refs", MAX_ENTRIES),
-    ("objects", MAX_ENTRIES),
-    ("objects/info", MAX_ENTRIES),
-    ("objects/pack", MAX_PACK_ENTRIES),
+/// share too. Each folder is noted: an entry added | removed changes its stamp. With each, the most entries looked at
+/// (a fuller folder is refused) and whether the folders in it are walked too, at any depth, within that same count: a
+/// loose ref sits where its name puts it (`refs/heads/feature/x`).
+const LISTED: [(&str, usize, bool); 6] = [
+    ("", MAX_ENTRIES, false),
+    ("info", MAX_ENTRIES, false),
+    ("refs", MAX_ENTRIES, true),
+    ("objects", MAX_ENTRIES, false),
+    ("objects/info", MAX_ENTRIES, false),
+    ("objects/pack", MAX_PACK_ENTRIES, false),
 ];
 /// Most entries of a listed folder (git packs loose refs | objects long before).
 const MAX_ENTRIES: usize = 4096;
@@ -187,10 +194,6 @@ const MAX_PACK_ENTRIES: usize = 100_000;
 /// installed git points `core.hooksPath` elsewhere, the built-in backend runs no hook), `lfs` (Git LFS's own store,
 /// which git does not read).
 const NOT_READ: [&str; 2] = ["hooks", "lfs"];
-
-/// Why a repository git may not open is refused (a member's reason, a backend call's error).
-pub(crate) const NOT_LOCAL: &str =
-    "the repository's git folder points outside this computer or through a link";
 
 /// Whether opening the git folder `git_dir` keeps git (the program, libgit2) on this computer: its `commondir`, read
 /// on every open, names no path that could leave it ([`named_path`]), and in the git folder and the common folder
@@ -223,6 +226,42 @@ pub(crate) fn git_dir_scan(git_dir: &Path, scan: &mut Scan) -> bool {
         .all(|folder| folder_stays_local(&folder, scan))
 }
 
+/// The folder whose `.git` leads git to the git folder of `at`: the folder that holds the git folder when that is its
+/// `.git` and the working tree is it | below it (`core.worktree`); else the working tree, whose `.git` file | link
+/// names the git folder (a linked worktree, a gitfile, a `.git` link).
+pub(crate) fn holder_of(at: &RepoLocation) -> &Path {
+    at.git_dir
+        .parent()
+        .filter(|holder| {
+            at.git_dir.file_name() == Some(OsStr::new(".git")) && at.workdir.starts_with(holder)
+        })
+        .unwrap_or(&at.workdir)
+}
+
+/// [`git_dir_scan`] of the git folder of `at`, while the `.git` of its holder ([`holder_of`]) still leads there: git,
+/// started in the working tree, reads that `.git` again on every call, so a gitfile rewritten | a `.git` link pointed
+/// elsewhere while the project is open would lead it to another git folder, a share too. A `.git` link to the same git
+/// folder still passes. That `.git`, a link's target and both folders compared are noted in `scan`: a change of any
+/// (one missing now and back later too) is a change.
+pub(crate) fn location_scan(at: &RepoLocation, scan: &mut Scan) -> bool {
+    let holder = holder_of(at);
+    let entry = holder.join(".git");
+    if scan
+        .note(&entry)
+        .is_ok_and(|meta| meta.file_type().is_symlink())
+    {
+        if let Some(target) = link_target(holder, &entry) {
+            let _ = scan.note(&target);
+        }
+    }
+    let Some(Dot::Folder(found) | Dot::File(Some(found))) = git_entry(holder) else {
+        return false;
+    };
+    let _ = scan.note(&found);
+    let _ = scan.note(&at.git_dir);
+    same_folder(&found, &at.git_dir) && git_dir_scan(&at.git_dir, scan)
+}
+
 /// [`git_dir_stays_local`] for one folder (the git folder | the common folder).
 fn folder_stays_local(folder: &Path, scan: &mut Scan) -> bool {
     let no_link = READ_ON_OPEN.iter().all(|name| {
@@ -235,13 +274,13 @@ fn folder_stays_local(folder: &Path, scan: &mut Scan) -> bool {
         }
     });
     no_link
-        && LISTED.iter().all(|&(name, cap)| {
+        && LISTED.iter().all(|&(name, cap, deep)| {
             let path = name
                 .split('/')
                 .filter(|part| !part.is_empty())
                 .fold(folder.to_path_buf(), |at, part| at.join(part));
             let skipped: &[&str] = if name.is_empty() { &NOT_READ } else { &[] };
-            no_link_in(&path, scan, cap, skipped)
+            no_link_in(&path, scan, cap, skipped, deep)
         })
         && ["config", "config.worktree"]
             .iter()
@@ -250,27 +289,45 @@ fn folder_stays_local(folder: &Path, scan: &mut Scan) -> bool {
 }
 
 /// Whether no entry of the folder `path` but those named in `skipped` is a link, within its first `cap` entries
-/// ([`LISTED`]); a missing folder | a file there holds none. The folder itself as a link is [`READ_ON_OPEN`]'s (the git
-/// folder may be one: a `.git` link leads there).
-fn no_link_in(path: &Path, scan: &mut Scan, cap: usize, skipped: &[&str]) -> bool {
+/// ([`LISTED`]); `deep`: nor any entry below the folders in it, `cap` entries in all, each folder walked noted (an entry
+/// added | removed there changes its stamp). A missing folder | a file there holds none. The folder itself as a link
+/// is [`READ_ON_OPEN`]'s (the git folder may be one: a `.git` link leads there).
+fn no_link_in(path: &Path, scan: &mut Scan, cap: usize, skipped: &[&str], deep: bool) -> bool {
     match scan.note(path) {
         Ok(meta) if meta.is_file() => return true,
         Ok(_) => {}
         Err(e) => return matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory),
     }
-    let Ok(mut entries) = std::fs::read_dir(path) else {
-        return false;
-    };
     let mut looked = 0;
-    entries.all(|entry| {
-        looked += 1;
-        // the entry's own type: a link (symlink | junction) is never followed
-        looked <= cap
-            && entry.is_ok_and(|entry| {
-                skipped.iter().any(|name| entry.file_name() == *name)
-                    || entry.file_type().is_ok_and(|kind| !kind.is_symlink())
-            })
-    })
+    let mut folders = vec![path.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        let Ok(entries) = std::fs::read_dir(&folder) else {
+            return false;
+        };
+        for entry in entries {
+            looked += 1;
+            let Some(entry) = entry.ok().filter(|_| looked <= cap) else {
+                return false;
+            };
+            if skipped.iter().any(|name| entry.file_name() == *name) {
+                continue;
+            }
+            // the entry's own type: a link (symlink | junction) is never followed
+            match entry.file_type() {
+                Ok(kind) if kind.is_symlink() => return false,
+                Ok(kind) if deep && kind.is_dir() => {
+                    let below = entry.path();
+                    if scan.note(&below).is_err() {
+                        return false;
+                    }
+                    folders.push(below);
+                }
+                Ok(_) => {}
+                Err(_) => return false,
+            }
+        }
+    }
+    true
 }
 
 /// Whether git may open the repository of the folder `root` without leaving this computer: a `.git` file | link | a
@@ -809,6 +866,69 @@ pub(crate) mod tests {
         for n in 0..=MAX_ENTRIES {
             std::fs::write(pack.join(format!("pack-{n}.promisor")), "").unwrap();
         }
+        assert!(git_dir_stays_local(&git));
+    }
+
+    /// git reads a loose ref wherever it sits below `refs` (`refs/heads/feature/x`): a link (symlink | junction) at any
+    /// depth there would lead it anywhere, a share too, so the repository is refused, at once, nothing looked up. Plain
+    /// refs in nested folders stay local.
+    #[test]
+    fn a_link_anywhere_below_refs_no_longer_stays_local() {
+        const A: &str = "0123456789abcdef0123456789abcdef01234567\n";
+        let dir = tempfile::tempdir().unwrap();
+        let git = dir.path().join(".git");
+        let heads = git.join("refs").join("heads");
+        std::fs::create_dir_all(heads.join("feature")).unwrap();
+        std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(heads.join("feature").join("x"), A).unwrap();
+        assert!(git_dir_stays_local(&git), "nested plain refs");
+        let spare = dir.path().join("spare");
+        std::fs::create_dir_all(&spare).unwrap();
+        let team = heads.join("team");
+        std::fs::create_dir_all(&team).unwrap();
+        if !link_folder(&spare, &team.join("deep")) {
+            eprintln!("links could not be made here; skipped");
+            return;
+        }
+        assert!(
+            !git_dir_stays_local(&git),
+            "a folder link two levels below refs"
+        );
+        std::fs::remove_dir(team.join("deep"))
+            .or_else(|_| std::fs::remove_file(team.join("deep")))
+            .unwrap();
+        assert!(git_dir_stays_local(&git));
+        let main = heads.join("main");
+        if !symlink(&on_share("main"), &main) {
+            eprintln!("symlinks cannot be made here; the share case is skipped");
+            return;
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(git_dir_stays_local(&git));
+        });
+        let stays = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("a ref's link to a share was looked up");
+        assert!(!stays);
+    }
+
+    /// The walk below `refs` looks at most at [`MAX_ENTRIES`] entries in all, nested folders counted together: a fuller
+    /// tree is refused (fail closed), not looked at in part.
+    #[test]
+    fn refs_beyond_the_cap_in_nested_folders_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = dir.path().join(".git");
+        let half = MAX_ENTRIES / 2 + 1;
+        for folder in ["heads/a", "tags/b"] {
+            let at = git.join("refs").join(folder);
+            std::fs::create_dir_all(&at).unwrap();
+            for n in 0..half {
+                std::fs::write(at.join(format!("r{n}")), "").unwrap();
+            }
+        }
+        assert!(!git_dir_stays_local(&git));
+        std::fs::remove_dir_all(git.join("refs").join("tags")).unwrap();
         assert!(git_dir_stays_local(&git));
     }
 

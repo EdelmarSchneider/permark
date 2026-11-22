@@ -11,12 +11,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use permark_core::document::DocScope;
 use permark_core::error::{ErrorKind, IpcError};
 use permark_core::format::units;
-use permark_core::fsx;
+use permark_core::fsx::{self, now_ms};
 use permark_core::paths::{key_of, VaultPath};
 use permark_core::projects::{OwnerSlot, Owners, OwnersChange, OwnersGate, ProjectUid};
 use permark_core::state::shared_write::lock_within;
@@ -452,12 +452,6 @@ struct Shared {
     gate: OwnersGate,
 }
 
-pub(crate) fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-}
-
 fn cut(text: &str, chars: usize) -> String {
     text.chars().take(chars).collect()
 }
@@ -559,11 +553,18 @@ impl Shared {
             let (Some(keeper), Some(prefix)) = (&slot.keeper, state.aside_prefix(i)) else {
                 continue;
             };
+            let folder = state
+                .owners
+                .as_ref()
+                .and_then(|o| o.slots().get(i))
+                .map(|s| s.path.clone())
+                .unwrap_or_default();
             for aside in keeper.asides(now) {
                 let count = missing(&aside.comments, &slot.book).len();
                 if count > 0 {
                     out.push(CommentAside {
                         id: format!("{prefix}{}", aside.id),
+                        folder: folder.clone(),
                         count: u32::try_from(count).unwrap_or(u32::MAX),
                         at: aside.at,
                         big: aside.big,

@@ -13,6 +13,7 @@ use crate::format::{
     PromptBlocks, RoleMatch, RoleRule, TextViewer,
 };
 use crate::paths::{FileScope, Root};
+use crate::tree::tests::link_out;
 use crate::watch::Change;
 
 fn formats() -> FormatRegistry {
@@ -160,6 +161,18 @@ fn other_formats_and_notices() {
     );
     let empty = p.open("w", "empty.md").unwrap();
     assert!(matches!(&empty.body, Body::Markdown { blocks, .. } if blocks.is_empty()));
+    // the view tells whether the default app may open the file: never for scripts | programs | macro carriers
+    assert!(json.opens_outside && pic.opens_outside);
+    for (name, bytes) in [
+        ("tool.py", b"print(1)".as_slice()),
+        ("run.exe", b"MZ"),
+        ("old.doc", b"x"),
+        ("a.rtf", b"{\\rtf1}"),
+        ("report.docm", b"x"),
+    ] {
+        p.write(name, bytes);
+        assert!(!p.open("w", name).unwrap().opens_outside, "{name}");
+    }
     // no viewer on (only Markdown): text files get the notice
     let bare = FormatRegistry::core();
     let none = p.docs.open("w", "notes.txt", &[], &bare).unwrap();
@@ -768,24 +781,6 @@ fn a_single_file_workspace_reads_the_files_of_its_folder_and_nothing_outside() {
         docs.open("w", "NOTE.md", &[], &formats()).is_ok(),
         dir.path().join("NOTE.md").exists()
     );
-}
-
-/// A link (Unix: symlink; Windows: junction, no admin needed) at `link` leading to `target`.
-fn link_out(link: &std::path::Path, target: &std::path::Path) -> bool {
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(target, link).is_ok()
-    }
-    #[cfg(windows)]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
-            .stdout(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
-    }
 }
 
 #[test]

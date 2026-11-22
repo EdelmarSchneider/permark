@@ -32,18 +32,26 @@ pub use seal::{Machine, Seal};
 pub use shared_write::{merge3, FileLock};
 
 pub const PERMARK_DIR: &str = ".permark";
+/// The profile file keeping the last good rules of a project's rule files (`projects::agent_view::LastGood`).
+pub const LAST_GOOD_FILE: &str = "agent-rules.json";
+/// The profile file of a folder's answers about the projects inside it (`projects::fsm::Membership`).
+pub const MEMBERSHIP_FILE: &str = "membership.json";
+/// The ledger of copied entries (profile of the opened folder; `projects::migrate`).
+pub const LEDGER_FILE: &str = "projects-copied.json";
+/// The profile copy of a project's card (`projects::card`).
+pub const PROFILE_CARD: &str = "card.json";
 /// Per-project files that ALWAYS stay in the profile (a project's files must never switch them). Initialize never
 /// copies them (nor a copy of one moved aside as unreadable) into `.permark/local/` (a copy there would never be
 /// read) and undoing it never carries one back ([`is_profile_only`]).
 pub const PROFILE_ONLY: [&str; 10] = [
     "agent.json",
     "agent-refused.json",
-    crate::projects::agent_view::LAST_GOOD_FILE,
+    LAST_GOOD_FILE,
     "plugins.json",
     "pictures.json",
-    crate::projects::fsm::MEMBERSHIP_FILE,
-    crate::projects::migrate::LEDGER_FILE,
-    crate::projects::card::PROFILE_CARD,
+    MEMBERSHIP_FILE,
+    LEDGER_FILE,
+    PROFILE_CARD,
     older::TAKEN_OVER,
     location::FILE,
 ];
@@ -284,9 +292,10 @@ impl From<StateError> for IpcError {
             StateError::BothHoldData { path } => IpcError::new(ErrorKind::Conflict)
                 .subject(path)
                 .detail(location::BOTH_HOLD_DATA),
-            StateError::Foreign { path } | StateError::DataInProject { path } => {
-                IpcError::new(ErrorKind::Conflict).subject(path)
-            }
+            StateError::DataInProject { path } => IpcError::new(ErrorKind::Conflict)
+                .subject(path)
+                .detail(location::DATA_IN_PROJECT),
+            StateError::Foreign { path } => IpcError::new(ErrorKind::Conflict).subject(path),
         }
     }
 }
@@ -1515,7 +1524,8 @@ fn make_permark(permark: &Path) -> Result<(), StateError> {
 }
 
 /// Carries the profile folder `from` into the project's `local/` all or nothing: the new `local/` (what it holds, then
-/// what the profile adds, never over an entry it has; each install's folder its `machine/` lacks joins it) is built
+/// what the profile adds, never over an entry it has; each install's folder joins its `machine/`, merged into the
+/// same install's folder already there) is built
 /// under a hidden name in `.permark/` and renamed into place when whole; the earlier `local/` is kept aside until
 /// `commit` (the row) is written. A failure removes what this call made and puts the earlier `local/` back: no half
 /// copy is ever taken for the person's data.
@@ -1683,6 +1693,9 @@ enum Depth {
     Top,
     /// Its `plugins/`: the plugin folders kept in the profile on purpose stay out ([`PROFILE_PLUGINS`]).
     Plugins,
+    /// Its `machine/`, at any depth: one folder per install, so a folder already in the target is the same install's
+    /// and gets what it lacks too ([`copy_missing`]).
+    Machine,
     /// Deeper, or a copy of everything.
     All,
 }
@@ -1695,15 +1708,16 @@ impl Depth {
                     || SHARED_FILES.iter().any(|p| name == *p)
             }
             Self::Plugins => PROFILE_PLUGINS.iter().any(|p| name == *p),
-            Self::All => false,
+            Self::Machine | Self::All => false,
         }
     }
 
     fn below(self, name: &std::ffi::OsStr) -> Self {
-        if self == Self::Top && name == "plugins" {
-            Self::Plugins
-        } else {
-            Self::All
+        match self {
+            Self::Top if name == "plugins" => Self::Plugins,
+            Self::Top if name == Machine::DIR => Self::Machine,
+            Self::Machine => Self::Machine,
+            _ => Self::All,
         }
     }
 }
@@ -1729,7 +1743,8 @@ fn copy_over(from: &Path, to: &Path, depth: Depth) -> io::Result<()> {
 }
 
 /// Copies files + folders of `from` into `to`, never over an existing entry (links not followed or copied); what
-/// `depth` keeps out stays out. A state folder's `machine/` already in `to` gets each install's folder it lacks.
+/// `depth` keeps out stays out. A state folder's `machine/` already in `to` gets what it lacks at every depth: each
+/// install's folder, and what that install's folder already there lacks.
 fn copy_missing(from: &Path, to: &Path, depth: Depth) -> io::Result<()> {
     let Ok(entries) = std::fs::read_dir(from) else {
         return Ok(());
@@ -1742,13 +1757,14 @@ fn copy_missing(from: &Path, to: &Path, depth: Depth) -> io::Result<()> {
         let target = to.join(&name);
         if std::fs::symlink_metadata(&target).is_ok() {
             // one folder per install: another computer's folder (a sync partner's, an empty `machine/` a repository
-            // ships) never keeps this install's journal and kept copies out
-            if depth == Depth::Top
-                && name == Machine::DIR
+            // ships) never keeps this install's journal and kept copies out, nor does this install's own folder
+            // left there by an earlier Initialize (add-only: the files it holds win)
+            let below = depth.below(&name);
+            if below == Depth::Machine
                 && entry.file_type()?.is_dir()
                 && private::is_real_folder(&target)
             {
-                copy_missing(&entry.path(), &target, depth.below(&name))?;
+                copy_missing(&entry.path(), &target, below)?;
             }
             continue;
         }

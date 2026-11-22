@@ -568,7 +568,8 @@ impl Explorer {
     }
 
     /// Markdown documents of the root `prefix` (`""` | `@wt/<name>`) found by a fresh walk (also the ones in folders the
-    /// tree leaves unlisted for their size), plus the ignored folders that were not looked into.
+    /// tree leaves unlisted for their size), plus the ignored folders that were not looked into. A document that is a
+    /// link is left out: its readers resolve paths through links, so they would read the target under the link's name.
     #[must_use]
     pub fn scan_documents(&self, prefix: &str) -> (Vec<String>, Vec<String>) {
         self.pass_gate();
@@ -581,7 +582,8 @@ impl Explorer {
         let mut docs: Vec<String> = scan
             .files
             .into_iter()
-            .filter(|f| f.category == super::Category::Markdown)
+            // a root scan gives a Markdown file no place on disk only when it is a link
+            .filter(|f| f.category == super::Category::Markdown && f.abs.is_some())
             .map(|f| f.path)
             .collect();
         docs.sort();
@@ -645,9 +647,11 @@ impl Explorer {
         found
     }
 
-    /// The folders of every root the walk listed (the roots too, not ignored ones, not unlisted ones), absolute.
+    /// The folders of every root the walk listed (the roots too, not ignored ones, not unlisted ones) whose listing held
+    /// a name of a write's temp, absolute: where a crash may have left one. From the walk's own listing: no folder is
+    /// read again.
     #[must_use]
-    pub fn listed_folders(&self) -> Vec<std::path::PathBuf> {
+    pub fn temp_folders(&self) -> Vec<std::path::PathBuf> {
         let guard = self.model();
         let Some(model) = guard.as_ref() else {
             return Vec::new();
@@ -665,7 +669,9 @@ impl Explorer {
                 },
                 |node| node.path.clone(),
             );
-            found.extend(model.abs_of(&path));
+            if model.holds_temps(&folder) {
+                found.extend(model.abs_of(&path));
+            }
             for child in model.children_of(&folder) {
                 if model.node(child).is_some_and(|node| {
                     !node.ignored && matches!(node.kind, NodeKind::Dir { unlisted: None })

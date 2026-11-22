@@ -295,7 +295,9 @@ impl DictStore {
             return;
         }
         match self.engine(at) {
-            Some((downloads, unit)) => downloads.enqueue(unit.clone()),
+            Some((downloads, unit)) => {
+                downloads.enqueue(unit.clone());
+            }
             None => {
                 self.apply(at, Event::Failed(SpellingFailure::Offline));
             }

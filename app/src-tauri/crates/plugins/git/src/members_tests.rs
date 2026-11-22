@@ -897,6 +897,45 @@ fn a_stale_index_lock_delays_the_look_by_the_wait_and_no_more() {
     );
 }
 
+/// `index.lock` is a plain file git writes: a link there (symlink | junction) is no lock, neither waited on nor
+/// followed, and the git folder holding it is refused at the look.
+#[test]
+fn a_link_at_the_index_lock_is_no_lock_and_the_repository_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Fake::new(Duration::ZERO);
+    let heard = Arc::new(Heard::default());
+    let mut env = env(Some(fake_backend(&fake)), &heard, None);
+    env.timings.lock_wait = Duration::from_secs(60);
+    let members = Members::new(env);
+    let list = members_in(dir.path(), &names(1, "p"));
+    members.sync(&list);
+    let elsewhere = dir.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let lock_file = list[0].folder.join(".git").join("index.lock");
+    if !crate::worktrees::tests::link_folder(&elsewhere, &lock_file) {
+        eprintln!("links could not be made here; skipped");
+        return;
+    }
+    let started = Instant::now();
+    members.interest("main", Glance, &[list[0].uid.clone()]);
+    wait_until("the refusal", || {
+        members
+            .summaries()
+            .iter()
+            .all(|s| !s.pending && s.error.is_some())
+    });
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "waited on a linked lock: {:?}",
+        started.elapsed()
+    );
+    let summary = &members.summaries()[0];
+    assert!(
+        matches!(&summary.error, Some(RepoError::Failed { code: GitErrorCode::NotLocal, reason }) if reason.is_empty()),
+        "{summary:?}"
+    );
+}
+
 // ---- fix round ------------------------------------------------------------------------
 
 /// Folders to look up (`(key, folder)`), each a repository on disk.

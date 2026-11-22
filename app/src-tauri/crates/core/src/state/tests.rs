@@ -384,13 +384,16 @@ fn rel_path(base: &Path, rel: &str) -> PathBuf {
         .fold(base.to_path_buf(), |path, name| path.join(name))
 }
 
-/// A sweep of "Remove data" meeting a link: `link` (a template below `base`, `{iid}` = this install's id) points to a
-/// folder outside holding what the sweep of `swept` would reach through it.
+/// A folder link made by `(link, target)`; `false`: the system cannot make one here (skipped).
+type MakeLink = fn(&Path, &Path) -> bool;
+
+/// A sweep of "Remove data" meeting a link: `link` (a template below `base`, `{iid}` = this install's id, made by
+/// `make`) points to a folder outside holding what the sweep of `swept` would reach through it.
 fn sweep_through_link(
     name: &str,
     base: &Path,
     iid: &str,
-    link: &str,
+    (link, make): (&str, MakeLink),
     swept: &[String],
     sweep: impl Fn(),
 ) {
@@ -409,7 +412,7 @@ fn sweep_through_link(
     put(&theirs, b"theirs");
     let at = rel_path(base, &link);
     fs::create_dir_all(at.parent().unwrap()).unwrap();
-    if !crate::tree::tests::link_out(&at, outside.path()) {
+    if !make(&at, outside.path()) {
         eprintln!("skipped {name}: no folder links here");
         return;
     }
@@ -429,6 +432,19 @@ fn sweep_through_link(
 /// file as a link is removed as a link, never followed.
 #[test]
 fn remove_data_never_deletes_through_a_link_in_the_project() {
+    sweep_project_links(crate::tree::tests::link_out);
+}
+
+/// The same with folder symlinks (`mklink /D`, only with the symlink privilege) in place of junctions: Windows tells
+/// the two kinds apart, and the walk down must stop at both.
+#[cfg(windows)]
+#[test]
+fn remove_data_never_deletes_through_a_folder_symlink_in_the_project() {
+    sweep_project_links(|link, target| std::os::windows::fs::symlink_dir(target, link).is_ok());
+}
+
+/// Each sweep of the project's folders meeting a folder link made by `make` on its way down from `.permark/`.
+fn sweep_project_links(make: MakeLink) {
     let git = PluginId::of("git");
     for link in [
         "local",
@@ -453,7 +469,7 @@ fn remove_data_never_deletes_through_a_link_in_the_project() {
             format!("cache/{iid}/plugins/git"),
             "local/own.json".to_owned(),
         ];
-        sweep_through_link(link, &f.permark(), &iid, link, &swept, || {
+        sweep_through_link(link, &f.permark(), &iid, (link, make), &swept, || {
             store.remove_plugin_data(&git, ROOT_FILES).unwrap();
             remove_plugin_data_everywhere(&f.dirs, &git, ROOT_FILES, &[f.root()]).unwrap();
         });
@@ -486,11 +502,135 @@ fn remove_data_never_deletes_through_a_link_in_the_profile() {
             format!("machine/{iid}/plugins/git"),
             "own.json".to_owned(),
         ];
-        sweep_through_link(name, &base, &iid, link, &swept, || {
+        let make: MakeLink = crate::tree::tests::link_out;
+        sweep_through_link(name, &base, &iid, (link, make), &swept, || {
             store.remove_plugin_data(&git, ROOT_FILES).unwrap();
             remove_plugin_data_everywhere(&f.dirs, &git, ROOT_FILES, &[]).unwrap();
         });
     }
+}
+
+/// Every way "Remove data" sweeps a folder's root file: the store's own and the sweep of every folder.
+fn remove_root_files(f: &Fx, store: &StateStore) {
+    let git = PluginId::of("git");
+    store.remove_plugin_data(&git, ROOT_FILES).unwrap();
+    remove_plugin_data_everywhere(&f.dirs, &git, ROOT_FILES, &[f.root()]).unwrap();
+}
+
+/// A file link in place of the plugin's root file (a repository may ship one in `.permark/local`) goes as a link:
+/// the file it points to keeps its bytes.
+#[test]
+fn remove_data_takes_a_file_link_in_place_of_a_root_file_as_a_link() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    let outside = crate::fsx::real_tempdir();
+    let target = outside.path().join("own.json");
+    put(&target, b"theirs");
+    let own = store.dir().join("own.json");
+    if !file_link(&own, &target) {
+        eprintln!("skipped: no file links here");
+        return;
+    }
+    remove_root_files(&f, &store);
+    assert!(fs::symlink_metadata(&own).is_err(), "the link itself goes");
+    assert_eq!(fs::read(&target).unwrap(), b"theirs");
+}
+
+/// A real folder in place of the plugin's root file goes whole, a link inside it as a link: the folder the link points
+/// to keeps what it holds.
+#[test]
+fn remove_data_takes_a_folder_in_place_of_a_root_file_never_what_a_link_in_it_points_to() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    let outside = crate::fsx::real_tempdir();
+    put(&outside.path().join("x"), b"theirs");
+    let own = store.dir().join("own.json");
+    put(&own.join("inner.json"), b"mine");
+    if !crate::tree::tests::link_out(&own.join("escape"), outside.path()) {
+        eprintln!("skipped: no folder links here");
+        return;
+    }
+    remove_root_files(&f, &store);
+    assert!(fs::symlink_metadata(&own).is_err(), "the folder goes");
+    assert_eq!(entries_below(outside.path()), ["x"]);
+    assert_eq!(fs::read(outside.path().join("x")).unwrap(), b"theirs");
+}
+
+/// A folder's profile folder that is itself a link | junction: the walk starts at a link, so nothing below it is
+/// removed (the plugin's root file and folder where it points stay).
+#[test]
+fn remove_data_leaves_a_profile_folder_that_is_a_link_as_it_is() {
+    let f = fx();
+    let store = f.store();
+    assert_eq!(store.location(), StateLocation::Profile);
+    let outside = crate::fsx::real_tempdir();
+    let theirs = [
+        outside.path().join("own.json"),
+        rel_path(outside.path(), "plugins/git/a.json"),
+    ];
+    for path in &theirs {
+        put(path, b"theirs");
+    }
+    let dir = store.dir().to_path_buf();
+    if dir.exists() {
+        fs::remove_dir_all(&dir).unwrap();
+    }
+    fs::create_dir_all(dir.parent().unwrap()).unwrap();
+    if !crate::tree::tests::link_out(&dir, outside.path()) {
+        eprintln!("skipped: no folder links here");
+        return;
+    }
+    let git = PluginId::of("git");
+    store.remove_plugin_data(&git, ROOT_FILES).unwrap();
+    remove_plugin_data_everywhere(&f.dirs, &git, ROOT_FILES, &[]).unwrap();
+    for path in &theirs {
+        assert_eq!(fs::read(path).unwrap(), b"theirs", "{}", path.display());
+    }
+    assert!(fs::symlink_metadata(&dir).is_ok_and(|m| crate::fsx::is_link(&m)));
+}
+
+/// `.permark` itself replaced by a link (a pull while the window holds the project's store, or before it opens):
+/// neither the store made before nor a new one nor the sweep of the open folders removes anything where it points.
+#[test]
+fn remove_data_never_deletes_through_a_team_folder_that_is_a_link() {
+    let f = fx();
+    let held = init_project(&f.dirs, &f.root()).unwrap();
+    let iid = held.machine().unwrap().iid().to_owned();
+    let outside = crate::fsx::real_tempdir();
+    let theirs = [
+        "local/own.json".to_owned(),
+        "local/plugins/git/a.json".to_owned(),
+        format!("local/machine/{iid}/plugins/git/a.json"),
+        format!("cache/{iid}/plugins/git/a.json"),
+    ]
+    .map(|rel| rel_path(outside.path(), &rel));
+    for path in &theirs {
+        put(path, b"theirs");
+    }
+    fs::remove_dir_all(f.permark()).unwrap();
+    if !crate::tree::tests::link_out(&f.permark(), outside.path()) {
+        eprintln!("skipped: no folder links here");
+        return;
+    }
+    remove_root_files(&f, &held);
+    remove_root_files(&f, &f.store());
+    for path in &theirs {
+        assert_eq!(fs::read(path).unwrap(), b"theirs", "{}", path.display());
+    }
+}
+
+/// A plain file where `local/plugins` stands: nothing to remove below it, and no failure.
+#[test]
+fn remove_data_over_a_file_in_place_of_the_plugins_folder_removes_nothing() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    let plugins = store.dir().join("plugins");
+    if plugins.exists() {
+        fs::remove_dir_all(&plugins).unwrap();
+    }
+    put(&plugins, b"a file");
+    remove_root_files(&f, &store);
+    assert_eq!(fs::read(&plugins).unwrap(), b"a file");
 }
 
 #[test]
@@ -2894,6 +3034,60 @@ fn initialize_carries_this_computers_folder_beside_the_ones_local_holds() {
     put(&mine, b"already here");
     init_project(&f.dirs, &f.root()).unwrap();
     assert_eq!(fs::read(&mine).unwrap(), b"already here");
+}
+
+/// Initialize into a `local/` already holding this install's folder (an earlier Initialize on this computer, a
+/// repository shipping it): what the profile's folder adds joins it at every depth, never over a file it has, so its
+/// kept copies are not left behind in the older profile copy.
+#[test]
+fn initialize_merges_this_installs_folder_never_over_what_it_holds() {
+    let f = fx();
+    // the folder opened before its `.permark/` came: its row names the profile, whose data Initialize carries in
+    let before = f.settled();
+    assert_eq!(before.location(), StateLocation::Profile);
+    before
+        .machine_file::<Sample>("journal.json")
+        .unwrap()
+        .save(&sample(7))
+        .unwrap();
+    let theirs = before.machine().unwrap().dir().to_path_buf();
+    put(&theirs.join("kept").join("x.json"), b"profile x");
+    put(&theirs.join("kept").join("a.json"), b"profile a");
+    let mine = f
+        .permark()
+        .join("local")
+        .join("machine")
+        .join(before.machine().unwrap().iid());
+    put(&mine.join("journal.json"), b"already here");
+    put(&mine.join("kept").join("a.json"), b"local a");
+    init_project(&f.dirs, &f.root()).unwrap();
+    assert_eq!(
+        fs::read(mine.join("journal.json")).unwrap(),
+        b"already here"
+    );
+    assert_eq!(
+        fs::read(mine.join("kept").join("x.json")).unwrap(),
+        b"profile x"
+    );
+    assert_eq!(
+        fs::read(mine.join("kept").join("a.json")).unwrap(),
+        b"local a"
+    );
+}
+
+/// Keep refused while the folder's data is in its own `.permark/local`: a conflict the window tells apart by its
+/// detail (the offer it answered is gone), never a setting that failed to save.
+#[test]
+fn keep_refused_for_data_in_the_project_names_its_reason() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    let Err(error) = location::keep(&store) else {
+        panic!("Keep not refused");
+    };
+    let error = crate::IpcError::from(error);
+    assert_eq!(error.kind, crate::ErrorKind::Conflict);
+    assert_eq!(error.detail.as_deref(), Some(location::DATA_IN_PROJECT));
+    assert_eq!(error.detail.as_deref(), Some("dataInProject"));
 }
 
 /// Undo of an init never carries a profile-only plugin folder back from `local/` (one an earlier version copied

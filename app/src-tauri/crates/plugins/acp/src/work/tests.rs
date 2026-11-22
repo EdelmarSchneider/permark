@@ -160,6 +160,14 @@ fn agent_settings_and_machinery_are_kept_out() {
         ".github/copilot-instructions.md",
         ".github/workflows/ci.yml",
         "github/agents/a.md",
+        ".bob/rules/style.md",
+        ".bob/rules-code/style.md",
+        ".nova/rules/style.md",
+        ".kiro/steering/skills.md",
+        ".agents/notes.md",
+        "agents/skills/x/SKILL.md",
+        "zed/settings.json",
+        "harn.md",
     ] {
         assert!(!kept_out(path), "{path}");
     }
@@ -310,6 +318,40 @@ fn without_a_profile_a_broken_team_file_refuses_the_copy() {
     let work = f.build();
     assert_eq!(copied(&work, "a.md").unwrap(), b"a\n");
     assert!(copied(&work, "secret/s.md").is_none());
+}
+
+/// A project inside the folder whose `.aiignore` cannot be read (a folder in its place) and has no last good rules is
+/// closed: the copy holds the rest of the folder and nothing of that project.
+#[test]
+fn a_member_with_an_unreadable_rule_file_stays_out_of_the_copy() {
+    let f = fx(&[
+        ("a.md", b"a\n"),
+        ("sub/b.md", b"b\n"),
+        (
+            ".permark/projects.toml",
+            b"version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"sub\"\n",
+        ),
+    ]);
+    std::fs::create_dir_all(f.project.path().join("sub/.git")).unwrap();
+    std::fs::create_dir(f.project.path().join("sub/.aiignore")).unwrap();
+    // the projects inside are what keeps it out
+    assert_eq!(copied(&f.build(), "sub/b.md").unwrap(), b"b\n");
+    let (_core, project) = crate::testing::project_with_members(
+        f.vault.main().path(),
+        &f.profile.path().join("state"),
+    );
+    assert_eq!(
+        project.rules_problem(),
+        Some(RulesProblem {
+            file: "sub/.aiignore".to_owned(),
+            why: RulesWhy::NotAFile,
+            fallback: RulesFallback::Closed,
+        })
+    );
+    let work = WorkCopy::build(project, f.dir()).unwrap();
+    assert_eq!(copied(&work, "a.md").unwrap(), b"a\n");
+    assert!(copied(&work, "sub/b.md").is_none());
+    assert!(std::fs::read_dir(work.dir().join("sub")).map_or(true, |mut d| d.next().is_none()));
 }
 
 #[test]

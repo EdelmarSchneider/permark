@@ -98,6 +98,8 @@ pub(super) fn free_space(folder: &Path) -> io::Result<u64> {
 }
 
 // drive types of `GetDriveTypeW` (WinBase.h)
+#[cfg(test)]
+pub(super) const DRIVE_NO_ROOT_DIR: u32 = 1;
 const DRIVE_REMOVABLE: u32 = 2;
 const DRIVE_FIXED: u32 = 3;
 const DRIVE_RAMDISK: u32 = 6;
@@ -106,7 +108,7 @@ const DRIVE_RAMDISK: u32 = 6;
 // Documented FFI: no std wrapper tells the drive type. The argument is a NUL-terminated wide string owned by this
 // function and alive for the whole call.
 #[allow(unsafe_code)]
-fn drive_type(letter: u8) -> u32 {
+pub(super) fn drive_type(letter: u8) -> u32 {
     use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
     let root = [u16::from(letter), u16::from(b':'), u16::from(b'\\'), 0];
     // SAFETY: `root` is a live NUL-terminated buffer that outlives the call.

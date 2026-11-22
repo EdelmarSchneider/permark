@@ -146,7 +146,7 @@ fn on_window_event(handle: &tauri::AppHandle, label: &str, event: &WindowEvent) 
             windows::remember_geometry(handle, label);
             shell.saver.poke();
         }
-        WindowEvent::Focused(true) => shell.registry.focused(label, open::now_ms()),
+        WindowEvent::Focused(true) => shell.registry.focused(label, permark_core::fsx::now_ms()),
         WindowEvent::CloseRequested { api, .. } => {
             if !request_close(handle, label) {
                 api.prevent_close();

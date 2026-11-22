@@ -6,10 +6,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime};
 
 use permark_core::document::DocScope;
-use permark_core::fsx;
+use permark_core::fsx::{self, now_ms};
 use permark_core::plugins::PluginId;
 use permark_core::projects::{Owners, OwnersChange};
 use permark_core::state::{merge3, Loaded, StateData, StateFile};
@@ -61,12 +61,6 @@ pub fn hash_from_hex(text: &str) -> Option<u64> {
     (text.len() == 16 && text.bytes().all(|b| b.is_ascii_hexdigit()))
         .then(|| u64::from_str_radix(text, 16).ok())
         .flatten()
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 /// Whoever follows the read state (the review of changes).
@@ -1020,7 +1014,7 @@ mod list_tests {
                 .next()?
                 .parse()
                 .ok()?;
-            Some(UNIX_EPOCH + Duration::from_secs(n))
+            Some(SystemTime::UNIX_EPOCH + Duration::from_secs(n))
         }
 
         fn asked(&self) -> usize {

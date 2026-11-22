@@ -192,6 +192,9 @@ pub struct CommentView {
 pub struct CommentAside {
     /// `<digits>` for the opened folder's comments, `<project id>:<digits>` for an included project's.
     pub id: String,
+    /// The included project's folder, relative to the opened folder (`/` separators); empty for the opened folder's
+    /// comments. Shown as it is, so the person can tell which project's comments these are.
+    pub folder: String,
     /// How many of them the file lacks now: what a restore adds.
     pub count: u32,
     /// When they were removed (ms since the epoch).

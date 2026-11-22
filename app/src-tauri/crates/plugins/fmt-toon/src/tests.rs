@@ -701,3 +701,42 @@ fn a_new_row_takes_plain_values_where_they_need_no_quotes() {
         "{quoted}"
     );
 }
+
+/// The ```` ```toon ```` blocks of the demo pages (`demo/*.md`), each with its page: the text as the reading view
+/// hands it to the format (the lines between the fences, each ending with a line break).
+fn demo_blocks() -> Vec<(String, String)> {
+    let demo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../../demo");
+    let mut pages: Vec<_> = std::fs::read_dir(&demo)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "md"))
+        .collect();
+    pages.sort();
+    let mut blocks = Vec::new();
+    for page in pages {
+        let text = std::fs::read_to_string(&page).unwrap();
+        let mut lines = text.lines();
+        while let Some(line) = lines.next() {
+            if line.trim_end() != "```toon" {
+                continue;
+            }
+            let body: String = lines
+                .by_ref()
+                .take_while(|l| l.trim_end() != "```")
+                .flat_map(|l| [l, "\n"])
+                .collect();
+            blocks.push((page.display().to_string(), body));
+        }
+    }
+    blocks
+}
+
+#[test]
+fn every_toon_block_of_the_demo_pages_is_valid_and_shows_as_a_sheet() {
+    let blocks = demo_blocks();
+    assert!(!blocks.is_empty(), "no toon block in the demo pages");
+    for (page, block) in blocks {
+        assert!(decode(&block).is_ok(), "{page}: {:?}", decode(&block).err());
+        assert!(ToonFormat.sheet(&block).is_some(), "{page}");
+    }
+}

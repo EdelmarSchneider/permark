@@ -300,7 +300,8 @@
     "editable": {
       "editable": "surgical"
     },
-    "notes": []
+    "notes": [],
+    "opensOutside": true
   },
   "docs/guide.md": {
     "path": "docs/guide.md",
@@ -391,7 +392,8 @@
     "editable": {
       "editable": "surgical"
     },
-    "notes": []
+    "notes": [],
+    "opensOutside": true
   },
   "docs/handbook.md": {
     "path": "docs/handbook.md",
@@ -1763,7 +1765,8 @@
     "editable": {
       "editable": "surgical"
     },
-    "notes": []
+    "notes": [],
+    "opensOutside": true
   },
   "notes/ideas.md": {
     "path": "notes/ideas.md",
@@ -1840,7 +1843,8 @@
     "editable": {
       "editable": "surgical"
     },
-    "notes": []
+    "notes": [],
+    "opensOutside": true
   },
   "CLAUDE.md": {
     "path": "CLAUDE.md",
@@ -1908,7 +1912,8 @@
     "editable": {
       "editable": "surgical"
     },
-    "notes": []
+    "notes": [],
+    "opensOutside": true
   },
   "Cargo.toml": {
     "path": "Cargo.toml",
@@ -2213,7 +2218,8 @@
     "editable": {
       "editable": "surgical"
     },
-    "notes": []
+    "notes": [],
+    "opensOutside": true
   },
   "docker-compose.yml": {
     "path": "docker-compose.yml",
@@ -2512,7 +2518,8 @@
     "editable": {
       "editable": "surgical"
     },
-    "notes": []
+    "notes": [],
+    "opensOutside": true
   },
   ".env.example": {
     "path": ".env.example",
@@ -2686,7 +2693,8 @@
     "editable": {
       "editable": "surgical"
     },
-    "notes": []
+    "notes": [],
+    "opensOutside": true
   },
   ".editorconfig": {
     "path": ".editorconfig",
@@ -2887,7 +2895,8 @@
     "editable": {
       "editable": "surgical"
     },
-    "notes": []
+    "notes": [],
+    "opensOutside": false
   },
   "config/app.properties": {
     "path": "config/app.properties",
@@ -3079,7 +3088,8 @@
     "editable": {
       "editable": "surgical"
     },
-    "notes": []
+    "notes": [],
+    "opensOutside": true
   },
   ".gitignore": {
     "path": ".gitignore",
@@ -3244,7 +3254,8 @@
     "editable": {
       "editable": "surgical"
     },
-    "notes": []
+    "notes": [],
+    "opensOutside": false
   },
   "data/team.toon": {
     "path": "data/team.toon",
@@ -3588,6 +3599,7 @@
     "editable": {
       "editable": "surgical"
     },
-    "notes": []
+    "notes": [],
+    "opensOutside": false
   }
 }

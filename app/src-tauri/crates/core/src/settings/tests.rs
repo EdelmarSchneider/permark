@@ -379,6 +379,33 @@ fn settings_file_apply_reads_fresh_and_keeps_hand_edits() {
     assert!(text.starts_with("# hand\n") && text.contains("custom = 1"));
 }
 
+/// A profile `settings.toml` that a dotfile manager links elsewhere stays a link: the change lands in the file the link
+/// leads to, its other bytes as they were, and nothing else is left beside it.
+#[test]
+fn a_linked_settings_file_stays_a_link_and_its_target_takes_the_change() {
+    let base = tempfile::tempdir().unwrap();
+    let file = SettingsFile::app(&AppDirs::under(base.path()));
+    let dotfiles = tempfile::tempdir().unwrap();
+    let target = dotfiles.path().join("settings.toml");
+    fs::write(&target, "# mine\ntone = \"paper\"\n").unwrap();
+    fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    if !crate::fsx::tests::file_link(file.path(), &target) {
+        eprintln!("skipped: no file links here");
+        return;
+    }
+    let s = file.apply(&SettingChange::Theme(ThemePref::Dark)).unwrap();
+    assert_eq!((s.theme, s.tone), (ThemePref::Dark, Tone::Paper));
+    assert!(fs::symlink_metadata(file.path())
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    let text = fs::read_to_string(&target).unwrap();
+    assert!(text.starts_with("# mine\ntone = \"paper\"\n"), "{text}");
+    assert!(text.contains("theme = \"dark\""), "{text}");
+    let beside: Vec<_> = fs::read_dir(dotfiles.path()).unwrap().collect();
+    assert_eq!(beside.len(), 1);
+}
+
 #[test]
 fn a_write_that_lands_meanwhile_is_kept_and_the_change_applied_on_top() {
     let base = tempfile::tempdir().unwrap();
@@ -1418,7 +1445,7 @@ fn a_team_file_lists_the_plugin_keys_it_holds_that_are_not_read() {
         "token-count.extra",
     ]);
     assert_eq!(config.ignored_plugin_keys, expected);
-    let settings = ProjectSettings::of(true, Sharing::Private, &config);
+    let settings = ProjectSettings::of(true, Sharing::Private, &config, false);
     assert_eq!(settings.ignored_plugin_keys, expected);
     let json = serde_json::to_value(&settings).unwrap();
     assert_eq!(json["ignoredPluginKeys"][2], "git.backend");
@@ -1604,7 +1631,7 @@ fn the_project_file_is_written_only_inside_a_real_permark_folder() {
     let config = ProjectConfig::load(&root);
     assert_eq!(config.unreadable_line, Some(2));
     assert_eq!(
-        ProjectSettings::of(true, Sharing::Shared, &config).unreadable_line,
+        ProjectSettings::of(true, Sharing::Shared, &config, false).unreadable_line,
         Some(2)
     );
     // fixed by hand: written again, and nothing is unreadable any more
@@ -1618,9 +1645,56 @@ fn the_project_file_is_written_only_inside_a_real_permark_folder() {
         .unwrap();
     assert_eq!(config.unreadable_line, None);
     assert_eq!(
-        ProjectSettings::of(true, Sharing::Shared, &config).unreadable_line,
+        ProjectSettings::of(true, Sharing::Shared, &config, false).unreadable_line,
         None
     );
+}
+
+/// A team file that is there but cannot be read as text (past the size cap, not UTF-8): the values are the defaults
+/// and the settings page hears why, in the words the settings file refusals use (`Unreadable::code`).
+#[test]
+fn a_team_file_that_cannot_be_read_as_text_says_why() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".permark")).unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    let file = dir.path().join(".permark/config.toml");
+    let mut large = b"ignore = [\"a/\"]\n".to_vec();
+    large.resize(usize::try_from(MAX_SETTINGS_BYTES).unwrap() + 1, b'\n');
+    let latin1 = b"ignore = [\"a/\"]\n# caf\xe9\n".to_vec();
+    for (bytes, why, code) in [
+        (large, ConfigUnreadableWhy::TooLarge, Unreadable::TooLarge),
+        (latin1, ConfigUnreadableWhy::NotText, Unreadable::NotText),
+    ] {
+        fs::write(&file, &bytes).unwrap();
+        let config = ProjectConfig::load(&root);
+        assert_eq!(config.unreadable_why, Some(why));
+        assert_eq!(config.unreadable_line, None);
+        assert_eq!(config.ignore, Vec::<String>::new());
+        let settings = ProjectSettings::of(true, Sharing::Shared, &config, false);
+        assert_eq!(settings.unreadable_why, Some(why));
+        let json = serde_json::to_value(&settings).unwrap();
+        assert_eq!(json["unreadableWhy"], code.code());
+    }
+    // text again: no reason left, the values are the file's
+    fs::write(&file, "ignore = [\"a/\"]\n").unwrap();
+    let config = ProjectConfig::load(&root);
+    assert_eq!(config.unreadable_why, None);
+    assert_eq!(config.ignore, list(&["a/"]));
+    // a file that is not TOML says its line, no reason of this kind
+    fs::write(&file, "ignore = [\n").unwrap();
+    assert_eq!(ProjectConfig::load(&root).unreadable_why, None);
+}
+
+/// What git counts of the folder's private state folder reaches the settings page as it is given.
+#[test]
+fn the_settings_page_hears_whether_git_tracks_the_private_folder() {
+    let config = ProjectConfig::default();
+    for tracked in [true, false] {
+        let settings = ProjectSettings::of(true, Sharing::Private, &config, tracked);
+        assert_eq!(settings.private_tracked, tracked);
+        let json = serde_json::to_value(&settings).unwrap();
+        assert_eq!(json["privateTracked"], tracked);
+    }
 }
 
 #[test]

@@ -10,6 +10,7 @@ use crate::edit::lines::encode;
 use crate::fsx::Encoding;
 use crate::projects::{AncestorRules, HiddenRule, MemberInfo, ProjectMarker, ProjectUid};
 use crate::state::{AppDirs, PROFILE_ONLY};
+use crate::tree::tests::link_out;
 
 const RULES: &str = "private/\n";
 
@@ -77,7 +78,7 @@ fn a_rule_file_in_any_unicode_form_hides_for_the_root() {
             RuleRead::Read(RULES.to_owned()),
             "{form:?}"
         );
-        let guard = Guard::new(&root, &[]);
+        let guard = Guard::for_tests(&root, &[]);
         assert!(guard.hidden("private/s.md", false), "{form:?}");
         assert!(!guard.hidden("docs/a.md", false), "{form:?}");
         assert!(
@@ -96,8 +97,8 @@ fn a_member_and_an_ancestor_rule_file_in_any_unicode_form_hide() {
         put(&base, "sub/private/x.md", b"# X\n");
         let rules = folder_rules(&base.join("sub"), "sub", ConfigRead::Absent, None);
         assert_eq!(rules.aiignore, ["private/"], "{form:?}");
-        let guard =
-            Guard::new(&root, &[]).with_projects(map(vec![member("sub", rules)], Vec::new()), None);
+        let guard = Guard::for_tests(&root, &[])
+            .with_projects(map(vec![member("sub", rules)], Vec::new()), None);
         assert!(guard.hidden("sub/private/x.md", false), "{form:?}");
         assert!(
             !guard.hidden("private/s.md", false),
@@ -114,7 +115,7 @@ fn a_member_and_an_ancestor_rule_file_in_any_unicode_form_hide() {
             base: up.clone(),
             rel: "proj".to_owned(),
         };
-        let guard = Guard::new(&Root::open(&opened).unwrap(), &[])
+        let guard = Guard::for_tests(&Root::open(&opened).unwrap(), &[])
             .with_projects(map(Vec::new(), vec![ancestor]), None);
         assert!(guard.hidden("private/x.md", false), "{form:?}");
         assert!(!guard.hidden("docs/a.md", false), "{form:?}");
@@ -168,7 +169,7 @@ fn a_rule_file_that_is_a_folder_or_undecodable_or_unbuildable_is_unreadable() {
     assert_eq!(read_rules(&file), RuleRead::Absent);
     fs::create_dir(&file).unwrap();
     assert_eq!(read_rules(&file), RuleRead::Unreadable(RulesWhy::NotAFile));
-    let guard = Guard::new(&root, &[]);
+    let guard = Guard::for_tests(&root, &[]);
     assert!(guard.closed() && guard.hidden("docs/a.md", false));
     assert_eq!(
         guard.rules_problems(),
@@ -186,7 +187,7 @@ fn a_rule_file_that_is_a_folder_or_undecodable_or_unbuildable_is_unreadable() {
     }
     // a pattern that does not build would leave what it names shared
     fs::write(&file, "private/\ndocs/[z-a]\n").unwrap();
-    let guard = Guard::new(&root, &[]);
+    let guard = Guard::for_tests(&root, &[]);
     assert!(guard.closed());
     assert_eq!(
         guard.rules_problems(),
@@ -197,7 +198,7 @@ fn a_rule_file_that_is_a_folder_or_undecodable_or_unbuildable_is_unreadable() {
         )]
     );
     fs::write(&file, RULES).unwrap();
-    let guard = Guard::new(&root, &["docs/[z-a]".to_owned()]);
+    let guard = Guard::for_tests(&root, &["docs/[z-a]".to_owned()]);
     assert!(guard.closed());
     assert_eq!(
         guard.rules_problems(),
@@ -291,8 +292,8 @@ fn an_unreadable_member_file_hides_the_member_and_an_unreadable_ancestor_file_cl
             RulesFallback::Closed
         )]
     );
-    let guard =
-        Guard::new(&root, &[]).with_projects(map(vec![member("sub", rules)], Vec::new()), None);
+    let guard = Guard::for_tests(&root, &[])
+        .with_projects(map(vec![member("sub", rules)], Vec::new()), None);
     assert!(guard.hidden("sub/doc.md", false) && guard.hidden("sub", true));
     assert!(!guard.hidden("docs/a.md", false));
     assert!(!guard.closed(), "only the member's own part");
@@ -310,8 +311,8 @@ fn an_unreadable_member_file_hides_the_member_and_an_unreadable_ancestor_file_cl
     kept.keep("sub/.aiignore", Some(RULES));
     let rules = folder_rules(&base.join("sub"), "sub", ConfigRead::Absent, Some(&kept));
     assert_eq!(rules.aiignore, ["private/"]);
-    let guard =
-        Guard::new(&root, &[]).with_projects(map(vec![member("sub", rules)], Vec::new()), None);
+    let guard = Guard::for_tests(&root, &[])
+        .with_projects(map(vec![member("sub", rules)], Vec::new()), None);
     assert!(!guard.hidden("sub/doc.md", false) && guard.hidden("sub/private/x.md", false));
     // an ancestor governs the whole folder: closed
     let opened = base.join("docs");
@@ -328,7 +329,7 @@ fn an_unreadable_member_file_hides_the_member_and_an_unreadable_ancestor_file_cl
             RulesFallback::Closed
         )]
     );
-    let guard = Guard::new(&Root::open(&opened).unwrap(), &[])
+    let guard = Guard::for_tests(&Root::open(&opened).unwrap(), &[])
         .with_projects(map(Vec::new(), vec![ancestor]), None);
     assert!(guard.closed() && guard.hidden("a.md", false));
 }
@@ -473,22 +474,27 @@ fn the_last_good_store_writes_only_changes_and_stays_bounded() {
     assert_eq!(kept.text_of("big5/.aiignore"), None);
 }
 
-/// Makes `link` point at the folder `target` (which may be missing): a symbolic link, a junction on Windows (no
-/// privilege needed). `false`: not possible here.
-fn link_dir(link: &Path, target: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(target, link).is_ok()
-    }
-    #[cfg(windows)]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
+/// A FIFO in place of `.aiignore` never makes a rule read wait (no writer would ever open it): unreadable, which
+/// closes the guard, and left as it is.
+#[cfg(unix)]
+#[test]
+fn a_fifo_in_place_of_a_rule_file_never_makes_the_read_wait() {
+    use std::os::unix::fs::FileTypeExt;
+    let (_dir, base, root) = project();
+    let file = base.join(AI_IGNORE);
+    let made = std::process::Command::new("mkfifo").arg(&file).status();
+    assert!(made.is_ok_and(|s| s.success()), "mkfifo {}", file.display());
+    let (tx, rx) = std::sync::mpsc::channel();
+    let path = file.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send((read_rules(&path), Guard::checked_alone(&root).closed()));
+    });
+    let (read, closed) = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the rule read waited on a FIFO");
+    assert_eq!(read, RuleRead::Unreadable(RulesWhy::NotAFile));
+    assert!(closed, "an unreadable rule file with no last good rules");
+    assert!(fs::symlink_metadata(&file).unwrap().file_type().is_fifo());
 }
 
 /// The lenient read drops an `[agent]` value of the wrong kind; the rules read never takes that as "no rules".
@@ -558,7 +564,7 @@ fn a_rule_file_link_leading_nowhere_keeps_its_last_good_rules() {
     put(&base, AI_IGNORE, RULES.as_bytes());
     assert!(Guard::checked(&root, &store).hidden("private/s.md", false));
     fs::remove_file(base.join(AI_IGNORE)).unwrap();
-    if !link_dir(&base.join(AI_IGNORE), &base.join("missing")) {
+    if !link_out(&base.join(AI_IGNORE), &base.join("missing")) {
         eprintln!("skipped: links cannot be made here");
         return;
     }
@@ -632,7 +638,7 @@ fn a_team_folder_that_is_a_link_is_unreadable_for_the_rules() {
         "config.toml",
         b"[agent]\ndeny_paths = [\"private/\"]\n",
     );
-    if !link_dir(&base.join(".permark"), elsewhere.path()) {
+    if !link_out(&base.join(".permark"), elsewhere.path()) {
         eprintln!("skipped: links cannot be made here");
         return;
     }
@@ -655,7 +661,7 @@ fn a_team_folder_that_is_a_link_is_unreadable_for_the_rules() {
 #[test]
 fn private_names_are_hidden_in_any_case_on_every_system() {
     let (_dir, _base, root) = project();
-    let guard = Guard::new(&root, &[]);
+    let guard = Guard::for_tests(&root, &[]);
     for path in [
         ".AIIGNORE",
         "sub/.AiIgnore",

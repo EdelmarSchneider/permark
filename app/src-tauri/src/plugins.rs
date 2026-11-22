@@ -595,8 +595,28 @@ mod tests {
         /// What the editors start from (mock `edit_source`).
         sources: JsonMap,
         /// The properties of each YAML front matter as Edit asks for them (`config_sheet` of the text between the
-        /// fences): the mock serves the real sheets, not made-up ones.
+        /// fences) and the sheet of each ```` ```toon ```` block as the reading view asks for it: the mock serves the
+        /// real sheets, not made-up ones.
         sheets: JsonMap,
+    }
+
+    /// The ```` ```toon ```` blocks of a Markdown text as the reading view hands them to the format: the lines between
+    /// the fences, each ending with a line break (the text of the block's `<code>`).
+    fn toon_blocks(text: &str) -> Vec<String> {
+        let mut blocks = Vec::new();
+        let mut open: Option<String> = None;
+        for line in text.lines() {
+            match open.as_mut() {
+                None if line.trim_end() == "```toon" => open = Some(String::new()),
+                None => {}
+                Some(_) if line.trim_end() == "```" => blocks.extend(open.take()),
+                Some(block) => {
+                    block.push_str(line);
+                    block.push('\n');
+                }
+            }
+        }
+        blocks
     }
 
     /// Renders `paths` (project paths) of the project folder `project`.
@@ -645,6 +665,13 @@ mod tests {
             rendered
                 .sources
                 .insert(path.clone(), serde_json::to_value(source).unwrap());
+            for (n, block) in toon_blocks(&text).into_iter().enumerate() {
+                let body = editor.config_sheet("embed.toon", &block).unwrap();
+                rendered.sheets.insert(
+                    format!("{path}#toon-{n}"),
+                    serde_json::json!({ "path": "embed.toon", "text": block, "body": body }),
+                );
+            }
             let Some((inner, _)) = text
                 .strip_prefix("---\n")
                 .and_then(|rest| rest.split_once("\n---\n"))
@@ -708,6 +735,26 @@ mod tests {
         write_json(&generated.join("mock-documents.json"), &rendered.views);
         write_json(&generated.join("mock-edit-sources.json"), &rendered.sources);
         write_json(&generated.join("mock-config-sheets.json"), &rendered.sheets);
+    }
+
+    /// A page's ```` ```toon ```` blocks reach the mock with the sheets the format makes of them: the reading view of
+    /// the mock draws a block as the app does, not as text the spec cannot read.
+    #[test]
+    fn toon_blocks_of_a_page_get_the_real_sheets() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(
+            project.path().join("page.md"),
+            "# Data\n\n```toon\nweek: 46\nitems[2]: a,b\n```\n\n```toon\nitems[3]: x\n```\n",
+        )
+        .unwrap();
+        let rendered = render_documents(project.path(), &["page.md".to_owned()]);
+        let first = &rendered.sheets["page.md#toon-0"];
+        assert_eq!(first["path"], "embed.toon");
+        assert_eq!(first["text"], "week: 46\nitems[2]: a,b\n");
+        assert_eq!(first["body"]["kind"], "sheet");
+        // a block the spec cannot read stays text with the backend's reason
+        assert_eq!(rendered.sheets["page.md#toon-1"]["body"]["kind"], "text");
+        assert_eq!(rendered.sheets.len(), 2);
     }
 
     /// Files of the corpus served as they are (pictures, sound, video), not rendered.

@@ -20,4 +20,8 @@ ignored: boolean,
 /**
  * Shown only because it is the kept (open) document.
  */
-forced: boolean, };
+forced: boolean, 
+/**
+ * A file the system's default program may be asked to open (never a folder, script, program or macro carrier).
+ */
+opensOutside: boolean, };

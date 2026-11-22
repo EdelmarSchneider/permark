@@ -357,10 +357,10 @@ fn verify_comment_added_while_left_out_survives_include_again() {
     .unwrap();
     assert!(list(&core).iter().any(|c| c["text"] == "while left out"));
     core.projects_include(
-        &env,
         &permark_core::projects::ProjectPick::Paths {
             paths: vec![MEMBER.to_owned()],
         },
+        &|| core.initialize(&env),
     )
     .unwrap();
     wait_until("included again", || {
@@ -800,6 +800,11 @@ fn each_project_sets_aside_and_restores_only_its_own_comments() {
     );
     assert_eq!(found[0]["count"], json!(1));
     assert_eq!(
+        found[0]["folder"],
+        json!(MEMBER),
+        "the line names the project's folder"
+    );
+    assert_eq!(
         call(&core, "restore", json!({ "id": id })).unwrap(),
         json!(1)
     );
@@ -836,4 +841,9 @@ fn each_project_sets_aside_and_restores_only_its_own_comments() {
     let found = call(&core, "asides", Value::Null).unwrap();
     let id = found[0]["id"].as_str().unwrap();
     assert!(id.bytes().all(|b| b.is_ascii_digit()), "{id}");
+    assert_eq!(
+        found[0]["folder"],
+        json!(""),
+        "the opened folder: no folder"
+    );
 }

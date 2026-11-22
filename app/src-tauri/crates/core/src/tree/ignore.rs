@@ -74,6 +74,9 @@ pub struct DirHints {
     pub git: bool,
     /// A real `.permark` folder (not a link | file) is among the entries.
     pub permark: bool,
+    /// A name of a write's temp ([`crate::fsx::stale_temps`]) is among the entries (never in the model): a crash may
+    /// have left it.
+    pub temps: bool,
 }
 
 /// Whether `dir` is a folder of its own, not a link to one (a walk never follows links; neither do its probes).

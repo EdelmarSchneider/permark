@@ -10,7 +10,7 @@ use ts_rs::TS;
 
 use super::{
     edit_file, plugin_tables, read_team_text, set_key_at, set_plugin_key, tokenizers_of,
-    tokenizers_value, toml_error_line, valid_tokenizers, Kept, SettingsError,
+    tokenizers_value, toml_error_line, valid_tokenizers, Kept, SettingsError, Unreadable,
 };
 use crate::fsx;
 use crate::paths::Root;
@@ -82,6 +82,9 @@ pub struct ProjectConfig {
     /// The file is there but not TOML: the line (1-based) where the parser stopped. The values are then not the
     /// file's, and every write to it is refused ([`ProjectConfigFile::apply`]).
     pub unreadable_line: Option<usize>,
+    /// The file is there but cannot be read as text: why. The values are then not the file's, and every write to it is
+    /// refused.
+    pub unreadable_why: Option<ConfigUnreadableWhy>,
 }
 
 /// The one plugin key besides `enabled` a project file is read for.
@@ -118,6 +121,35 @@ pub enum ConfigUnreadable {
     NotToml { line: usize },
 }
 
+impl ConfigUnreadable {
+    /// Why the file cannot be read as text, in words the settings page has; `None`: not TOML (it says its line), a
+    /// linked `.permark`, any other failure.
+    #[must_use]
+    pub fn why(&self) -> Option<ConfigUnreadableWhy> {
+        match self {
+            Self::Read(SettingsError::Unreadable { why, .. }) => match why {
+                Unreadable::NotText => Some(ConfigUnreadableWhy::NotText),
+                Unreadable::TooLarge => Some(ConfigUnreadableWhy::TooLarge),
+                Unreadable::Locked => Some(ConfigUnreadableWhy::Locked),
+                Unreadable::NotToml { .. } => None,
+            },
+            Self::Read(_) | Self::LinkedFolder | Self::NotToml { .. } => None,
+        }
+    }
+}
+
+/// Why `.permark/config.toml` cannot be read as text, as the settings page words it: the same words as the refusals of
+/// a settings file (`detail` of `settingsUnreadable`, [`Unreadable::code`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ConfigUnreadableWhy {
+    NotText,
+    TooLarge,
+    /// Another program holds it, past the retries.
+    Locked,
+}
+
 /// `.permark/config.toml` read checked ([`ProjectConfig::load_checked`]).
 #[derive(Debug)]
 pub enum ConfigRead {
@@ -130,7 +162,8 @@ pub enum ConfigRead {
 
 impl ProjectConfig {
     /// Reads `<root>/.permark/config.toml`; defaults when `.permark/` is no real folder | file missing | invalid (not
-    /// TOML: the defaults + [`ProjectConfig::unreadable_line`]).
+    /// TOML: the defaults + [`ProjectConfig::unreadable_line`]; not read as text: the defaults +
+    /// [`ProjectConfig::unreadable_why`]).
     #[must_use]
     pub fn load(root: &Root) -> Self {
         match Self::load_checked(root) {
@@ -139,7 +172,11 @@ impl ProjectConfig {
                 unreadable_line: Some(line),
                 ..Self::default()
             },
-            ConfigRead::Absent | ConfigRead::Unreadable(_) => Self::default(),
+            ConfigRead::Unreadable(unreadable) => Self {
+                unreadable_why: unreadable.why(),
+                ..Self::default()
+            },
+            ConfigRead::Absent => Self::default(),
         }
     }
 
@@ -245,6 +282,7 @@ impl ProjectConfig {
             plugins_off,
             ignored_plugin_keys,
             unreadable_line: None,
+            unreadable_why: None,
         }
     }
 }
@@ -275,11 +313,22 @@ pub struct ProjectSettings {
     /// The file is there but not TOML: the line where it stops being TOML (1-based); the page says so and nothing is
     /// written to it.
     pub unreadable_line: Option<u32>,
+    /// The file is there but cannot be read as text: why; the page says so and nothing is written to it.
+    pub unreadable_why: Option<ConfigUnreadableWhy>,
+    /// Git counts the folder's private state folder (`.permark/local`) as tracked, or cannot tell now
+    /// ([`crate::projects::OwnerSlot::private_tracked`]): what it keeps never reaches agents, and the page says why.
+    pub private_tracked: bool,
 }
 
 impl ProjectSettings {
+    /// `private_tracked`: [`ProjectSettings::private_tracked`] (asks git: never worked out on the open path).
     #[must_use]
-    pub fn of(initialized: bool, sharing: Sharing, config: &ProjectConfig) -> Self {
+    pub fn of(
+        initialized: bool,
+        sharing: Sharing,
+        config: &ProjectConfig,
+        private_tracked: bool,
+    ) -> Self {
         Self {
             initialized,
             sharing,
@@ -292,6 +341,8 @@ impl ProjectSettings {
             unreadable_line: config
                 .unreadable_line
                 .map(|line| u32::try_from(line).unwrap_or(u32::MAX)),
+            unreadable_why: config.unreadable_why,
+            private_tracked,
         }
     }
 }

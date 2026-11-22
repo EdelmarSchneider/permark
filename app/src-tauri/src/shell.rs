@@ -106,11 +106,14 @@ fn unreadable_settings(file: &SettingsFile) -> Option<StateRecovered> {
     })
 }
 
-/// One setting change (file read fresh), then plugins re-applied when a switch changed, every window told. All of it
-/// inside `writes`: the cached settings and the windows' news follow the order of the writes, so a write that finished
-/// earlier never lands over a newer one, and a window never ends on older settings than the file holds. `writes` stays
-/// held while plugins start | stop: nothing reachable from a plugin's start may write a setting (it would wait on
-/// `writes` forever); only the IPC commands call this.
+/// One setting change (file read fresh), then plugins re-applied when a switch changed, every window told. The file,
+/// the cached settings, the app's own plugins and the windows' settings news inside `writes`: they follow the order of
+/// the writes, so a write that finished earlier never lands over a newer one, and a window never ends on older
+/// settings than the file holds. The open projects' plugins after `writes` is let go: each project waits for its
+/// settings turn first (an Initialize holds it while it copies the folder's data), which must never hold every other
+/// setting; each apply reads the settings as they are then, so the last change wins in whatever order the threads get
+/// there. Nothing reachable from an app plugin's start may write a setting (it would wait on `writes` forever); only
+/// the IPC commands call this.
 fn change_setting(
     env: &CoreEnv,
     registry: &WorkspaceRegistry,
@@ -118,10 +121,24 @@ fn change_setting(
     writes: &Mutex<()>,
     change: &SettingChange,
 ) -> Result<AppSettings, SettingsError> {
-    let _guard = lock(writes);
-    let settings = file.apply(change)?;
-    env.set_settings(settings.clone());
-    env.settings_changed();
+    let switched = matches!(change, SettingChange::PluginEnabled { .. });
+    let settings = {
+        let _guard = lock(writes);
+        let settings = file.apply(change)?;
+        env.set_settings(settings.clone());
+        env.settings_changed();
+        if switched {
+            let before = env.app_plugins_on();
+            env.apply_app_plugins();
+            withdraw_if_switched_off(&before, &env.app_plugins_on());
+        }
+        env.sink
+            .emit(CoreEvent::SettingsChanged(Box::new(SettingsChanged {
+                keys: vec![change.key()],
+                settings: settings.clone(),
+            })));
+        settings
+    };
     if matches!(change, SettingChange::GitBackend(_)) {
         // the git plugin of every open project starts again with the other backend
         for core in registry.cores() {
@@ -129,21 +146,13 @@ fn change_setting(
         }
         registry.refresh();
     }
-    if matches!(change, SettingChange::PluginEnabled { .. }) {
-        let before = env.app_plugins_on();
-        env.apply_app_plugins();
-        withdraw_if_switched_off(&before, &env.app_plugins_on());
+    if switched {
         for core in registry.cores() {
             core.apply_plugins(env);
         }
         env.sink.emit(CoreEvent::PluginsChanged);
         registry.refresh();
     }
-    env.sink
-        .emit(CoreEvent::SettingsChanged(Box::new(SettingsChanged {
-            keys: vec![change.key()],
-            settings: settings.clone(),
-        })));
     Ok(settings)
 }
 
@@ -638,6 +647,81 @@ mod tests {
         assert_eq!(file.load().keymap.len(), 200);
         assert_eq!(env.settings().keymap.len(), 200);
         assert_eq!(*lock(&told.sizes), (1..=200).collect::<Vec<_>>());
+    }
+
+    /// A plugin switch waits for a project whose settings turn is held (an Initialize copying the folder's data), but
+    /// no other setting waits with it: the writes' turn is let go before the projects are waited for.
+    #[test]
+    fn a_plugin_switch_waiting_for_a_project_holds_no_other_setting() {
+        use permark_core::workspace::{TabOpen, WorkspaceRef};
+        let base = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let dirs = AppDirs::under(base.path());
+        let file = SettingsFile::app(&dirs);
+        let env = Arc::new(CoreEnv::new(
+            dirs,
+            Arc::new(permark_core::plugins::PluginRegistry::new(Vec::new()).unwrap()),
+            Arc::new(Told::default()) as Arc<dyn EventSink>,
+            Distribution::Direct,
+            file.load(),
+        ));
+        let registry = Arc::new(WorkspaceRegistry::new(Arc::clone(&env)));
+        registry.add_window("main");
+        let _ = registry.show_welcome_view("main");
+        let reference = WorkspaceRef::Project(Root::open(folder.path()).unwrap());
+        let TabOpen::Opening { outcome, .. } = registry.open_tab("main", &reference, None).unwrap()
+        else {
+            panic!("the folder was open already");
+        };
+        for (ticket, reference) in outcome.loads {
+            registry.load(ticket, &reference).unwrap();
+        }
+        let core = registry.cores().pop().expect("the project is open");
+        let file = Arc::new(file);
+        let writes = Arc::new(Mutex::new(()));
+        let turn = core.hold_config_turn();
+        let switch = std::thread::spawn({
+            let (env, registry, file, writes) = (
+                Arc::clone(&env),
+                Arc::clone(&registry),
+                Arc::clone(&file),
+                Arc::clone(&writes),
+            );
+            move || {
+                let change = SettingChange::PluginEnabled {
+                    plugin: PluginId::of("git"),
+                    enabled: Some(false),
+                };
+                change_setting(&env, &registry, &file, &writes, &change).map(|_| ())
+            }
+        });
+        // the switch is in the cache (written inside the writes' turn): it waits for the project now
+        let started = std::time::Instant::now();
+        while env.settings().plugins.is_empty() {
+            assert!(started.elapsed() < std::time::Duration::from_secs(10));
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let (done, other) = std::sync::mpsc::channel();
+        std::thread::spawn({
+            let (env, registry, file, writes) = (
+                Arc::clone(&env),
+                Arc::clone(&registry),
+                Arc::clone(&file),
+                Arc::clone(&writes),
+            );
+            move || {
+                let change = SettingChange::Keymap {
+                    command: "test.other".to_owned(),
+                    combo: Some("Ctrl+1".to_owned()),
+                };
+                let _ = done.send(change_setting(&env, &registry, &file, &writes, &change).is_ok());
+            }
+        });
+        let answered = other.recv_timeout(std::time::Duration::from_secs(5));
+        drop(turn);
+        assert_eq!(answered, Ok(true), "another setting waited for the project");
+        assert!(switch.join().unwrap().is_ok());
+        assert_eq!(file.load().keymap.len(), 1);
     }
 
     #[test]

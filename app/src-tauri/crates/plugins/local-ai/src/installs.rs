@@ -27,13 +27,12 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::thread::JoinHandle;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use permark_core::downloads::{
     DownloadError, DownloadKit, Downloads, Phase, Progress, Secret, SecretError, Source, Unit,
     Update,
 };
-use permark_core::fsx;
+use permark_core::fsx::{self, now_ms};
 use permark_core::plugins::{FolderRevealApi, PluginEvents, ProjectPlacesApi};
 use permark_core::state::{StateError, StateFile};
 use permark_core::{ErrorKind, IpcError};
@@ -418,12 +417,6 @@ pub struct Installs {
     /// Token set, as read once from the credential store (`None`: not read yet); kept by set | clear.
     token: Mutex<Option<bool>>,
     me: Weak<Self>,
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 impl Installs {

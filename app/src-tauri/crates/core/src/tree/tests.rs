@@ -161,6 +161,32 @@ fn default_app_opening_is_an_allow_list_with_a_deny_list_on_top() {
     assert!(is_html("a.html") && is_html("A.HTM") && !is_html("a.md"));
 }
 
+#[test]
+fn tree_nodes_tell_which_files_the_default_app_may_open() {
+    let f = fixture(&[
+        "report.docm",
+        "old.doc",
+        "a.rtf",
+        "a.pdf",
+        "run.py",
+        "x.pdf/inner.md",
+    ]);
+    let snap = f.explorer.open_view("w", Some(everything()));
+    let opens = |path: &str| {
+        snap.nodes
+            .iter()
+            .find(|n| n.path == path)
+            .map(|n| n.opens_outside)
+    };
+    for never in ["report.docm", "old.doc", "a.rtf", "run.py"] {
+        assert_eq!(opens(never), Some(false), "{never}");
+    }
+    assert_eq!(opens("a.pdf"), Some(true));
+    assert_eq!(opens("x.pdf/inner.md"), Some(true));
+    // a folder is never handed to the default app, whatever its name says
+    assert_eq!(opens("x.pdf"), Some(false));
+}
+
 // ---- snapshot ------------------------------------------------------------------------------------------------------
 
 #[test]
@@ -246,17 +272,24 @@ fn git_folder_and_permark_private_folders_are_never_listed() {
     }
 }
 
+/// The folders where a crash may have left a write's temp come from the walk's own listing (no second read of every
+/// folder): walked folders whose listing held a name of that shape, never an ignored | private | unlisted one.
 #[test]
-fn listed_folders_are_the_walked_ones_not_the_ignored_or_private() {
+fn temp_folders_are_walked_ones_whose_listing_held_a_temp_name() {
     let f = fixture_with(
         &[
             "a.md",
             "docs/b.md",
+            "docs/.b.md.4242.0.part",
             "docs/deep/c.md",
+            "docs/deep/notes.part",
             "empty/",
             "build/out.md",
+            "build/.out.md.4242.1.part",
             ".permark/config.toml",
+            ".permark/.config.toml.4242.2.part",
             ".permark/local/x",
+            ".permark/local/.x.4242.3.part",
             ".git/HEAD",
         ],
         &ProjectConfig::default(),
@@ -264,7 +297,7 @@ fn listed_folders_are_the_walked_ones_not_the_ignored_or_private() {
     fs::write(f.dir.path().join(".gitignore"), "build/\n").unwrap();
     let mut folders: Vec<String> = f
         .explorer
-        .listed_folders()
+        .temp_folders()
         .iter()
         .map(|abs| {
             abs.strip_prefix(f.dir.path())
@@ -274,7 +307,8 @@ fn listed_folders_are_the_walked_ones_not_the_ignored_or_private() {
         })
         .collect();
     folders.sort();
-    assert_eq!(folders, ["", ".permark", "docs", "docs/deep", "empty"]);
+    // `.permark` is listed; the sweep itself never takes a temp there (`fsx::stale_temps`)
+    assert_eq!(folders, [".permark", "docs"]);
 }
 
 // ---- filter ---------------------------------------------------------------------------------------------------------
@@ -1035,13 +1069,7 @@ fn junctions_are_leaves_never_followed() {
     let outside = tempfile::tempdir().unwrap();
     write(outside.path(), "secret/s.md");
     let link = f.dir.path().join("escape");
-    let made = std::process::Command::new("cmd")
-        .args(["/C", "mklink", "/J"])
-        .arg(&link)
-        .arg(outside.path())
-        .output()
-        .is_ok_and(|o| o.status.success());
-    if !made {
+    if !link_out(&link, outside.path()) {
         eprintln!("junction could not be made here; skipped");
         return;
     }
@@ -1644,6 +1672,20 @@ fn scan_documents_names_a_root_and_knows_when_there_is_none() {
     assert_eq!(f.explorer.scan_documents("@wt/none").0.len(), 0);
 }
 
+/// A Markdown file that is a link is listed by name only: the readers of every document (unread, link upkeep, missing
+/// links) take their list from here, so they never read its target under the link's name.
+#[test]
+fn scan_documents_leaves_out_markdown_files_that_are_links() {
+    let f = fixture(&["far.md", "docs/a.md"]);
+    let alias = f.dir.path().join("alias.md");
+    if !crate::fsx::tests::file_link(&alias, &f.dir.path().join("far.md")) {
+        eprintln!("skipped: no file links here");
+        return;
+    }
+    let (docs, _) = f.explorer.scan_documents("");
+    assert_eq!(docs, ["docs/a.md", "far.md"]);
+}
+
 /// A link at `link` leading to `target` (Unix: symlink; Windows: junction, which needs no privilege). `false`: the
 /// system would not make one here.
 pub(crate) fn link_out(link: &Path, target: &Path) -> bool {
@@ -1653,11 +1695,13 @@ pub(crate) fn link_out(link: &Path, target: &Path) -> bool {
     }
     #[cfg(windows)]
     {
-        // `mklink` wants one kind of separator
+        // `mklink` refuses a path mixing `/` and `\` (a caller's `join("a/b")`): rebuilt from its parts, every
+        // separator is `\`
+        let plain = |path: &Path| path.components().collect::<std::path::PathBuf>();
         std::process::Command::new("cmd")
             .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
+            .arg(plain(link))
+            .arg(plain(target))
             .output()
             .is_ok_and(|o| o.status.success())
     }
@@ -2194,13 +2238,10 @@ fn a_junction_below_a_container_is_never_followed_to_a_repository() {
     write(outside.path(), "deep/inner/x.md");
     let mut made = true;
     for (link, target) in [("link", "repo"), ("far", "deep")] {
-        // `mklink` wants one kind of separator
-        made &= std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(f.dir.path().join("hubs").join(link))
-            .arg(outside.path().join(target))
-            .output()
-            .is_ok_and(|o| o.status.success());
+        made &= link_out(
+            &f.dir.path().join("hubs").join(link),
+            &outside.path().join(target),
+        );
     }
     if !made {
         eprintln!("junction could not be made here; skipped");
@@ -2672,6 +2713,7 @@ mod list_diff {
             hidden: look & 2 != 0,
             ignored: look & 4 != 0,
             forced: look & 8 != 0,
+            opens_outside: look & 1 == 0,
             path,
         }
     }

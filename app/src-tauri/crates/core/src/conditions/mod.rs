@@ -64,6 +64,12 @@ pub enum GitErrorCode {
     Failed,
     /// The answer could not be read.
     Parse,
+    /// The repository is not opened: its git folder leads off this computer | through a link.
+    NotLocal,
+    /// No `.git` that leads to a repository (none, a link in its place, a `.git` file naming none here).
+    NoGit,
+    /// Git was stopped before it answered (the look was no longer needed).
+    Stopped,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

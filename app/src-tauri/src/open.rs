@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use permark_core::events::OpenFailed;
+use permark_core::fsx::now_ms;
 use permark_core::open::{
     create_untitled_markdown, place_open, route, OpenPlacement, OpenRequest, Placed, Route,
 };
@@ -43,12 +44,6 @@ pub enum OpenOutcome {
     OpenedElsewhere {
         window: String,
     },
-}
-
-pub fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 fn path_of(reference: &WorkspaceRef) -> PathBuf {

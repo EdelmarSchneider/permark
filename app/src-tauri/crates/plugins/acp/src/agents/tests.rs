@@ -203,6 +203,32 @@ const AGENT_SETTINGS_OF: &[(&str, &[&str])] = &[
         &[".agent/workflows/deploy.md", ".agent/skills/x/SKILL.md"],
     ),
     ("auggie", &[".augment/settings.json"]),
+    // https://github.com/autohandai/code-cli/blob/main/docs/config-reference.md
+    (
+        "autohand",
+        &[
+            ".autohand/config.json",
+            ".autohand/config.toml",
+            ".autohand/config.yaml",
+            ".autohand/config.yml",
+            ".autohand/settings.local.json",
+            ".autohand/skills/x/SKILL.md",
+        ],
+    ),
+    // its rules folders are instructions and stay
+    // https://bob.ibm.com/docs/shell/configuration/lifecycle-hooks
+    // https://bob.ibm.com/docs/shell/configuration/mcp/mcp-bobshell
+    // https://bob.ibm.com/docs/shell/configuration/custom-modes-bobshell
+    // https://bob.ibm.com/docs/shell/features/skills
+    (
+        "bob",
+        &[
+            ".bob/settings.json",
+            ".bob/mcp.json",
+            ".bob/custom_modes.yaml",
+            ".bob/skills/x/SKILL.md",
+        ],
+    ),
     (
         "claude-acp",
         &[
@@ -231,7 +257,58 @@ const AGENT_SETTINGS_OF: &[(&str, &[&str])] = &[
         ],
     ),
     ("codex-acp", &[".codex/config.toml"]),
+    // https://docs.snowflake.com/en/user-guide/cortex-code/extensibility
+    // https://docs.snowflake.com/en/user-guide/cortex-code/settings
+    (
+        "cortex-code",
+        &[
+            ".cortex/settings.json",
+            ".cortex/settings.local.json",
+            ".cortex/skills/x/SKILL.md",
+            ".cortex/agents/a.md",
+            ".claude/settings.json",
+            ".claude/settings.local.json",
+            ".claude/skills/x/SKILL.md",
+            ".claude/agents/a.md",
+        ],
+    ),
     ("cursor", &[".cursor/cli.json", ".cursor/mcp.json"]),
+    // the registry's build loads skills | memory only when started with them; the command line agent of the same name
+    // reads these from the working folder (extensions are code it loads)
+    // https://unpkg.com/deepagents-acp@0.1.7/README.md
+    // https://docs.langchain.com/oss/javascript/deepagents/cli/configuration.md
+    (
+        "deepagents",
+        &[
+            ".deepagents/skills/x/SKILL.md",
+            ".deepagents/agents/a/AGENTS.md",
+            ".deepagents/extensions/e.py",
+            ".agents/skills/x/SKILL.md",
+        ],
+    ),
+    // it also imports the settings of other agents' folders, Zed's servers included
+    // https://docs.devin.ai/cli/extensibility/index.md
+    // https://docs.devin.ai/cli/reference/configuration/read-config-from.md
+    (
+        "devin",
+        &[
+            ".devin/config.json",
+            ".devin/config.local.json",
+            ".devin/mcp_config.json",
+            ".devin/mcp_config.local.json",
+            ".devin/hooks.v1.json",
+            ".devin/skills/x/SKILL.md",
+            ".devin/agents/a.md",
+            ".claude/commands/c.md",
+            ".claude/agents/a.md",
+            ".claude/hooks/h.sh",
+            ".github/skills/x/SKILL.md",
+            ".codex/skills/x/SKILL.md",
+            ".kiro/skills/x/SKILL.md",
+            "opencode.json",
+            ".zed/settings.json",
+        ],
+    ),
     (
         "factory-droid",
         &[
@@ -259,9 +336,60 @@ const AGENT_SETTINGS_OF: &[(&str, &[&str])] = &[
             ".github/skills/x/SKILL.md",
         ],
     ),
+    // https://github.com/stefandevo/glm-acp-agent
+    (
+        "glm-acp-agent",
+        &[".claude/commands/c.md", ".claude/skills/x/SKILL.md"],
+    ),
     ("goose", &[".goose/config.yaml"]),
+    // https://docs.x.ai/build/settings
+    // https://docs.x.ai/build/features/hooks
+    // https://docs.x.ai/build/features/skills-plugins-marketplaces
+    (
+        "grok-build",
+        &[
+            ".grok/config.toml",
+            ".grok/hooks/h.json",
+            ".grok/skills/x/SKILL.md",
+            ".grok/plugins/p/plugin.json",
+            ".claude/settings.json",
+            ".cursor/hooks.json",
+            ".cursor/mcp.json",
+            ".mcp.json",
+        ],
+    ),
+    // MCP servers and the capability policy; its own folder holds sessions and state
+    // https://github.com/burin-labs/harn/blob/main/docs/src/mcp-and-acp.md
+    ("harn", &["harn.toml", ".harn/state.json"]),
     ("junie", &[".junie/mcp/mcp.json"]),
     ("kilo", &[".kilo/kilo.json", ".kilocode/mcp.json"]),
+    // hooks are scripts; its folder holds state, no documents; the workspace file is a template it applies
+    // https://github.com/getkimchi/kimchi
+    (
+        "kimchi",
+        &[".kimchi/hooks/bash/h.sh", "kimchi_workspace.yaml"],
+    ),
+    // https://moonshotai.github.io/kimi-cli/en/customization/skills.html
+    (
+        "kimi",
+        &[
+            ".kimi/skills/x/SKILL.md",
+            ".claude/skills/x/SKILL.md",
+            ".codex/skills/x/SKILL.md",
+            ".agents/skills/x/SKILL.md",
+        ],
+    ),
+    // https://www.kimi.com/code/docs/en/kimi-code-cli/configuration/config-files.html
+    // https://moonshotai.github.io/kimi-code/en/configuration/data-locations.html
+    (
+        "kimi-code",
+        &[
+            ".kimi-code/local.toml",
+            ".kimi-code/mcp.json",
+            ".kimi-code/skills/x/SKILL.md",
+            ".agents/skills/x/SKILL.md",
+        ],
+    ),
     (
         "kiro",
         &[
@@ -271,6 +399,19 @@ const AGENT_SETTINGS_OF: &[(&str, &[&str])] = &[
         ],
     ),
     ("mistral-vibe", &[".vibe/config.toml"]),
+    // https://dev.meta.ai/docs/muse-code/extending
+    (
+        "muse-code",
+        &[
+            ".muse/hooks.json",
+            ".agents/skills/x/SKILL.md",
+            ".claude/skills/x/SKILL.md",
+            ".codex/skills/x/SKILL.md",
+        ],
+    ),
+    // its rules folder is instructions and stays; `.compass` is its earlier folder name
+    // https://unpkg.com/@compass-ai/nova@1.1.66/README.md
+    ("nova", &[".nova/commands/c.md", ".compass/commands/c.md"]),
     (
         "opencode",
         &[".opencode/agent/a.md", "opencode.json", "opencode.jsonc"],
@@ -281,6 +422,17 @@ const AGENT_SETTINGS_OF: &[(&str, &[&str])] = &[
     ),
     // extensions are code it loads
     ("pi-acp", &[".pi/settings.json", ".pi/extensions/e.ts"]),
+    // servers, permissions and hooks; the hook scripts the settings name live beside them
+    // https://docs.poolside.ai/settings-file-reference.md
+    // https://docs.poolside.ai/mcp-servers
+    (
+        "poolside",
+        &[
+            ".poolside/settings.yaml",
+            ".poolside/settings.local.yaml",
+            ".poolside/hooks/x.sh",
+        ],
+    ),
     (
         "qoder",
         &[
@@ -292,33 +444,21 @@ const AGENT_SETTINGS_OF: &[(&str, &[&str])] = &[
         ],
     ),
     ("qwen-code", &[".qwen/settings.json"]),
+    // `mcp.toml` | `mcp.json` at the folder's top are read too: names too common to keep out (they could be anyone's)
+    // https://github.com/stakpak/agent
+    ("stakpak", &[".stakpak/mcp.toml", ".stakpak/mcp.json"]),
     // tool policies and MCP servers
     ("vtcode", &["vtcode.toml"]),
-    // none known in the working folder from their public documentation when classified: look again when one
-    // documents project settings
+    // none in the working folder from their public documentation (settings in the user's profile, if any): look
+    // again when one documents project settings
     ("agoragentic-acp", &[]),
-    ("autohand", &[]),
-    ("bob", &[]),
-    ("cortex-code", &[]),
     ("corust-agent", &[]),
     ("crow-cli", &[]),
-    ("deepagents", &[]),
-    ("devin", &[]),
     ("dimcode", &[]),
     ("dirac", &[]),
-    ("glm-acp-agent", &[]),
-    ("grok-build", &[]),
-    ("harn", &[]),
-    ("kimchi", &[]),
-    ("kimi", &[]),
-    ("kimi-code", &[]),
     ("minimax-code", &[]),
     ("minion-code", &[]),
-    ("muse-code", &[]),
-    ("nova", &[]),
-    ("poolside", &[]),
     ("sigit", &[]),
-    ("stakpak", &[]),
 ];
 
 /// Every agent the snapshot offers has its project settings classified, and each one it reads stays out of the copy:

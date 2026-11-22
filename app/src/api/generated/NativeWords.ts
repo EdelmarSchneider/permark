@@ -37,6 +37,7 @@ windowFailed?: string,
 viewFailedExit?: string, 
 /**
  * The interface language (`de`, `pt-BR`). Only picks one of the backend's own translations for a dialog no page
- * may word (the program-start question), when the person's setting is the system's language.
+ * may word (the program-start question), when the person's setting is the system's language and the system names
+ * none (macOS).
  */
 language?: string, };

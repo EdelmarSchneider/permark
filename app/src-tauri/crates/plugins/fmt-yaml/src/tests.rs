@@ -203,6 +203,26 @@ fn lists_and_mappings_nested_deeper_than_followed_are_one_read_only_row() {
 }
 
 #[test]
+fn a_list_whose_mapping_is_too_deep_says_nested() {
+    // a list at the top: the mappings after the dashes sit at the levels the reader stops at, so the list row
+    // holding the cut mapping is about nesting, not mixed items
+    let mut text = String::new();
+    for level in 0..60 {
+        let _ = writeln!(text, "{}- k{level}:", "  ".repeat(level));
+    }
+    let _ = writeln!(text, "{}- leaf", "  ".repeat(60));
+    let sheet = format().sheet(&text).expect("parses");
+    let reasons: Vec<&str> = sheet
+        .rows()
+        .filter_map(|(_, row)| match &row.value {
+            RowValue::Raw { reason, .. } => Some(reason.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reasons, ["nested"]);
+}
+
+#[test]
 fn compose_reads_as_cards() {
     let sheet = format().sheet(COMPOSE).expect("parses");
     let titles: Vec<&str> = sheet.groups.iter().map(|g| g.title.as_str()).collect();

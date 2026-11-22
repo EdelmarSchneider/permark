@@ -30,7 +30,7 @@ pub use scope::{DocScope, LinkTarget};
 use crate::error::{ErrorKind, IpcError};
 use crate::events::{CoreEvent, EventSink};
 use crate::format::{Body, Editability, FormatRegistry, Notice, RenderCx};
-use crate::fsx::{self, Encoding, FsxError};
+use crate::fsx::{self, now_ms, Encoding, FsxError};
 use crate::watch::{stat_sig, ChangeKind, FsBatch};
 
 /// Text larger than this is not rendered (`TooLarge` notice).
@@ -68,6 +68,8 @@ pub struct DocumentView {
     pub editable: Editability,
     /// `utf16 | lossy | deepNesting`.
     pub notes: Vec<String>,
+    /// The system's default program may be asked to open the file (never a script, program or macro carrier).
+    pub opens_outside: bool,
 }
 
 /// What happened to the document a window shows.
@@ -125,12 +127,6 @@ impl Shown {
         self.stat
             .is_some_and(|(_, mtime)| self.read_ms.saturating_sub(mtime) < RACY_MS)
     }
-}
-
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 struct Inner {
@@ -395,6 +391,7 @@ impl Documents {
         }
         let known: HashSet<String> = known.iter().cloned().collect();
         let name = crate::format::name_of(path).to_owned();
+        let opens_outside = crate::tree::may_open_with_default_app(&name);
         let cx = RenderCx {
             path,
             env: scope,
@@ -414,6 +411,7 @@ impl Documents {
             mtime_ms: mtime_ms(&meta),
             editable: read_only("noViewer"),
             notes: Vec::new(),
+            opens_outside,
         };
         let mut mode = Mode::Signature;
         let mut version = Some(signature(&meta));

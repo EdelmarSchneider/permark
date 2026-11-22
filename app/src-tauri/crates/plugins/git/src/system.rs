@@ -21,6 +21,7 @@ use crate::porcelain::{
     LogEntry, LOG_FORMAT,
 };
 use crate::types::{BackendKind, HeadInfo, Letter};
+use crate::worktrees::holder_of;
 
 /// How long one git call may take.
 pub const TIMEOUT: Duration = Duration::from_secs(10);
@@ -29,8 +30,10 @@ const MAX_OUTPUT: usize = 64 * 1024 * 1024;
 /// Most bytes of a committed file.
 const MAX_BLOB: usize = 8 * 1024 * 1024;
 const MAX_STDERR: usize = 64 * 1024;
-/// Most bytes of index entries listed for one folder (whether it is tracked needs one).
-const MAX_LISTED: usize = 64 * 1024;
+/// Most bytes of index entries listed for one folder. Everything below a name spelled so the volume may resolve it to
+/// a name of the path is listed (notes named beyond ASCII are common) and sorted out after; past it the folder counts
+/// as tracked.
+const MAX_LISTED: usize = 16 * 1024 * 1024;
 /// The largest number of commits `git log --skip` takes.
 const MAX_SKIP: usize = 0x7fff_ffff;
 
@@ -262,7 +265,7 @@ pub fn run(
 /// [`run`] that also stops (the program killed) when `cancel` is set.
 ///
 /// # Errors
-/// As [`run`]; `Failed("stopped")` when cancelled.
+/// As [`run`]; [`GitError::Stopped`] when cancelled.
 pub fn run_until(
     exe: &Path,
     dir: &Path,
@@ -286,7 +289,7 @@ fn run_with(
     cancel: Option<&AtomicBool>,
 ) -> Result<Output, GitError> {
     if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-        return Err(GitError::Failed("stopped".to_owned()));
+        return Err(GitError::Stopped);
     }
     let hooks = hooks_option()
         .ok_or_else(|| GitError::Spawn("no path keeps the repository's hooks off".to_owned()))?;
@@ -330,7 +333,7 @@ fn run_with(
         }
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             child.kill();
-            return Err(GitError::Failed("stopped".to_owned()));
+            return Err(GitError::Stopped);
         }
         thread::sleep(Duration::from_millis(3));
     };
@@ -661,20 +664,12 @@ fn filters_off(names: &[String]) -> Vec<String> {
 }
 
 /// The folder git's search for the repository of `at` may not go into (`GIT_CEILING_DIRECTORIES`): the parent of the
-/// folder whose `.git` git found it by, fixed at discovery, so a `.git` there that is no repository later (emptied |
-/// swapped while the project is open) never lets git go on to a repository further up that was never looked at. That
-/// folder holds the git folder itself when the working tree is it | below it (`core.worktree`); else it is the working
-/// tree, whose `.git` file names the git folder (a linked worktree, a gitfile). `None`: no such parent (a drive root),
-/// or a path holding the list separator (git would split it into other paths).
+/// folder whose `.git` git found it by ([`holder_of`]), fixed at discovery, so a `.git` there that is no repository
+/// later (emptied | swapped while the project is open) never lets git go on to a repository further up that was never
+/// looked at. `None`: no such parent (a drive root), or a path holding the list separator (git would split it into
+/// other paths).
 fn ceiling_of(at: &RepoLocation) -> Option<OsString> {
-    let holder = at
-        .git_dir
-        .parent()
-        .filter(|holder| {
-            at.git_dir.file_name() == Some(OsStr::new(".git")) && at.workdir.starts_with(holder)
-        })
-        .unwrap_or(&at.workdir);
-    let ceiling = permark_core::paths::simplified(holder.parent()?).into_owned();
+    let ceiling = permark_core::paths::simplified(holder_of(at).parent()?).into_owned();
     let separator = if cfg!(windows) { ';' } else { ':' };
     (!ceiling.to_string_lossy().contains(separator)).then(|| ceiling.into_os_string())
 }
@@ -685,39 +680,38 @@ fn first_line(text: &str) -> String {
 
 /// The pathspecs of the `ls-files` that lists every index entry [`tracked_entry`] may count for the folder `path`
 /// (relative to the project folder `prefix`); which ones count is decided after, so a spec may list more. Every glob
-/// holds a wildcard: a pathspec without one also lists everything below the folder it names, and a large folder above
-/// would cut the listing ([`MAX_LISTED`]).
+/// holds a wildcard: a pathspec without one also lists everything below the folder it names.
 fn tracked_specs(prefix: &str, path: &str) -> Vec<String> {
     let names: Vec<&str> = path.split('/').collect();
-    let base = if prefix.is_empty() {
-        String::new()
-    } else {
-        format!("{}/", glob_names(&prefix.split('/').collect::<Vec<_>>()))
+    let asked: Vec<&str> = prefix
+        .split('/')
+        .filter(|name| !name.is_empty())
+        .chain(names.iter().copied())
+        .collect();
+    let inside = asked.len() - names.len();
+    let base = |depth: usize| {
+        if depth == 0 {
+            String::new()
+        } else {
+            format!("{}/", glob_names(&asked[..depth]))
+        }
     };
     // the folder and all below it, other cases too: a pathspec ignores `core.ignorecase`
     let mut specs = vec![format!(":(literal,icase){}", repo_path(prefix, path))];
     // an entry at a folder above it inside the project (`*` also lists names that only start the same)
-    for depth in 1..names.len() {
-        specs.push(format!(
-            ":(glob,icase){base}{}*",
-            glob_names(&names[..depth])
-        ));
+    for depth in inside + 1..asked.len() {
+        specs.push(format!(":(glob,icase){}*", glob_names(&asked[..depth])));
     }
-    // another spelling of the name that holds the folder, the folder's name next: one holding `~` | a byte beyond
-    // printable ASCII, or ending in `.` | a space
-    if let Some((last, above)) = names
-        .split_last()
-        .and_then(|(last, rest)| rest.split_last().map(|(_, above)| (last, above)))
-    {
-        let above = if above.is_empty() {
-            String::new()
-        } else {
-            format!("{}/", glob_names(above))
-        };
+    // another spelling of a name of the path, the names above it as asked: one holding `~` | a byte beyond printable
+    // ASCII, or ending in `.` | a space; all below it (further names may be spelled otherwise too), and the entry at
+    // it when inside the project
+    for (place, _) in asked.iter().enumerate() {
         for alias in ["*[! -}]*", "*[. ]"] {
-            let at = format!(":(glob,icase){base}{above}{alias}/{}", glob_names(&[last]));
+            let at = format!(":(glob,icase){}{alias}", base(place));
             specs.push(format!("{at}/**"));
-            specs.push(at);
+            if place >= inside {
+                specs.push(at);
+            }
         }
     }
     specs
@@ -824,7 +818,7 @@ impl GitOps for SystemGit {
         if !location.prefix.is_empty() {
             let ignored = self.call(&location, &["check-ignore", "-q", "--", &location.prefix]);
             if ignored.is_ok_and(|o| o.code == Some(0)) {
-                return Discovery::NoRepo;
+                return Discovery::Ignored(location);
             }
         }
         Discovery::Repo(location)
@@ -921,7 +915,7 @@ impl GitOps for SystemGit {
             .to_vec();
         args.extend(specs.iter().map(OsStr::new));
         let out = match self.run_at(location, &args, MAX_LISTED) {
-            // more entries than the cap: some are there; counted as tracked rather than read whole
+            // more entries than the cap: counted as tracked rather than read whole
             Err(GitError::TooLarge(_)) => return Ok(true),
             other => other?,
         };

@@ -158,6 +158,19 @@ impl CommentBook for Comments {
     }
 }
 
+/// Lists comment `c1` on a shared file, then refuses to mark it done with its error kind (the comment changed between
+/// the two calls).
+struct Refusing(ErrorKind);
+
+impl CommentBook for Refusing {
+    fn list(&self, _: CommentFilter) -> Result<Vec<CommentItem>, IpcError> {
+        Ok(vec![comment("c1", "README.md", "Hello")])
+    }
+    fn resolve(&self, _: &str, _: Option<&str>) -> Result<(), IpcError> {
+        Err(IpcError::new(self.0))
+    }
+}
+
 struct Unread;
 
 impl UnreadLookup for Unread {
@@ -1262,6 +1275,43 @@ fn comments_are_listed_and_resolved_with_a_reply() {
         tools.call("list_comments", json!({ "which": "some" })),
         Err(ToolError::Invalid(_))
     ));
+}
+
+/// A comment removed or withheld between the list the resolve checks and the resolve itself is not there for the
+/// agent, as if it had never been listed; any other refusal stays a failure.
+#[test]
+fn a_comment_gone_or_withheld_while_resolving_is_not_found() {
+    let fx = fx();
+    fx.set_choice(&ProjectChoice {
+        enabled: true,
+        groups: [("comments.resolve".to_owned(), true)]
+            .into_iter()
+            .collect(),
+        resolve_asked: true,
+        folder: None,
+    });
+    for (kind, not_found) in [
+        (ErrorKind::NotFound, true),
+        (ErrorKind::Denied, true),
+        (ErrorKind::Io, false),
+    ] {
+        let _lease = fx.core().services().services.provide(Arc::new(CommentsApi(
+            Arc::new(Refusing(kind)) as Arc<dyn CommentBook>,
+        )));
+        let answer = fx.tools().call("resolve_comment", json!({ "id": "c1" }));
+        if not_found {
+            assert_eq!(
+                answer,
+                Err(ToolError::NotFound("c1".to_owned())),
+                "{kind:?}"
+            );
+        } else {
+            assert!(
+                matches!(answer, Err(ToolError::Failed(_))),
+                "{kind:?}: {answer:?}"
+            );
+        }
+    }
 }
 
 #[test]

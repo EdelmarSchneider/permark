@@ -327,6 +327,18 @@ impl Emit<'_> {
                 }
             }
         } else if let Some(span) = self.region(first, last) {
+            // mappings and lists too deep to follow (or a list in the list) only: the row is about nesting
+            let nested = !items.is_empty()
+                && items.iter().all(|i| {
+                    matches!(
+                        i.val,
+                        Val::Map(_)
+                            | Val::Raw {
+                                reason: "nested",
+                                ..
+                            }
+                    )
+                });
             rows.push(Row {
                 path: path.to_owned(),
                 key: key.to_owned(),
@@ -334,7 +346,7 @@ impl Emit<'_> {
                 end: line_no(last),
                 value: RowValue::Raw {
                     text: self.text[span.clone()].to_owned(),
-                    reason: "mixed".to_owned(),
+                    reason: if nested { "nested" } else { "mixed" }.to_owned(),
                     span: Some(span),
                 },
                 comment: caption(None, None),

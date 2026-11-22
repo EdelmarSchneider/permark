@@ -456,8 +456,9 @@ impl Downloads {
     }
 
     /// Queues `unit` (FIFO); the first call starts the worker thread. Already queued | running | shutting down:
-    /// nothing. Already installed: `Done` at its turn. Thread cannot start: `Failed(Disk)`.
-    pub fn enqueue(&self, unit: Unit) {
+    /// nothing. Already installed: `Done` at its turn. Thread cannot start: `Failed(Disk)`. `true`: news of the unit
+    /// follows (queued now | already queued | running); `false`: shutting down, none comes.
+    pub fn enqueue(&self, unit: Unit) -> bool {
         // worker slot first, queue inside: `shutdown` (queue, then slot) never sees a worker started after it
         let mut worker = self.worker.lock().unwrap_or_else(PoisonError::into_inner);
         {
@@ -465,13 +466,13 @@ impl Downloads {
             let known = queue.active.as_ref().is_some_and(|a| a.id == unit.id())
                 || queue.waiting.iter().any(|u| u.id() == unit.id());
             if queue.stopping || known {
-                return;
+                return !queue.stopping;
             }
             queue.waiting.push_back(unit);
         }
         self.shared.wake.notify_all();
         if worker.is_some() {
-            return;
+            return true;
         }
         let shared = Arc::clone(&self.shared);
         match std::thread::Builder::new()
@@ -488,6 +489,7 @@ impl Downloads {
                 }
             }
         }
+        true
     }
 
     /// Stops unit `id`: running -> stops before its next read | redirect hop (part kept); queued -> dropped. Both

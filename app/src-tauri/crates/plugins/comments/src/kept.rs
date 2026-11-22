@@ -8,13 +8,14 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use permark_core::fsx::now_ms;
 use permark_core::state::{
     Loaded, Machine, RawFile, Seal, StateData, StateError, StateFile, StateStore,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::model::Comment;
-use crate::service::{book_of, now_ms};
+use crate::service::book_of;
 
 const KEPT_FILE: &str = "comments-kept.json";
 const ASIDES_FILE: &str = "comments-asides.json";
@@ -35,7 +36,7 @@ pub(crate) const KEPT_CAP: u64 = 2 * MAX_KEPT_TEXT + ENVELOPE;
 /// Most bytes of the asides file: [`MAX_ASIDES`] asides of at most a kept copy's size each.
 pub(crate) const ASIDES_CAP: u64 = MAX_ASIDES as u64 * KEPT_CAP;
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 struct Kept {
     /// The comments file's text.
     text: String,
@@ -171,9 +172,14 @@ impl Keeper {
             text: text.to_owned(),
             seal: self.kept_seal(text).sign(),
         };
-        if self.kept.save(&kept).is_err() && self.kept().is_some() {
-            let _ = self.kept_raw.remove();
+        if self.kept.save(&kept).is_ok() {
+            return;
         }
+        // not written: a stale kept copy would show this install's later changes as removals, and a file no load reads
+        // (planted over its cap) refuses every save, so removals would never be seen again. Only this install's own
+        // comparison copy goes (never the person's comments), then it is written once more as a new file.
+        let _ = self.kept_raw.remove();
+        let _ = self.kept.update(|_| Some(kept.clone()));
     }
 
     /// The file holds `now`: what an outside write removed since the kept copy is set aside, then the kept copy follows

@@ -209,6 +209,7 @@ fn read_entries(
             hints.git = true;
         }
         if always_out(parent_path, &name) {
+            hints.temps |= crate::fsx::temp_pid(&name).is_some();
             continue;
         }
         let Ok(file_type) = entry.file_type() else {
@@ -279,6 +280,8 @@ pub(crate) struct TreeModel {
     markers: HashMap<String, Marker>,
     /// Keys of the folders listed because the person asked (a large one, an ignored one): a walk lists them again.
     asked: HashSet<String>,
+    /// Keys of the listed folders whose listing held a name of a write's temp ([`super::ignore::DirHints::temps`]).
+    temps: HashSet<String>,
 }
 
 impl TreeModel {
@@ -289,7 +292,13 @@ impl TreeModel {
             children: HashMap::new(),
             markers: HashMap::new(),
             asked: HashSet::new(),
+            temps: HashSet::new(),
         }
+    }
+
+    /// Whether the listing of the folder `key` held a name of a write's temp.
+    pub(crate) fn holds_temps(&self, key: &str) -> bool {
+        self.temps.contains(key)
     }
 
     /// Folders holding a project marker (main root, the root itself left out).
@@ -483,6 +492,7 @@ impl TreeModel {
         self.nodes.clear();
         self.children.clear();
         self.markers.clear();
+        self.temps.clear();
         let mut budget = MAX_ENTRIES;
         for index in 0..self.roots.len() {
             let root = self.roots[index].clone();
@@ -531,6 +541,9 @@ impl TreeModel {
         }
         if depth > 0 && !asked && found.len() > LARGE_FOLDER {
             return Err(found.len());
+        }
+        if hints.temps {
+            self.temps.insert(key_of(dir_path));
         }
         // inside a container only nested projects count: its own rules are needed only on the way to an included one
         let frames = if depth == 0 {

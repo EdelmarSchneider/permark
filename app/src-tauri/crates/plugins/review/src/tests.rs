@@ -30,7 +30,12 @@ pub(crate) struct Harness {
 impl Harness {
     pub(crate) fn new(with_git: bool) -> Self {
         let base = tempfile::tempdir().unwrap();
-        let mut plugins = vec![permark_plugin_unread::plugin(), plugin()];
+        // the properties card is on, as in the app: the front matter is no block of the page
+        let mut plugins = vec![
+            permark_plugin_unread::plugin(),
+            permark_plugin_frontmatter_card::plugin(),
+            plugin(),
+        ];
         if with_git {
             plugins.push(permark_plugin_git::plugin());
         }
@@ -1188,7 +1193,7 @@ fn old_text(view: &Value) -> String {
 }
 
 #[test]
-fn bringing_back_a_version_does_not_forget_what_was_last_read() {
+fn bringing_back_a_version_counts_as_read_and_so_does_its_undo() {
     let mut h = Harness::new(true);
     let repo = init_repo(&h);
     let (first, last) = three_versions(&h, &repo, "r.md");
@@ -1205,8 +1210,9 @@ fn bringing_back_a_version_does_not_forget_what_was_last_read() {
         json!({"path": "r.md", "hash": h.hash("r.md")}),
     )
     .unwrap();
-    let read = |h: &Harness| h.review("open", json!({"path": "r.md", "basis": "read"}));
-    let before = read(&h).unwrap();
+    let before = h
+        .review("open", json!({"path": "r.md", "basis": "read"}))
+        .unwrap();
     assert_eq!(before["count"], 1);
     assert!(old_text(&before).contains("Second paragraph."), "{before}");
     // the person looks at the first version and brings it back
@@ -1222,27 +1228,70 @@ fn bringing_back_a_version_does_not_forget_what_was_last_read() {
         .unwrap();
     assert_eq!(done["count"], 0);
     assert_eq!(h.read("r.md"), BASE_DOC.as_bytes());
-    // what was last read is still the text from before the agent's change: against it, the version differs in the
-    // two paragraphs the commits after it changed, and the agent's paragraph is the one read
-    // (asked at once, and again when the watch has reported the write)
+    // the person's own choice is no news to the person: nothing is offered (asked at once, and again when the watch
+    // has reported the write)
+    let same = json!({"state": {"state": "same"}, "basis": "read"});
+    let read_status = |h: &Harness| h.review("status", json!({"path": "r.md", "basis": "read"}));
     for (moment, wait) in [("at once", 0), ("after the watch", 500)] {
         std::thread::sleep(Duration::from_millis(wait));
-        let status = h
-            .review("status", json!({"path": "r.md", "basis": "read"}))
-            .unwrap();
-        assert_eq!(
-            status,
-            json!({"state": {"state": "changes", "count": 2}, "basis": "read"}),
-            "{moment}"
-        );
-        let after = read(&h).unwrap();
-        let old = old_text(&after);
-        assert!(
-            old.contains("1st paragraph.") && old.contains("3rd paragraph."),
-            "{moment}: {after}"
-        );
-        assert!(!old.contains("2nd paragraph."), "{moment}: {after}");
+        assert_eq!(read_status(&h).unwrap(), same, "{moment}");
     }
+    // Undo puts the text back and the review of the version with it; that write is the person's too: once the
+    // review is let go, nothing is offered either
+    let back = h
+        .review("undo", json!({"path": "r.md", "basis": version}))
+        .unwrap();
+    assert_eq!(h.read("r.md"), agents.as_bytes());
+    assert_eq!(back["count"], view["count"], "{back}");
+    h.review("release", json!({"path": "r.md"})).unwrap();
+    for (moment, wait) in [("at once", 0), ("after the watch", 500)] {
+        std::thread::sleep(Duration::from_millis(wait));
+        assert_eq!(read_status(&h).unwrap(), same, "undone, {moment}");
+    }
+}
+
+#[test]
+fn bringing_back_a_version_brings_back_its_front_matter_too() {
+    let mut h = Harness::new(true);
+    let repo = init_repo(&h);
+    let old = format!(
+        "---
+title: Plan
+date: 2026-01-01
+---
+{BASE_DOC}"
+    );
+    h.write("fm.md", &old);
+    let first = commit(&repo, "first", T0);
+    let now = format!(
+        "---
+title: Plan
+date: 2026-02-01
+---
+{}",
+        BASE_DOC.replace("First", "1st")
+    );
+    h.write("fm.md", &now);
+    commit(&repo, "second", T0 + 60);
+    h.open();
+    wait_git(&h);
+    let version = json!({"version": first});
+    let view = h
+        .review("open", json!({"path": "fm.md", "basis": version}))
+        .unwrap();
+    // the card shows the front matter: the review shows the one passage that changed
+    assert_eq!(view["count"], 1, "{view}");
+    h.review(
+        "revertAll",
+        json!({"path": "fm.md", "hash": view["hash"], "basis": version}),
+    )
+    .unwrap();
+    // the whole text of the version, its front matter included
+    assert_eq!(
+        String::from_utf8(h.read("fm.md")).unwrap(),
+        old,
+        "the file is the version"
+    );
 }
 
 #[test]
