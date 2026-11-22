@@ -13,7 +13,7 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
 
 use super::own::OwnWrites;
 use super::reconcile::{reconcile, Env, Pending};
-use super::sigs::{sig_of, SigStore};
+use super::sigs::{sig_of, stat_sig, SigStore, HASH_LIMIT};
 use super::types::{FsBatch, BULK_CHANGES};
 use super::wsl::is_wsl;
 use super::{LiveStatus, StatusHook, WatchHub};
@@ -412,9 +412,10 @@ impl Watcher {
                     std::fs::symlink_metadata(path),
                 ) {
                     let (key, sigs) = (key_of(vp.as_str()), &self.shared.sigs);
+                    let held = sigs.get(&key);
                     // with live updates what the watch holds for the path stays: the file is read only for a path
                     // it knows nothing of
-                    if polling || sigs.get(&key).is_none() {
+                    if polling || held.is_none() {
                         match sig_of(path, &meta) {
                             // nothing but the polls tells of the file: what the window read is what is known, and
                             // the first poll must not report a change that is none
@@ -423,6 +424,18 @@ impl Watcher {
                             // told (a new file the app made and shows at once is still to be news)
                             Some(sig) => sigs.note_read(key, vp.as_str(), sig),
                             None => {}
+                        }
+                    } else if held.is_some_and(|s| s.hash == 0)
+                        && meta.is_file()
+                        && meta.len() <= HASH_LIMIT
+                    {
+                        // a new big file the watch left unread: shown now, so read once, or every touch that
+                        // leaves its bytes would be news. Taken only if nothing changed it while it was read
+                        if let Some(sig) = sig_of(path, &meta) {
+                            let stat = (sig.len, sig.mtime_ms);
+                            if std::fs::symlink_metadata(path).is_ok_and(|m| stat_sig(&m) == stat) {
+                                sigs.fill_hash(&key, stat, sig.hash);
+                            }
                         }
                     }
                 }

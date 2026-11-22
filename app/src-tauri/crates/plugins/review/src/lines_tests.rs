@@ -269,6 +269,28 @@ fn the_persons_own_save_is_not_news_to_the_person() {
 }
 
 #[test]
+fn the_persons_own_save_is_no_news_before_the_person_looks_again() {
+    let mut h = Harness::new(false);
+    h.write("app.properties", "a=1\nb=2\n");
+    h.open();
+    look(&h, "app.properties");
+    // the page reloads right after a save and asks at once, long before the next look
+    h.write("app.properties", "a=1\nb=3\n");
+    h.core
+        .as_ref()
+        .unwrap()
+        .documents()
+        .saved("w", "app.properties", &h.hash("app.properties"));
+    assert_eq!(state(&h, "app.properties"), "same");
+    // another program's change after the save is news, and only that change
+    h.write("app.properties", "a=0\nb=3\n");
+    assert_eq!(h.state("app.properties")["count"], 1);
+    let view = open(&h, "app.properties");
+    assert_eq!(view["changes"][0]["old"], json!(["a=1"]));
+    assert_eq!(view["changes"].as_array().map(Vec::len), Some(1));
+}
+
+#[test]
 fn what_was_looked_at_is_remembered_between_sessions() {
     let mut h = Harness::new(false);
     h.write("p.rs", CODE);
@@ -555,4 +577,40 @@ fn an_earlier_version_is_a_basis_for_code_too() {
             .unwrap(),
         json!({"state": {"state": "noBasis"}, "basis": nowhere, "gap": "missing"})
     );
+}
+
+#[test]
+fn bringing_back_a_version_of_code_counts_as_seen_and_so_does_its_undo() {
+    let mut h = Harness::new(true);
+    let repo = init_repo(&h);
+    h.write("s.rs", CODE);
+    let first = commit(&repo, "first", T0);
+    let last = CODE.replace("\"b\"", "\"B\"");
+    h.write("s.rs", &last);
+    commit(&repo, "second", T0 + 60);
+    h.open();
+    wait_git(&h);
+    look(&h, "s.rs");
+    let version = json!({"version": first});
+    let view = h
+        .review("open", json!({"path": "s.rs", "basis": version}))
+        .unwrap();
+    h.review(
+        "revertAll",
+        json!({"path": "s.rs", "hash": view["hash"], "basis": version}),
+    )
+    .unwrap();
+    assert_eq!(h.read("s.rs"), CODE.as_bytes());
+    // the window looks at what the person brought back: no news to the person
+    look(&h, "s.rs");
+    assert_eq!(state(&h, "s.rs"), "same");
+    // Undo brings the review of the version back; once it is let go, nothing is news either
+    let back = h
+        .review("undo", json!({"path": "s.rs", "basis": version}))
+        .unwrap();
+    assert_eq!(back["count"], 1);
+    assert_eq!(h.read("s.rs"), last.as_bytes());
+    look(&h, "s.rs");
+    h.review("release", json!({"path": "s.rs"})).unwrap();
+    assert_eq!(state(&h, "s.rs"), "same");
 }

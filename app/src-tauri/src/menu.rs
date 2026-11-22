@@ -159,17 +159,30 @@ pub fn on_event(handle: &AppHandle, event: &MenuEvent) {
     if *event.id() != QUIT {
         return;
     }
-    let closing: Vec<String> = handle
-        .windows()
-        .into_keys()
-        .filter(|label| !crate::print::is_sheet(label))
-        .filter(|label| crate::request_close(handle, label))
-        .collect();
+    let closing = quit_plan(
+        handle.windows().into_keys(),
+        crate::print::is_sheet,
+        |label| crate::request_close(handle, label),
+    );
     for label in closing {
         if let Some(window) = handle.get_window(&label) {
             let _ = window.destroy();
         }
     }
+}
+
+/// The windows Quit closes: each one of `labels` but a print sheet is asked (`ask`), every one even after a no (each
+/// answers for its own unsaved edits); only those that agreed are returned.
+fn quit_plan(
+    labels: impl IntoIterator<Item = String>,
+    is_sheet: impl Fn(&str) -> bool,
+    mut ask: impl FnMut(&str) -> bool,
+) -> Vec<String> {
+    labels
+        .into_iter()
+        .filter(|label| !is_sheet(label))
+        .filter(|label| ask(label))
+        .collect()
 }
 
 #[cfg(test)]
@@ -217,6 +230,26 @@ mod tests {
         for entry in [Undo, Redo, Cut, Copy, Paste, SelectAll] {
             assert!(edit.entries.contains(&entry), "{entry:?}");
         }
+    }
+
+    #[test]
+    fn quit_asks_every_work_window_even_after_a_no_and_closes_only_the_agreeing_ones() {
+        let labels = ["main", "export-1", "w2", "w3"].map(String::from);
+        let mut asked = Vec::new();
+        let closing = quit_plan(
+            labels,
+            |label| label.starts_with("export-"),
+            |label| {
+                asked.push(label.to_owned());
+                label != "main"
+            },
+        );
+        // the first window's no stops no other question; a print sheet is never asked
+        assert_eq!(asked, ["main", "w2", "w3"]);
+        assert_eq!(closing, ["w2", "w3"]);
+        // nobody agrees -> nothing closes
+        let none = quit_plan(["a".to_owned(), "b".to_owned()], |_| false, |_| false);
+        assert_eq!(none, Vec::<String>::new());
     }
 
     #[test]

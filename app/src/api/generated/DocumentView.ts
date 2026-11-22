@@ -21,4 +21,8 @@ hash: string | null, size: number, mtimeMs: number, editable: Editability,
 /**
  * `utf16 | lossy | deepNesting`.
  */
-notes: Array<string>, };
+notes: Array<string>, 
+/**
+ * The system's default program may be asked to open the file (never a script, program or macro carrier).
+ */
+opensOutside: boolean, };

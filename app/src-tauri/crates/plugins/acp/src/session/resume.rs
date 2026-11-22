@@ -10,10 +10,8 @@
 //! - what the agent names (the id, the title) is bounded: a title is cut and loses control | bidi characters (it
 //!   labels a button), an id too long to be one is never kept.
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use agent_client_protocol_schema::v1::{AgentCapabilities, SessionId};
-use permark_core::fsx;
+use permark_core::fsx::{self, now_ms};
 use permark_core::settings::is_unsafe_char;
 use permark_core::state::{Loaded, StateData};
 use serde::{Deserialize, Serialize};
@@ -108,12 +106,6 @@ pub(super) fn way_of(caps: &AgentCapabilities) -> Option<ContinueWay> {
     } else {
         None
     }
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 impl Core {

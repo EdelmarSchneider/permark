@@ -10,6 +10,11 @@ export type CommentAside = {
  */
 id: string, 
 /**
+ * The included project's folder, relative to the opened folder (`/` separators); empty for the opened folder's
+ * comments. Shown as it is, so the person can tell which project's comments these are.
+ */
+folder: string, 
+/**
  * How many of them the file lacks now: what a restore adds.
  */
 count: number, 

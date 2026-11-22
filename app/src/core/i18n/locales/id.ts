@@ -948,6 +948,8 @@ export default {
   "since.nothing": "Tidak ada yang berubah sejak {when}.",
   "review.offer.one": "Berubah sejak terakhir Anda baca · {n} perubahan",
   "review.offer.other": "Berubah sejak terakhir Anda baca · {n} perubahan",
+  "review.offerCommit.one": "Berubah sejak commit terakhir · {n} perubahan",
+  "review.offerCommit.other": "Berubah sejak commit terakhir · {n} perubahan",
   "review.review": "Tinjau",
   "review.reviewing.one": "Meninjau {n} perubahan",
   "review.reviewing.other": "Meninjau {n} perubahan",
@@ -972,6 +974,7 @@ export default {
   "review.change": "Perubahan {i} dari {n}, {kind}",
   "review.keptAll": "Semua perubahan dipertahankan",
   "review.revertedAll": "Semua perubahan di {name} dikembalikan",
+  "review.endedMixed": "Sebagian perubahan di {name} dipertahankan, sebagian lagi dikembalikan",
   "review.undo": "Batalkan",
   "review.undoStale": "Tidak dapat dibatalkan: {name} telah berubah sejak itu.",
   "review.allDone": "Semua perubahan telah ditinjau",
@@ -1032,6 +1035,10 @@ export default {
   "git.why.tooLarge": "Jawaban Git terlalu panjang untuk dibaca.",
   "git.why.spawn": "Git tidak dapat dijalankan.",
   "git.why.parse": "Jawaban Git tidak dapat dipahami.",
+  "git.why.notLocal":
+    "Folder git repositori ini mengarah ke luar komputer ini atau melewati tautan, jadi PerMark tidak membukanya.",
+  "git.why.noGit": "Folder ini tidak memiliki .git yang mengarah ke repositori.",
+  "git.why.stopped": "Git dihentikan sebelum menjawab.",
   "git.why.failed": "Detail: {detail}",
   "git.errorHint":
     "Buka pengaturan untuk memilih git lain (git bawaan tidak memerlukan kepercayaan).",
@@ -1482,7 +1489,7 @@ export default {
   "agent.title": "Koneksi agen",
   "agent.switch": "Bagikan folder ini dengan agen",
   "agent.switchHint":
-    "Agen yang Anda hubungkan (alat AI yang mendukung MCP, seperti Claude Code atau Cursor) dapat melihat apa yang sedang Anda lihat dan apa yang berubah, mencari dan membaca file folder ini, membaca komentar Anda dan catatan yang Anda bagikan, serta menunjukkan suatu tempat kepada Anda. Hanya di komputer ini. File yang tercantum di .aiignore tetap di luar jangkauan agen. Agen yang terhubung dengan cara ini hanya membaca dan tidak pernah mengedit file melalui PerMark; agar agen dapat mengusulkan perubahan, gunakan Asisten. Ini hanya mencakup apa yang didapat agen dari PerMark: agen tetap dapat membuka file di komputer Anda secara langsung.",
+    "Agen yang Anda hubungkan (alat AI yang mendukung MCP, seperti Claude Code atau Cursor) dapat melihat apa yang sedang Anda lihat dan apa yang berubah, mencari dan membaca file folder ini, membaca komentar Anda dan catatan yang Anda bagikan, serta menunjukkan suatu tempat kepada Anda. Hanya di komputer ini. File yang tercantum di .aiignore tetap di luar jangkauan agen. Agen yang terhubung dengan cara ini tidak pernah mengedit file melalui PerMark: agen membaca, dan hanya menandai komentar Anda selesai jika Anda mengizinkannya. Agar agen dapat mengusulkan perubahan, gunakan Asisten. Ini hanya mencakup apa yang didapat agen dari PerMark: agen tetap dapat membuka file di komputer Anda secara langsung.",
   "agent.folderReplaced":
     "Folder ini berubah sejak Anda menghubungkannya. Aktifkan koneksi lagi untuk mengizinkan agen di sini.",
   "agent.groups": "Yang boleh dilakukan agen",
@@ -1729,6 +1736,8 @@ export default {
     'Pilihan Anda untuk setiap plugin di folder ini. "Nonaktif untuk semua orang" disimpan di .permark/config.toml dan berlaku bagi siapa pun yang membuka folder ini.',
   "plugins.removeConfirm": "Hapus data {name}?",
   "plugins.removeConfirmBytes": "Hapus data {name}? Ini akan mengosongkan {size}.",
+  "plugins.removeScope":
+    "Folder yang menyimpan datanya di folder .permark miliknya sendiri hanya dibersihkan selagi folder itu terbuka.",
   "plugins.removeData": "Hapus data",
   "plugins.removeYes": "Hapus",
   "plugins.turnOn": "Aktifkan {name}",
@@ -1753,6 +1762,8 @@ export default {
   "project.initConfig": "Pengaturan yang dibagikan proyek ini dengan timnya.",
   "project.initConfirm": "Inisialisasi PerMark",
   "project.initFailed": "Tidak dapat menginisialisasi PerMark di {path}: {message}",
+  "project.initHeld":
+    "{path}/.permark/local sudah berisi data PerMark dari tempat lain; tidak ada yang diubah.",
   "project.initIgnore": "Menjaga folder pribadi tetap di luar git.",
   "project.initIntro": "PerMark membuat folder .permark di sini yang berisi:",
   "project.initLocal":
@@ -1794,6 +1805,18 @@ export default {
   "project.sharedFileHint": "Dibagikan dengan siapa pun yang membuka folder ini.",
   "project.sharedFileUnreadable":
     "PerMark tidak dapat membaca file ini di baris {line}, jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
+  "project.sharedLocked":
+    "PerMark tidak dapat membaca .permark/config.toml, jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
+  "project.sharedLocked.line":
+    "PerMark tidak dapat membaca .permark/config.toml di baris {line}, jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
+  "project.sharedLocked.notText":
+    "PerMark tidak dapat membaca .permark/config.toml (isinya bukan teks biasa), jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
+  "project.sharedLocked.tooLarge":
+    "PerMark tidak dapat membaca .permark/config.toml (ukurannya terlalu besar), jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
+  "project.sharedLocked.locked":
+    "PerMark tidak dapat membaca .permark/config.toml (sedang digunakan program lain), jadi pengaturan bertanda Semua orang tidak dapat diubah sampai file diperbaiki.",
+  "project.privateTracked":
+    "Agen tidak menerima komentar maupun aktivitas folder ini: repositori git-nya melacak folder pribadi PerMark (.permark/local), atau PerMark tidak dapat memeriksanya.",
   "settings.all": "Semua pengaturan",
   "settings.editorPreview": "Contoh:",
   "settings.linkUpdateHint":
@@ -2190,7 +2213,7 @@ export default {
     "Token dokumen, pilihan, atau bagian menurut tokenizer pilihan Anda; tepat jika tokenizer-nya publik, perkiraan (dan ditandai) jika tidak.",
   "plugin.local-ai.name": "AI lokal",
   "plugin.local-ai.about":
-    "Model AI kecil yang berjalan di komputer ini, secara offline, untuk membantu PerMark mengoreksi, menerjemahkan, dan mencari berdasarkan makna. Tidak ada yang diunduh sampai Anda memintanya.",
+    "Model AI kecil yang berjalan di komputer ini untuk membantu PerMark mengoreksi, menerjemahkan, dan mencari berdasarkan makna. Tidak ada yang diunduh sampai Anda memintanya.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} baris",
   "config.table.rows.other": "{n} baris",
@@ -2610,7 +2633,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "AI lokal",
   "localAi.intro":
-    "Model AI kecil yang berjalan di komputer ini, secara offline. Tidak ada yang diunduh sampai Anda memintanya.",
+    "Model AI kecil yang berjalan di komputer ini. Tidak ada yang diunduh sampai Anda memintanya.",
   "localAi.command": "Buka pengaturan AI lokal",
   "localAi.loadFailed": "Tidak dapat membaca pengaturan AI lokal.",
   "localAi.retry": "Coba lagi",
@@ -2682,8 +2705,8 @@ export default {
   "localAi.models.details.size": "Ukuran unduhan",
   "localAi.models.details.restriction": "Siapa yang boleh menggunakannya",
   "localAi.models.comingSoon": "Segera hadir",
-  "localAi.models.needs.newer": "Memerlukan versi mesin AI yang lebih baru.",
-  "localAi.models.needs.missing": "Memerlukan mesin AI yang belum dimiliki PerMark.",
+  "localAi.models.needs.newer": "Model ini memerlukan versi PerMark yang lebih baru.",
+  "localAi.models.needs.missing": "PerMark belum dapat menjalankan jenis model ini.",
   "localAi.dl.waiting": "Menunggu…",
   "localAi.dl.cancelLabel": "Batalkan pengunduhan {name}",
   "localAi.dl.progress": "{done} dari {total}",

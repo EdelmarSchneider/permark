@@ -37,8 +37,10 @@
     template: string;
     hasOutline: boolean;
     onFind: () => void;
-    /** Opens the system program: only for files of a project. */
+    /** Shows the file in the system's file manager: only for files of a project. */
     canOpenSystem: boolean;
+    /** Opens the file with the system's default program (never a script, program or macro carrier). */
+    opensOutside: boolean;
     /** The mode switch (View | Edit | Source) and Save, when the document can be edited; `true` = icons only. */
     modes?: Snippet<[boolean]>;
     /** Px the edit controls add to the row now (Save, diagram toggle): the row folds that much sooner. */
@@ -52,6 +54,7 @@
     hasOutline,
     onFind,
     canOpenSystem,
+    opensOutside,
     modes,
     extra = 0,
   }: Props = $props();
@@ -119,7 +122,8 @@
   const saved = $derived.by((): string | null => {
     if (savedMs === null) return null;
     const seconds = Math.max(0, Math.round((now - savedMs) / 1000));
-    if (seconds < 20) return t("doc.savedNow");
+    // under a minute the minute count rounds to 0 ("0m ago"): the first minute reads as just now
+    if (seconds < 60) return t("doc.savedNow");
     const rtf = compactRelativeFormat(formatLocale());
     const [value, unit]: [number, Intl.RelativeTimeFormatUnit] =
       seconds < 3600
@@ -217,19 +221,19 @@
       });
     }
     if (canOpenSystem) {
-      entries.push(
-        { kind: "separator" },
-        {
+      entries.push({ kind: "separator" });
+      if (opensOutside) {
+        entries.push({
           kind: "item",
           label: t("menu.openDefaultApp"),
           run: () => void documents.openExternal(opened, "defaultApp"),
-        },
-        {
-          kind: "item",
-          label: t("menu.showInFileManager"),
-          run: () => void documents.openExternal(opened, "reveal"),
-        },
-      );
+        });
+      }
+      entries.push({
+        kind: "item",
+        label: t("menu.showInFileManager"),
+        run: () => void documents.openExternal(opened, "reveal"),
+      });
     }
     popup = below(event.currentTarget, entries);
   }

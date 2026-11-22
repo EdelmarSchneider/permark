@@ -515,11 +515,41 @@ describe("other kinds of file", () => {
   it("says why a file has no page", async () => {
     await show("notes/todo.txt");
     await until(() => target.querySelector(".text") !== null, "text");
-    mock.probe.project.add("blob.bin", "x");
-    await show("blob.bin");
+    mock.probe.project.add("report.pdf", "x");
+    await show("report.pdf");
     await until(() => target.querySelector(".notice") !== null, "notice");
     expect(target.querySelector(".notice .title")?.textContent).toContain("can't be shown");
-    expect(target.querySelector(".notice button")).not.toBeNull();
+    // a file the system's default program may open: the notice offers it
+    expect(target.querySelector(".notice button")?.textContent).toContain("Open with default app");
+  });
+
+  it("never offers the system program for a script or a program; the file manager still shows it", async () => {
+    mock.probe.project.add("tool.py", "print('hi')\n");
+    mock.probe.project.add("setup.exe", "MZ");
+    const moreMenu = (): string[] => {
+      target.querySelector<HTMLButtonElement>("button[aria-label='More actions']")?.click();
+      flushSync();
+      const items = [...document.querySelectorAll<HTMLElement>("[role=menuitem]")].map(
+        (i) => i.textContent?.trim() ?? "",
+      );
+      document
+        .querySelector("[role=menu]")
+        ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      flushSync();
+      return items;
+    };
+    await show("tool.py");
+    await until(() => documents.view?.path === "tool.py", "the script");
+    expect(moreMenu()).not.toContain("Open with default app");
+    expect(moreMenu()).toContain("Show in file manager");
+    await show("setup.exe");
+    await until(() => target.querySelector(".notice") !== null, "notice");
+    expect(target.querySelector(".notice button")).toBeNull();
+    expect(moreMenu()).not.toContain("Open with default app");
+    // a document the system's program may open keeps the offer
+    await show("README.md");
+    await until(() => documents.view?.path === "README.md", "the document");
+    expect(moreMenu()).toContain("Open with default app");
   });
 
   it("tells a document that cannot be opened", async () => {
@@ -732,6 +762,94 @@ describe("editing", () => {
     expect(panel?.textContent).toContain("mermaid, plantuml or dot");
     toggle?.click();
     await until(() => target.querySelector(".source .preview") === null, "panel off");
+  });
+
+  it("a save that failed or met a change on disk shows no saved time beside its bar", async () => {
+    await import("../editing/visual/jsdomShims");
+    const savedTime = (): string | null =>
+      target.querySelector(".doc-header .saved")?.textContent ?? null;
+    await show("docs/guide.md");
+    await until(() => modeButton("Source") !== undefined, "mode switch");
+    modeButton("Source")?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    expect(editing.apply([{ from: 0, to: 0, insert: "Typed. ", expect: "" }])).toBe(true);
+    await until(() => editing.state.s === "dirty", "unsaved");
+    // editing with nothing wrong: the file's time stays
+    expect(savedTime()).toMatch(/saved/);
+    mock.probe.edit.failures.push({
+      command: "edit_save",
+      path: "docs/guide.md",
+      kind: "locked",
+      detail: null,
+    });
+    editing.save();
+    await until(() => editing.state.s === "saveError", "save failed");
+    expect(savedTime()).toBeNull();
+    // the file changed on disk meanwhile: the next try meets a conflict, still no time
+    mock.probe.edit.failures.length = 0;
+    mock.probe.edit.files.set("docs/guide.md", "Someone else's words.\n");
+    editing.save();
+    await until(() => editing.state.s === "conflict", "conflict");
+    expect(savedTime()).toBeNull();
+  });
+
+  it("a loose file a crash left text for gets no editor from the chosen mode until the person chooses in its bar", async () => {
+    await import("../editing/visual/jsdomShims");
+    const { notes } = await import("../../plugins/notes/store.svelte");
+    const { chooseMode } = await import("../editing/choose");
+    stopFollowing?.();
+    if (component) await unmount(component);
+    const opened = await mock.openNotes("thisTab");
+    if (
+      !opened.ok ||
+      opened.value.outcome !== "opened" ||
+      opened.value.view.state !== "showing" ||
+      opened.value.view.workspace.kind !== "notes"
+    ) {
+      throw new Error("no notes");
+    }
+    const space = opened.value.view.workspace;
+    const crashed = mock.probe.plugins.notes.loose({
+      name: "draft.md",
+      folder: "C:/Downloads",
+      text: "# On disk\n",
+      state: "unsaved",
+    });
+    const off = notes.attach(space);
+    try {
+      component = mount(DocumentArea, {
+        target,
+        props: {
+          workspace: space,
+          get document() {
+            return notes.current;
+          },
+          store,
+        },
+      });
+      flushSync();
+      await until(() => notes.list.status === "ready", "the list");
+      // the person works in Source in this window: the next document would open in it
+      editing.chosenMode = "source";
+      const enter = vi.spyOn(editing, "enter");
+      await notes.select(crashed);
+      await until(() => documents.view?.path === crashed, "the file shown");
+      await new Promise((done) => setTimeout(done, 50));
+      flushSync();
+      expect(enter).not.toHaveBeenCalled();
+      expect(editing.path).not.toBe(crashed);
+      // nor from the mode switch or its keys
+      expect(modeButton("Source")?.disabled).toBe(true);
+      chooseMode("source");
+      expect(enter).not.toHaveBeenCalled();
+      // Keep mine writes the text: the file is the person's to edit again
+      await notes.keepMine(crashed);
+      await until(() => editing.path === crashed && editing.mode !== "view", "the editor");
+      expect(modeButton("Source")?.disabled).toBe(false);
+      enter.mockRestore();
+    } finally {
+      off();
+    }
   });
 
   it("Source shows the text editor; a text file has Source only", async () => {

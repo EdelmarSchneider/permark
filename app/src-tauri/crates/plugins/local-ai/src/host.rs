@@ -212,6 +212,14 @@ impl<'a> EngineWait<'a> {
         })
     }
 
+    /// Queues the worker unit again, under the count lock as [`EngineWait::join`]: the download this open joined
+    /// stopped for the last waiter before it, whose cancel came before this open was counted (another open doing the
+    /// same first: it is queued already). `false`: the downloads shut down, no news comes.
+    fn rejoin(&self) -> Result<bool, FilesError> {
+        let _count = self.host.waiters();
+        self.host.files.enqueue()
+    }
+
     /// Leaves cancelled; the last waiter out stops the download (part kept for resume).
     fn cancel(mut self) {
         self.cancelled = true;
@@ -348,6 +356,7 @@ impl ModelHost {
         // listening before the enqueue: an install finished meanwhile still answers `Done`
         let updates = self.news.open();
         let waiting = EngineWait::join(self)?;
+        let mut rejoined = false;
         loop {
             if cancel.is_cancelled() {
                 waiting.cancel();
@@ -363,6 +372,15 @@ impl ModelHost {
                 Ok(Update::Done) => {
                     self.files.sweep_earlier();
                     return Ok(());
+                }
+                // not this open's cancel: started again for it, once
+                Ok(Update::Failed(DownloadError::Cancelled))
+                    if !rejoined && !cancel.is_cancelled() =>
+                {
+                    rejoined = true;
+                    if !waiting.rejoin()? {
+                        return Err(DownloadError::Cancelled.into());
+                    }
                 }
                 Ok(Update::Failed(error)) => return Err(error.into()),
                 Err(RecvTimeoutError::Timeout) => {}

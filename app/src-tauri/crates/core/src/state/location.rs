@@ -7,7 +7,6 @@
 
 use std::fs::Metadata;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -17,7 +16,7 @@ use super::{
     is_profile_only, private, AppDirs, Parsed, RawFile, StateData, StateFile, StateLocation,
     StateStore, PROFILE_PLUGINS, SHARED_FILES,
 };
-use crate::fsx::FolderIdentity;
+use crate::fsx::{now_ms, FolderIdentity};
 use crate::paths::Root;
 
 /// Name of the row file in the project's profile folder.
@@ -25,6 +24,9 @@ pub const FILE: &str = "location.json";
 /// `detail` of the `conflict` refusal of an Initialize while the profile and the project's `local/` both hold
 /// PerMark data: nothing is carried, so neither copy hides the other.
 pub const BOTH_HOLD_DATA: &str = "bothHoldData";
+/// `detail` of the `conflict` refusal of Keep while the folder's data is in its own `.permark/local`: the offer it
+/// answered is gone, nothing is wrong with the settings.
+pub const DATA_IN_PROJECT: &str = "dataInProject";
 /// This computer's own folder in a state folder.
 const MACHINE: &str = super::Machine::DIR;
 /// Most rows kept: one per folder that stood at the path (a roaming profile, a dual boot, a clone made again), the
@@ -461,14 +463,6 @@ fn holds(dir: &Path, unreadable: bool, counts: impl Fn(&str, &Path) -> bool) -> 
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
         Err(_) => unreadable,
     }
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| {
-            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
-        })
 }
 
 #[cfg(test)]

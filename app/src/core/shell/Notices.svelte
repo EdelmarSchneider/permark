@@ -86,6 +86,8 @@
         return t("settings.notSaved", { message: apiErrorText(notice.error) });
       case "initFailed":
         return t("project.initFailed", { path: notice.path, message: apiErrorText(notice.error) });
+      case "initHeld":
+        return t("project.initHeld", { path: notice.path });
       case "fileOpFailed":
         return apiErrorText(notice.error);
       case "note":
@@ -137,7 +139,12 @@
       <span class="text">{text(notice)}</span>
       {#if notice.kind === "action" || notice.kind === "timed"}
         {#each notice.actions as action (action.label)}
-          <button type="button" class="btn btn--sm" onclick={() => void act(notice.id, action)}>
+          <button
+            type="button"
+            class="btn btn--sm"
+            aria-keyshortcuts={action.keys}
+            onclick={() => void act(notice.id, action)}
+          >
             {action.label}
           </button>
         {/each}

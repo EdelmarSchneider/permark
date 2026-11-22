@@ -296,11 +296,12 @@ fn a_map_not_ready_hides_everything() {
         &root, "a.md", "# a
 ",
     );
-    let guard = permark_core::projects::agent_view::Guard::new(&Root::open(&root).unwrap(), &[])
-        .with_projects(
-            Arc::new(permark_core::projects::ProjectMap::default()),
-            None,
-        );
+    let guard =
+        permark_core::projects::agent_view::Guard::for_tests(&Root::open(&root).unwrap(), &[])
+            .with_projects(
+                Arc::new(permark_core::projects::ProjectMap::default()),
+                None,
+            );
     assert!(guard.hidden("a.md", false));
     assert!(matches!(
         crate::guard::file(&guard, "a.md"),

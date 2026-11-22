@@ -159,7 +159,7 @@ export function aheadBehindText(ahead: number, behind: number): string {
 }
 
 /** Why git could not answer, in words people know: a failure keeps git's own words (dubious ownership -> "doesn't
- *  trust this folder's owner"); "" when there are none. */
+ *  trust this folder's owner"); "" when there are none. A repository PerMark does not open says why in its own words. */
 export function gitErrorText(code: GitErrorCode, reason: string): string {
   switch (code) {
     case "timeout":
@@ -170,6 +170,13 @@ export function gitErrorText(code: GitErrorCode, reason: string): string {
       return t("git.why.spawn");
     case "parse":
       return t("git.why.parse");
+    // PerMark's own reasons: no git words come with them
+    case "notLocal":
+      return t("git.why.notLocal");
+    case "noGit":
+      return t("git.why.noGit");
+    case "stopped":
+      return t("git.why.stopped");
     case "failed": {
       if (/dubious ownership/i.test(reason)) return t("git.errorOwnership");
       const detail = reason.trim();

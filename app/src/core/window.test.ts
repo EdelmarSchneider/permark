@@ -504,6 +504,46 @@ describe("where a folder's data is kept", () => {
     expect(action(store).text).toBe(t("project.dataMoveHeld"));
   });
 
+  it("Initialize of another folder refused because both places hold data names that folder, not a failure", async () => {
+    const api = createMockApi();
+    const store = await started({
+      ...api,
+      projectInit: () => Promise.resolve(refused("conflict", "bothHoldData")),
+    });
+    await store.openFolder();
+    const nested = `${MOCK_FOLDER}/guides`;
+    expect(await store.initProject(nested)).toBe(false);
+    expect(store.notices).toEqual([expect.objectContaining({ kind: "initHeld", path: nested })]);
+    expect(en["project.initHeld"]).toBe(
+      "{path}/.permark/local already holds PerMark data from elsewhere; nothing was changed.",
+    );
+  });
+
+  it("Keep refused because the data is in the folder already says nothing: the offer it answered is gone", async () => {
+    const api = createMockApi();
+    api.probe.shell.dataOffer(MOCK_FOLDER, "ask");
+    const keepRefused = (detail: string | null): Result<null> => ({
+      ok: false,
+      error: {
+        kind: "backend",
+        command: "project_data_keep",
+        error: { kind: "conflict", subject: `${MOCK_FOLDER}/.permark/local`, detail },
+      },
+    });
+    let detail: string | null = "dataInProject";
+    const store = await started({
+      ...api,
+      projectDataKeep: () => Promise.resolve(keepRefused(detail)),
+    });
+    await store.openFolder();
+    await press(store, t("project.dataKeep"));
+    expect(store.notices).toEqual([]);
+    // any other refusal still says the choice was not kept
+    detail = null;
+    await store.keepData(shown(store));
+    expect(store.notices.map((n) => n.kind)).toEqual(["settingNotSaved"]);
+  });
+
   it("another refusal of Move says why", async () => {
     const api = createMockApi();
     api.probe.shell.dataOffer(MOCK_FOLDER, "ask");

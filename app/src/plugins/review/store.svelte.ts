@@ -34,11 +34,14 @@ import { kindWord } from "./blocks";
 
 export type ReviewUi =
   | { status: "idle" }
-  | { status: "offer"; path: string; count: number }
+  | { status: "offer"; path: string; count: number; since: Choice }
   | { status: "reviewing"; view: ReviewView; at: number };
 
 /** What the person can choose to compare with from now on (the backend remembers it). */
-type Choice = Exclude<Basis, { version: string }>;
+export type Choice = Exclude<Basis, { version: string }>;
+
+/** One keep | revert of a review, as the line that ends it tells (several at once count as one). */
+type Step = "kept" | "reverted";
 
 /** The earlier version a review compares with: its commit and when it was made. */
 export type PickedVersion = { commit: string; atMs: number };
@@ -146,6 +149,8 @@ type Ended = {
   basis: Basis;
   picked: PickedVersion | null;
   undoable: number;
+  /** The steps of the review before the one that ended it: Undo brings the review back with them. */
+  steps: readonly Step[];
   takeBack: () => void;
 };
 
@@ -227,6 +232,9 @@ export class ReviewStore {
   #closed: Closed | null = null;
   /** A review just ended by a revert: the backend still holds that step while "Undo" is offered for it. */
   #ended: Ended | null = null;
+  /** The keeps | reverts of the review on screen, oldest first (an undo takes the last one back): the line that ends
+   *  the review says "all kept" | "all reverted" only when every step was one of them. */
+  #steps: Step[] = [];
   /** The hash of the document shown, as last seen: an open list marks the version that has that text. */
   #shownHash: string | null = null;
   readonly #client: PluginClient;
@@ -472,11 +480,14 @@ export class ReviewStore {
     }
     const status = await this.#client.call("review.status", { path });
     if (seq !== this.#seq) return;
-    if (status.ok && status.value.state.state === "changes") {
+    const since = status.ok ? status.value.basis : null;
+    // the offer names what it compares with: the backend falls back to the last commit for a document never read
+    // (a version is never remembered, so never offered)
+    if (status.ok && status.value.state.state === "changes" && typeof since === "string") {
       this.#held = path;
       // the bar offers them again: "Review again" is no longer what holds them
       if (this.#closed?.path === path) this.#forget();
-      this.state = { status: "offer", path, count: status.value.state.count };
+      this.state = { status: "offer", path, count: status.value.state.count, since };
     } else {
       this.state = { status: "idle" };
     }
@@ -535,6 +546,7 @@ export class ReviewStore {
     this.#held = path;
     this.#review += 1;
     this.undoable = 0;
+    this.#steps = [];
     // the Undo of a review that ended before is not this review's
     this.#withdrawUndo();
   }
@@ -630,14 +642,22 @@ export class ReviewStore {
 
   /** The review of `path` ended with its last change put back: a quiet line says so and offers Undo (the bar that
    *  held Undo is gone). No clock: it waits for the person, for as long as the window stays on the document. */
-  #offerUndo(path: string, basis: Basis, picked: PickedVersion | null, undoable: number): void {
+  #offerUndo(
+    path: string,
+    basis: Basis,
+    picked: PickedVersion | null,
+    undoable: number,
+    steps: readonly Step[],
+  ): void {
     this.#withdrawUndo();
-    const ended: Ended = { path, basis, picked, undoable, takeBack: () => undefined };
+    const ended: Ended = { path, basis, picked, undoable, steps, takeBack: () => undefined };
     this.#ended = ended;
+    const name = path.split("/").at(-1) ?? path;
     ended.takeBack = this.#notice({
-      text:
-        picked === null
-          ? t("review.revertedAll", { name: path.split("/").at(-1) ?? path })
+      text: steps.includes("kept")
+        ? t("review.endedMixed", { name })
+        : picked === null
+          ? t("review.revertedAll", { name })
           : t("review.broughtBack", { when: exactTime(picked.atMs, formatLocale()) }),
       actions: [{ label: t("review.undo"), run: () => void this.#undoEnded(ended) }],
       onGone: (how) => {
@@ -673,6 +693,7 @@ export class ReviewStore {
     this.#seq += 1;
     this.#fresh(path);
     this.undoable = ended.undoable;
+    this.#steps = [...ended.steps];
     if (picked !== null) this.#pick(picked);
     this.#show(result.value, 0);
     this.announce(tn("review.sr.undone", result.value.count));
@@ -770,6 +791,7 @@ export class ReviewStore {
     }
     // two undos sent before the first answer: the count never goes below none
     this.undoable = Math.max(0, this.undoable - 1);
+    this.#steps.pop();
     this.#show(result.value, this.current);
     this.announce(tn("review.sr.undone", result.value.count));
   }
@@ -804,21 +826,27 @@ export class ReviewStore {
     }
     if (single) this.undoable += 1;
     else this.undoable = 1;
+    const step: Step = what === "kept" || what === "keptAll" ? "kept" : "reverted";
+    // the steps before this one: a mix of kept and reverted ends with a line that says so
+    const before = [...this.#steps];
+    this.#steps.push(step);
     const next = result.value;
     if (next.count === 0) {
       this.announce(t("review.allDone"));
       // what the review compared with, before it goes with the review
       const picked = this.#picked;
       const basis: Basis = picked === null ? this.basis : { version: picked.commit };
-      const before = this.undoable - 1;
+      const undoable = this.undoable - 1;
       this.state = { status: "idle" };
       this.#held = null;
       this.#review += 1;
       this.undoable = 0;
+      this.#steps = [];
       this.#over();
       this.#page.repaint();
-      if (what === "keptAll" || what === "kept") this.#say(t("review.keptAll", { name }));
-      else this.#offerUndo(path, basis, picked, before);
+      if (step === "reverted") this.#offerUndo(path, basis, picked, undoable, before);
+      else if (before.includes("reverted")) this.#say(t("review.endedMixed", { name }));
+      else this.#say(t("review.keptAll", { name }));
       return;
     }
     this.#show(next, single ? index : 0);

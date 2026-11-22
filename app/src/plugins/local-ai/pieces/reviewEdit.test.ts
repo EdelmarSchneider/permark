@@ -396,3 +396,80 @@ describe("typing while suggestions are pending, in the Edit-mode editor", () => 
     expect(store.review?.outdated).toBe(1);
   });
 });
+
+describe("a click on a suggestion's mark, in the Edit-mode editor", () => {
+  const TEXT = "Intro line.\n\nThe cat sat on teh mat with the the dog today.\n";
+  const SENT = "The cat sat on teh mat with the the dog today.";
+
+  async function reviewed(): Promise<void> {
+    await reviewOf(TEXT, blocks([1, 1], [3, 3]));
+    answer(SENT, "teh>the; the the> the");
+    finish();
+    expect(pending()).toEqual(["teh>the", " the the> the"]);
+  }
+
+  /** The mark of suggestion `index` on screen. */
+  function mark(index: number): HTMLElement {
+    const found = core.view.dom.querySelector<HTMLElement>(`[data-mark-index="${index}"]`);
+    if (found === null) throw new Error(`no mark ${index}`);
+    return found;
+  }
+
+  /** A click on the mark of suggestion `index`, `offset` chars into its text, as quick as automation makes it: the
+   *  browser has put the caret there, the editor has not read it yet. */
+  function click(index: number, offset: number): void {
+    const text = mark(index).firstChild;
+    if (text === null) throw new Error(`no text in mark ${index}`);
+    document.getSelection()?.collapse(text, offset);
+    mark(index).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  }
+
+  /** What the editor's selection covers (`|` = the caret alone) and the selected text in the page. */
+  function selected(): { editor: string; page: string } {
+    const { from, to, empty } = core.view.state.selection;
+    const editor = empty ? "|" : core.view.state.doc.textBetween(from, to);
+    return { editor, page: document.getSelection()?.toString() ?? "" };
+  }
+
+  it("makes its suggestion current, the caret where the click put it: the one shown before is no longer selected", async () => {
+    await reviewed();
+    core.view.focus();
+    // the doubled word shown (selected) by a step to it
+    store.go(1);
+    expect(selected().editor).toBe(" the the");
+    click(0, 1);
+    expect(store.review?.at).toBe(0);
+    expect(selected()).toEqual({ editor: "|", page: "" });
+    // the caret where the click was: inside the clicked mark
+    const head = core.view.state.selection.head;
+    expect(core.view.state.doc.textBetween(head - 1, head + 2)).toBe("teh");
+  });
+
+  it("only the clicked suggestion's mark looks current; the doubled word is no longer painted", async () => {
+    await reviewed();
+    core.view.focus();
+    store.go(1);
+    click(0, 2);
+    const current = [...core.view.dom.querySelectorAll(".correction-mark--current")];
+    expect(current.map((el) => el.getAttribute("data-mark-index"))).toEqual(["0"]);
+    expect(mark(1).classList.contains("correction-mark--current")).toBe(false);
+    expect(document.getSelection()?.toString()).not.toContain("the the");
+  });
+});
+
+describe("the excerpt of a suggestion, in the Edit-mode editor", () => {
+  it("reads as the editor shows the text: no quote mark, no emphasis marks", async () => {
+    const text = "Intro line.\n\n> This is **very** important and teh text.\n";
+    await reviewOf(text, blocks([1, 1], [3, 3]));
+    answer("This is **very** important and teh text.", "teh>the");
+    finish();
+    const current = store.review?.suggestions[0];
+    if (!current) throw new Error("no suggestion");
+    expect(store.shown(current)).toMatchObject({
+      before: "This is very important and ",
+      after: " text.\n",
+      original: "teh",
+      insert: "the",
+    });
+  });
+});

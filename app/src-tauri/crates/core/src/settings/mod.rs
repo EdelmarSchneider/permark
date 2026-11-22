@@ -22,10 +22,10 @@ pub use characters::{
 };
 pub use installer::installer_language;
 pub use project::{
-    ConfigRead, ConfigUnreadable, ProjectConfig, ProjectConfigFile, ProjectSettingChange,
-    ProjectSettings, TreeConfig, TreeShow,
+    ConfigRead, ConfigUnreadable, ConfigUnreadableWhy, ProjectConfig, ProjectConfigFile,
+    ProjectSettingChange, ProjectSettings, TreeConfig, TreeShow,
 };
-pub use region::system_region;
+pub use region::{system_languages, system_region};
 
 use crate::error::IpcError;
 use crate::fileops::{check_name, NameProblem};
@@ -1597,9 +1597,8 @@ impl SettingsFile {
 /// Whose settings file [`edit_file`] changes: how it is read, and what happens to one that is text but not TOML.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Kept<'a> {
-    /// The person's own file (the profile, which dotfile managers may link elsewhere): read wherever links lead, but a
-    /// write never replaces a link (`Conflict`); not TOML -> moved to `<name>.broken-<ms>`, the change starts a fresh
-    /// one.
+    /// The person's own file (the profile, which dotfile managers may link elsewhere): a link stays a link, the file it
+    /// leads to is read and written; not TOML -> moved to `<name>.broken-<ms>`, the change starts a fresh one.
     Own,
     /// A file shared with whoever opens the folder, below its `permark` folder: every pass reads only a plain file
     /// there, never through a link (one swapped in between two passes would copy an outside file's text into it); not
@@ -1614,6 +1613,18 @@ impl Kept<'_> {
             Self::Own => read_settings_text(path),
             Self::Team { permark } => read_team_file(permark, path),
         }
+    }
+
+    /// Where a change of the file at `path` is read and written: the person's own file that is a link -> the file the
+    /// link leads to (an atomic write replaces the name it renames over, which would turn the link into a plain file);
+    /// else `path` (a dangling link included: its write is refused as something in the way).
+    fn place(self, path: &Path) -> PathBuf {
+        let linked = matches!(self, Self::Own)
+            && std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink());
+        linked
+            .then(|| crate::paths::canonicalize(path).ok())
+            .flatten()
+            .unwrap_or_else(|| path.to_path_buf())
     }
 }
 
@@ -1647,6 +1658,8 @@ fn edit_once(
     kept: Kept<'_>,
     change: &mut impl FnMut(&mut DocumentMut) -> Result<(), SettingsError>,
 ) -> Result<Option<DocumentMut>, SettingsError> {
+    let place = kept.place(path);
+    let path = place.as_path();
     let original = kept.read(path)?;
     // what must still be at the path for the write to land: the bytes read, or nothing
     let mut seen = original.as_deref().map(|text| hash(text.as_bytes()));

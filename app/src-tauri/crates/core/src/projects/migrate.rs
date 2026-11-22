@@ -37,7 +37,7 @@ const UNREAD_MAX_BYTES: u64 = 32 * 1024 * 1024;
 /// Most bytes `comments.json` is read with (the comments plugin's own cap).
 const COMMENTS_MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// The ledger of copied entries (profile of the opened folder).
-pub const LEDGER_FILE: &str = "projects-copied.json";
+pub use crate::state::LEDGER_FILE;
 
 /// What a copy did (tests, the report).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]

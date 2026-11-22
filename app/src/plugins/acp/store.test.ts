@@ -441,6 +441,29 @@ describe("continuing the last conversation", () => {
     ).toEqual(["Make it shorter.", "Done.", "Thanks."]);
   });
 
+  it("replies replayed while the agent starts are marked replayed; a turn's replies are not", async () => {
+    const { store } = await setup();
+    await store.continueLast();
+    await until(ready(store));
+    const replies = store.transcript.filter((e) => e.kind === "agent");
+    expect(replies.length).toBeGreaterThan(0);
+    expect(replies.every((e) => e.kind === "agent" && e.replayed)).toBe(true);
+    store.take({ type: "status", state: "working", error: null });
+    store.take({ type: "text", text: "Live." });
+    expect(store.transcript.at(-1)).toEqual(
+      expect.objectContaining({ kind: "agent", text: "Live.", replayed: false }),
+    );
+    // a live reply never joins a replayed one: each keeps how it came
+    store.take({ type: "status", state: "starting", error: null });
+    store.take({ type: "text", text: "**Old**" });
+    store.take({ type: "status", state: "working", error: null });
+    store.take({ type: "text", text: "New" });
+    expect(store.transcript.slice(-2)).toEqual([
+      expect.objectContaining({ kind: "agent", text: "**Old**", replayed: true }),
+      expect.objectContaining({ kind: "agent", text: "New", replayed: false }),
+    ]);
+  });
+
   it("after a new conversation the one just left is offered; on the same copy nothing is said lost", async () => {
     const { store } = await setup();
     store.draft = "Shorten the guide";

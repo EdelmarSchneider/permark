@@ -5,15 +5,16 @@
 import ArrowLeftRight from "@lucide/svelte/icons/arrow-left-right";
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { documents } from "../../core/doc/document.svelte";
-import { pageSelection } from "../../core/doc/selection";
+import { selectionForCommand } from "../../core/doc/selection";
 import { definePlugin } from "../../core/plugins/registry.svelte";
 import { convertible, sourceOf } from "./model";
 import { converter } from "./store.svelte";
 import { convertTable, decorateTables, heldTable } from "./tables";
 
-/** The text selected in the page, if any (a selection in a panel or a field is not the page's). */
+/** The text selected in the page, if any (a selection in a panel or a field is not the page's); from the palette, the
+ *  page selection its field took the focus from. */
 function selectedText(): string {
-  return pageSelection()?.text ?? "";
+  return selectionForCommand()?.text ?? "";
 }
 
 /** A table of the page into the converter, read as CSV. */

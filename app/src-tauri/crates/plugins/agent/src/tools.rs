@@ -15,6 +15,7 @@ use permark_core::search::SearchFilter;
 use permark_core::settings::ProjectConfig;
 use permark_core::state::StateStore;
 use permark_core::tokens::TokenCounterApi;
+use permark_core::ErrorKind;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -728,7 +729,11 @@ impl Tools {
         }
         api.0
             .resolve(&id, reply.as_deref())
-            .map_err(|e| ToolError::Failed(format!("not marked done: {}", why(&e))))?;
+            .map_err(|e| match e.kind {
+                // removed | withheld since the list above: not there for the agent, as if never listed
+                ErrorKind::NotFound | ErrorKind::Denied => ToolError::NotFound(id.clone()),
+                _ => ToolError::Failed(format!("not marked done: {}", why(&e))),
+            })?;
         Ok(json!({ "resolved": id }))
     }
 

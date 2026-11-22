@@ -71,11 +71,17 @@ enum KeyFile {
 /// Reads the key in `dir`, or makes one. A bad key is moved aside (never deleted) once, then a new one is made; a key
 /// another process made meanwhile is read.
 fn load(dir: &Path) -> io::Result<Install> {
-    crate::fsx::private_dir(dir)?;
+    load_with(dir, modes_stick)
+}
+
+/// [`load`] with the probe that tells whether the key's volume keeps file modes ([`modes_stick`]).
+fn load_with(dir: &Path, modes_stick: fn(&Path) -> bool) -> io::Result<Install> {
+    // a volume without modes refuses closing the folder: the key file is checked on its own below
+    crate::fsx::private_dir_as(dir, crate::fsx::ModeRefused::Accept)?;
     let path = dir.join(KEY_FILE);
     let mut moved = false;
     for _ in 0..3 {
-        match read_key(&path)? {
+        match read_key(&path, modes_stick)? {
             KeyFile::Key(bytes) => return Ok(Install::of(&bytes)),
             KeyFile::Missing => match make_key(&path) {
                 Ok(bytes) => return Ok(Install::of(&bytes)),
@@ -96,7 +102,7 @@ fn load(dir: &Path) -> io::Result<Install> {
     ))
 }
 
-fn read_key(path: &Path) -> io::Result<KeyFile> {
+fn read_key(path: &Path, modes_stick: fn(&Path) -> bool) -> io::Result<KeyFile> {
     let mut waits = SHORT_KEY_WAITS.iter();
     loop {
         let meta = match std::fs::symlink_metadata(path) {
@@ -104,7 +110,12 @@ fn read_key(path: &Path) -> io::Result<KeyFile> {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(KeyFile::Missing),
             Err(error) => return Err(error),
         };
-        if !meta.file_type().is_file() || open_to_others(&meta) {
+        if !meta.file_type().is_file() || other_owner(&meta) {
+            return Ok(KeyFile::Bad);
+        }
+        // open to others on a volume that keeps modes: may be known elsewhere. A volume that keeps none (FAT, exFAT,
+        // some shares) shows every file open: its key is used, or each start would make a new one and drop every seal
+        if open_to_others(&meta) && modes_stick(path) {
             return Ok(KeyFile::Bad);
         }
         let bytes = match crate::fsx::read_bytes(path, KEY_LEN as u64 + 1) {
@@ -125,17 +136,46 @@ fn read_key(path: &Path) -> io::Result<KeyFile> {
     }
 }
 
-/// A key file another user owns, or one group | others may read, may be known elsewhere: never used.
+/// A key file another user owns: never used.
+#[cfg(unix)]
+fn other_owner(meta: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    meta.uid() != rustix::process::geteuid().as_raw()
+}
+
+/// A key file group | others may read.
 #[cfg(unix)]
 #[allow(clippy::verbose_bit_mask)] // the group/other permission bits are the point
 fn open_to_others(meta: &std::fs::Metadata) -> bool {
     use std::os::unix::fs::MetadataExt;
-    meta.uid() != rustix::process::geteuid().as_raw() || meta.mode() & 0o077 != 0
+    meta.mode() & 0o077 != 0
+}
+
+/// Whether the volume of the key at `path` (open to others) keeps file modes: the key is closed to others (mode 0600)
+/// and looked at again. Still open (the change refused or not kept): the volume keeps no modes. Anything but a plain
+/// file there now counts as keeping them (the key is then not used).
+#[cfg(unix)]
+fn modes_stick(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    // a refusal says the same as a change not kept
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    !std::fs::symlink_metadata(path)
+        .is_ok_and(|meta| meta.file_type().is_file() && open_to_others(&meta))
+}
+
+#[cfg(not(unix))]
+fn other_owner(_: &std::fs::Metadata) -> bool {
+    false
 }
 
 #[cfg(not(unix))]
 fn open_to_others(_: &std::fs::Metadata) -> bool {
     false
+}
+
+#[cfg(not(unix))]
+fn modes_stick(_: &Path) -> bool {
+    true
 }
 
 /// A new key, created only where nothing is (a link counts): unix mode 0600 from the start.
@@ -516,6 +556,45 @@ mod tests {
             .file_type()
             .is_symlink());
         assert_eq!(std::fs::read(&elsewhere).unwrap(), [5; 32]);
+    }
+
+    /// A volume that keeps no modes (FAT, exFAT, some shares) shows every file open to others and keeps no change of
+    /// mode: its key is used as it is, never moved aside at each start (which would drop every seal each time).
+    #[cfg(unix)]
+    #[test]
+    fn a_key_on_a_volume_that_keeps_no_modes_is_used() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("install");
+        let keeps_none = |_: &Path| false;
+        let first = load_with(&dir, keeps_none).unwrap();
+        // as such a volume shows a file: open to everyone
+        std::fs::set_permissions(dir.join(KEY_FILE), std::fs::Permissions::from_mode(0o777))
+            .unwrap();
+        assert_eq!(load_with(&dir, keeps_none).unwrap().iid, first.iid);
+        assert_eq!(load_with(&dir, keeps_none).unwrap().iid, first.iid);
+        assert_eq!(broken(&dir), Vec::<PathBuf>::new());
+    }
+
+    /// Such a volume also refuses closing the key's folder to others: the key is still made and used, the same at each
+    /// start.
+    #[cfg(unix)]
+    #[test]
+    fn a_key_folder_that_refuses_its_mode_change_still_keeps_the_key() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("install");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let keeps_none = |_: &Path| false;
+        crate::fsx::tests::with_modes_refused(|| {
+            let first = load_with(&dir, keeps_none).unwrap();
+            std::fs::set_permissions(dir.join(KEY_FILE), std::fs::Permissions::from_mode(0o777))
+                .unwrap();
+            assert_eq!(load_with(&dir, keeps_none).unwrap().iid, first.iid);
+            assert_eq!(load_with(&dir, keeps_none).unwrap().iid, first.iid);
+        });
+        assert_eq!(broken(&dir), Vec::<PathBuf>::new());
     }
 
     #[test]

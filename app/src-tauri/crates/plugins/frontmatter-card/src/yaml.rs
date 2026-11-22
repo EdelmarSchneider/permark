@@ -1,7 +1,8 @@
 //! A small YAML subset for the properties card: flat `key: value` pairs.
 //!
-//! Supported: plain and quoted scalars, trailing comments, inline lists (`[a, b]`), block lists (`- a`), block
-//! scalars (`|` and `>`), nested maps (flattened to `parent.child`). Anything fancier (anchors, tags, flow maps,
+//! Supported: plain and quoted scalars, trailing comments, inline lists (`[a, b]`), block lists (`- a`; a list of
+//! maps gives one `key: value; key: value` item per map), block scalars (`|` and `>`), nested maps (flattened to
+//! `parent.child`). Anything fancier (anchors, tags, flow maps,
 //! complex keys) is kept as its raw text rather than failing.
 
 use permark_core::format::config::util::unescape_double;
@@ -129,8 +130,26 @@ fn block_after(lines: &[&str], at: usize, indent: usize) -> Block {
         match item {
             // a list item at the key's own indent is still its list (`key:` then `- a`)
             Some(item) if indent_of(candidate) >= indent => {
-                items.push(unquote(strip_comment(item)));
                 next += 1;
+                if split_key(item).is_none() {
+                    items.push(unquote(strip_comment(item)));
+                    continue;
+                }
+                // a map (`- name: Ana` + deeper `email: …`): one chip of its lines, as a TOML array of tables shows
+                let dash = indent_of(candidate);
+                let mut chip = strip_comment(item).to_owned();
+                while let Some(line) = lines
+                    .get(next)
+                    .filter(|l| l.trim().is_empty() || indent_of(l) > dash)
+                {
+                    let part = strip_comment(line.trim_start());
+                    if !part.is_empty() {
+                        chip.push_str("; ");
+                        chip.push_str(part);
+                    }
+                    next += 1;
+                }
+                items.push(chip);
             }
             _ => break,
         }
@@ -358,29 +377,45 @@ single: 'C:\new'
 
     #[test]
     fn a_model_card_list_of_maps_keeps_every_value() {
-        // Hugging Face model cards list authors as maps; the subset flattens them, so keys repeat
+        // Hugging Face model cards list authors as maps: one chip per map, its lines joined as a TOML array of
+        // tables shows them
         let fields = shape(
             "license: apache-2.0\nlanguage:\n- en\n- pt\nauthors:\n- name: Ana Lima\n  email: ana@example.com\n- name: Bo Chen\n  email: bo@example.com\npipeline_tag: text-generation\n",
         );
-        let shown: String = fields
-            .iter()
-            .map(|(key, value)| match value {
-                FieldValue::Text { text } => format!("{key}={text}\n"),
-                FieldValue::List { items } => format!("{key}={}\n", items.join(",")),
-            })
-            .collect();
-        for value in [
-            "apache-2.0",
-            "en,pt",
-            "Ana Lima",
-            "ana@example.com",
-            "Bo Chen",
-            "bo@example.com",
-            "text-generation",
-        ] {
-            assert!(shown.contains(value), "{value} missing from {shown}");
-        }
-        assert_eq!(fields.iter().filter(|(key, _)| key == "email").count(), 2);
+        assert_eq!(
+            fields,
+            [
+                ("license".into(), t("apache-2.0")),
+                ("language".into(), l(&["en", "pt"])),
+                (
+                    "authors".into(),
+                    l(&[
+                        "name: Ana Lima; email: ana@example.com",
+                        "name: Bo Chen; email: bo@example.com"
+                    ])
+                ),
+                ("pipeline_tag".into(), t("text-generation")),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_list_of_maps_keeps_deeper_lines_and_drops_comments() {
+        // indented under its key, a blank line and a comment inside, a deeper list, scalars after it untouched
+        let fields = shape(
+            "people:\n  - name: \"Ana\"  # lead\n\n    # who\n    roles:\n      - a\n  - name: Bo\nplain:\n  - one\n    two\nend: x\n",
+        );
+        assert_eq!(
+            fields,
+            [
+                (
+                    "people".into(),
+                    l(&["name: \"Ana\"; roles:; - a", "name: Bo"])
+                ),
+                ("plain".into(), l(&["one"])),
+                ("end".into(), t("x")),
+            ]
+        );
     }
 
     #[test]
@@ -395,5 +430,12 @@ single: 'C:\new'
         let _ = parse(&"- ".repeat(50_000));
         let _ = parse("\u{0}: \u{202e}\n'\n\"\n: x\n:\n");
         let _ = parse(&"a: |\n".repeat(10_000));
+        // one map with a huge body: one clipped chip
+        let wide = parse(&format!("k:\n- a: b\n{}", "  c: d\n".repeat(100_000)));
+        assert!(matches!(
+            wide.as_slice(),
+            [Field { value: FieldValue::List { items }, .. }]
+                if items.len() == 1 && items[0].chars().count() == crate::MAX_VALUE
+        ));
     }
 }

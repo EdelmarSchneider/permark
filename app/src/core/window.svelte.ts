@@ -37,8 +37,9 @@ import { tabs } from "./shell/tabs.svelte";
 import { ui } from "./shell/ui.svelte";
 
 /** A button of a notice. `run` answers a promise when its work goes on after it returns (an Undo that asks the
- *  backend, then places the keyboard): what follows the action waits for it. */
-export type NoticeAction = { label: string; run: () => void | Promise<void> };
+ *  backend, then places the keyboard): what follows the action waits for it. `keys`: the shortcut that does the same
+ *  where the person works, in `aria-keyshortcuts` form (`Control+Z`), told to screen readers on the button. */
+export type NoticeAction = { label: string; run: () => void | Promise<void>; keys?: string };
 
 export type Notice =
   | { id: number; kind: "openFailed"; path: string; error: IpcError }
@@ -46,6 +47,8 @@ export type Notice =
   | { id: number; kind: "stateRecovered"; notice: StateRecovered }
   | { id: number; kind: "settingNotSaved"; error: ApiError }
   | { id: number; kind: "initFailed"; path: string; error: ApiError }
+  /** Initialize of a folder that is not the one on screen refused: its `.permark/local` holds data from elsewhere. */
+  | { id: number; kind: "initHeld"; path: string }
   | { id: number; kind: "fileOpFailed"; error: ApiError }
   | { id: number; kind: "note"; text: string }
   /** A quiet line with buttons (Undo, Open in project); closes by itself after `ACTION_MS` unless `lasting` (then it
@@ -91,6 +94,7 @@ function closeAfter(notice: Notice): number | null {
     case "stateRecovered":
     case "settingNotSaved":
     case "initFailed":
+    case "initHeld":
     case "fileOpFailed":
       return ACTION_MS;
     default:
@@ -122,6 +126,9 @@ export type ProjectView = Extract<WorkspaceView, { kind: "project" }>;
 /** `detail` of the backend's `conflict` when the profile and the folder's `.permark/local` both hold PerMark data
  *  (mirror of Rust `state::location::BOTH_HOLD_DATA`): nothing was carried either way. */
 const BOTH_HOLD_DATA = "bothHoldData";
+/** `detail` of the backend's `conflict` when Keep is refused because the folder's data is in its own `.permark/local`
+ *  already (mirror of Rust `state::location::DATA_IN_PROJECT`): the offer it answered is gone. */
+const DATA_IN_PROJECT = "dataInProject";
 /** The folder's own copy of PerMark data, relative to the folder. */
 const FOLDER_DATA = ".permark/local";
 
@@ -135,11 +142,10 @@ function dataKey(project: ProjectView): string {
   return `data-place:${project.id}`;
 }
 
-function bothHoldData(error: ApiError): boolean {
+/** A backend `conflict` refusal with this `detail`. */
+function conflictWith(error: ApiError, detail: string): boolean {
   return (
-    error.kind === "backend" &&
-    error.error.kind === "conflict" &&
-    error.error.detail === BOTH_HOLD_DATA
+    error.kind === "backend" && error.error.kind === "conflict" && error.error.detail === detail
   );
 }
 
@@ -470,11 +476,14 @@ export class WindowStore {
     if (!result.ok) this.#notify({ kind: "apiFailed", path: null, error: result.error });
   }
 
-  /** Keep: the folder's data stays on this computer; the window hears its offer again (Move alone is left). */
+  /** Keep: the folder's data stays on this computer; the window hears its offer again (Move alone is left). Refused
+   *  because the data is in the folder by now: nothing to say, the window hears the offer that is left instead. */
   async keepData(project: ProjectView): Promise<void> {
     this.dismissKey(dataKey(project));
     const result = await this.#api.projectDataKeep(project.root);
-    if (!result.ok) this.#notify({ kind: "settingNotSaved", error: result.error });
+    if (!result.ok && !conflictWith(result.error, DATA_IN_PROJECT)) {
+      this.#notify({ kind: "settingNotSaved", error: result.error });
+    }
   }
 
   /** Move: the folder's data goes into its `.permark/local` (Initialize; the project reloads). */
@@ -484,7 +493,7 @@ export class WindowStore {
     const result = await this.#api.projectInit(project.root);
     if (result.ok) {
       this.notifyKeyed(key, t("project.dataMoved"));
-    } else if (bothHoldData(result.error)) {
+    } else if (conflictWith(result.error, BOTH_HOLD_DATA)) {
       this.#bothHoldData(project);
     } else {
       this.notifyKeyed(key, t("project.dataMoveFailed", { message: apiErrorText(result.error) }));
@@ -575,13 +584,16 @@ export class WindowStore {
     if (tab !== null) await this.#api.tabClose(tab);
   }
 
-  /** Creates `.permark/` in a folder; a project open on it reloads at once. `true` when it worked. Refused for the
-   *  folder on screen because both places hold data: the same neutral word as Move. */
+  /** Creates `.permark/` in a folder; a project open on it reloads at once. `true` when it worked. Refused because
+   *  both places hold data: for the folder on screen the same neutral word as Move, for another one (a project inside
+   *  it) a word naming that folder, as nothing failed. */
   async initProject(path: string): Promise<boolean> {
     const result = await this.#api.projectInit(path);
     if (!result.ok) {
       const shown = this.#shownProject();
-      if (shown?.root === path && bothHoldData(result.error)) this.#bothHoldData(shown);
+      const held = conflictWith(result.error, BOTH_HOLD_DATA);
+      if (held && shown?.root === path) this.#bothHoldData(shown);
+      else if (held) this.#notify({ kind: "initHeld", path });
       else this.#notify({ kind: "initFailed", path, error: result.error });
       return false;
     }

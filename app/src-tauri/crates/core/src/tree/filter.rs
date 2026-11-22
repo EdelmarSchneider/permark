@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use super::model::{below_root, key_of, parent_of, Node, TreeModel};
-use super::{Category, NodeKind, TreeNode};
+use super::{may_open_with_default_app, Category, NodeKind, TreeNode};
 use crate::settings::{TreeConfig, TreeShow};
 
 /// Preset of the filter.
@@ -283,6 +283,8 @@ fn dto(node: &Node, forced: bool) -> TreeNode {
         hidden: node.hidden,
         ignored: node.ignored,
         forced,
+        opens_outside: matches!(node.kind, NodeKind::File { .. })
+            && may_open_with_default_app(&node.name),
     }
 }
 

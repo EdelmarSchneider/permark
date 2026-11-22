@@ -950,6 +950,8 @@ export default {
   "since.nothing": "Nessuna modifica da {when}.",
   "review.offer.one": "Cambiato dall'ultima lettura · {n} modifica",
   "review.offer.other": "Cambiato dall'ultima lettura · {n} modifiche",
+  "review.offerCommit.one": "Cambiato dall'ultimo commit · {n} modifica",
+  "review.offerCommit.other": "Cambiato dall'ultimo commit · {n} modifiche",
   "review.review": "Rivedi",
   "review.reviewing.one": "Revisione di {n} modifica",
   "review.reviewing.other": "Revisione di {n} modifiche",
@@ -974,6 +976,7 @@ export default {
   "review.change": "Modifica {i} di {n}, {kind}",
   "review.keptAll": "Tutte le modifiche sono state mantenute",
   "review.revertedAll": "Tutte le modifiche di {name} sono state scartate",
+  "review.endedMixed": "Alcune modifiche di {name} sono state mantenute, altre scartate",
   "review.undo": "Annulla",
   "review.undoStale": "Impossibile annullare: {name} è cambiato dopo.",
   "review.allDone": "Tutte le modifiche sono state riviste",
@@ -1032,6 +1035,10 @@ export default {
   "git.why.tooLarge": "La risposta di Git era troppo lunga da leggere.",
   "git.why.spawn": "Impossibile avviare Git.",
   "git.why.parse": "Impossibile capire la risposta di Git.",
+  "git.why.notLocal":
+    "La cartella git di questo repository porta fuori da questo computer o passa per un collegamento, quindi PerMark non lo apre.",
+  "git.why.noGit": "Questa cartella non ha un .git che porti a un repository.",
+  "git.why.stopped": "Git è stato interrotto prima di rispondere.",
   "git.why.failed": "Dettagli: {detail}",
   "git.errorHint":
     "Apri le impostazioni per scegliere un altro git (quello integrato non richiede fiducia).",
@@ -1489,7 +1496,7 @@ export default {
   "agent.title": "Connessione con gli agenti",
   "agent.switch": "Condividi questa cartella con gli agenti",
   "agent.switchHint":
-    "Un agente che colleghi (uno strumento di IA che supporta MCP, come Claude Code o Cursor) può vedere cosa stai guardando e cosa è cambiato, cercare e leggere i file di questa cartella, leggere i tuoi commenti e le note che condividi, e mostrarti un punto. Solo su questo computer. I file elencati in .aiignore restano fuori dalla loro portata. Gli agenti collegati in questo modo si limitano a leggere e non modificano mai file tramite PerMark; per permettere a un agente di proporre modifiche, usa l'Assistente. Questo vale solo per ciò che gli agenti ricevono da PerMark: un agente può comunque aprire da solo i file del tuo computer.",
+    "Un agente che colleghi (uno strumento di IA che supporta MCP, come Claude Code o Cursor) può vedere cosa stai guardando e cosa è cambiato, cercare e leggere i file di questa cartella, leggere i tuoi commenti e le note che condividi, e mostrarti un punto. Solo su questo computer. I file elencati in .aiignore restano fuori dalla loro portata. Gli agenti collegati in questo modo non modificano mai file tramite PerMark: leggono, e segnano i tuoi commenti come completati solo se lo permetti. Per permettere a un agente di proporre modifiche, usa l'Assistente. Questo vale solo per ciò che gli agenti ricevono da PerMark: un agente può comunque aprire da solo i file del tuo computer.",
   "agent.folderReplaced":
     "Questa cartella è cambiata da quando l'hai collegata. Riattiva la connessione per consentire gli agenti qui.",
   "agent.groups": "Cosa possono fare gli agenti",
@@ -1737,6 +1744,8 @@ export default {
     "La tua scelta per ogni plugin in questa cartella. “Disattivato per tutti” è salvato in .permark/config.toml e vale per chiunque apra la cartella.",
   "plugins.removeConfirm": "Rimuovere i dati di {name}?",
   "plugins.removeConfirmBytes": "Rimuovere i dati di {name}? Libera {size}.",
+  "plugins.removeScope":
+    "Le cartelle che conservano i loro dati nella propria cartella .permark vengono pulite solo mentre sono aperte.",
   "plugins.removeData": "Rimuovi dati",
   "plugins.removeYes": "Rimuovi",
   "plugins.turnOn": "Attiva {name}",
@@ -1761,6 +1770,8 @@ export default {
   "project.initConfig": "Le impostazioni che questo progetto condivide con il team.",
   "project.initConfirm": "Inizializza PerMark",
   "project.initFailed": "Impossibile inizializzare PerMark in {path}: {message}",
+  "project.initHeld":
+    "{path}/.permark/local contiene già dati di PerMark provenienti da altrove; non è stato modificato nulla.",
   "project.initIgnore": "Tiene le cartelle private fuori da git.",
   "project.initIntro": "PerMark crea qui una cartella .permark con:",
   "project.initLocal":
@@ -1803,6 +1814,18 @@ export default {
   "project.sharedFileHint": "Condiviso con chiunque apra questa cartella.",
   "project.sharedFileUnreadable":
     "PerMark non riesce a leggere questo file alla riga {line}, quindi le impostazioni contrassegnate con Tutti non si possono cambiare finché non viene corretto.",
+  "project.sharedLocked":
+    "PerMark non riesce a leggere .permark/config.toml, quindi le impostazioni contrassegnate con Tutti non si possono cambiare finché non viene corretto.",
+  "project.sharedLocked.line":
+    "PerMark non riesce a leggere .permark/config.toml alla riga {line}, quindi le impostazioni contrassegnate con Tutti non si possono cambiare finché non viene corretto.",
+  "project.sharedLocked.notText":
+    "PerMark non riesce a leggere .permark/config.toml (non è testo semplice), quindi le impostazioni contrassegnate con Tutti non si possono cambiare finché non viene corretto.",
+  "project.sharedLocked.tooLarge":
+    "PerMark non riesce a leggere .permark/config.toml (è troppo grande), quindi le impostazioni contrassegnate con Tutti non si possono cambiare finché non viene corretto.",
+  "project.sharedLocked.locked":
+    "PerMark non riesce a leggere .permark/config.toml (un altro programma lo sta usando), quindi le impostazioni contrassegnate con Tutti non si possono cambiare finché non viene corretto.",
+  "project.privateTracked":
+    "Gli agenti non ricevono né i commenti né l'attività di questa cartella: il suo repository git traccia la cartella privata di PerMark (.permark/local), oppure PerMark non ha potuto verificarlo.",
   "settings.all": "Tutte le impostazioni",
   "settings.editorPreview": "Esempio:",
   "settings.linkUpdateHint": "Cosa succede ai link quando un file viene spostato o rinominato.",
@@ -2197,7 +2220,7 @@ export default {
     "Token di un documento, una selezione o una sezione secondo il tokenizzatore scelto; esatto quando il tokenizzatore è pubblico, approssimato (e segnalato) quando non lo è.",
   "plugin.local-ai.name": "IA locale",
   "plugin.local-ai.about":
-    "Piccoli modelli di IA che funzionano su questo computer, offline, per aiutare PerMark a correggere, tradurre e trovare per significato. Non viene scaricato nulla finché non lo chiedi.",
+    "Piccoli modelli di IA che funzionano su questo computer per aiutare PerMark a correggere, tradurre e trovare per significato. Non viene scaricato nulla finché non lo chiedi.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} riga",
   "config.table.rows.other": "{n} righe",
@@ -2624,7 +2647,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "IA locale",
   "localAi.intro":
-    "Piccoli modelli di IA che funzionano su questo computer, offline. Non viene scaricato nulla finché non lo chiedi.",
+    "Piccoli modelli di IA che funzionano su questo computer. Non viene scaricato nulla finché non lo chiedi.",
   "localAi.command": "Apri impostazioni IA locale",
   "localAi.loadFailed": "Impossibile leggere le impostazioni di IA locale.",
   "localAi.retry": "Riprova",
@@ -2696,8 +2719,8 @@ export default {
   "localAi.models.details.size": "Dimensione del download",
   "localAi.models.details.restriction": "Chi può usarlo",
   "localAi.models.comingSoon": "Prossimamente",
-  "localAi.models.needs.newer": "Richiede una versione più recente del motore IA.",
-  "localAi.models.needs.missing": "Richiede un motore IA che PerMark non ha ancora.",
+  "localAi.models.needs.newer": "Questo modello richiede una versione successiva di PerMark.",
+  "localAi.models.needs.missing": "PerMark non può ancora eseguire questo tipo di modello.",
   "localAi.dl.waiting": "In attesa…",
   "localAi.dl.cancelLabel": "Annulla il download di {name}",
   "localAi.dl.progress": "{done} di {total}",

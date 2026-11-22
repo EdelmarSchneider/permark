@@ -4,6 +4,7 @@
 import type { Added, RootNode, TreeDelta, TreeNode } from "../../api";
 
 const WORKTREE = "@wt/";
+const SLASH = "/".charCodeAt(0);
 
 /** `a/b/c.md` -> `c.md`. */
 export function nameOf(path: string): string {
@@ -212,7 +213,11 @@ export function rowsOf(
   collapsedRoots: ReadonlySet<string>,
 ): Row[] {
   const rows: Row[] = [];
-  const stack: { path: string; open: boolean }[] = [];
+  // the folders above the node, with how many of them are closed: each node costs a constant check, not a walk of
+  // its folders, and its depth comes from its folder's (no split of its path); "inside a folder" is checked without
+  // building `<folder>/` per node
+  const stack: { path: string; open: boolean; depth: number }[] = [];
+  let closed = 0;
   const worktrees = roots.filter((r) => r.kind === "worktree");
   const header = new Map(worktrees.map((r) => [r.path, r] as const));
   let current = "";
@@ -222,6 +227,7 @@ export function rowsOf(
     if (root !== current) {
       current = root;
       stack.length = 0;
+      closed = 0;
       const rootNode = header.get(root);
       if (rootNode) {
         rootOpen = !collapsedRoots.has(root);
@@ -230,16 +236,27 @@ export function rowsOf(
         rootOpen = true;
       }
     }
-    while (stack.length > 0) {
-      const top = stack[stack.length - 1];
-      if (top && node.path.startsWith(`${top.path}/`)) break;
+    let top = stack.at(-1);
+    while (
+      top !== undefined &&
+      !(node.path.charCodeAt(top.path.length) === SLASH && node.path.startsWith(top.path))
+    ) {
+      if (!top.open) closed -= 1;
       stack.pop();
+      top = stack.at(-1);
     }
-    const visible = rootOpen && stack.every((s) => s.open);
+    // a top-level node, or one whose folder is not listed (the stack falls short): the depth comes from the path
+    const depth =
+      top !== undefined && node.path.indexOf("/", top.path.length + 1) < 0
+        ? top.depth + 1
+        : depthOf(node.path);
     const isDir = node.kind.type === "dir";
     const open = isDir && expanded.has(node.path);
-    if (visible) rows.push({ type: "node", node, depth: depthOf(node.path), expanded: open });
-    if (isDir) stack.push({ path: node.path, open });
+    if (rootOpen && closed === 0) rows.push({ type: "node", node, depth, expanded: open });
+    if (isDir) {
+      if (!open) closed += 1;
+      stack.push({ path: node.path, open, depth });
+    }
   }
   return rows;
 }

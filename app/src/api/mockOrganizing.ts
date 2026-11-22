@@ -73,10 +73,12 @@ export type OrganizingProbe = {
   /** Comments as they are kept (all of them). */
   comments(): CommentView[];
   /** Sets comments aside as an outside write that removed them would (they are not kept any more); the aside's id.
-   *  `big`: a large part of the comments was removed. */
+   *  `big`: a large part of the comments was removed. `project`: an included project's file lost them (its id and
+   *  folder); none: the opened folder's. */
   setAside(
     removed: readonly { path: string; quote: string; text: string; line: number }[],
     big: boolean,
+    project?: { uid: string; folder: string },
   ): string;
   /** The comments file cannot be written now (read-only, over its size): Restore is refused, the aside stays. */
   refuseRestore(refuse: boolean): void;
@@ -203,14 +205,15 @@ export function createMockOrganizing(
   };
   const stored: Stored[] = [];
   let next = 1;
-  /** Comments an outside write removed (`setAside`), as the backend keeps them: the opened folder's, by aside id. */
-  const asides: { id: string; at: number; big: boolean; comments: Stored[] }[] = [];
+  /** Comments an outside write removed (`setAside`), as the backend keeps them, by aside id; `folder` names an included
+   *  project's (`""`: the opened folder's). */
+  const asides: { id: string; folder: string; at: number; big: boolean; comments: Stored[] }[] = [];
   let nextAside = 1;
   let restoreRefused = false;
   /** The comments of an aside the comments lack now (what a restore adds). */
   const missing = (aside: { comments: Stored[] }): Stored[] =>
     aside.comments.filter((c) => !stored.some((s) => s.id === c.id));
-  /** As the backend: `<digits>` | `<project id>:<digits>`, never a path; the mock has no included projects. */
+  /** As the backend: `<digits>` | `<project id>:<digits>`, never a path. */
   const asideOf = (id: string): number => {
     if (!/^([^:]+:)?\d+$/.test(id)) throw new MockPluginError("invalidData", "id");
     return asides.findIndex((a) => a.id === id);
@@ -486,7 +489,7 @@ export function createMockOrganizing(
     "comments.asides": () =>
       asides.flatMap((a) => {
         const count = missing(a).length;
-        return count === 0 ? [] : [{ id: a.id, count, at: a.at, big: a.big }];
+        return count === 0 ? [] : [{ id: a.id, folder: a.folder, count, at: a.at, big: a.big }];
       }),
     // only the comments the file lacks come back, never one it holds; the aside goes once they are in
     "comments.restore": ({ id }) => {
@@ -538,8 +541,9 @@ export function createMockOrganizing(
       },
       appTags: (path) => [...(app.get(path)?.tags ?? [])],
       comments: () => stored.map(view),
-      setAside: (removed, big) => {
-        const id = String(nextAside++);
+      setAside: (removed, big, project) => {
+        const n = String(nextAside++);
+        const id = project ? `${project.uid}:${n}` : n;
         const at = Date.now();
         const comments = removed.map((r): Stored => ({
           id: `c${next++}`,
@@ -554,7 +558,7 @@ export function createMockOrganizing(
           doneMs: null,
           replies: [],
         }));
-        asides.push({ id, at, big, comments });
+        asides.push({ id, folder: project?.folder ?? "", at, big, comments });
         emit("comments:aside", null);
         return id;
       },

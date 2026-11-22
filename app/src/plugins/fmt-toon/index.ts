@@ -21,6 +21,8 @@ export default definePlugin({
         language: "toon",
         requires: NO_REQUIREMENT,
         view: () => import("./ToonEmbed.svelte"),
+        // Edit names the block's corner as the reading view's embed does
+        label: () => "TOON",
       }),
     ];
     return () => offs.forEach((off) => off());

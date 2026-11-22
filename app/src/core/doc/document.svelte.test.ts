@@ -1162,10 +1162,10 @@ describe("where the reader is", () => {
     const wrap = document.createElement("div");
     wrap.innerHTML =
       '<table><tbody><tr><td><code data-math-style="inline">x</code></td></tr></tbody></table><p><code data-math-style="inline">y</code></p>';
-    const [inCell, outside] = wrap.querySelectorAll<HTMLElement>("[data-math-style]");
-    if (!inCell || !outside) throw new Error("no formulas");
-    fx.doc.decorator.mounted(inCell);
-    fx.doc.decorator.mounted(outside);
+    fx.doc.decorator.setEmbeds(() => () => import("../testing/EmbedProbe.svelte"));
+    fx.doc.decorator.near(wrap);
+    await fx.doc.decorator.idle();
+    expect(wrap.querySelectorAll(".embed-probe")).toHaveLength(2);
     expect(redrawn.mock.calls).toEqual([[wrap.querySelector("table")]]);
   });
 

@@ -96,10 +96,12 @@ impl StateData for SeenFile {
 enum Undo {
     /// A keep: the version held before it (`None`: none).
     Keep { prev: Option<u64> },
-    /// A revert: the edits that put the lines back, valid on the version `hash_after`.
+    /// A revert: the edits that put the lines back, valid on the version `hash_after`. `ended`: the revert ended the
+    /// review (what it wrote counts as read, and so does what the undo writes).
     Revert {
         edits: Vec<LineEdit>,
         hash_after: String,
+        ended: bool,
     },
 }
 
@@ -523,6 +525,9 @@ impl Shared {
         if markdown && asked == Basis::Read && self.own_save_unreported(path, current.hash) {
             return Ok(status(ReviewState::Same));
         }
+        if !markdown && asked == Basis::Read {
+            self.own_save_seen(path, &current);
+        }
         let base = if markdown {
             self.base(path, asked)
         } else {
@@ -727,6 +732,22 @@ impl Shared {
         Ok(())
     }
 
+    /// `current` (not Markdown) is the person's own save and no review is open: it counts as seen at once. The page
+    /// reloads right after a save and asks before the person's next look, and nothing else follows a text that is not
+    /// Markdown: the save would be offered as a change, and a change by another program before that look would come
+    /// mixed with it.
+    fn own_save_seen(&self, path: &str, current: &Version) {
+        if self.held_hash(path).is_none()
+            && self.seen_hash(path) != Some(current.hash)
+            && self
+                .project
+                .documents
+                .saved_as(path, &fsx::ContentHash(current.hash).hex())
+        {
+            self.count_as_read(path, current);
+        }
+    }
+
     fn lines_base(&self, path: &str, asked: Basis) -> Result<Base, NoBase> {
         match asked {
             // no version looked at: nothing to compare with (the first sight of a file is its baseline)
@@ -798,19 +819,13 @@ impl Shared {
         let section = (!all)
             .then(|| diff.section(index, &current.text, &base.text))
             .flatten();
-        if all && is_markdown(path) {
-            // the version on disk is approved: it counts as read (readers are told outside the hold; a copy missing by
-            // then is asked for again)
-            let _ = self.store.put(current.hash, &current.text);
-            self.hub.mark_read(path, current.hash);
+        if all {
+            // the version on disk is approved: it counts as read
+            self.count_as_read(path, &current);
         }
         {
             let _held = self.store.hold();
             if all {
-                if !is_markdown(path) {
-                    let _ = self.store.put(current.hash, &current.text);
-                    self.set_seen(path, current.hash);
-                }
                 // marking read starts a review of what was read before; this one is over
                 self.set_held(path, None);
             } else {
@@ -845,14 +860,21 @@ impl Shared {
             base,
             diff,
         } = self.draw(path, seen, asked)?;
+        let section = (!all)
+            .then(|| diff.section(index, &current.text, &base.text))
+            .flatten();
+        // bringing a version back is its whole text: also what no block shows (the front matter under the card, the
+        // lines between blocks), so it goes by lines
+        let diff = if all && matches!(base.used, Basis::Version(_)) {
+            Diff::Lines(line_hunks(&base.text, &current.text))
+        } else {
+            diff
+        };
         let picks: Vec<usize> = if all {
             (0..diff.count()).collect()
         } else {
             vec![index]
         };
-        let section = (!all)
-            .then(|| diff.section(index, &current.text, &base.text))
-            .flatten();
         let mut edits = diff
             .edits(&picks, &base.text, &current.text, Way::Revert)
             .map_err(|e| invalid(path, e.detail()))?;
@@ -865,24 +887,29 @@ impl Shared {
         let outcome = self
             .project
             .with_editor(|editor| editor.save(path, seen, &edits))?;
-        match outcome {
-            SaveOutcome::Saved { hash, .. } => {
-                self.push_undo(
-                    path,
-                    Undo::Revert {
-                        edits: inverse,
-                        hash_after: hash,
-                    },
-                );
-                self.note(path, ReviewOp::Revert, section);
-            }
-            SaveOutcome::Conflict { .. } => {
-                return Err(IpcError::new(ErrorKind::Conflict)
-                    .subject(path)
-                    .detail("stale"))
-            }
+        let SaveOutcome::Saved { hash, .. } = outcome else {
+            return Err(IpcError::new(ErrorKind::Conflict)
+                .subject(path)
+                .detail("stale"));
+        };
+        self.note(path, ReviewOp::Revert, section);
+        let view = self.view(path, asked);
+        // the person's own revert that leaves nothing to review is no news to the person: what it wrote counts as
+        // read, and the review it ended (a version's too) holds nothing any more
+        let ended = view.as_ref().is_ok_and(|view| view.count == 0);
+        if ended {
+            self.written_is_read(path, &hash);
+            self.set_held(path, None);
         }
-        self.finish(path, asked)
+        self.push_undo(
+            path,
+            Undo::Revert {
+                edits: inverse,
+                hash_after: hash,
+                ended,
+            },
+        );
+        view
     }
 
     fn undo(&self, path: &str, asked: Basis) -> Result<ReviewView, IpcError> {
@@ -892,18 +919,54 @@ impl Shared {
             .ok_or_else(|| IpcError::new(ErrorKind::Unavailable).subject("undo"))?;
         match step {
             Undo::Keep { prev } => self.set_held(path, prev),
-            Undo::Revert { edits, hash_after } => {
+            Undo::Revert {
+                edits,
+                hash_after,
+                ended,
+            } => {
                 let outcome = self
                     .project
                     .with_editor(|editor| editor.save(path, &hash_after, &edits))?;
-                if matches!(outcome, SaveOutcome::Conflict { .. }) {
+                let SaveOutcome::Saved { hash, .. } = outcome else {
                     return Err(IpcError::new(ErrorKind::Conflict)
                         .subject(path)
                         .detail("stale"));
+                };
+                if ended {
+                    // the review comes back against what the revert wrote (the base it ended on), and what the undo
+                    // wrote is the person's own choice too
+                    let reverted = hash_from_hex(&hash_after).filter(|h| self.store.has(*h));
+                    if self.held_hash(path).is_none() && reverted.is_some() {
+                        self.set_held(path, reverted);
+                    }
+                    self.written_is_read(path, &hash);
                 }
             }
         }
         self.view(path, asked)
+    }
+
+    /// `version` (on disk) counts as what the person read (Markdown) | last looked at (other text).
+    fn count_as_read(&self, path: &str, version: &Version) {
+        if is_markdown(path) {
+            // readers are told outside the hold; a copy missing by then is asked for again
+            let _ = self.store.put(version.hash, &version.text);
+            self.hub.mark_read(path, version.hash);
+        } else {
+            let _held = self.store.hold();
+            let _ = self.store.put(version.hash, &version.text);
+            self.set_seen(path, version.hash);
+        }
+    }
+
+    /// The version `hash` the review just wrote counts as read. A file that is another version by now (a writer came
+    /// in between) is news, and stays so.
+    fn written_is_read(&self, path: &str, hash: &str) {
+        if let Ok(Some(written)) = self.current(path) {
+            if fsx::ContentHash(written.hash).hex() == hash {
+                self.count_as_read(path, &written);
+            }
+        }
     }
 
     /// The review after a change: over when nothing differs any more. A look at an earlier version ends no review:

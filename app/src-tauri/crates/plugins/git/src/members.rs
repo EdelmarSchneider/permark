@@ -19,7 +19,9 @@ use permark_core::state::StateFile;
 
 use crate::cheap::{cheap_facts, member_location, Cheap};
 use crate::ops::{repo_state, GitError, GitOps, RepoLocation};
-use crate::service::{measured_status, next_seq, BackendCell, Timings, Visit, Visiting};
+use crate::service::{
+    index_locked, measured_status, next_seq, BackendCell, Timings, Visit, Visiting,
+};
 use crate::types::{
     BackendKind, BaselineInfo, BaselineKind, CommitLine, GitFile, GitSnapshot, HeadInfo,
     InterestLevel, ProjectSnapshot, RepoError, RepoSummary, ReposChanged,
@@ -998,7 +1000,7 @@ fn pick(st: &mut State, now: Instant, env: &Env, backend: Option<&Arc<dyn GitOps
             continue;
         };
         // git is writing the index: its answer would race the write; wait a little
-        if location.git_dir.join("index.lock").exists() {
+        if index_locked(&location.git_dir) {
             let since = *slot.lock_since.get_or_insert(now);
             if now.duration_since(since) < env.timings.lock_wait {
                 slot.due = Some(now + LOCK_POLL);

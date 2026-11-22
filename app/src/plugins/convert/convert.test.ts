@@ -118,6 +118,70 @@ describe("the palette command", () => {
       host.disable("convert");
     }
   });
+
+  it("is offered in the palette for the page selection its field took the focus from, and runs on it", async () => {
+    const { ui } = await import("../../core/shell/ui.svelte");
+    const { host: plugins } = await import("../../core/plugins/instance.svelte");
+    const { default: Finder } = await import("../../core/search/Finder.svelte");
+    const { selectionForCommand } = await import("../../core/doc/selection");
+    Element.prototype.scrollIntoView = () => {};
+    await plugins.enable("convert");
+    const shown = vi.spyOn(documents, "path", "get").mockReturnValue("notes/today.md");
+    const open = vi.spyOn(converter, "open").mockImplementation(() => {});
+    const text = '{"in":"the page"}';
+    try {
+      const block = document.createElement("p");
+      block.setAttribute("data-b", "b1");
+      block.textContent = text;
+      const target = document.createElement("div");
+      document.body.append(block, target);
+      // the webview moves the selection into the box's field when it takes the focus: the page has none left
+      const typeIn = (): void => document.getSelection()?.removeAllRanges();
+
+      select(block);
+      ui.openFinder("commands");
+      component = mount(Finder, { target, props: { preset: "commands" } });
+      flushSync();
+      typeIn();
+      const input = target.querySelector<HTMLInputElement>("input.field");
+      if (!input) throw new Error("no field");
+      input.value = "convert";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      flushSync();
+      await tick();
+      const rows = Array.from(target.querySelectorAll(".row"), (r) => r.textContent ?? "");
+      expect(rows[0], rows.join(" | ")).toContain("Convert…");
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+      expect(ui.finder.status).toBe("closed");
+      expect(open).toHaveBeenLastCalledWith({
+        kind: "text",
+        text,
+        language: null,
+        beside: "notes/today.md",
+      });
+      // the box is gone and its command ran: nothing of the kept selection is left
+      await tick();
+      expect(selectionForCommand()).toBeNull();
+
+      // another face of the box keeps it; closed without a command, it is let go
+      select(block);
+      ui.openFinder("commands");
+      typeIn();
+      ui.openFinder("everywhere");
+      expect(selectionForCommand()?.text).toBe(text);
+      ui.closeFinder();
+      await tick();
+      expect(selectionForCommand()).toBeNull();
+    } finally {
+      ui.closeFinder();
+      document.getSelection()?.removeAllRanges();
+      shown.mockRestore();
+      open.mockRestore();
+      plugins.disable("convert");
+    }
+  });
 });
 
 describe("the rules", () => {

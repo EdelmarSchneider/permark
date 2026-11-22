@@ -15,6 +15,7 @@ import type {
   Unlisten,
 } from "../../api";
 import { ImportFlow } from "./importFlow.svelte";
+import { conditions, neutralContext } from "../conditions/context.svelte";
 import { ancestorsOf, applyDelta } from "./list";
 import { setLeaveGuard } from "../editing/guard";
 import { language, t, tn } from "../i18n";
@@ -1127,6 +1128,8 @@ describe("delete and undo", () => {
     await f.store.remove(["README.md"]);
     expect(f.acted.at(-1)?.text).toContain("README.md");
     expect(f.acted.at(-1)?.actions.map((a) => a.label)).toEqual(["Undo"]);
+    // the shortcut that does the same in the tree, where file operations are done, told to screen readers
+    expect(f.acted.at(-1)?.actions[0]?.keys).toBe("Control+Z");
     f.acted.at(-1)?.actions[0]?.run();
     await vi.waitFor(() => expect(paths(f.store)).toContain("README.md"));
     expect(undo).toHaveBeenCalledTimes(1);
@@ -1136,6 +1139,17 @@ describe("delete and undo", () => {
     renamed?.actions[0]?.run();
     await vi.waitFor(() => expect(paths(f.store)).toContain("README.md"));
     expect(undo).toHaveBeenCalledTimes(2);
+  });
+
+  it("on macOS the Undo of a note tells Cmd+Z, the tree's key there", async () => {
+    conditions.set({ ...neutralContext(), platform: "mac" });
+    try {
+      const f = await setup("never");
+      await f.store.remove(["README.md"]);
+      expect(f.acted.at(-1)?.actions[0]?.keys).toBe("Meta+Z");
+    } finally {
+      conditions.set(neutralContext());
+    }
   });
 
   it("nothing selected, nothing deleted", async () => {

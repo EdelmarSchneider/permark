@@ -570,6 +570,8 @@ describe("plugins here", () => {
   async function herePage(): Promise<void> {
     mountPage("pluginsHere");
     await until(() => pluginsStore.state.status === "ready", "the list");
+    // Off for everyone waits for the folder's file to be read: it may be one that can't be written
+    await until(() => projectSettings.state.status === "ready", "the folder's settings");
     await tick();
   }
   const select = (id: string): HTMLSelectElement | null =>
@@ -636,6 +638,25 @@ describe("plugins here", () => {
       expect(await info("comments")).toEqual({ choice: null, teamOff: false }),
     );
     await until(() => chipOf("comments") === null, "no chip: follows the app");
+  });
+
+  it("Off for everyone can't be picked while the folder's file does not read", async () => {
+    mock.probe.shell.teamFileBroken(MOCK_FOLDER, 3);
+    await open();
+    await until(() => conditions.current.permark === "initialized", "set up");
+    await herePage();
+    const options = Array.from(select("comments")!.options).map((o) => [
+      o.textContent?.trim(),
+      o.disabled,
+    ]);
+    expect(options).toEqual([
+      ["Same as the app", false],
+      ["On here", false],
+      ["Off here (only you)", false],
+      ["Off for everyone", true],
+    ]);
+    expect(target.textContent).not.toContain("Initialize PerMark to share this with everyone");
+    expect(target.textContent).toContain("PerMark can't read .permark/config.toml");
   });
 
   it("a refused Off for everyone says why and the box shows the choice still in force", async () => {
@@ -809,6 +830,46 @@ describe("the project settings and Initialize PerMark", () => {
     await until(() => fields().every((f) => !f.disabled), "the rows work");
     expect(target.textContent).not.toContain("Initialize PerMark to share this with everyone");
     expect(target.querySelector(".shared.off")).toBeNull();
+  });
+
+  it("Files, shared file not readable: the shared rows show greyed, do nothing, and say where to look", async () => {
+    mock.probe.shell.teamFileBroken(MOCK_FOLDER, 3);
+    await open();
+    await until(() => conditions.current.permark === "initialized", "set up");
+    mountPage("files");
+    await until(() => projectSettings.state.status === "ready", "loaded");
+    await tick();
+    const fields = Array.from(target.querySelectorAll<HTMLInputElement>(".list input"));
+    expect(fields.length).toBe(3);
+    expect(fields.every((f) => f.disabled)).toBe(true);
+    const radios = Array.from(target.querySelectorAll<HTMLButtonElement>("button[role=radio]"));
+    expect(radios.length).toBeGreaterThan(0);
+    expect(radios.every((b) => b.disabled)).toBe(true);
+    expect(target.querySelector(".shared.off")).not.toBeNull();
+    // not the offer to set PerMark up: it is set up, its file needs fixing by hand
+    expect(target.textContent).not.toContain("Initialize PerMark to share this with everyone");
+    expect(target.textContent).toContain(
+      "PerMark can't read .permark/config.toml at line 3, so settings marked Everyone can't be changed until it's fixed.",
+    );
+    byText("button", "Overview").click();
+    await until(() => target.querySelector("h3.title")?.textContent === "Overview", "Overview");
+    expect(target.textContent).toContain("PerMark can't read this file at line 3");
+  });
+
+  it("Files, set up with a file that reads: no line about a file to fix", async () => {
+    await open();
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    mountPage("files");
+    await until(() => projectSettings.state.status === "ready", "loaded");
+    await tick();
+    expect(target.querySelector(".share-init")).toBeNull();
+    expect(Array.from(target.querySelectorAll<HTMLInputElement>(".list input")).length).toBe(3);
+    expect(
+      Array.from(target.querySelectorAll<HTMLInputElement>(".list input")).every(
+        (f) => !f.disabled,
+      ),
+    ).toBe(true);
   });
 
   it("patterns are added and removed one by one, kept at once; a refused value says why", async () => {

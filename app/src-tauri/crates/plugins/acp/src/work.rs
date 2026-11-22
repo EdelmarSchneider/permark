@@ -57,7 +57,7 @@ const RULES_WAIT: Duration = Duration::from_secs(5);
 pub const RULES_UNREADABLE: &str = "rulesUnreadable";
 
 /// Folders agents read as their own settings (permissions, tools, servers, hooks, extensions), any depth.
-const AGENT_FOLDERS: [&str; 11] = [
+const AGENT_FOLDERS: [&str; 21] = [
     ".codex",
     ".gemini",
     ".cursor",
@@ -69,26 +69,54 @@ const AGENT_FOLDERS: [&str; 11] = [
     ".cline",
     ".amp",
     ".pi",
+    ".devin",
+    ".kimi-code",
+    ".grok",
+    ".cortex",
+    ".autohand",
+    ".kimchi",
+    ".muse",
+    ".stakpak",
+    ".harn",
+    // the editor's servers and tasks, which agents import as their own
+    ".zed",
 ];
 /// Files agents read as their own settings, any depth.
-const AGENT_FILES: [&str; 6] = [
+const AGENT_FILES: [&str; 8] = [
     ".mcp.json",
     "opencode.json",
     "opencode.jsonc",
     "fastagent.config.yaml",
     "fastagent.secrets.yaml",
     "vtcode.toml",
+    "harn.toml",
+    "kimchi_workspace.yaml",
 ];
 /// Agent folders that also hold instructions (documents, kept): the settings | servers | hooks inside them (files or
 /// folders, right under the agent folder) stay out, and so do subagents | skills | commands: their headers grant
 /// tools, a permission mode or servers once loaded.
-const AGENT_SETTINGS: [(&str, &[&str]); 12] = [
+const AGENT_SETTINGS: [(&str, &[&str]); 19] = [
     (".claude", &CLAUDE_LIKE),
     (".codebuddy", &CLAUDE_LIKE),
     (".qoder", &CLAUDE_LIKE),
     (".kilocode", &["mcp.json"]),
     (".junie", &["mcp"]),
-    (".kiro", &["settings", "hooks", "agents"]),
+    (".kiro", &["settings", "hooks", "agents", "skills"]),
+    (
+        ".bob",
+        &["settings.json", "mcp.json", "custom_modes.yaml", "skills"],
+    ),
+    (
+        ".poolside",
+        &["settings.yaml", "settings.local.yaml", "hooks"],
+    ),
+    (".nova", &["commands"]),
+    // the earlier folder name of the same agent
+    (".compass", &["commands"]),
+    (".kimi", &["skills", "agents"]),
+    (".deepagents", &["skills", "agents", "extensions"]),
+    // the skills folder several agents share
+    (".agents", &["skills"]),
     (".clinerules", &["hooks"]),
     (
         ".factory",

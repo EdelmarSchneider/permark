@@ -2,6 +2,7 @@
 // settings, where a folder's data is kept, the other windows of the process. In memory; same shapes as the real
 // commands.
 
+import type { ConfigUnreadableWhy } from "./generated/ConfigUnreadableWhy";
 import type { Context } from "./generated/Context";
 import type { DataOffer } from "./generated/DataOffer";
 import type { Manifest } from "./generated/Manifest";
@@ -125,6 +126,8 @@ function emptyProject(): ProjectSettings {
     tokenizers: [],
     ignoredPluginKeys: [],
     unreadableLine: null,
+    unreadableWhy: null,
+    privateTracked: false,
   };
 }
 
@@ -172,6 +175,8 @@ export function createMockShell(deps: {
   const offers = new Map<string, DataOffer>();
   /** Folders whose shared file is not TOML: the line where it stops being TOML. */
   const brokenTeamFiles = new Map<string, number>();
+  /** Folders whose shared file can't be read as text: why. */
+  const unreadableTeamFiles = new Map<string, ConfigUnreadableWhy>();
   let currentPath = "";
   const choices = new Map<string, boolean>();
   /** Plugins the project's shared file turns off for everyone (`enabled = false`). */
@@ -207,6 +212,8 @@ export function createMockShell(deps: {
         ...emptyProject(),
         initialized: initializedPaths.has(path),
         unreadableLine: brokenTeamFiles.get(path) ?? null,
+        unreadableWhy: unreadableTeamFiles.get(path) ?? null,
+        privateTracked: project.privateTracked,
       };
       choices.clear();
       teamOff.clear();
@@ -240,11 +247,23 @@ export function createMockShell(deps: {
         initializedPaths.add(path);
         if (path === currentPath) project = { ...project, initialized: true, unreadableLine: line };
       },
+      /** The shared file of the folder at `path` can't be read as text (`why`): the folder is set up, its settings
+       *  page says why and every change of a shared setting is refused. */
+      teamFileUnreadable(path: string, why: ConfigUnreadableWhy): void {
+        unreadableTeamFiles.set(path, why);
+        initializedPaths.add(path);
+        if (path === currentPath) project = { ...project, initialized: true, unreadableWhy: why };
+      },
+      /** Git tracks the folder's private folder (`.permark/local`), or can't tell: agents get none of what it keeps. */
+      privateTracked(tracked: boolean): void {
+        project = { ...project, privateTracked: tracked };
+      },
       /** Every folder is as new: nothing is initialized. */
       forgetInit(): void {
         initializedPaths.clear();
         offers.clear();
         brokenTeamFiles.clear();
+        unreadableTeamFiles.clear();
         project = emptyProject();
       },
       /** The folder at `path` offers `offer` about its data when it opens; with Move | Keep and both places holding
@@ -286,12 +305,12 @@ export function createMockShell(deps: {
         }
         if (!project.initialized)
           return refusal<ProjectSettings>("project_config_set", "unavailable", "permark");
-        if (project.unreadableLine !== null) {
+        if (project.unreadableLine !== null || project.unreadableWhy !== null) {
           return refusal<ProjectSettings>(
             "project_config_set",
             "settingsUnreadable",
             ".permark/config.toml",
-            "notToml",
+            project.unreadableWhy ?? "notToml",
           );
         }
         const problem = listProblem(change);

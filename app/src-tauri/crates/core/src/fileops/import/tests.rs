@@ -11,6 +11,7 @@ use crate::events::Recorder;
 use crate::paths::{Root, Vault};
 use crate::settings::ProjectConfig;
 use crate::state::{AppDirs, StateStore};
+use crate::tree::tests::link_out;
 use crate::tree::{Explorer, TreeFilter};
 use crate::watch::{Change, ChangeKind, OwnWrites};
 
@@ -1026,29 +1027,12 @@ fn a_file_another_program_holds_open_fails_its_item_and_the_rest_come_in() {
     no_temps(f.dir.path());
 }
 
-/// Makes `link` point at `target` (a folder): a symbolic link, or a junction on Windows. `false`: not possible here.
-fn make_link(link: &Path, target: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(target, link).is_ok()
-    }
-    #[cfg(windows)]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
-}
-
 #[test]
 fn a_link_inside_a_dropped_folder_is_neither_followed_nor_copied() {
     let f = fx(&[], &[("dir/own.md", "mine")]);
     let secret = tempfile::tempdir().unwrap();
     fs::write(secret.path().join("secret.txt"), "private").unwrap();
-    if !make_link(&f.outside.path().join("dir/jump"), secret.path()) {
+    if !link_out(&f.outside.path().join("dir/jump"), secret.path()) {
         eprintln!("skipped: cannot create a link here");
         return;
     }
@@ -1065,7 +1049,7 @@ fn a_link_inside_a_dropped_folder_is_neither_followed_nor_copied() {
 #[test]
 fn a_link_dropped_itself_is_refused() {
     let f = fx(&[], &[("real/x.md", "x")]);
-    if !make_link(
+    if !link_out(
         &f.outside.path().join("alias"),
         &f.outside.path().join("real"),
     ) {
@@ -1559,7 +1543,7 @@ fn copy_folder_refuses_a_link_inside_and_leaves_nothing_behind() {
     let secret = tempfile::tempdir().unwrap();
     fs::write(secret.path().join("secret.txt"), "private").unwrap();
     // one kind of separator: `mklink` refuses a mixed path
-    if !make_link(&src.path().join("b").join("jump"), secret.path()) {
+    if !link_out(&src.path().join("b").join("jump"), secret.path()) {
         eprintln!("skipped: cannot create a link here");
         return;
     }
@@ -1583,7 +1567,7 @@ fn copy_folder_refuses_a_source_that_is_a_link_or_a_file() {
     let file = holder.path().join("file.md");
     fs::write(&file, "x").unwrap();
     assert!(copy_folder(&file, &parent.path().join("one")).is_err());
-    if make_link(&holder.path().join("link"), real.path()) {
+    if link_out(&holder.path().join("link"), real.path()) {
         assert!(copy_folder(&holder.path().join("link"), &parent.path().join("two")).is_err());
     }
     assert!(copy_folder(&holder.path().join("missing"), &parent.path().join("three")).is_err());

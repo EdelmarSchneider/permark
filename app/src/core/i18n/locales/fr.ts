@@ -963,6 +963,8 @@ export default {
   "since.nothing": "Rien n'a changé depuis {when}.",
   "review.offer.one": "Modifié depuis votre dernière lecture · {n} modification",
   "review.offer.other": "Modifié depuis votre dernière lecture · {n} modifications",
+  "review.offerCommit.one": "Modifié depuis le dernier commit · {n} modification",
+  "review.offerCommit.other": "Modifié depuis le dernier commit · {n} modifications",
   "review.review": "Passer en revue",
   "review.reviewing.one": "Revue de {n} modification",
   "review.reviewing.other": "Revue de {n} modifications",
@@ -988,6 +990,7 @@ export default {
   "review.change": "Modification {i} sur {n}, {kind}",
   "review.keptAll": "Toutes les modifications ont été conservées",
   "review.revertedAll": "Toutes les modifications de {name} ont été rejetées",
+  "review.endedMixed": "Certaines modifications de {name} ont été conservées, d'autres rejetées",
   "review.undo": "Annuler",
   "review.undoStale": "Impossible d'annuler : {name} a changé depuis.",
   "review.allDone": "Toutes les modifications ont été passées en revue",
@@ -1049,6 +1052,10 @@ export default {
   "git.why.tooLarge": "La réponse de Git était trop longue pour être lue.",
   "git.why.spawn": "Impossible de démarrer Git.",
   "git.why.parse": "La réponse de Git est incompréhensible.",
+  "git.why.notLocal":
+    "Le dossier git de ce dépôt mène hors de cet ordinateur ou passe par un lien, donc PerMark ne l'ouvre pas.",
+  "git.why.noGit": "Ce dossier n'a aucun .git qui mène à un dépôt.",
+  "git.why.stopped": "Git a été arrêté avant de répondre.",
   "git.why.failed": "Détails : {detail}",
   "git.errorHint":
     "Ouvrez les paramètres pour choisir un autre Git (le Git intégré n'exige pas cette confiance).",
@@ -1509,7 +1516,7 @@ export default {
   "agent.title": "Connexion aux agents",
   "agent.switch": "Partager ce dossier avec les agents",
   "agent.switchHint":
-    "Un agent que vous connectez (un outil d'IA compatible MCP, comme Claude Code ou Cursor) peut voir ce que vous regardez et ce qui a changé, rechercher et lire les fichiers de ce dossier, lire vos commentaires et les notes que vous partagez, et vous montrer un emplacement. Uniquement sur cet ordinateur. Les fichiers listés dans .aiignore restent hors de leur portée. Les agents connectés de cette façon ne font que lire et ne modifient jamais de fichiers via PerMark ; pour permettre à un agent de proposer des modifications, utilisez l'Assistant. Cela ne couvre que ce que les agents obtiennent de PerMark : un agent peut toujours ouvrir lui-même des fichiers sur votre ordinateur.",
+    "Un agent que vous connectez (un outil d'IA compatible MCP, comme Claude Code ou Cursor) peut voir ce que vous regardez et ce qui a changé, rechercher et lire les fichiers de ce dossier, lire vos commentaires et les notes que vous partagez, et vous montrer un emplacement. Uniquement sur cet ordinateur. Les fichiers listés dans .aiignore restent hors de leur portée. Les agents connectés de cette façon ne modifient jamais de fichiers via PerMark : ils lisent, et ne marquent vos commentaires comme traités que si vous l'autorisez. Pour permettre à un agent de proposer des modifications, utilisez l'Assistant. Cela ne couvre que ce que les agents obtiennent de PerMark : un agent peut toujours ouvrir lui-même des fichiers sur votre ordinateur.",
   "agent.folderReplaced":
     "Ce dossier a changé depuis que vous l'avez connecté. Réactivez la connexion pour autoriser les agents ici.",
   "agent.groups": "Ce que les agents peuvent faire",
@@ -1763,6 +1770,8 @@ export default {
     "Votre choix pour chaque plugin dans ce dossier. « Désactivé pour tout le monde » est enregistré dans .permark/config.toml et s'applique à quiconque ouvre le dossier.",
   "plugins.removeConfirm": "Supprimer les données de {name} ?",
   "plugins.removeConfirmBytes": "Supprimer les données de {name} ? Cela libère {size}.",
+  "plugins.removeScope":
+    "Les dossiers qui gardent leurs données dans leur propre dossier .permark ne sont nettoyés que lorsqu'ils sont ouverts.",
   "plugins.removeData": "Supprimer les données",
   "plugins.removeYes": "Supprimer",
   "plugins.turnOn": "Activer {name}",
@@ -1787,6 +1796,8 @@ export default {
   "project.initConfig": "Les paramètres que ce projet partage avec son équipe.",
   "project.initConfirm": "Initialiser PerMark",
   "project.initFailed": "Impossible d'initialiser PerMark dans {path} : {message}",
+  "project.initHeld":
+    "{path}/.permark/local contient déjà des données PerMark venues d'ailleurs ; rien n'a été modifié.",
   "project.initIgnore": "Garde les dossiers privés hors de Git.",
   "project.initIntro": "PerMark crée ici un dossier .permark contenant :",
   "project.initLocal":
@@ -1829,6 +1840,18 @@ export default {
   "project.sharedFileHint": "Partagé avec quiconque ouvre ce dossier.",
   "project.sharedFileUnreadable":
     "PerMark ne peut pas lire ce fichier à la ligne {line} : les paramètres marqués Tout le monde ne peuvent pas être modifiés tant qu'il n'est pas corrigé.",
+  "project.sharedLocked":
+    "PerMark ne peut pas lire .permark/config.toml : les paramètres marqués Tout le monde ne peuvent pas être modifiés tant qu'il n'est pas corrigé.",
+  "project.sharedLocked.line":
+    "PerMark ne peut pas lire .permark/config.toml à la ligne {line} : les paramètres marqués Tout le monde ne peuvent pas être modifiés tant qu'il n'est pas corrigé.",
+  "project.sharedLocked.notText":
+    "PerMark ne peut pas lire .permark/config.toml (ce n'est pas du texte brut) : les paramètres marqués Tout le monde ne peuvent pas être modifiés tant qu'il n'est pas corrigé.",
+  "project.sharedLocked.tooLarge":
+    "PerMark ne peut pas lire .permark/config.toml (il est trop volumineux) : les paramètres marqués Tout le monde ne peuvent pas être modifiés tant qu'il n'est pas corrigé.",
+  "project.sharedLocked.locked":
+    "PerMark ne peut pas lire .permark/config.toml (un autre programme l'utilise) : les paramètres marqués Tout le monde ne peuvent pas être modifiés tant qu'il n'est pas corrigé.",
+  "project.privateTracked":
+    "Les agents ne reçoivent ni les commentaires ni l'activité de ce dossier : son dépôt git suit le dossier privé de PerMark (.permark/local), ou PerMark n'a pas pu le vérifier.",
   "settings.all": "Tous les paramètres",
   "settings.editorPreview": "Exemple :",
   "settings.linkUpdateHint": "Ce qui arrive aux liens quand un fichier est déplacé ou renommé.",
@@ -2241,7 +2264,7 @@ export default {
     "Jetons d'un document, d'une sélection ou d'une section selon le tokeniseur choisi ; exact quand le tokeniseur est public, approximatif (et signalé) sinon.",
   "plugin.local-ai.name": "IA locale",
   "plugin.local-ai.about":
-    "Petits modèles d'IA qui fonctionnent sur cet ordinateur, hors ligne, pour aider PerMark à corriger, traduire et trouver par le sens. Rien n'est téléchargé tant que vous ne le demandez pas.",
+    "Petits modèles d'IA qui fonctionnent sur cet ordinateur pour aider PerMark à corriger, traduire et trouver par le sens. Rien n'est téléchargé tant que vous ne le demandez pas.",
 
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} ligne",
@@ -2676,7 +2699,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "IA locale",
   "localAi.intro":
-    "De petits modèles d'IA qui fonctionnent sur cet ordinateur, hors ligne. Rien n'est téléchargé tant que vous ne le demandez pas.",
+    "De petits modèles d'IA qui fonctionnent sur cet ordinateur. Rien n'est téléchargé tant que vous ne le demandez pas.",
   "localAi.command": "Ouvrir les paramètres d'IA locale",
   "localAi.loadFailed": "Impossible de lire les paramètres d'IA locale.",
   "localAi.retry": "Réessayer",
@@ -2749,8 +2772,8 @@ export default {
   "localAi.models.details.size": "Taille du téléchargement",
   "localAi.models.details.restriction": "Qui peut l'utiliser",
   "localAi.models.comingSoon": "Bientôt disponible",
-  "localAi.models.needs.newer": "Nécessite une version plus récente du moteur d'IA.",
-  "localAi.models.needs.missing": "Nécessite un moteur d'IA que PerMark n'a pas encore.",
+  "localAi.models.needs.newer": "Ce modèle nécessite une version ultérieure de PerMark.",
+  "localAi.models.needs.missing": "PerMark ne peut pas encore exécuter ce type de modèle.",
   "localAi.dl.waiting": "En attente…",
   "localAi.dl.cancelLabel": "Annuler le téléchargement de {name}",
   "localAi.dl.progress": "{done} sur {total}",

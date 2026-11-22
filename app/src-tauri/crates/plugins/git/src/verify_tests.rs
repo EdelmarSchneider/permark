@@ -100,10 +100,7 @@ fn cancel_once(exe: &Path, name: &str) -> Result<Option<Duration>, std::io::Erro
     };
     wait_marker(&h.marker);
     cancel.store(true, Ordering::SeqCst);
-    assert_eq!(
-        worker.join().unwrap().unwrap_err(),
-        GitError::Failed("stopped".to_owned())
-    );
+    assert_eq!(worker.join().unwrap().unwrap_err(), GitError::Stopped);
     rename_now(&h.folder, &h.base.join("renamed é x"))
 }
 

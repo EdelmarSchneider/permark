@@ -28,6 +28,7 @@ use std::sync::Arc;
 
 use permark_core::conditions::Requirement;
 use permark_core::error::IpcError;
+use permark_core::fsx::now_ms;
 use permark_core::notes::{
     NotesScope, ObserverLease, ProjectKey, SharedNote, SharedNotes, SharedNotesApi,
 };
@@ -43,7 +44,7 @@ pub use folder::{FolderInfo, FolderStatus, Places};
 pub use intent::{Intents, NotesIntent};
 pub use loose::{find_renamed, folder_label, new_id, prune as prune_loose, MAX_LISTED};
 pub use names::Moment;
-pub use service::{now_ms, NotesService};
+pub use service::NotesService;
 pub use types::{
     Deleted, EntryKind, LooseState, MoveUndone, Moved, NoteEntry, NoteList, NotesSummary,
     SharedWith,

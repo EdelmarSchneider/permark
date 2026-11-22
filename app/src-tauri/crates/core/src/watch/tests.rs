@@ -1149,6 +1149,36 @@ fn a_touch_of_a_shown_picture_that_leaves_its_bytes_is_no_news() {
 }
 
 #[test]
+fn a_big_new_file_is_read_once_a_window_shows_it_so_a_touch_that_leaves_its_bytes_is_no_news() {
+    // a new file of this size is not read when it appears; the window that shows it gives the reason to
+    let f = make(&[], true);
+    let big = f.dir.path().join("big.bin");
+    let bytes = vec![b'x'; 2 * 1024 * 1024];
+    fs::write(&big, &bytes).unwrap();
+    let all = fence(&f, "fence0.md");
+    assert!(wrote(&all, "big.bin"), "{all:?}");
+    f.seen.lock().unwrap().clear();
+    f.watcher.poll_document("w", Some(&big));
+    // a sync client | a virus scan: the same bytes, a new time
+    let later = std::time::SystemTime::now() + Duration::from_secs(90);
+    fs::File::options()
+        .write(true)
+        .open(&big)
+        .unwrap()
+        .set_modified(later)
+        .unwrap();
+    let all = fence(&f, "fence1.md");
+    assert!(all.iter().all(|c| c.path == "fence1.md"), "{all:?}");
+    // a real change after the reading is still told
+    let mut changed = bytes;
+    changed[0] = b'y';
+    fs::write(&big, &changed).unwrap();
+    wait_for(&f.seen, "the change", |c| {
+        has(c, "big.bin", &ChangeKind::Modified)
+    });
+}
+
+#[test]
 fn the_apps_own_save_of_a_shown_document_is_marked_own() {
     let (f, doc) = shown(&["a.md"], "a.md", FAST);
     let bytes = b"saved by the person in the app";
@@ -2635,6 +2665,93 @@ fn only_hints_the_pass_would_drop_unseen_are_dropped_early() {
         ..fx.hint("build/x/a.md")
     }));
     assert!(!early(created("build/out/new.md")));
+}
+
+/// The team files (the `.permark` folder, its `config.toml`, `meta.toml` and `projects.toml`, in the opened folder and
+/// in a folder below) reach their followers whatever the ignore rules say: git sharing set to private ignores
+/// everything inside `.permark`, a root `.gitignore` may name the folder itself. Other files there stay dropped.
+#[test]
+fn team_files_pass_the_ignore_rules_and_nothing_else_there_does() {
+    const TEAM: [&str; 3] = ["config.toml", "meta.toml", "projects.toml"];
+    for private in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        for folder in [".permark", "sub/.permark"] {
+            fs::create_dir_all(dir.path().join(folder)).unwrap();
+            for name in TEAM.iter().chain(&["tags.toml"]) {
+                fs::write(dir.path().join(folder).join(name), "x = 1\n").unwrap();
+            }
+            if private {
+                fs::write(dir.path().join(folder).join(".gitignore"), "*\n").unwrap();
+            }
+        }
+        if !private {
+            fs::write(dir.path().join(".gitignore"), ".permark/\n").unwrap();
+        }
+        let fx = Direct::new_at(dir);
+        let sigs = SigStore::default();
+        let env = Env {
+            vault: &fx.vault,
+            sigs: &sigs,
+            ignorers: &fx.ignorers,
+            known: &|_| None,
+            opened_ignored: &|_| false,
+            wanted: &|_| false,
+        };
+        let mut folders = std::collections::HashMap::new();
+        let modified = |rel: &str| Pending {
+            modified: true,
+            ..fx.hint(rel)
+        };
+        let mut hints = Vec::new();
+        for folder in [".permark", "sub/.permark"] {
+            for name in TEAM {
+                let hint = modified(&format!("{folder}/{name}"));
+                assert!(!env.ignored_early(&hint, &mut folders), "{folder}/{name}");
+                hints.push(hint);
+            }
+            hints.push(modified(&format!("{folder}/tags.toml")));
+        }
+        let mut told: Vec<String> = fx
+            .pass(&sigs, &|_| None, hints)
+            .into_iter()
+            .map(|c| c.path)
+            .collect();
+        told.sort();
+        assert_eq!(
+            told,
+            [
+                ".permark/config.toml",
+                ".permark/meta.toml",
+                ".permark/projects.toml",
+                "sub/.permark/config.toml",
+                "sub/.permark/meta.toml",
+                "sub/.permark/projects.toml",
+            ],
+            "private: {private}"
+        );
+        // the folder itself arriving (a checkout, a copy): told, with its team files and nothing else
+        let arrived = Pending {
+            created: true,
+            ..fx.hint(".permark")
+        };
+        assert!(!env.ignored_early(&arrived, &mut folders));
+        let mut told: Vec<String> = fx
+            .pass(&SigStore::default(), &|_| None, vec![arrived])
+            .into_iter()
+            .map(|c| c.path)
+            .collect();
+        told.sort();
+        assert_eq!(
+            told,
+            [
+                ".permark",
+                ".permark/config.toml",
+                ".permark/meta.toml",
+                ".permark/projects.toml",
+            ],
+            "private: {private}"
+        );
+    }
 }
 
 #[test]

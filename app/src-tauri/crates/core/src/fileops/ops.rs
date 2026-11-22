@@ -81,10 +81,18 @@ pub(crate) fn undoable(path: &VaultPath) -> bool {
 
 /// Absolute place of a project path: its parent folder is resolved (links followed, escape refused), the name joined.
 pub(crate) fn locate(vault: &Vault, path: &VaultPath) -> Result<PathBuf, FileOpError> {
+    locate_by(path, |parent| Ok(vault.resolve(parent)?))
+}
+
+/// [`locate`] with the parent folder resolved by `resolve`.
+fn locate_by(
+    path: &VaultPath,
+    resolve: impl FnOnce(&VaultPath) -> Result<PathBuf, FileOpError>,
+) -> Result<PathBuf, FileOpError> {
     let (Some(parent), Some(name)) = (path.parent(), path.name()) else {
         return Err(FileOpError::Protected(path.to_string()));
     };
-    Ok(vault.resolve(&parent)?.join(name))
+    Ok(resolve(&parent)?.join(name))
 }
 
 /// [`locate`] for an undo: the path as written and the place it leads to both pass [`undoable`]. A folder on the way
@@ -99,6 +107,29 @@ pub(crate) fn locate_undoable(vault: &Vault, path: &VaultPath) -> Option<PathBuf
         .relativize(&abs)
         .is_some_and(|real| undoable(&real))
         .then_some(abs)
+}
+
+/// Folders looked up during one check of many paths: thousands of items dragged out of | into one folder resolve it
+/// once, not once per item. Keyed by the path as written: two spellings may be two folders where names keep their
+/// case. Lives for one check only; the disk is not changed while it runs.
+#[derive(Default)]
+struct Folders(HashMap<String, PathBuf>);
+
+impl Folders {
+    /// [`Vault::resolve`] of `folder`; an error is not kept (a check ends at its first error).
+    fn resolve(&mut self, vault: &Vault, folder: &VaultPath) -> Result<PathBuf, FileOpError> {
+        if let Some(abs) = self.0.get(folder.as_str()) {
+            return Ok(abs.clone());
+        }
+        let abs = vault.resolve(folder)?;
+        self.0.insert(folder.as_str().to_owned(), abs.clone());
+        Ok(abs)
+    }
+
+    /// [`locate`] through the folders already looked up.
+    fn locate(&mut self, vault: &Vault, path: &VaultPath) -> Result<PathBuf, FileOpError> {
+        locate_by(path, |parent| self.resolve(vault, parent))
+    }
 }
 
 /// Last look before the disk is touched: `abs` is a place strictly inside the root `root` is the index of.
@@ -136,6 +167,7 @@ pub(crate) fn check_moves(
         return Err(FileOpError::Nothing);
     }
     let mut valid = Vec::with_capacity(moves.len());
+    let mut folders = Folders::default();
     for (from, to) in moves {
         for path in [from, to] {
             if is_root_path(path) || is_protected(path) {
@@ -153,8 +185,8 @@ pub(crate) fn check_moves(
         }
         let name = to.name().unwrap_or("");
         check_name(name).map_err(FileOpError::InvalidName)?;
-        let abs_from = locate(vault, from)?;
-        let abs_to = locate(vault, to)?;
+        let abs_from = folders.locate(vault, from)?;
+        let abs_to = folders.locate(vault, to)?;
         confine(vault, from_root, &abs_from)?;
         confine(vault, to_root, &abs_to)?;
         let meta = fs::symlink_metadata(&abs_from).map_err(|e| io_error(from, e))?;
@@ -178,7 +210,7 @@ pub(crate) fn check_moves(
         }
         let parent_ok = to
             .parent()
-            .and_then(|p| vault.resolve(&p).ok())
+            .and_then(|p| folders.resolve(vault, &p).ok())
             .is_some_and(|p| fs::metadata(p).is_ok_and(|m| m.is_dir()));
         if !parent_ok {
             return Err(FileOpError::Vault(crate::paths::VaultError::NotFound(

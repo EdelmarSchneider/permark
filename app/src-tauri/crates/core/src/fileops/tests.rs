@@ -425,6 +425,20 @@ fn a_preview_lists_every_link_with_its_line_and_a_plan_without_links_reads_nothi
     );
 }
 
+/// A Markdown file that is a link is never planned for: its target's links are changed once, under the target's name,
+/// and the link stays a link.
+#[test]
+fn a_document_that_is_a_link_is_left_out_of_the_link_plan() {
+    let f = fx(&[("far.md", "[l](b.md)\n"), ("b.md", "")]);
+    if !crate::fsx::tests::file_link(&f.dir.path().join("alias.md"), &f.dir.path().join("far.md")) {
+        eprintln!("skipped: no file links here");
+        return;
+    }
+    let plan = f.ops.plan_move(&[spec("b.md", "c.md")], true).unwrap();
+    let planned: Vec<&str> = plan.files.iter().map(|d| d.path.as_str()).collect();
+    assert_eq!(planned, ["far.md"]);
+}
+
 #[test]
 fn a_document_with_unsaved_edits_is_skipped_and_said_so() {
     let f = fx(&[
@@ -627,6 +641,36 @@ fn moves_are_refused_for_every_reason_and_touch_nothing() {
         Err(ErrorKind::Unavailable)
     );
     assert!(exists(&f, "a.md") && exists(&f, "b.md") && exists(&f, "docs/x.md"));
+}
+
+/// Moves into one folder look the folder up once per check; each other folder is still looked up on its own, so one
+/// missing destination folder among many good ones refuses the whole set.
+#[test]
+fn many_moves_into_one_folder_pass_and_one_into_a_missing_folder_refuses_all() {
+    let f = fx(&[("a.md", ""), ("b.md", ""), ("c.md", ""), ("docs/", "")]);
+    let plan = |moves: &[(&str, &str)]| {
+        let specs: Vec<MoveSpec> = moves.iter().map(|(a, b)| spec(a, b)).collect();
+        f.ops.plan_move(&specs, false).map(|_| ()).map_err(kind_of)
+    };
+    let into_docs = [
+        ("a.md", "docs/a.md"),
+        ("b.md", "docs/b.md"),
+        ("c.md", "docs/c.md"),
+    ];
+    assert_eq!(plan(&into_docs), Ok(()));
+    for missing_at in 0..into_docs.len() {
+        let mut moves = into_docs;
+        moves[missing_at].1 = ["nodir/a.md", "nodir/b.md", "nodir/c.md"][missing_at];
+        assert_eq!(plan(&moves), Err(ErrorKind::NotFound), "{moves:?}");
+    }
+    // a folder named like a known one in another case is another folder where names keep their case
+    if !crate::paths::CASE_INSENSITIVE {
+        assert_eq!(
+            plan(&[("a.md", "docs/a.md"), ("b.md", "DOCS/b.md")]),
+            Err(ErrorKind::NotFound)
+        );
+    }
+    assert!(exists(&f, "a.md") && exists(&f, "b.md") && exists(&f, "c.md"));
 }
 
 #[test]

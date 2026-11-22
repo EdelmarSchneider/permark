@@ -628,10 +628,10 @@ fn include_pauses_followers_copies_then_resumes_with_the_new_owner() {
     });
     let outcome = core
         .projects_include(
-            &env,
             &ProjectPick::Paths {
                 paths: vec!["sub-a".to_owned()],
             },
+            &|| core.initialize(&env),
         )
         .unwrap();
     assert_eq!(outcome.0.included, 1);
@@ -654,10 +654,10 @@ fn include_pauses_followers_copies_then_resumes_with_the_new_owner() {
     // included again: no second copy (a change made in the project meanwhile stays)
     fs::write(fx.root.join("sub-a/.permark/local/quiet.json"), b"{}").unwrap();
     core.projects_include(
-        &env,
         &ProjectPick::Paths {
             paths: vec!["sub-a".to_owned()],
         },
+        &|| core.initialize(&env),
     )
     .unwrap();
     assert_eq!(

@@ -7,6 +7,7 @@ use crate::format::{
     Contributions, LockReason, MarkdownFeature, PromptBlocks, SegmentKind, TextViewer,
 };
 use crate::paths::{FileScope, Root, Vault};
+use crate::tree::tests::link_out;
 use crate::watch::{Change, ChangeKind};
 
 pub(super) fn formats() -> FormatRegistry {
@@ -950,22 +951,4 @@ fn a_single_file_never_saves_through_a_way_out() {
     );
     assert!(!outside.path().join("new.md").exists());
     assert_eq!(std::fs::read(&file).unwrap(), b"# Only\n");
-}
-
-/// A link (Unix: symlink; Windows: junction, no admin needed) at `link` leading to `target`.
-fn link_out(link: &std::path::Path, target: &std::path::Path) -> bool {
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(target, link).is_ok()
-    }
-    #[cfg(windows)]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
-            .stdout(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
-    }
 }

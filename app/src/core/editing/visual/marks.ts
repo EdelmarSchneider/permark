@@ -5,13 +5,14 @@
 // block) gets no mark. A click on one picks it and leaves the caret alone; a right-click opens its layer's menu when it
 // has one. Classes, attributes + routing: `../marks.ts`, look: `../marks.css`.
 
-import { Plugin, PluginKey, type EditorState } from "@milkdown/kit/prose/state";
+import { Plugin, PluginKey, TextSelection, type EditorState } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/view";
 import {
   DEFAULT_LAYER,
   markAttrs,
   markClass,
   menuClicked,
+  onMark,
   pickClicked,
   type MarkHandlers,
   type MarkOptions,
@@ -65,8 +66,11 @@ export function marksPlugin(): Plugin<Marks> {
       decorations: (state) => marksKey.getState(state)?.all ?? null,
       handleDOMEvents: {
         click: (view, event) => {
+          // the caret goes where the person clicked, as always: a click quicker than the browser's news of the caret
+          // it placed (a short press, automation) puts it into the state first, else the marks drawn anew for the
+          // pick would write the earlier selection (a suggestion shown before) back over the click
+          if (onMark(event.target)) takePageSelection(view);
           pickClicked(marksKey.getState(view.state)?.layers ?? NONE.layers, event.target);
-          // the caret goes where the person clicked, as always
           return false;
         },
         contextmenu: (view, event) =>
@@ -74,6 +78,28 @@ export function marksPlugin(): Plugin<Marks> {
       },
     },
   });
+}
+
+/** The page's selection into the editor's state when they differ: the browser placed it, the editor has not read it
+ *  yet. One that leaves the editor | names no place of its document: nothing. */
+function takePageSelection(view: EditorView): void {
+  const page = view.dom.ownerDocument.getSelection();
+  const anchorNode = page?.anchorNode;
+  const focusNode = page?.focusNode;
+  if (!page || !anchorNode || !focusNode) return;
+  if (!view.dom.contains(anchorNode) || !view.dom.contains(focusNode)) return;
+  let anchor: number;
+  let head: number;
+  try {
+    anchor = view.posAtDOM(anchorNode, page.anchorOffset);
+    head = view.posAtDOM(focusNode, page.focusOffset);
+  } catch {
+    return;
+  }
+  const { doc, selection } = view.state;
+  if (selection.anchor === anchor && selection.head === head) return;
+  const placed = TextSelection.between(doc.resolve(anchor), doc.resolve(head));
+  view.dispatch(view.state.tr.setSelection(placed).setMeta("pointer", true));
 }
 
 function insertMark(layer: string, index: number, current: boolean, base?: string): HTMLElement {

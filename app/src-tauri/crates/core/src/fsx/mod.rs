@@ -41,6 +41,14 @@ pub fn hash(bytes: &[u8]) -> ContentHash {
     ContentHash(xxhash_rust::xxh3::xxh3_64(bytes))
 }
 
+/// Milliseconds since the epoch on the system clock, the stamp of saved times; a clock before the epoch reads 0.
+#[must_use]
+pub fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+
 /// Sends files to the system recycle bin. A refusal may come after the bin took some of them: [`recycle_each`] names
 /// those.
 ///
@@ -425,7 +433,7 @@ pub(crate) fn scratch_in(dir: &Path) -> PathBuf {
 }
 
 /// The process that made a temp of [`temp_path`] | [`scratch_in`] (`.<name>.<pid>.<n>.part`); `None`: another name.
-fn temp_pid(name: &str) -> Option<u32> {
+pub(crate) fn temp_pid(name: &str) -> Option<u32> {
     let inner = name.strip_prefix('.')?.strip_suffix(".part")?;
     let (rest, n) = inner.rsplit_once('.')?;
     let (stem, pid) = rest.rsplit_once('.')?;
@@ -708,15 +716,33 @@ pub fn replace_file(from: &Path, to: &Path) -> io::Result<()> {
 }
 
 /// Makes `dir` (missing parents too) a real folder of this user that only this user can enter. Unix: mode 0700 (an
-/// existing folder is tightened); a link, a file or another user's folder in the way is refused. Windows: created;
-/// the per-user profile it sits in already keeps other users out.
+/// existing folder is tightened); a link, a file or another user's folder in the way is refused. Windows: created; the
+/// per-user profile it sits in already keeps other users out.
 ///
 /// # Errors
 /// Creation failed, something other than this user's folder in the way, mode change refused.
 pub fn private_dir(dir: &Path) -> io::Result<()> {
+    private_dir_as(dir, ModeRefused::Fail)
+}
+
+/// How [`private_dir_as`] takes a mode change the volume refuses (the owner may always change the mode where modes are
+/// kept: a refusal comes from a volume without them, such as FAT, exFAT, some shares).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModeRefused {
+    /// An error: what lives in the folder (a socket) relies on it being closed to others.
+    Fail,
+    /// The folder as it is: what lives in it checks its own files (the install key).
+    Accept,
+}
+
+/// [`private_dir`], a refused mode change taken as `refused` says.
+///
+/// # Errors
+/// As [`private_dir`]; a refused mode change only with [`ModeRefused::Fail`].
+pub(crate) fn private_dir_as(dir: &Path, refused: ModeRefused) -> io::Result<()> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+        use std::os::unix::fs::{DirBuilderExt, MetadataExt};
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -732,14 +758,30 @@ pub fn private_dir(dir: &Path) -> io::Result<()> {
             ));
         }
         if meta.mode() & 0o777 != 0o700 {
-            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+            if let Err(e) = owner_only(dir) {
+                if e.kind() != io::ErrorKind::PermissionDenied || refused == ModeRefused::Fail {
+                    return Err(e);
+                }
+            }
         }
         Ok(())
     }
     #[cfg(not(unix))]
     {
+        let _ = refused;
         std::fs::create_dir_all(dir)
     }
+}
+
+/// Mode 0700 on `dir`.
+#[cfg(unix)]
+fn owner_only(dir: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    #[cfg(test)]
+    if tests::MODES_REFUSED.with(std::cell::Cell::get) {
+        return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+    }
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
 }
 
 /// Bytes free for this user on the volume holding `path`; a path not made yet answers for its nearest existing
@@ -897,6 +939,50 @@ pub(crate) fn real_tempdir() -> tempfile::TempDir {
 pub(crate) mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    thread_local! {
+        /// While set, a private folder's mode change on this thread is refused, as a volume without modes refuses it.
+        pub(crate) static MODES_REFUSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
+    /// Runs `body` with every private folder's mode change on this thread refused.
+    #[cfg(unix)]
+    pub(crate) fn with_modes_refused<T>(body: impl FnOnce() -> T) -> T {
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                MODES_REFUSED.with(|refused| refused.set(false));
+            }
+        }
+        MODES_REFUSED.with(|refused| refused.set(true));
+        let _reset = Reset;
+        body()
+    }
+
+    /// A refused mode change fails the private folder (a socket folder must be closed to others); only the place that
+    /// checks its own files takes the folder as it is.
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_mode_change_fails_the_private_folder_unless_accepted() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("private");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        with_modes_refused(|| {
+            let refused = private_dir(&dir).unwrap_err();
+            assert_eq!(refused.kind(), io::ErrorKind::PermissionDenied);
+            private_dir_as(&dir, ModeRefused::Accept).unwrap();
+        });
+        // modes kept again: the folder is tightened
+        private_dir(&dir).unwrap();
+        let mode = std::fs::symlink_metadata(&dir)
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+
     /// A folder registered as a Cloud Files sync root, the way OneDrive | Dropbox register theirs, while this lives
     /// (no provider connected: nothing is ever fetched); the registration goes on drop. Unregister before the folder
     /// is removed: keep this after the temp folder in the test's bindings.
@@ -957,6 +1043,15 @@ pub(crate) mod tests {
             // SAFETY: `self.0` is the live NUL-terminated path the root was registered with.
             let _ = unsafe { CfUnregisterSyncRoot(self.0.as_ptr()) };
         }
+    }
+
+    #[test]
+    fn the_clock_reads_milliseconds_since_the_epoch() {
+        // 2023-11-14 in milliseconds: a seconds | micros mix-up or the 0 of an unreadable clock lands far off
+        let before = now_ms();
+        assert!(before > 1_700_000_000_000, "{before}");
+        assert!(before < 100_000_000_000_000, "{before}");
+        assert!(now_ms() >= before);
     }
 
     #[test]
@@ -1583,10 +1678,11 @@ pub(crate) mod tests {
             ] {
                 assert!(!is_local_path(Path::new(odd)), "{odd:?}");
             }
-            // a drive letter with no drive behind it tells nothing
+            // a drive letter with no drive behind it tells nothing; asked of the system, not by a lookup at the letter
+            // (that would wait on a mapped network drive | an empty CD drive and take either for a free letter)
             if let Some(letter) = (b'A'..=b'Z')
                 .rev()
-                .find(|l| !Path::new(&format!("{}:\\", char::from(*l))).exists())
+                .find(|l| win::drive_type(*l) == win::DRIVE_NO_ROOT_DIR)
             {
                 let free = format!(r"{}:\x", char::from(letter));
                 assert!(!is_local_path(Path::new(&free)), "{free}");
@@ -1633,16 +1729,7 @@ pub(crate) mod tests {
         let opened = opened.expect("the system names the opened file");
         assert_eq!(crate::paths::simplified(&opened), real.join("a.md"));
         let link = base.join("link");
-        #[cfg(windows)]
-        let made = std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(&link)
-            .arg(&real)
-            .output()
-            .is_ok_and(|o| o.status.success());
-        #[cfg(unix)]
-        let made = std::os::unix::fs::symlink(&real, &link).is_ok();
-        if made {
+        if crate::tree::tests::link_out(&link, &real) {
             let (_, opened) = read_text_opened(&link.join("a.md"), 1024).unwrap();
             assert_eq!(
                 crate::paths::simplified(&opened.unwrap()),

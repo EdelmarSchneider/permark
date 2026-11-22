@@ -38,9 +38,10 @@ function isReloadKey(event: Pick<KeyEventLike, "key">): boolean {
 }
 
 /** Chords the webview acts on by itself, as `comboFromEvent` writes them: Mod+R | Mod+Shift+R reload the page (the
- * same loss as F5), Mod+P opens the print dialog over the whole window, Mod+F | F3 | Shift+F3 open its own find bar
- * over the whole window, F7 asks to turn on caret browsing. None is ever text, also in a field. An editor that handles
- * one itself (CodeMirror's search panel) takes it first, on its own element. */
+ * same loss as F5), Mod+P opens the print dialog over the whole window, Mod+F | F3 | Shift+F3 | Mod+G | Mod+Shift+G
+ * (find, next, previous) open its own find bar over the whole window, F7 asks to turn on caret browsing. None is ever
+ * text, also in a field. An editor that handles one itself (CodeMirror's search panel, its go to line on Mod+G) takes
+ * it first, on its own element. */
 const WEBVIEW_CHORDS: ReadonlySet<string> = new Set([
   "Mod+r",
   "Mod+Shift+r",
@@ -48,6 +49,8 @@ const WEBVIEW_CHORDS: ReadonlySet<string> = new Set([
   "Mod+f",
   "F3",
   "Shift+F3",
+  "Mod+g",
+  "Mod+Shift+g",
   "F7",
 ]);
 

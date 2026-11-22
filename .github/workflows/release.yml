@@ -4,14 +4,19 @@ name: Release
 # signs the updater artifacts and publishes the GitHub release together with `latest.json`, the manifest the in-app
 # updater reads.
 #
-# Flow: `draft` makes the release (a draft, invisible to the updater) -> the three `release` jobs build and upload their
-# installers + `.sig` files in parallel -> `publish` checks every installer against its `.sig` with the updater key,
-# writes `latest.json` once, from all the `.sig` files (app/scripts/updater-json.mjs; same shape as tauri-action's),
-# attests the installers' build provenance, attaches the SBOMs and publishes the release. Installed copies only ever
-# see a complete release; a failed platform leaves a draft (re-run the failed jobs, `publish` then runs).
+# Flow: `draft` makes the release (a draft, invisible to the updater) -> the three `build` jobs build the installers in
+# parallel and keep them as artifacts of the run -> `sign` signs the updater bundles, checks every signature with the
+# updater key the app trusts, attests the installers' build provenance and uploads installers + `.sig` files to the
+# draft -> `publish` checks every installer against its `.sig` again, writes `latest.json` once, from all the `.sig`
+# files of the release (app/scripts/updater-json.mjs; same shape as tauri-action's), attaches the SBOMs (made by `sbom`)
+# and publishes the release. Installed copies only ever see a complete release; a failed platform leaves a draft
+# (re-run the failed jobs: `sign` and `publish` run again after them).
 #
-# The updater signing key reaches one step only, after the build: npm and cargo run third-party code (install and
-# build scripts, macros, bundler plugins) in a step without secrets, then tauri-action only bundles and signs.
+# The updater signing key never meets the build. The `build` jobs run third-party code (npm and cargo install and build
+# scripts, macros, bundler plugins), so they get no secret and a read-only token. Only `sign` uses the `release`
+# environment that holds the key, and it runs nothing from the build: it checks out only the lockfile, the app config
+# and the signature check, installs no package and builds nothing. Its signer is the Tauri CLI the lockfile pins,
+# downloaded from the npm registry and checked against the lockfile's integrity hash before it runs.
 #
 # No Rust cache here: a tag run can restore only caches of its own tag or of develop, and develop has no release-profile
 # build, so it never hit (and its saves crowded develop's caches out of the 10 GB budget).
@@ -138,20 +143,20 @@ jobs:
           fi
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
-  release:
-    name: Release (${{ matrix.platform }})
+  # The installers of one platform, kept as the artifact `bundles-<runner>` under their release asset names.
+  build:
+    name: Build (${{ matrix.platform }})
     needs: draft
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
-    # The updater signing key lives in this environment, which only release tags and main | develop may use.
-    environment: release
+    # No environment and no secret: this is where third-party code runs.
     permissions:
-      contents: write
+      contents: read
     env:
       RUN_THIS: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, matrix.platform) }}
     strategy:
       fail-fast: false
-      # In parallel: each job uploads only its own assets; `publish` writes latest.json once, after all of them.
+      # In parallel: each job keeps only its own installers; `sign` uploads them, `publish` writes latest.json once.
       matrix:
         include:
           - platform: windows-latest
@@ -222,10 +227,12 @@ jobs:
         working-directory: app
         run: npm run notices
 
-      # The interface and the program, built without any secret: this is where third-party code runs. The overlay
-      # src-tauri/tauri.signing.conf.json empties `beforeBuildCommand` (the interface is built just before), and the
-      # signing step passes the same overlay, so cargo finds the program up to date there and compiles nothing again.
-      - name: Build the program
+      # The interface, then the program and its installers. The overlay src-tauri/tauri.signing.conf.json empties
+      # `beforeBuildCommand`, so the interface is not built twice.
+      # Tauri signs the updater bundles it makes and stops when the app has an updater key but no private key. A
+      # throwaway key made here lets it finish (Tauri warns that it does not match the app's key); its `.sig` files are
+      # never kept: `sign` signs the installers with the real key.
+      - name: Build the program and its installers
         if: env.RUN_THIS == 'true'
         working-directory: app
         shell: bash
@@ -233,40 +240,258 @@ jobs:
           ARGS: ${{ matrix.args }}
         run: |
           npm run build
+          key="$RUNNER_TEMP/throwaway.key"
+          npx tauri signer generate --ci -w "$key"
           # shellcheck disable=SC2086 # ARGS holds several words or none
-          npx tauri build $ARGS --config src-tauri/tauri.signing.conf.json --no-bundle
+          TAURI_SIGNING_PRIVATE_KEY="$key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
+            npx tauri build $ARGS --config src-tauri/tauri.signing.conf.json
 
-      # Bundles the program built above, signs the updater artifacts and uploads installers + `.sig` files to the release
-      # (tauri-action names them: the CLI's file names, macOS updater bundle `PerMark_<version>_universal.app.tar.gz`).
-      # Given `releaseId`, it leaves the release's name and notes alone. `latest.json` is written once by `publish`:
-      # `uploadUpdaterJson` is on by default and would make each platform job upload its own copy in parallel.
-      - name: Bundle, sign and upload the installers
+      # The installers under the names tauri-action gave the release assets up to 0.17: the CLI's file names, but the
+      # macOS updater bundle gets the version and architecture like the other installers
+      # (`PerMark_<version>_universal.app.tar.gz`; universal is the only macOS build). The `.app` folder ships inside
+      # the `.dmg`; the throwaway `.sig` files stay behind.
+      - name: Collect the installers
         if: env.RUN_THIS == 'true'
-        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Signs the updater artifacts (the matching public key is in tauri.conf.json). The key has no password.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        with:
-          projectPath: app
-          releaseId: ${{ needs.draft.outputs.id }}
-          uploadUpdaterJson: false
-          args: ${{ matrix.args }} --config src-tauri/tauri.signing.conf.json
+        working-directory: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/bundles"
+          mkdir -p "$out"
+          version=$(node -p 'require("./src-tauri/tauri.conf.json").version')
+          for file in src-tauri/target/release/bundle/*/* src-tauri/target/*/release/bundle/*/*; do
+            [ -f "$file" ] || continue
+            name=$(basename "$file")
+            case "$name" in
+              *-setup.exe | *.dmg | *.AppImage | *.deb | *.rpm) cp "$file" "$out/$name" ;;
+              *.app.tar.gz) cp "$file" "$out/${name%.app.tar.gz}_${version}_universal.app.tar.gz" ;;
+            esac
+          done
+          ls -l "$out"
 
-  # `latest.json` from every `.sig` of the release (all platforms, also after a rebuild of some), then the release goes
-  # public. The script refuses a release with a platform missing or an installer its `.sig` does not verify, so the
-  # draft stays a draft.
-  publish:
-    name: Publish the release
-    needs: [draft, release]
+      - name: Keep the installers for the signing job
+        if: env.RUN_THIS == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundles-${{ matrix.platform }}
+          path: ${{ runner.temp }}/bundles/
+          if-no-files-found: error
+          # installers are compressed already
+          compression-level: 0
+          # a re-run of this job replaces what an earlier attempt kept
+          overwrite: true
+
+  # Signs the updater bundles of the installers built in this run, checks the signatures, attests the installers and
+  # uploads installers + `.sig` files to the draft. It runs when some platform failed too (the others' assets go up;
+  # `publish` still waits for all) and signs only what this run built (a rebuild of some platforms signs those).
+  # The key reaches one step only, and no step runs code from npm, cargo or the build.
+  sign:
+    name: Sign and upload the installers
+    needs: [draft, build]
+    if: ${{ !cancelled() && needs.draft.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The updater signing key lives in this environment, which only release tags and main | develop may use.
+    environment: release
     permissions:
-      contents: write
+      contents: write # uploads the installers and their signatures to the draft
       # The build provenance attestations of the installers (`gh attestation verify`).
       id-token: write
       attestations: write
+    steps:
+      # Only what this job reads: the lockfile (the signer's version and integrity hash), the app config (version and
+      # updater key) and the script that picks and checks the updater bundles (Node built-ins only).
+      - name: Checkout the lockfile, the app config and the signature check
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+          sparse-checkout: |
+            app/package-lock.json
+            app/src-tauri/tauri.conf.json
+            app/scripts/updater-json.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Download the installers
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: bundles-*
+          path: ${{ runner.temp }}/bundles
+          merge-multiple: true
+
+      # The signer is the Linux build of the Tauri CLI the lockfile pins (a Node addon; no install script runs), checked
+      # against the lockfile's integrity hash before it is unpacked. Bumping @tauri-apps/cli in the lockfile bumps it.
+      - name: Get the pinned signer
+        id: signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Source files in this job:"
+          find . -path ./.git -prune -o -type f -print
+          entry=$(jq -c '.packages["node_modules/@tauri-apps/cli-linux-x64-gnu"]' app/package-lock.json)
+          version=$(jq -r .version <<<"$entry")
+          url=$(jq -r .resolved <<<"$entry")
+          integrity=$(jq -r .integrity <<<"$entry")
+          if [ "$url" != "https://registry.npmjs.org/@tauri-apps/cli-linux-x64-gnu/-/cli-linux-x64-gnu-$version.tgz" ]; then
+            echo "::error::The lockfile does not pin the signer to the npm registry: $url"
+            exit 1
+          fi
+          dir="$RUNNER_TEMP/signer"
+          mkdir -p "$dir"
+          curl -fsSL --retry 3 -o "$dir/cli.tgz" "$url"
+          actual="sha512-$(openssl dgst -sha512 -binary "$dir/cli.tgz" | base64 -w0)"
+          if [ "$actual" != "$integrity" ]; then
+            echo "::error::The signer download is not the one the lockfile pins: $actual, want $integrity"
+            exit 1
+          fi
+          tar -xzf "$dir/cli.tgz" -C "$dir"
+          echo "addon=$dir/package/cli.linux-x64-gnu.node" >> "$GITHUB_OUTPUT"
+          echo "Signer: @tauri-apps/cli-linux-x64-gnu $version, integrity checked against the lockfile."
+
+      # A `.sig` that came with the installers is never trusted: every updater bundle is signed below.
+      - name: Pick the updater bundles
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP"/bundles/*.sig
+          ls -l "$RUNNER_TEMP/bundles"
+          node app/scripts/updater-json.mjs bundles "$RUNNER_TEMP/bundles" > "$RUNNER_TEMP/to-sign.txt"
+          if [ ! -s "$RUNNER_TEMP/to-sign.txt" ]; then
+            echo "::error::This run built no updater bundle."
+            exit 1
+          fi
+
+      # The key reaches this step only (it has no password). Each signature names the app version, as `tauri build`
+      # signs them.
+      - name: Sign the updater bundles
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          ADDON: ${{ steps.signer.outputs.addon }}
+        run: |
+          set -euo pipefail
+          version=$(jq -r .version app/src-tauri/tauri.conf.json)
+          while IFS= read -r name; do
+            node -e '
+              const [addon, ...args] = process.argv.slice(1);
+              require(addon).run(args, "tauri", (error) => {
+                if (error) {
+                  console.error(error.message);
+                  process.exit(1);
+                }
+              });
+            ' "$ADDON" signer sign --password "" --app-version "$version" "$RUNNER_TEMP/bundles/$name" > /dev/null
+            echo "Signed $name"
+          done < "$RUNNER_TEMP/to-sign.txt"
+
+      # The in-app updater's check, with the key the app trusts (plugins.updater.pubkey): nothing goes up when one
+      # signature does not verify.
+      - name: Check the signatures
+        run: node app/scripts/updater-json.mjs verify "$RUNNER_TEMP/bundles"
+
+      # Not blocking: a failed attestation leaves the installers as they were before attestations existed.
+      - name: Attest the installers' build provenance
+        continue-on-error: true
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/bundles/*.exe
+            ${{ runner.temp }}/bundles/*.dmg
+            ${{ runner.temp }}/bundles/*.app.tar.gz
+            ${{ runner.temp }}/bundles/*.AppImage
+            ${{ runner.temp }}/bundles/*.deb
+            ${{ runner.temp }}/bundles/*.rpm
+
+      # A re-run or a rebuild replaces the assets of the same name.
+      - name: Upload the installers and their signatures
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ID: ${{ needs.draft.outputs.id }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$ID/assets?per_page=100" > "$RUNNER_TEMP/assets.json"
+          upload() { # <file> <asset name>
+            old=$(jq -r --arg name "$2" '.[] | select(.name == $name) | .id' "$RUNNER_TEMP/assets.json")
+            if [ -n "$old" ]; then gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old"; fi
+            curl -fsS -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$1" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$ID/assets?name=$2" |
+              jq -r .browser_download_url
+          }
+          for file in "$RUNNER_TEMP"/bundles/*; do upload "$file" "$(basename "$file")"; done
+
+  # The software bills of materials (CycloneDX) of what ships: the Rust crates compiled in (all three systems) and
+  # the npm packages the interface bundles. Both tools read the lockfiles only: no build, no install script.
+  # cargo-cyclonedx = pinned prebuilt binary, checked against its published sha256 (bumping: new version + the
+  # sha256 published beside that release's x86_64-unknown-linux-musl asset). Read-only: `publish` attaches them. Not
+  # blocking: without them the release still goes out, with a warning.
+  sbom:
+    name: Make the SBOMs
+    needs: draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      made: ${{ steps.sbom.outcome == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      - name: Make the SBOMs
+        id: sbom
+        continue-on-error: true
+        shell: bash
+        env:
+          VERSION: "0.5.10"
+          SHA256: "528be9dd99ae522c3ee14fb881fd0cbf51767e8f12b74248f437e6a66b1a3c1b"
+        run: |
+          set -euo pipefail
+          tool="$RUNNER_TEMP/cargo-cyclonedx"
+          mkdir -p "$tool" "$RUNNER_TEMP/sbom"
+          curl -fsSL --retry 3 -o "$tool/cyclonedx.tar.xz" \
+            "https://github.com/CycloneDX/cyclonedx-rust-cargo/releases/download/cargo-cyclonedx-${VERSION}/cargo-cyclonedx-x86_64-unknown-linux-musl.tar.xz"
+          echo "${SHA256}  $tool/cyclonedx.tar.xz" | sha256sum -c -
+          tar -xJf "$tool/cyclonedx.tar.xz" --strip-components 1 -C "$tool"
+          # Writes <crate>.cdx.json beside the Cargo.toml of every workspace member; `permark` is the program.
+          PATH="$tool:$PATH" cargo cyclonedx --manifest-path app/src-tauri/Cargo.toml --format json --spec-version 1.5 --target all
+          name="PerMark_${TAG#v}"
+          mv app/src-tauri/permark.cdx.json "$RUNNER_TEMP/sbom/${name}_rust.cdx.json"
+          # npm 10 (the runner's) names the root component after the folder it runs in ("app"), not the package, and
+          # has no flag for it: it reads a copy of the manifest and lockfile in a folder named after the package.
+          npm_root="$RUNNER_TEMP/permark"
+          mkdir -p "$npm_root"
+          cp app/package.json app/package-lock.json "$npm_root/"
+          (cd "$npm_root" && npm sbom --omit dev --sbom-format cyclonedx --sbom-type application --package-lock-only) \
+            > "$RUNNER_TEMP/sbom/${name}_npm.cdx.json"
+
+      - name: Keep the SBOMs for the publish job
+        if: steps.sbom.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom/
+          if-no-files-found: error
+          overwrite: true
+
+  # `latest.json` from every `.sig` of the release (all platforms, also after a rebuild of some), then the release goes
+  # public. The script refuses a release with a platform missing or an installer its `.sig` does not verify, so the
+  # draft stays a draft. It waits for every platform to be built and signed; the SBOMs never hold it back.
+  publish:
+    name: Publish the release
+    needs: [draft, build, sign, sbom]
+    if: ${{ !cancelled() && needs.draft.result == 'success' && needs.build.result == 'success' && needs.sign.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # uploads latest.json and the SBOMs, then publishes the release
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       ID: ${{ needs.draft.outputs.id }}
@@ -294,51 +519,21 @@ jobs:
       - name: Write latest.json
         run: node app/scripts/updater-json.mjs "$RUNNER_TEMP/release.json" "$RUNNER_TEMP/assets" "$GITHUB_REPOSITORY" "$RUNNER_TEMP/latest.json"
 
-      # Not blocking: a failed attestation leaves the installers as they were before attestations existed.
-      - name: Attest the installers' build provenance
+      # The SBOMs the `sbom` job made, when it made them. Not blocking either.
+      - name: Download the SBOMs
+        id: sboms
+        if: needs.sbom.outputs.made == 'true'
         continue-on-error: true
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          subject-path: |
-            ${{ runner.temp }}/assets/*.exe
-            ${{ runner.temp }}/assets/*.dmg
-            ${{ runner.temp }}/assets/*.app.tar.gz
-            ${{ runner.temp }}/assets/*.AppImage
-            ${{ runner.temp }}/assets/*.deb
-            ${{ runner.temp }}/assets/*.rpm
-
-      # The software bills of materials (CycloneDX) of what ships: the Rust crates compiled in (all three systems) and
-      # the npm packages the interface bundles. Both tools read the lockfiles only: no build, no install script.
-      # cargo-cyclonedx = pinned prebuilt binary, checked against its published sha256 (bumping: new version + the
-      # sha256 published beside that release's x86_64-unknown-linux-musl asset). Not blocking: without them the release
-      # still goes out, with a warning.
-      - name: Make the SBOMs
-        id: sbom
-        continue-on-error: true
-        shell: bash
-        env:
-          VERSION: "0.5.10"
-          SHA256: "528be9dd99ae522c3ee14fb881fd0cbf51767e8f12b74248f437e6a66b1a3c1b"
-        run: |
-          set -euo pipefail
-          tool="$RUNNER_TEMP/cargo-cyclonedx"
-          mkdir -p "$tool" "$RUNNER_TEMP/sbom"
-          curl -fsSL --retry 3 -o "$tool/cyclonedx.tar.xz" \
-            "https://github.com/CycloneDX/cyclonedx-rust-cargo/releases/download/cargo-cyclonedx-${VERSION}/cargo-cyclonedx-x86_64-unknown-linux-musl.tar.xz"
-          echo "${SHA256}  $tool/cyclonedx.tar.xz" | sha256sum -c -
-          tar -xJf "$tool/cyclonedx.tar.xz" --strip-components 1 -C "$tool"
-          # Writes <crate>.cdx.json beside the Cargo.toml of every workspace member; `permark` is the program.
-          PATH="$tool:$PATH" cargo cyclonedx --manifest-path app/src-tauri/Cargo.toml --format json --spec-version 1.5 --target all
-          name="PerMark_${TAG#v}"
-          mv app/src-tauri/permark.cdx.json "$RUNNER_TEMP/sbom/${name}_rust.cdx.json"
-          (cd app && npm sbom --omit dev --sbom-format cyclonedx --sbom-type application --package-lock-only) \
-            > "$RUNNER_TEMP/sbom/${name}_npm.cdx.json"
+          name: sbom
+          path: ${{ runner.temp }}/sbom
 
       # A re-run replaces what an earlier run uploaded.
       - name: Upload latest.json and the SBOMs
         shell: bash
         env:
-          SBOM: ${{ steps.sbom.outcome }}
+          SBOM: ${{ steps.sboms.outcome }}
         run: |
           upload() { # <file> <asset name>
             old=$(jq -r --arg name "$2" '.assets[] | select(.name == $name) | .id' "$RUNNER_TEMP/release.json")
@@ -355,7 +550,7 @@ jobs:
           if [ "$SBOM" = "success" ]; then
             for file in "$RUNNER_TEMP"/sbom/*.cdx.json; do upload "$file" "$(basename "$file")"; done
           else
-            echo "::warning::The release goes out without its SBOM files: making them failed (see the step above)."
+            echo "::warning::The release goes out without its SBOM files: making or downloading them failed (see the sbom job and the step above)."
           fi
 
       # A rebuild of an already public release leaves it as it is (it may not be the latest one).

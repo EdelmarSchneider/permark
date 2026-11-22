@@ -410,15 +410,18 @@ impl GitOps for BuiltinGit {
         let Some(prefix) = prefix_of(&workdir, root) else {
             return Discovery::NoRepo;
         };
-        if !prefix.is_empty() && repo.is_path_ignored(&prefix).unwrap_or(false) {
-            return Discovery::NoRepo;
-        }
-        Discovery::Repo(RepoLocation {
+        let ignored = !prefix.is_empty() && repo.is_path_ignored(&prefix).unwrap_or(false);
+        let location = RepoLocation {
             workdir: permark_core::paths::canonicalize(&workdir).unwrap_or(workdir),
             git_dir: permark_core::paths::canonicalize(repo.path())
                 .unwrap_or_else(|_| repo.path().to_path_buf()),
             prefix,
-        })
+        };
+        if ignored {
+            Discovery::Ignored(location)
+        } else {
+            Discovery::Repo(location)
+        }
     }
 
     fn status(&self, location: &RepoLocation, baseline: &Baseline) -> Result<RawStatus, GitError> {

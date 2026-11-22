@@ -5,9 +5,9 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use permark_core::conditions::AgentCondition;
+use permark_core::fsx::now_ms;
 use permark_core::ipc_local::{Endpoint, IpcLocalError, Reply, Server};
 use permark_core::plugins::{PluginEvents, ProjectFacts};
 use permark_core::projects::agent_view::RulesProblem;
@@ -145,12 +145,6 @@ pub struct AgentStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub rules: Option<RulesProblem>,
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 /// Printable text of at most `max` chars (a client's self-declared words, shown in the app): no control characters,

@@ -229,6 +229,78 @@ fn one_waiter_cancelling_leaves_the_engine_download_to_the_other() {
     bench.unloaded();
 }
 
+/// The only open waiting on the engine download cancels, and the download, told to stop, is still held in its
+/// transport. Returns the `count` opens that come next, waiting on that download.
+fn opens_after_the_last_cancel(
+    bench: &Bench,
+    held: &Held,
+    count: usize,
+) -> Vec<std::thread::JoinHandle<Result<(), HostError>>> {
+    let first = CancelToken::new();
+    let cancelled = opening(bench, &first);
+    engine_waiters(bench, 1);
+    let start = Instant::now();
+    while !held.reached.load(Ordering::SeqCst) {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    first.cancel();
+    assert_eq!(
+        ipc(cancelled.join().unwrap().unwrap_err()).2,
+        Some("cancelled".into())
+    );
+    (1..=count)
+        .map(|waiting| {
+            let next = opening(bench, &CancelToken::new());
+            engine_waiters(bench, waiting);
+            next
+        })
+        .collect()
+}
+
+/// Opens that join a download its last waiter just stopped are not cancelled with it: the download starts again,
+/// once, for both, and both load.
+#[test]
+fn opens_joining_a_download_the_last_waiter_stopped_start_it_again_and_load() {
+    let (bench, held) = held_engine();
+    let next = opens_after_the_last_cancel(&bench, &held, 2);
+    held.release();
+    for open in next {
+        assert!(open.join().unwrap().is_ok(), "each joining open loads");
+    }
+    assert!(bench.host.files.is_installed());
+    assert_eq!(bench.host.engine_waiters(), 0);
+    bench.unloaded();
+}
+
+/// Same, while the downloads shut down (plugin off): nothing can start again, the joining open ends cancelled and
+/// does not wait for ever.
+#[test]
+fn an_open_joining_a_stopped_download_during_shutdown_ends_cancelled() {
+    let (bench, held) = held_engine();
+    let [next] = <[_; 1]>::try_from(opens_after_the_last_cancel(&bench, &held, 1)).unwrap();
+    // the shutdown waits for the download thread, held in its transport until the release
+    let stopping = {
+        let host = Arc::clone(&bench.host);
+        std::thread::spawn(move || host.files.shutdown())
+    };
+    std::thread::sleep(Duration::from_millis(300));
+    held.release();
+    let start = Instant::now();
+    while !next.is_finished() {
+        assert!(start.elapsed() < Duration::from_secs(10), "the open ended");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        ipc(next.join().unwrap().unwrap_err()).2,
+        Some("cancelled".into())
+    );
+    stopping.join().unwrap();
+    assert!(!bench.host.files.is_installed());
+    assert_eq!(bench.host.engine_waiters(), 0);
+    assert_eq!(bench.workers.launched(), 0);
+}
+
 /// No worker built for this computer: typed `notAvailable`, nothing fetched | started.
 #[test]
 fn open_without_an_engine_for_this_computer_is_not_available() {

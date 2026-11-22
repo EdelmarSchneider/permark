@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use permark_core::conditions::Distribution;
 use permark_core::events::{CoreEvent, EventSink};
+use permark_core::fsx::now_ms;
 use permark_core::paths::Root;
 use permark_core::plugins::{PluginRegistry, RpcCall};
 use permark_core::settings::AppSettings;
@@ -20,7 +21,7 @@ use serde_json::{json, Value};
 use super::*;
 use crate::kept::{ASIDES_CAP, KEPT_CAP, MAX_KEPT_TEXT};
 use crate::model::{Anchor, Book};
-use crate::service::{merge_book, now_ms};
+use crate::service::merge_book;
 
 // ---- the merge, as it is ---------------------------------------------------------------------------------------
 
@@ -706,32 +707,51 @@ fn an_aside_older_than_thirty_days_is_dropped() {
 // ---- sizes and the writers' lock -------------------------------------------------------------------------------
 
 #[test]
-fn a_planted_kept_copy_or_asides_file_over_its_cap_is_refused_by_size_and_left_in_place() {
+fn a_planted_asides_file_over_its_cap_is_refused_by_size_and_left_in_place() {
     let fx = Fx::new();
     let core = fx.open();
     add(&core, "mine");
-    let kept = kept_file(&core);
-    let asides_file = kept.with_file_name("comments-asides.json");
+    let asides_file = kept_file(&core).with_file_name("comments-asides.json");
     drop(core);
     // not JSON: a file that was read would be found corrupt and moved aside; one refused by its size stays as it is
-    let planted = [(&kept, KEPT_CAP + 1), (&asides_file, ASIDES_CAP + 1)];
-    for (path, len) in planted {
-        std::fs::write(path, vec![b'x'; usize::try_from(len).unwrap()]).unwrap();
-    }
+    let len = ASIDES_CAP + 1;
+    std::fs::write(&asides_file, vec![b'x'; usize::try_from(len).unwrap()]).unwrap();
     let core = fx.open();
     assert!(asides(&core).is_empty());
     assert_eq!(texts(&core), strings(&["mine"]));
     add(&core, "second");
     assert_eq!(texts(&core), strings(&["mine", "second"]));
-    for (path, len) in planted {
-        assert_eq!(
-            std::fs::metadata(path).unwrap().len(),
-            len,
-            "{}",
-            path.display()
-        );
-    }
+    assert_eq!(std::fs::metadata(&asides_file).unwrap().len(), len);
     const { assert!(KEPT_CAP < 9 * 1024 * 1024 && ASIDES_CAP < 25 * 1024 * 1024) };
+}
+
+/// A kept copy no load reads (planted over its cap) refuses every save: left in place, removals would never be seen
+/// again. This install's next write replaces it.
+#[test]
+fn a_planted_kept_copy_over_its_cap_is_replaced_at_the_next_write_and_removals_are_seen_again() {
+    let fx = Fx::new();
+    let core = fx.open();
+    add(&core, "mine");
+    let kept = kept_file(&core);
+    let file = file_of(&core);
+    drop(core);
+    std::fs::write(&kept, vec![b'x'; usize::try_from(KEPT_CAP + 1).unwrap()]).unwrap();
+    let core = fx.open();
+    let keeper = crate::kept::Keeper::of(&core.store(), Arc::new(|| {})).unwrap();
+    assert_eq!(keeper.kept(), None, "over its cap: never read");
+    assert!(asides(&core).is_empty());
+    add(&core, "second");
+    assert_eq!(
+        keeper.kept(),
+        Some(std::fs::read_to_string(&file).unwrap()),
+        "the next write keeps the file's text again"
+    );
+    assert!(std::fs::metadata(&kept).unwrap().len() <= KEPT_CAP);
+    outside(&file, without(&["mine"]));
+    let found = asides(&core);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0]["count"], json!(1));
+    assert_eq!(texts(&core), strings(&["second"]));
 }
 
 /// Another program pads the comments file to exactly `len` bytes (a key the comments keep beside them).

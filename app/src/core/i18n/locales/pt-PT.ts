@@ -950,6 +950,8 @@ export default {
   "since.nothing": "Nada mudou desde {when}.",
   "review.offer.one": "Alterado desde a última leitura · {n} alteração",
   "review.offer.other": "Alterado desde a última leitura · {n} alterações",
+  "review.offerCommit.one": "Alterado desde o último commit · {n} alteração",
+  "review.offerCommit.other": "Alterado desde o último commit · {n} alterações",
   "review.review": "Rever",
   "review.reviewing.one": "A rever {n} alteração",
   "review.reviewing.other": "A rever {n} alterações",
@@ -974,6 +976,7 @@ export default {
   "review.change": "Alteração {i} de {n}, {kind}",
   "review.keptAll": "Todas as alterações foram mantidas",
   "review.revertedAll": "Todas as alterações foram revertidas em {name}",
+  "review.endedMixed": "Algumas alterações foram mantidas e outras revertidas em {name}",
   "review.undo": "Anular",
   "review.undoStale": "Não é possível anular: {name} mudou entretanto.",
   "review.allDone": "Todas as alterações foram revistas",
@@ -1030,6 +1033,10 @@ export default {
   "git.why.tooLarge": "A resposta do Git era demasiado longa para ser lida.",
   "git.why.spawn": "Não foi possível iniciar o Git.",
   "git.why.parse": "Não foi possível compreender a resposta do Git.",
+  "git.why.notLocal":
+    "A pasta git deste repositório aponta para fora deste computador ou passa por uma ligação simbólica, por isso o PerMark não o abre.",
+  "git.why.noGit": "Esta pasta não tem um .git que conduza a um repositório.",
+  "git.why.stopped": "O Git foi interrompido antes de responder.",
   "git.why.failed": "Detalhes: {detail}",
   "git.errorHint":
     "Abra as definições para escolher outro Git (o integrado não precisa de confiança).",
@@ -1485,7 +1492,7 @@ export default {
   "agent.title": "Ligação a agentes",
   "agent.switch": "Partilhar esta pasta com agentes",
   "agent.switchHint":
-    "Um agente que ligar (uma ferramenta de IA compatível com MCP, como o Claude Code ou o Cursor) pode ver o que está a ver e o que mudou, pesquisar e ler os ficheiros desta pasta, ler os seus comentários e as notas que partilhar, e mostrar-lhe um local. Só neste computador. Os ficheiros listados no .aiignore ficam fora do seu alcance. Os agentes ligados desta forma apenas leem e nunca editam ficheiros através do PerMark; para permitir que um agente proponha edições, use o Assistente. Isto abrange apenas o que os agentes obtêm do PerMark: um agente pode continuar a abrir ficheiros no seu computador por si próprio.",
+    "Um agente que ligar (uma ferramenta de IA compatível com MCP, como o Claude Code ou o Cursor) pode ver o que está a ver e o que mudou, pesquisar e ler os ficheiros desta pasta, ler os seus comentários e as notas que partilhar, e mostrar-lhe um local. Só neste computador. Os ficheiros listados no .aiignore ficam fora do seu alcance. Os agentes ligados desta forma nunca editam ficheiros através do PerMark: leem, e só marcam os seus comentários como concluídos se o permitir. Para permitir que um agente proponha edições, use o Assistente. Isto abrange apenas o que os agentes obtêm do PerMark: um agente pode continuar a abrir ficheiros no seu computador por si próprio.",
   "agent.folderReplaced":
     "Esta pasta mudou desde que a ligou. Volte a ativar a ligação para permitir agentes aqui.",
   "agent.groups": "O que os agentes podem fazer",
@@ -1735,6 +1742,8 @@ export default {
     "A sua escolha para cada plug-in nesta pasta. «Desativado para todos» fica em .permark/config.toml e aplica-se a quem abrir a pasta.",
   "plugins.removeConfirm": "Remover os dados de {name}?",
   "plugins.removeConfirmBytes": "Remover os dados de {name}? Isto liberta {size}.",
+  "plugins.removeScope":
+    "As pastas que guardam os dados na sua própria pasta .permark só são limpas enquanto estão abertas.",
   "plugins.removeData": "Remover dados",
   "plugins.removeYes": "Remover",
   "plugins.turnOn": "Ativar {name}",
@@ -1759,6 +1768,8 @@ export default {
   "project.initConfig": "As definições que este projeto partilha com a equipa.",
   "project.initConfirm": "Inicializar o PerMark",
   "project.initFailed": "Não foi possível inicializar o PerMark em {path}: {message}",
+  "project.initHeld":
+    "{path}/.permark/local já contém dados do PerMark vindos de outro sítio; nada foi alterado.",
   "project.initIgnore": "Mantém as pastas privadas fora do Git.",
   "project.initIntro": "O PerMark cria aqui uma pasta .permark com:",
   "project.initLocal":
@@ -1801,6 +1812,18 @@ export default {
   "project.sharedFileHint": "Partilhado com quem abrir esta pasta.",
   "project.sharedFileUnreadable":
     "O PerMark não consegue ler este ficheiro na linha {line}, por isso as definições marcadas com Todos não podem ser alteradas até que seja corrigido.",
+  "project.sharedLocked":
+    "O PerMark não consegue ler .permark/config.toml, por isso as definições marcadas com Todos não podem ser alteradas até que seja corrigido.",
+  "project.sharedLocked.line":
+    "O PerMark não consegue ler .permark/config.toml na linha {line}, por isso as definições marcadas com Todos não podem ser alteradas até que seja corrigido.",
+  "project.sharedLocked.notText":
+    "O PerMark não consegue ler .permark/config.toml (não é texto simples), por isso as definições marcadas com Todos não podem ser alteradas até que seja corrigido.",
+  "project.sharedLocked.tooLarge":
+    "O PerMark não consegue ler .permark/config.toml (é demasiado grande), por isso as definições marcadas com Todos não podem ser alteradas até que seja corrigido.",
+  "project.sharedLocked.locked":
+    "O PerMark não consegue ler .permark/config.toml (outro programa está a utilizá-lo), por isso as definições marcadas com Todos não podem ser alteradas até que seja corrigido.",
+  "project.privateTracked":
+    "Os agentes não recebem os comentários nem a atividade desta pasta: o repositório git dela acompanha a pasta privada do PerMark (.permark/local), ou o PerMark não conseguiu verificar isso.",
   "settings.all": "Todas as definições",
   "settings.editorPreview": "Exemplo:",
   "settings.linkUpdateHint":
@@ -2198,7 +2221,7 @@ export default {
     "Tokens de um documento, de uma seleção ou de uma secção, segundo o tokenizador que escolher; exato quando o tokenizador é público, aproximado (e assinalado) quando não é.",
   "plugin.local-ai.name": "IA local",
   "plugin.local-ai.about":
-    "Modelos de IA pequenos que funcionam neste computador, sem ligação à internet, para ajudar o PerMark a corrigir, traduzir e encontrar pelo significado. Nada é transferido até que o peça.",
+    "Modelos de IA pequenos que funcionam neste computador para ajudar o PerMark a corrigir, traduzir e encontrar pelo significado. Nada é transferido até que o peça.",
 
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} linha",
@@ -2628,7 +2651,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "IA local",
   "localAi.intro":
-    "Modelos de IA pequenos que funcionam neste computador, sem internet. Nada é transferido até o pedir.",
+    "Modelos de IA pequenos que funcionam neste computador. Nada é transferido até o pedir.",
   "localAi.command": "Abrir as definições de IA local",
   "localAi.loadFailed": "Não foi possível ler as definições de IA local.",
   "localAi.retry": "Tentar novamente",
@@ -2700,8 +2723,8 @@ export default {
   "localAi.models.details.size": "Tamanho da transferência",
   "localAi.models.details.restriction": "Quem pode usar",
   "localAi.models.comingSoon": "Brevemente",
-  "localAi.models.needs.newer": "Precisa de uma versão mais recente do motor de IA.",
-  "localAi.models.needs.missing": "Precisa de um motor de IA que o PerMark ainda não tem.",
+  "localAi.models.needs.newer": "Este modelo precisa de uma versão mais recente do PerMark.",
+  "localAi.models.needs.missing": "O PerMark ainda não consegue executar este tipo de modelo.",
   "localAi.dl.waiting": "A aguardar…",
   "localAi.dl.cancelLabel": "Cancelar a transferência de {name}",
   "localAi.dl.progress": "{done} de {total}",

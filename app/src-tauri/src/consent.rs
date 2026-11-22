@@ -1,12 +1,13 @@
 //! The system dialog before a program the person set up (the editor, the Assistant's own command) starts while not yet
 //! allowed. Its words live here, in every app language: a page never words it (a page that could would hide which
-//! program starts or swap the buttons); the interface language a page reports only picks one of these translations.
+//! program starts or swap the buttons). For the system's language the system's own list picks one of these
+//! translations; the interface language a page reports counts only where the system names none.
 
 use std::sync::Arc;
 
 use permark_core::plugins::{GuardedConsent, ProgramConsent, ProgramConsentApi, ServiceLease};
 use permark_core::process::{ProgramApprovals, ProgramCall};
-use permark_core::settings::{is_format_char, is_unsafe_char, LanguagePref};
+use permark_core::settings::{is_format_char, is_unsafe_char, system_languages, LanguagePref};
 use permark_core::state::StateStore;
 use permark_core::workspace::CoreEnv;
 use tauri::{AppHandle, Manager};
@@ -223,6 +224,20 @@ const WORDS: &[(LanguagePref, Words)] = &[
     ),
 ];
 
+/// The dialog's language: the person's choice; for the system's language the first of `system` (best first) PerMark
+/// has, and only when the system names none (macOS) the interface language a page `reported` (a page may not pick the
+/// words over the system's own list).
+fn consent_language<S: AsRef<str>>(
+    choice: LanguagePref,
+    system: &[S],
+    reported: Option<&str>,
+) -> LanguagePref {
+    match reported {
+        Some(tag) if system.is_empty() => choice.resolve(&[tag]),
+        _ => choice.resolve(system),
+    }
+}
+
 /// The words of `language` (English for one without, `System` included: resolve first).
 fn words_of(language: LanguagePref) -> &'static Words {
     WORDS
@@ -284,14 +299,13 @@ struct DialogConsent {
 
 impl ProgramConsent for DialogConsent {
     fn allow(&self, call: &ProgramCall) -> bool {
-        // the person's choice of language; for the system's, the one the windows show
+        let choice = crate::shell::state(&self.handle).env.settings().language;
         let reported = crate::views::words(&self.handle).language;
-        let language = crate::shell::state(&self.handle)
-            .env
-            .settings()
-            .language
-            .resolve(&reported.into_iter().collect::<Vec<_>>());
-        let words = words_of(language);
+        let words = words_of(consent_language(
+            choice,
+            &system_languages(),
+            reported.as_deref(),
+        ));
         let mut dialog = self
             .handle
             .dialog()
@@ -429,6 +443,39 @@ mod tests {
         assert_eq!(
             words_of(LanguagePref::System.resolve(&["de-AT"])).allow,
             "Erlauben"
+        );
+    }
+
+    /// For the system's language the system's own list picks the words; a page's report counts only where the system
+    /// names none, and a person's choice ignores both.
+    #[test]
+    fn the_dialog_speaks_the_systems_language_and_a_page_cannot_pick_it() {
+        let austria = ["de-AT".to_owned()];
+        assert_eq!(
+            consent_language(LanguagePref::System, &austria, Some("ja")),
+            LanguagePref::De
+        );
+        // a system language PerMark lacks reads as English, never as the page's
+        assert_eq!(
+            consent_language(LanguagePref::System, &["sv-SE"], Some("ja")),
+            LanguagePref::En
+        );
+        // no list from the system (macOS): the page's report, else English
+        assert_eq!(
+            consent_language::<&str>(LanguagePref::System, &[], Some("pt-BR")),
+            LanguagePref::PtBr
+        );
+        assert_eq!(
+            consent_language::<&str>(LanguagePref::System, &[], None),
+            LanguagePref::En
+        );
+        assert_eq!(
+            consent_language(LanguagePref::Fr, &austria, Some("ja")),
+            LanguagePref::Fr
+        );
+        assert_eq!(
+            consent_language::<&str>(LanguagePref::Fr, &[], Some("ja")),
+            LanguagePref::Fr
         );
     }
 

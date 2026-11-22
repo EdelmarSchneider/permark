@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 use std::time::{Duration, UNIX_EPOCH};
 
 use permark_core::error::{ErrorKind, IpcError};
-use permark_core::fsx;
+use permark_core::fsx::{self, now_ms};
 use permark_core::notes::{loose_key, parse_loose, NotesScope, ProjectKey, SharedNote};
 use permark_core::paths::{fold, Root};
 use permark_core::plugins::PluginId;
@@ -39,14 +39,6 @@ const UNDO_NOTE_BYTES: u64 = 5 * 1024 * 1024;
 
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// Milliseconds since the epoch on the system clock.
-#[must_use]
-pub fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 /// A title and snippet as they were when the file had a given stamp (a list is made without reading every file).

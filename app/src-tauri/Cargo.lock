@@ -3796,6 +3796,7 @@ dependencies = [
  "dunce",
  "git2",
  "permark-core",
+ "permark-plugin-frontmatter-card",
  "permark-plugin-git",
  "permark-plugin-unread",
  "serde",

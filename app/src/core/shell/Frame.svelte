@@ -106,7 +106,15 @@
         aria-label={t("panel.sidebar")}
         inert={!sideOpen}
       >
-        {@render sidebar()}
+        <div class="inner">{@render sidebar()}</div>
+        {#if sideOpen}
+          <Splitter
+            side="sidebar"
+            range={SIDEBAR}
+            value={widths.sidebar ?? sidebarWidth}
+            onchange={onSidebarWidth}
+          />
+        {/if}
       </aside>
     {/if}
     <!-- the page over the bottom panel, between the side panels (they keep the whole height) -->
@@ -125,14 +133,6 @@
     >
       <main class="main" data-region="page" tabindex="-1">{@render main()}</main>
       {#if bottom}
-        {#if bottomDrawn !== null}
-          <Splitter
-            side="bottom"
-            range={bottomRange}
-            value={bottomDrawn}
-            onchange={(px) => onBottomHeight(Math.min(px, bottomRange.max))}
-          />
-        {/if}
         <aside
           class="bottom"
           class:gone={bottomDrawn === null}
@@ -140,7 +140,15 @@
           aria-label={t("panel.bottom")}
           inert={bottomDrawn === null}
         >
-          {@render bottom()}
+          {#if bottomDrawn !== null}
+            <Splitter
+              side="bottom"
+              range={bottomRange}
+              value={bottomDrawn}
+              onchange={(px) => onBottomHeight(Math.min(px, bottomRange.max))}
+            />
+          {/if}
+          <div class="inner">{@render bottom()}</div>
         </aside>
       {/if}
     </div>
@@ -152,24 +160,16 @@
         aria-label={t("panel.right")}
         inert={!rightOpen}
       >
-        {@render panel()}
+        {#if rightOpen}
+          <Splitter
+            side="right"
+            range={RIGHT}
+            value={widths.right ?? rightWidth}
+            onchange={onRightWidth}
+          />
+        {/if}
+        <div class="inner">{@render panel()}</div>
       </aside>
-    {/if}
-    {#if sidebar && sideOpen}
-      <Splitter
-        side="sidebar"
-        range={SIDEBAR}
-        value={widths.sidebar ?? sidebarWidth}
-        onchange={onSidebarWidth}
-      />
-    {/if}
-    {#if panel && rightOpen}
-      <Splitter
-        side="right"
-        range={RIGHT}
-        value={widths.right ?? rightWidth}
-        onchange={onRightWidth}
-      />
     {/if}
   </div>
   <footer class="status" inert={focus}>{@render status()}</footer>
@@ -216,15 +216,25 @@
   .center.has-bottom {
     grid-template-rows: minmax(0, 1fr) var(--h-bottom);
   }
+  /* each splitter sits inside the region it resizes (no content outside a landmark), on the region's inner edge:
+     the region itself never clips, so the handle's hit area reaches across the border; its content box clips */
   .sidebar,
   .panel,
   .bottom {
+    position: relative;
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    overflow: hidden;
     background: var(--surface);
+  }
+  .inner {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
   }
   .sidebar {
     border-right: 1px solid var(--border);

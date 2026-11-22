@@ -4,6 +4,7 @@
 
 use std::fmt::Write as _;
 
+use permark_core::fsx::now_ms;
 use serde_json::Value;
 
 use crate::format::{self, ceiling, rows_only, sub, table, zone, Header, CEILING_CHARS};
@@ -50,12 +51,6 @@ fn range(v: Option<&Value>) -> Option<String> {
 
 fn size(v: &Value, key: &str) -> String {
     u(v, key).map(format::tokens).unwrap_or_default()
-}
-
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 fn age_of(iso: &str, now: u64) -> String {

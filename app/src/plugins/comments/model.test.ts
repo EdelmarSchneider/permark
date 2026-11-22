@@ -161,13 +161,13 @@ describe("the prompt for an agent", () => {
 describe("comments removed outside the app", () => {
   it("one line per project: the opened folder's asides together, each included project's apart, in their order", () => {
     const lines = asideLines([
-      { id: "1", count: 2, at: 10, big: false },
-      { id: "p7:1", count: 1, at: 11, big: true },
-      { id: "3", count: 4, at: 12, big: true },
+      { id: "1", folder: "", count: 2, at: 10, big: false },
+      { id: "p7:1", folder: "notes/sub a", count: 1, at: 11, big: true },
+      { id: "3", folder: "", count: 4, at: 12, big: true },
     ]);
     expect(lines).toEqual([
-      { project: "", ids: ["1", "3"], count: 6, big: ["3"] },
-      { project: "p7", ids: ["p7:1"], count: 1, big: ["p7:1"] },
+      { project: "", folder: "", ids: ["1", "3"], count: 6, big: ["3"] },
+      { project: "p7", folder: "notes/sub a", ids: ["p7:1"], count: 1, big: ["p7:1"] },
     ]);
     expect(asideLines([])).toEqual([]);
   });

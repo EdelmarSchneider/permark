@@ -49,6 +49,13 @@ export function categoryOfName(name: string): Category {
   return EXTENSIONS[name.slice(dot + 1).toLowerCase()] ?? "other";
 }
 
+/** Whether the default app may open a file of this name: the backend's rule (`tree::may_open_with_default_app`)
+ *  over the mock's categories (a picture that may hold script never; macro carriers fall to "other" here). */
+export function opensOutsideOf(name: string): boolean {
+  const category = categoryOfName(name);
+  return category !== "other" && category !== "code" && !name.toLowerCase().endsWith(".svg");
+}
+
 const PRESETS: Record<string, readonly Category[]> = {
   documents: ["markdown", "text"],
   "docs-and-assets": ["markdown", "text", "config", "data", "image", "audio", "video"],
@@ -195,6 +202,7 @@ export class MockProject {
           hidden,
           ignored: false,
           forced: false,
+          opensOutside: false,
         });
         const inside = walk(dir);
         // Everything lists every folder (backend `TreeFilter::hides_empty_dirs`)
@@ -214,6 +222,7 @@ export class MockProject {
           hidden,
           ignored: false,
           forced: false,
+          opensOutside: opensOutsideOf(name),
         });
         any = true;
       }

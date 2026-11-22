@@ -918,6 +918,8 @@ export default {
   "since.nothing": "自 {when} 以來沒有任何變更。",
   "review.offer.one": "自您上次閱讀以來已變更 · {n} 處變更",
   "review.offer.other": "自您上次閱讀以來已變更 · {n} 處變更",
+  "review.offerCommit.one": "自上次提交以來已變更 · {n} 處變更",
+  "review.offerCommit.other": "自上次提交以來已變更 · {n} 處變更",
   "review.review": "審閱",
   "review.reviewing.one": "正在審閱 {n} 處變更",
   "review.reviewing.other": "正在審閱 {n} 處變更",
@@ -942,6 +944,7 @@ export default {
   "review.change": "第 {i} 處變更，共 {n} 處，{kind}",
   "review.keptAll": "已保留所有變更",
   "review.revertedAll": "已還原 {name} 中的所有變更",
+  "review.endedMixed": "已保留 {name} 中的部分變更，其餘已還原",
   "review.undo": "復原",
   "review.undoStale": "無法復原：{name} 之後已變更。",
   "review.allDone": "已審閱所有變更",
@@ -995,6 +998,10 @@ export default {
   "git.why.tooLarge": "Git 的回應太長，無法讀取。",
   "git.why.spawn": "無法啟動 Git。",
   "git.why.parse": "無法理解 Git 的回應。",
+  "git.why.notLocal":
+    "此存放庫的 git 資料夾指向這部電腦以外的位置或經過連結，因此 PerMark 不會開啟它。",
+  "git.why.noGit": "此資料夾中沒有指向存放庫的 .git。",
+  "git.why.stopped": "Git 在回應前已被停止。",
   "git.why.failed": "詳細資訊：{detail}",
   "git.errorHint": "開啟設定以選擇其他 Git（內建 Git 不需要信任設定）。",
   "git.folderChanged.one": "其中有 {n} 個已變更的檔案",
@@ -1427,7 +1434,7 @@ export default {
   "agent.title": "代理程式連線",
   "agent.switch": "與代理程式共用此資料夾",
   "agent.switchHint":
-    "您連線的代理程式（支援 MCP 的 AI 工具，例如 Claude Code 或 Cursor）可以看到您正在檢視的內容和變更、搜尋並讀取此資料夾的檔案、讀取您的註解和您共用的筆記，並為您顯示某個位置。僅限於這部電腦。代理程式無法存取列在 .aiignore 中的檔案。以這種方式連線的代理程式只會讀取，絕不會透過 PerMark 編輯檔案；若要讓代理程式提議編輯，請使用助理。這只涵蓋代理程式從 PerMark 取得的內容：代理程式仍可自行開啟您電腦上的檔案。",
+    "您連線的代理程式（支援 MCP 的 AI 工具，例如 Claude Code 或 Cursor）可以看到您正在檢視的內容和變更、搜尋並讀取此資料夾的檔案、讀取您的註解和您共用的筆記，並為您顯示某個位置。僅限於這部電腦。代理程式無法存取列在 .aiignore 中的檔案。以這種方式連線的代理程式絕不會透過 PerMark 編輯檔案：它們會讀取內容，只有在您允許時才會將您的註解標示為完成。若要讓代理程式提議編輯，請使用助理。這只涵蓋代理程式從 PerMark 取得的內容：代理程式仍可自行開啟您電腦上的檔案。",
   "agent.folderReplaced": "此資料夾在您連線後已變更。請再次開啟連線，以允許代理程式在此存取。",
   "agent.groups": "代理程式可以執行的動作",
   "agent.group.context": "查看您正在檢視的內容",
@@ -1661,6 +1668,7 @@ export default {
     "您在此資料夾中對每個外掛程式的選擇。「為所有人關閉」儲存在 .permark/config.toml 中，適用於開啟此資料夾的每個人。",
   "plugins.removeConfirm": "要移除 {name} 的資料嗎？",
   "plugins.removeConfirmBytes": "要移除 {name} 的資料嗎？這會釋放 {size}。",
+  "plugins.removeScope": "將資料保存在自身 .permark 資料夾中的資料夾，只有在開啟時才會被清理。",
   "plugins.removeData": "移除資料",
   "plugins.removeYes": "移除",
   "plugins.turnOn": "開啟 {name}",
@@ -1685,6 +1693,7 @@ export default {
   "project.initConfig": "此專案與團隊共用的設定。",
   "project.initConfirm": "初始化 PerMark",
   "project.initFailed": "無法在 {path} 中初始化 PerMark：{message}",
+  "project.initHeld": "{path}/.permark/local 中已有來自別處的 PerMark 資料；未做任何變更。",
   "project.initIgnore": "讓私人資料夾不進入 Git。",
   "project.initIntro": "PerMark 會在此建立 .permark 資料夾，內含：",
   "project.initLocal":
@@ -1724,6 +1733,18 @@ export default {
   "project.sharedFileHint": "與開啟此資料夾的每個人共用。",
   "project.sharedFileUnreadable":
     "PerMark 無法讀取此檔案的第 {line} 行，因此在修正之前無法變更標示為「所有人」的設定。",
+  "project.sharedLocked":
+    "PerMark 無法讀取 .permark/config.toml，因此在修正之前無法變更標示為「所有人」的設定。",
+  "project.sharedLocked.line":
+    "PerMark 無法讀取 .permark/config.toml 的第 {line} 行，因此在修正之前無法變更標示為「所有人」的設定。",
+  "project.sharedLocked.notText":
+    "PerMark 無法讀取 .permark/config.toml（不是純文字），因此在修正之前無法變更標示為「所有人」的設定。",
+  "project.sharedLocked.tooLarge":
+    "PerMark 無法讀取 .permark/config.toml（檔案太大），因此在修正之前無法變更標示為「所有人」的設定。",
+  "project.sharedLocked.locked":
+    "PerMark 無法讀取 .permark/config.toml（其他程式正在使用），因此在修正之前無法變更標示為「所有人」的設定。",
+  "project.privateTracked":
+    "代理程式不會取得此資料夾的註解或活動：其 git 存放庫追蹤了 PerMark 的私人資料夾 (.permark/local)，或 PerMark 無法檢查這一點。",
   "settings.all": "所有設定",
   "settings.editorPreview": "範例：",
   "settings.linkUpdateHint": "移動或重新命名檔案時，連結會如何處理。",
@@ -2095,7 +2116,7 @@ export default {
     "以您選擇的分詞器計算文件、選取範圍或章節的 Token 數；分詞器公開時為精確值，未公開時為約略值（並加上標示）。",
   "plugin.local-ai.name": "本機 AI",
   "plugin.local-ai.about":
-    "在這部電腦上離線執行的小型 AI 模型，協助 PerMark 進行校正、翻譯和依語意尋找。在您要求之前不會下載任何內容。",
+    "在這部電腦上執行的小型 AI 模型，協助 PerMark 進行校正、翻譯和依語意尋找。在您要求之前不會下載任何內容。",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} 列",
   "config.table.rows.other": "{n} 列",
@@ -2492,7 +2513,7 @@ export default {
   "projects.vocabulary.addAs": "將以「{name}」新增（小寫，空格改為連字號）。",
   // ---- Local AI settings page
   "localAi.section": "本機 AI",
-  "localAi.intro": "在這部電腦上離線執行的小型 AI 模型。在您要求之前不會下載任何內容。",
+  "localAi.intro": "在這部電腦上執行的小型 AI 模型。在您要求之前不會下載任何內容。",
   "localAi.command": "開啟本機 AI 設定",
   "localAi.loadFailed": "無法讀取本機 AI 設定。",
   "localAi.retry": "重試",
@@ -2562,8 +2583,8 @@ export default {
   "localAi.models.details.size": "下載大小",
   "localAi.models.details.restriction": "使用資格",
   "localAi.models.comingSoon": "即將推出",
-  "localAi.models.needs.newer": "需要較新版本的 AI 引擎。",
-  "localAi.models.needs.missing": "需要 PerMark 尚未提供的 AI 引擎。",
+  "localAi.models.needs.newer": "此模型需要較新版本的 PerMark。",
+  "localAi.models.needs.missing": "PerMark 目前還無法執行這類模型。",
   "localAi.dl.waiting": "正在等待…",
   "localAi.dl.cancelLabel": "取消取得 {name}",
   "localAi.dl.progress": "{done} / {total}",

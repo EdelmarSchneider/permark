@@ -50,6 +50,7 @@ function view(path: string): DocumentView {
     mtimeMs: 1,
     editable: { editable: "surgical" },
     notes: [],
+    opensOutside: true,
   };
 }
 

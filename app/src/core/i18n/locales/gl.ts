@@ -944,6 +944,8 @@ export default {
   "since.nothing": "Non cambiou nada desde {when}.",
   "review.offer.one": "Cambiou desde a última lectura · {n} cambio",
   "review.offer.other": "Cambiou desde a última lectura · {n} cambios",
+  "review.offerCommit.one": "Cambiou desde o último commit · {n} cambio",
+  "review.offerCommit.other": "Cambiou desde o último commit · {n} cambios",
   "review.review": "Revisar",
   "review.reviewing.one": "Revisando {n} cambio",
   "review.reviewing.other": "Revisando {n} cambios",
@@ -968,6 +970,7 @@ export default {
   "review.change": "Cambio {i} de {n}, {kind}",
   "review.keptAll": "Conserváronse todos os cambios",
   "review.revertedAll": "Revertéronse todos os cambios de {name}",
+  "review.endedMixed": "Conserváronse algúns cambios de {name} e revertéronse outros",
   "review.undo": "Desfacer",
   "review.undoStale": "Non se pode desfacer: {name} cambiou desde entón.",
   "review.allDone": "Revisáronse todos os cambios",
@@ -1024,6 +1027,10 @@ export default {
   "git.why.tooLarge": "A resposta de Git era demasiado longa para lela.",
   "git.why.spawn": "Non foi posíbel iniciar Git.",
   "git.why.parse": "Non foi posíbel entender a resposta de Git.",
+  "git.why.notLocal":
+    "O cartafol git deste repositorio leva fóra deste computador ou pasa por unha ligazón, así que PerMark non o abre.",
+  "git.why.noGit": "Este cartafol non ten ningún .git que leve a un repositorio.",
+  "git.why.stopped": "Git detívose antes de responder.",
   "git.why.failed": "Detalles: {detail}",
   "git.errorHint":
     "Abra a configuración para escoller outro Git (o integrado non precisa desa confianza).",
@@ -1475,7 +1482,7 @@ export default {
   "agent.title": "Conexión con axentes",
   "agent.switch": "Compartir este cartafol cos axentes",
   "agent.switchHint":
-    "Un axente que conecte (unha ferramenta de IA compatíbel con MCP, como Claude Code ou Cursor) pode ver o que está a mirar e o que cambiou, buscar e ler os ficheiros deste cartafol, ler os seus comentarios e as notas que comparta, e mostrarlle un lugar. Só neste computador. Os ficheiros que lista .aiignore quedan fóra do seu alcance. Os axentes conectados deste xeito só len e nunca editan ficheiros a través de PerMark; para permitir que un axente propoña edicións, use o Asistente. Isto só abrangue o que os axentes obteñen de PerMark: un axente aínda pode abrir ficheiros do seu computador pola súa conta.",
+    "Un axente que conecte (unha ferramenta de IA compatíbel con MCP, como Claude Code ou Cursor) pode ver o que está a mirar e o que cambiou, buscar e ler os ficheiros deste cartafol, ler os seus comentarios e as notas que comparta, e mostrarlle un lugar. Só neste computador. Os ficheiros que lista .aiignore quedan fóra do seu alcance. Os axentes conectados deste xeito nunca editan ficheiros a través de PerMark: len, e só marcan os seus comentarios como resoltos se o permite. Para permitir que un axente propoña edicións, use o Asistente. Isto só abrangue o que os axentes obteñen de PerMark: un axente aínda pode abrir ficheiros do seu computador pola súa conta.",
   "agent.folderReplaced":
     "Este cartafol cambiou desde que o conectou. Volva activar a conexión para permitir axentes aquí.",
   "agent.groups": "O que poden facer os axentes",
@@ -1722,6 +1729,8 @@ export default {
     "A súa elección para cada complemento neste cartafol. «Desactivado para todos» gárdase en .permark/config.toml e aplícase a quen abra o cartafol.",
   "plugins.removeConfirm": "Quitar os datos de {name}?",
   "plugins.removeConfirmBytes": "Quitar os datos de {name}? Isto libera {size}.",
+  "plugins.removeScope":
+    "Os cartafoles que gardan os seus datos no seu propio cartafol .permark só se limpan mentres están abertos.",
   "plugins.removeData": "Quitar os datos",
   "plugins.removeYes": "Quitar",
   "plugins.turnOn": "Activar {name}",
@@ -1746,6 +1755,8 @@ export default {
   "project.initConfig": "A configuración que este proxecto comparte co seu equipo.",
   "project.initConfirm": "Inicializar PerMark",
   "project.initFailed": "Non foi posíbel inicializar PerMark en {path}: {message}",
+  "project.initHeld":
+    "{path}/.permark/local xa contén datos de PerMark doutro lugar; non se cambiou nada.",
   "project.initIgnore": "Mantén os cartafoles privados fóra de Git.",
   "project.initIntro": "PerMark crea aquí un cartafol .permark con:",
   "project.initLocal":
@@ -1788,6 +1799,18 @@ export default {
   "project.sharedFileHint": "Compartido con quen abra este cartafol.",
   "project.sharedFileUnreadable":
     "PerMark non pode ler este ficheiro na liña {line}, así que a configuración marcada con Todos non se pode cambiar ata que se corrixa.",
+  "project.sharedLocked":
+    "PerMark non pode ler .permark/config.toml, así que a configuración marcada con Todos non se pode cambiar ata que se corrixa.",
+  "project.sharedLocked.line":
+    "PerMark non pode ler .permark/config.toml na liña {line}, así que a configuración marcada con Todos non se pode cambiar ata que se corrixa.",
+  "project.sharedLocked.notText":
+    "PerMark non pode ler .permark/config.toml (non é texto simple), así que a configuración marcada con Todos non se pode cambiar ata que se corrixa.",
+  "project.sharedLocked.tooLarge":
+    "PerMark non pode ler .permark/config.toml (é demasiado grande), así que a configuración marcada con Todos non se pode cambiar ata que se corrixa.",
+  "project.sharedLocked.locked":
+    "PerMark non pode ler .permark/config.toml (outro programa está a usalo), así que a configuración marcada con Todos non se pode cambiar ata que se corrixa.",
+  "project.privateTracked":
+    "Os axentes non reciben os comentarios nin a actividade deste cartafol: o seu repositorio git segue o cartafol privado de PerMark (.permark/local), ou PerMark non puido comprobalo.",
   "settings.all": "Toda a configuración",
   "settings.editorPreview": "Exemplo:",
   "settings.linkUpdateHint": "Que lles pasa ás ligazóns cando se move ou se renomea un ficheiro.",
@@ -2187,7 +2210,7 @@ export default {
     "Tokens dun documento, dunha selección ou dunha sección segundo o tokenizador que escolla; exacto onde o tokenizador é público, aproximado (e marcado) onde non o é.",
   "plugin.local-ai.name": "IA local",
   "plugin.local-ai.about":
-    "Modelos de IA pequenos que funcionan neste ordenador, sen conexión, para axudar a PerMark a corrixir, traducir e atopar polo significado. Non se descarga nada ata que o pida.",
+    "Modelos de IA pequenos que funcionan neste ordenador para axudar a PerMark a corrixir, traducir e atopar polo significado. Non se descarga nada ata que o pida.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} fila",
   "config.table.rows.other": "{n} filas",
@@ -2610,7 +2633,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "IA local",
   "localAi.intro":
-    "Modelos de IA pequenos que funcionan neste ordenador, sen conexión. Non se descarga nada ata que o pida.",
+    "Modelos de IA pequenos que funcionan neste ordenador. Non se descarga nada ata que o pida.",
   "localAi.command": "Abrir a configuración da IA local",
   "localAi.loadFailed": "Non foi posíbel ler a configuración da IA local.",
   "localAi.retry": "Tentar de novo",
@@ -2682,8 +2705,8 @@ export default {
   "localAi.models.details.size": "Tamaño da descarga",
   "localAi.models.details.restriction": "Quen pode usalo",
   "localAi.models.comingSoon": "Proximamente",
-  "localAi.models.needs.newer": "Necesita unha versión máis recente do motor de IA.",
-  "localAi.models.needs.missing": "Necesita un motor de IA que PerMark aínda non ten.",
+  "localAi.models.needs.newer": "Este modelo necesita unha versión posterior de PerMark.",
+  "localAi.models.needs.missing": "PerMark aínda non pode executar este tipo de modelo.",
   "localAi.dl.waiting": "En espera…",
   "localAi.dl.cancelLabel": "Cancelar a descarga de {name}",
   "localAi.dl.progress": "{done} de {total}",

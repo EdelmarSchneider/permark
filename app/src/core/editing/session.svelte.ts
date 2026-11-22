@@ -47,6 +47,9 @@ export type ActiveEditor = {
   kind: "edit" | "source";
   /** The whole edit text now. */
   text(): string;
+  /** Resolves once the edits this editor sent away (the sheet: to the backend, which answers with the new text) are
+   *  back in its text: `text()` then holds every one. Absent: `text()` is always whole. */
+  settle?(): Promise<void>;
   /** Blocks (Edit) | line runs (Source) that differ from `base` (save message). */
   changes(base: string): number;
   /** Line (1-based) at the top of the pane. */
@@ -118,11 +121,17 @@ export type Content = {
   text: string;
   segments: Segment[] | null;
   line: number;
+  /** `line` is a place asked for (a search hit, a code reference): the editor tints it as the page would; `false`: a
+   *  place kept (the reading place, a mode switch), shown untinted. */
+  located: boolean;
   /** Bumped on every (re)load: the editor is made again. */
   seq: number;
   /** The editor takes the keyboard once made (`false`: it stays where the person put it, the Explorer's tree). */
   focus: boolean;
 };
+
+/** Where a loaded editor starts. */
+type Start = Pick<Content, "line" | "located" | "focus">;
 
 export type Hooks = {
   note(text: string): void;
@@ -145,6 +154,9 @@ const JOURNAL_MS = 2000;
 
 /** Keeps (`text`) or forgets (`null`) the unsaved text of a document: crash recovery. */
 export type Journal = (path: string, baseHash: string, text: string | null) => void;
+
+/** Why editors stay off a document for now (a reason id, as `Editability.reason`); `null`: not this one. */
+export type EditBlocker = (path: string) => string | null;
 
 export class EditingSession {
   mode = $state<EditMode>("view");
@@ -187,6 +199,8 @@ export class EditingSession {
   /** The window lets go of a document that may still hold unsaved text: its journal entry stays. */
   #keepJournal = false;
   #savedListeners = new Set<(path: string) => void>();
+  /** Holds of the window's parts on documents; reactive, so a mode switch follows a hold added later. */
+  #blockers = $state.raw<readonly EditBlocker[]>([]);
   #waiting: ((ok: boolean) => void)[] = [];
   #unguard: (() => void) | null = null;
   /** The block map the backend gave with the text it was made from: only that exact text may reuse it. */
@@ -215,6 +229,24 @@ export class EditingSession {
   onSaved(listener: (path: string) => void): () => void {
     this.#savedListeners.add(listener);
     return () => this.#savedListeners.delete(listener);
+  }
+
+  /** Keeps editors off the documents `blocker` names, whatever route opens them (the mode chosen in the window,
+   *  the mode switch, its keys). Returns its removal. */
+  block(blocker: EditBlocker): () => void {
+    this.#blockers = [...this.#blockers, blocker];
+    return () => {
+      this.#blockers = this.#blockers.filter((b) => b !== blocker);
+    };
+  }
+
+  /** Why a hold keeps editors off `path` (`null`: none does). */
+  blockedBy(path: string): string | null {
+    for (const blocker of this.#blockers) {
+      const reason = blocker(path);
+      if (reason !== null) return reason;
+    }
+    return null;
   }
 
   /** How the document being edited is saved. */
@@ -264,7 +296,7 @@ export class EditingSession {
   // ---- entering and leaving ----------------------------------------------------------------------------------
 
   /** Opens `path` in an editor (`kind`: which Edit the document has; `at`: the line to start at, else the reading
-   * place; `focus`: the editor takes the keyboard once made). */
+   * place; `focus`: the editor takes the keyboard once made; `located`: `at` is a place asked for, shown tinted). */
   async enter(
     mode: "edit" | "source",
     path: string,
@@ -272,6 +304,7 @@ export class EditingSession {
     policy: SavePolicy,
     at?: number,
     focus = true,
+    located = false,
   ): Promise<void> {
     const wanted = kind === "text" ? "source" : mode;
     if (this.#path === path && this.mode !== "view") {
@@ -290,10 +323,10 @@ export class EditingSession {
     this.chosenMode = mode;
     this.#used = true;
     this.#unguard = setLeaveGuard((leave) => this.confirmLeave(leave));
-    await this.#load(line, focus);
+    await this.#load({ line, located: located && at !== undefined, focus });
   }
 
-  async #load(line: number, focus = true): Promise<void> {
+  async #load(start: Start): Promise<void> {
     const path = this.#path;
     if (path === null) return;
     const seq = ++this.#seq;
@@ -305,7 +338,7 @@ export class EditingSession {
       return;
     }
     this.#fitKind(result.value);
-    this.#mount(result.value, line, focus);
+    this.#mount(result.value, start);
     this.dispatch({ e: "loaded", base: { hash: result.value.hash, text: result.value.text } });
   }
 
@@ -325,7 +358,7 @@ export class EditingSession {
     this.lastEdit = "source";
   }
 
-  #mount(source: EditSource, line: number, focus: boolean): void {
+  #mount(source: EditSource, start: Start): void {
     this.#loadedSegments =
       source.segments === null ? null : { text: source.text, segments: source.segments };
     this.text = source.text;
@@ -333,9 +366,8 @@ export class EditingSession {
       path: source.path,
       text: source.text,
       segments: source.segments,
-      line,
+      ...start,
       seq: ++this.#seq,
-      focus,
     };
   }
 
@@ -352,6 +384,10 @@ export class EditingSession {
     if (this.state.s === "loading") return;
     if (mode === "edit" && this.kind === "text") return;
     const editor = this.#editor;
+    // an edit still on its way into the editor's text goes along: the editor made next would start without it
+    const seq = this.#seq;
+    const settling = this.#settling();
+    if (settling !== null && (!(await settling) || seq !== this.#seq)) return;
     const text = editor?.text() ?? this.content.text;
     const line = at ?? editor?.topLine() ?? this.content.line;
     let segments: Segment[] | null = null;
@@ -371,10 +407,26 @@ export class EditingSession {
       }
     }
     this.#editor = null;
-    this.content = { path, text, segments, line, seq: ++this.#seq, focus: true };
+    this.content = { path, text, segments, line, located: false, seq: ++this.#seq, focus: true };
     this.mode = mode;
     this.lastEdit = mode;
     this.chosenMode = mode;
+  }
+
+  /**
+   * Waits for the edits the editor on screen still has on their way into its text, then checks the text against the
+   * base, so a change about to count as unsaved does before that editor goes. `false`: the session let go of the
+   * document meanwhile (another one, none). `null`: nothing on its way, the text is whole now.
+   */
+  #settling(): Promise<boolean> | null {
+    const settle = this.#editor?.settle?.();
+    if (settle === undefined) return null;
+    const path = this.#path;
+    return settle.then(() => {
+      if (path !== this.#path) return false;
+      this.sync();
+      return true;
+    });
   }
 
   /** Goes back to View once nothing is unsaved (scrolls the page to where the editor was). */
@@ -631,7 +683,7 @@ export class EditingSession {
       case "load": {
         const line = this.#editor?.topLine() ?? this.content?.line ?? 1;
         this.disk = null;
-        await this.#load(line);
+        await this.#load({ line, located: false, focus: true });
         return;
       }
       case "fetchDisk": {
@@ -830,6 +882,9 @@ export class EditingSession {
    * edits the conflict view against the moved file, so "Keep mine" writes there and never brings the old path back.
    */
   async #follow(to: string): Promise<void> {
+    // an edit still on its way into the editor's text goes along with the file; a mode switch done meanwhile counts
+    const settling = this.#settling();
+    if (settling !== null && !(await settling)) return;
     const from = this.#path;
     const base = this.base;
     if (from === null || base === null) return;
@@ -863,7 +918,15 @@ export class EditingSession {
       this.lastEdit = "source";
     }
     const segments = map?.ok ? map.value : null;
-    this.content = { path: to, text, segments, line, seq: ++this.#seq, focus: true };
+    this.content = {
+      path: to,
+      text,
+      segments,
+      line,
+      located: false,
+      seq: ++this.#seq,
+      focus: true,
+    };
     this.dispatch(disk.ok ? { e: "diskChanged", hash: disk.value.hash } : { e: "diskDeleted" });
   }
 

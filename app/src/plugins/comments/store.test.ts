@@ -385,7 +385,7 @@ describe("comments removed outside the app", () => {
     const { store, stop, notes, notices, organizing } = await withAsides();
     organizing.setAside(removed, false);
     await later();
-    expect(store.lines).toEqual([{ project: "", ids: ["1"], count: 2, big: [] }]);
+    expect(store.lines).toEqual([{ project: "", folder: "", ids: ["1"], count: 2, big: [] }]);
     // not a large part of the comments: the panel's line is enough
     expect(notices.notices).toEqual([]);
     await store.restore("");

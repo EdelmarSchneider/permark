@@ -487,8 +487,8 @@ pub fn projects_view(handle: AppHandle, window: Webview) -> Result<ProjectsView,
     Ok(project_of(&handle, &window)?.projects_view())
 }
 
-/// Includes projects (`all` = every offered one). A folder without `.permark/` is initialized first; its windows are
-/// told.
+/// Includes projects (`all` = every offered one). A folder without `.permark/` is initialized first, as from the
+/// settings (every open folder that includes it holds its writes around the copy); its windows are told.
 #[tauri::command(async)]
 pub fn projects_include(
     handle: AppHandle,
@@ -497,7 +497,8 @@ pub fn projects_include(
 ) -> Result<IncludeOutcome, IpcError> {
     let shell = state(&handle);
     let core = project_of(&handle, &window)?;
-    let (outcome, initialized) = core.projects_include(&shell.env, &pick)?;
+    let (outcome, initialized) =
+        core.projects_include(&pick, &|| shell.registry.init_project(core.root()))?;
     if initialized {
         shell.registry.refresh();
     }
@@ -1673,13 +1674,19 @@ pub fn folder_empty(path: String) -> bool {
     std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_none())
 }
 
-/// The shared settings of the project the window shows.
+/// The shared settings of the project the window shows, and whether git tracks its private folder (asks git: this
+/// command runs off the main thread).
 #[tauri::command(async)]
 pub fn project_config_get(handle: AppHandle, window: Webview) -> Result<ProjectSettings, IpcError> {
     let core = project_of(&handle, &window)?;
     let initialized = ProjectConfigFile::of(core.root()).initialized();
     let sharing = permark_core::state::sharing(core.root());
-    Ok(ProjectSettings::of(initialized, sharing, &core.config()))
+    Ok(ProjectSettings::of(
+        initialized,
+        sharing,
+        &core.config(),
+        core.private_tracked(),
+    ))
 }
 
 /// One shared setting of the project: written surgically to `.permark/config.toml`, live at once (the core tells the
@@ -1697,7 +1704,12 @@ pub fn project_config_set(
     let core = project_of(&handle, &window)?;
     let config = core.change_config(&shell.env, &change)?;
     let sharing = permark_core::state::sharing(core.root());
-    Ok(ProjectSettings::of(true, sharing, &config))
+    Ok(ProjectSettings::of(
+        true,
+        sharing,
+        &config,
+        core.private_tracked(),
+    ))
 }
 
 /// What git may see of the project's `.permark/` folder: PerMark's own `.permark/.gitignore` rewritten, only from the
@@ -1710,7 +1722,12 @@ pub fn project_sharing_set(
 ) -> Result<ProjectSettings, IpcError> {
     let core = project_of(&handle, &window)?;
     let sharing = core.set_sharing(sharing)?;
-    Ok(ProjectSettings::of(true, sharing, &core.config()))
+    Ok(ProjectSettings::of(
+        true,
+        sharing,
+        &core.config(),
+        core.private_tracked(),
+    ))
 }
 
 /// Only a plugin of this build that runs per project can be turned on | off for one project.

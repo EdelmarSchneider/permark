@@ -2,6 +2,7 @@
 // every action on files. The backend owns the truth (tree, files, undo); this mirrors it through snapshots + deltas
 // and sends actions. UI modes are tagged unions; actions are methods called from event handlers.
 
+import { conditions } from "../conditions/context.svelte";
 import { confirmLeave } from "../editing/guard";
 import { editing } from "../editing/session.svelte";
 import { DEFAULT_REFERENCE_TEMPLATE, formatReference } from "../doc/reference";
@@ -160,6 +161,8 @@ export class ExplorerStore {
   outsidePoint = $state.raw<{ x: number; y: number } | null>(null);
   /** The list's geometry: the folder a point on screen belongs to (`null`: outside the list). Set by the panel. */
   geometry: ((x: number, y: number) => string | null) | null = null;
+  /** Gives the keyboard to the list (its row named) when nothing holds it. Set by the panel (`null`: no list drawn). */
+  takeKeyboard: (() => void) | null = null;
   /** A request to bring a row into view (`n` makes repeated requests for one path distinct). */
   scrollTo = $state.raw<{ path: string; n: number } | null>(null);
   /** Whether a Refresh is under way (its button shows it; asking again meanwhile does nothing). */
@@ -865,9 +868,18 @@ export class ExplorerStore {
     );
   }
 
-  /** The Undo of a note about a file operation: the journal's undo, as Ctrl+Z in the tree (wherever the focus is). */
+  /** The Undo of a note about a file operation: the journal's undo, as Ctrl+Z (Cmd+Z) in the tree, where file
+   *  operations are done (screen readers are told that key). The button went with its note: once undone, the keyboard
+   *  is on the tree, where the undone items are, and not on whatever came before the notes in the Tab order. */
   #undoAction(): NoticeAction {
-    return { label: t("fileOps.undo"), run: () => void this.undo() };
+    return {
+      label: t("fileOps.undo"),
+      keys: conditions.current.platform === "mac" ? "Meta+Z" : "Control+Z",
+      run: async () => {
+        await this.undo();
+        this.takeKeyboard?.();
+      },
+    };
   }
 
   async undo(): Promise<void> {

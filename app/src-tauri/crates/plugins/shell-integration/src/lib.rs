@@ -88,13 +88,12 @@ mod imp {
     use std::sync::Mutex;
 
     use permark_core::plugins::{typed, NoArgs, PluginCx, PluginError, RpcRegistration, Running};
-    use permark_core::settings::AppSettings;
+    use permark_core::settings::{system_languages, AppSettings};
     use permark_core::{ErrorKind, IpcError};
 
     use serde::Deserialize;
 
     use super::{Entry, Language, ID};
-    use crate::notify::display_languages;
     use crate::registry::Registry;
 
     /// The real registry; a development build works on `HKCU\Software\PerMark-dev` (never the person's entries).
@@ -118,7 +117,7 @@ mod imp {
     }
 
     fn language(settings: &AppSettings) -> Language {
-        Language::resolve(settings.language, &display_languages())
+        Language::resolve(settings.language, &system_languages())
     }
 
     struct ShellRunning {

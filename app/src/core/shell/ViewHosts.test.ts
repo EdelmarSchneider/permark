@@ -403,7 +403,9 @@ describe("a region", () => {
   it("at the bottom its divider moves the widths: the shares are saved", async () => {
     await show();
     arrange([[FILES, SEARCH]], [], [[PROBE], [OTHER]]);
-    const bar = document.querySelector<HTMLElement>('[data-region="bottom"] [role="separator"]');
+    const bar = document.querySelector<HTMLElement>(
+      '[data-region="bottom"] [role="separator"]:not([data-side])',
+    );
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
       width: 400,
       height: 240,
@@ -419,7 +421,8 @@ describe("a region", () => {
     arrange([[FILES]], [], [[SEARCH], [PROBE], [OTHER]]);
     const need = 3 * MIN_GROUP_PX + 2 * DIVIDER_PX;
     const separators = (): number =>
-      document.querySelectorAll('[data-region="bottom"] [role="separator"]').length;
+      document.querySelectorAll('[data-region="bottom"] [role="separator"]:not([data-side])')
+        .length;
     expect(separators()).toBe(2);
     arrangement.setSize("bottom", need - 1);
     flushSync();

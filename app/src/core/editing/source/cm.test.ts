@@ -9,6 +9,7 @@ import { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MOCK_DOCUMENT_PATHS, MOCK_EDIT_SOURCES, mockView } from "../../../api/mockDocs";
 import { createSource, headingStarts, languageFor, type SourceHost, type SourceView } from "./cm";
+import type { Fence } from "./fence";
 
 const host: SourceHost = {
   changed: () => {},
@@ -274,6 +275,31 @@ describe("Source insert from outside the editor", () => {
     const locked = make("two", true);
     expect(locked.replaceSelection("x")).toBe(false);
     expect(locked.text()).toBe("two");
+  });
+});
+
+describe("Source diagram preview source", () => {
+  it("the caret in the middle of a block of thousands of lines gives the preview the whole block", () => {
+    parent = document.createElement("div");
+    document.body.append(parent);
+    const body = Array.from({ length: 3000 }, (_, i) => `  node${i} -> node${i + 1};`);
+    const text = ["# Graph", "", "```dot", "digraph {", ...body, "}", "```", "", "after"].join(
+      "\n",
+    );
+    const fences: (Fence | null)[] = [];
+    made = createSource({
+      parent,
+      text,
+      path: "notes.md",
+      markdown: true,
+      host: { ...host, fence: (fence) => fences.push(fence) },
+    });
+    made.view.dispatch({ selection: EditorSelection.cursor(made.view.state.doc.line(1500).from) });
+    const fence = fences.at(-1);
+    expect(fence?.language).toBe("dot");
+    expect(fence?.closed).toBe(true);
+    expect(fence?.code).toBe(["digraph {", ...body, "}"].join("\n"));
+    expect(fence?.from).toBe(3);
   });
 });
 

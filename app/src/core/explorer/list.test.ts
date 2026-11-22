@@ -29,14 +29,10 @@ import {
   stemLength,
   topmost,
 } from "./list";
-import { rng } from "../testing/trees";
+import { rng, treeNode } from "../testing/trees";
 
-const file: NodeKind = { type: "file", category: "markdown" };
 const dir: NodeKind = { type: "dir", unlisted: null };
-
-function node(path: string, kind: NodeKind = file): TreeNode {
-  return { path, name: nameOf(path), kind, hidden: false, ignored: false, forced: false };
-}
+const node = treeNode;
 
 function delta(partial: Partial<TreeDelta>): TreeDelta {
   return {
@@ -192,6 +188,62 @@ describe("rowsOf", () => {
       );
     expect(types([])).toEqual(["b.md", "root:feature", "@wt/feature/x", "@wt/feature/x/y.md"]);
     expect(types(["@wt/feature"])).toEqual(["b.md", "root:feature"]);
+  });
+
+  it("a closed folder deep inside open ones hides only its own contents", () => {
+    const deep = [
+      node("a", dir),
+      node("a/b", dir),
+      node("a/b/c", dir),
+      node("a/b/c/x.md"),
+      node("a/b/y.md"),
+      node("a/z.md"),
+      node("q.md"),
+    ];
+    const shown = (open: string[]) =>
+      rowsOf([main], deep, new Set(open), new Set()).map((r) =>
+        r.type === "node" ? [r.node.path, r.depth] : [r.root.path, -1],
+      );
+    expect(shown(["a", "a/b/c"])).toEqual([
+      ["a", 0],
+      ["a/b", 1],
+      ["a/z.md", 1],
+      ["q.md", 0],
+    ]);
+    expect(shown(["a", "a/b", "a/b/c"])).toEqual([
+      ["a", 0],
+      ["a/b", 1],
+      ["a/b/c", 2],
+      ["a/b/c/x.md", 3],
+      ["a/b/y.md", 2],
+      ["a/z.md", 1],
+      ["q.md", 0],
+    ]);
+  });
+
+  it("a node whose folder is not listed keeps its depth by path; a new root starts with nothing closed", () => {
+    const wt: RootNode = { name: "feature", kind: "worktree", path: "@wt/feature" };
+    const odd = [
+      node("a", dir),
+      node("a/b/c.md"),
+      node("z", dir),
+      node("z/hidden.md"),
+      node("@wt/feature/d", dir),
+      node("@wt/feature/d/e.md"),
+      node("@wt/feature/f/g.md"),
+    ];
+    const rows = rowsOf([main, wt], odd, new Set(["a", "@wt/feature/d"]), new Set());
+    expect(
+      rows.map((r) => (r.type === "node" ? [r.node.path, r.depth] : [r.root.path, -1])),
+    ).toEqual([
+      ["a", 0],
+      ["a/b/c.md", 2],
+      ["z", 0],
+      ["@wt/feature", -1],
+      ["@wt/feature/d", 0],
+      ["@wt/feature/d/e.md", 1],
+      ["@wt/feature/f/g.md", 1],
+    ]);
   });
 
   it("handles a big list in one pass", () => {

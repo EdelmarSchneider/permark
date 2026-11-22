@@ -166,25 +166,17 @@ mod tests {
     }
 
     #[cfg(windows)]
-    fn junction(link: &Path, target: &Path) -> bool {
-        std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
-            .stdout(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
-    }
-
-    #[cfg(windows)]
     #[test]
     fn a_junction_inside_counts_a_junction_leading_out_does_not() {
         let dir = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("rules")).unwrap();
         fs::create_dir_all(outside.path().join("rules")).unwrap();
-        if !junction(&dir.path().join(".claude"), &dir.path().join("rules"))
-            || !junction(&dir.path().join(".cursor"), &outside.path().join("rules"))
+        if !crate::tree::tests::link_out(&dir.path().join(".claude"), &dir.path().join("rules"))
+            || !crate::tree::tests::link_out(
+                &dir.path().join(".cursor"),
+                &outside.path().join("rules"),
+            )
         {
             eprintln!("SKIPPED: cannot make a junction here");
             return;

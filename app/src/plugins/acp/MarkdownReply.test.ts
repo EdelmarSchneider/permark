@@ -3,7 +3,8 @@
 // (raw markup of the message never becomes elements, a failed render keeps the text, a late answer is dropped); web
 // links open in the browser, project links | code references open the file at the line (`#L3`) | heading, a link that
 // leads nowhere is said, a web picture stays an inert chip, a link inside the message stays in it; its headings sit
-// below the panel's; only the last message keeps the plain text's height.
+// below the panel's; only the last message keeps the plain text's height. A replayed message never shows its raw
+// markup before the blocks (its plain text only when the render fails).
 import "../../core/testing/media";
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -37,7 +38,7 @@ function blocks(...html: string[]): Block[] {
   }));
 }
 
-function show(text: Box<string>, final: Box<boolean>, last = new Box(false)): void {
+function show(text: Box<string>, final: Box<boolean>, last = new Box(false), quiet = false): void {
   component = mount(MarkdownReply, {
     target: root,
     props: {
@@ -50,6 +51,7 @@ function show(text: Box<string>, final: Box<boolean>, last = new Box(false)): vo
       get last() {
         return last.value;
       },
+      quiet,
     },
   });
   flushSync();
@@ -136,6 +138,47 @@ describe("an agent's message", () => {
     await settle();
     expect(root.querySelector(".text")?.textContent).toBe("# Title");
     expect(root.querySelector(".md-body")).toBeNull();
+  });
+
+  it("replayed (quiet): never shows its raw markup before the blocks come", async () => {
+    let answer: (value: readonly Block[] | null) => void = () => {};
+    const render = vi.spyOn(acp, "render").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const final = new Box(false);
+    show(new Box("**x**"), final, new Box(true), true);
+    await settle();
+    // the last replayed line before the agent is ready: a placeholder, nothing asked yet
+    expect(root.querySelector(".text")).toBeNull();
+    expect(root.textContent).not.toContain("**x**");
+    expect(root.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(render).not.toHaveBeenCalled();
+    final.value = true;
+    flushSync();
+    await settle();
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(root.querySelector(".text")).toBeNull();
+    expect(root.textContent).not.toContain("**x**");
+    answer(blocks('<p data-b="b0"><strong>x</strong></p>'));
+    await settle();
+    expect(body().querySelector("strong")?.textContent).toBe("x");
+    expect(root.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
+  it("replayed (quiet): keeps its plain text when it cannot be rendered", async () => {
+    vi.spyOn(acp, "render").mockResolvedValue(null);
+    show(new Box("**x**"), new Box(true), new Box(false), true);
+    await settle();
+    expect(root.querySelector(".text")?.textContent).toBe("**x**");
+    expect(root.querySelector('[aria-busy="true"]')).toBeNull();
+    if (component) unmount(component);
+    vi.spyOn(acp, "render").mockRejectedValue(new Error("gone"));
+    show(new Box("**y**"), new Box(true), new Box(false), true);
+    await settle();
+    expect(root.querySelector(".text")?.textContent).toBe("**y**");
   });
 
   it("drops an answer for text it no longer shows", async () => {

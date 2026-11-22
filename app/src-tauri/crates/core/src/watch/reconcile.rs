@@ -10,7 +10,7 @@ use std::fs::{self, Metadata};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::noise::{is_git_signal, is_news};
+use super::noise::{is_git_signal, is_news, team_holder};
 use super::sigs::{sig_retried, stat_sig, Sig, SigStore, HASH_LIMIT, NEW_HASH_LIMIT};
 use super::types::{Change, ChangeKind};
 use crate::fsx::RETRY_DELAYS;
@@ -85,14 +85,27 @@ impl Env<'_> {
             .map(|(_, ignorer)| ignorer.as_ref())
     }
 
+    /// Whether this project path is a team folder | file ([`team_holder`]) of a folder the rules show (the opened
+    /// folder, an included project, a shown folder): followed whatever the rules say of the team folder itself. One
+    /// that a package ships inside an ignored folder is no team's.
+    fn followed_team_path(&self, path: &str) -> bool {
+        team_holder(path).is_some_and(|holder| {
+            holder.is_empty()
+                || self
+                    .ignorer_for(&key_of(path))
+                    .is_some_and(|ignorer| !ignorer.rel_ignored(holder, true))
+        })
+    }
+
     /// Whether a change at this project path is dropped before the disk is looked at.
     fn skip(&self, path: &str, is_dir: bool) -> bool {
         if !is_news(path) {
             return true;
         }
         let rel = below_root(path);
-        // git signals are not files of the project tree
-        if rel.starts_with(".git/") || rel.contains("/.git/") {
+        // git signals are not files of the project tree; team files are followed (the tree decides on its own whether
+        // it lists them)
+        if rel.starts_with(".git/") || rel.contains("/.git/") || self.followed_team_path(path) {
             return false;
         }
         let ignored = self
@@ -110,10 +123,10 @@ impl Env<'_> {
     /// Whether a hint may be dropped as it arrives, before it counts toward the pending limit (a storm in
     /// `node_modules` would else end in a rescan) and with no look at the disk: its folder is ignored and not opened,
     /// so the pass would drop it too ([`Env::skip`]), and it cannot change which folders are projects. Kept: anything
-    /// named `.git` or inside one, a rename | a creation right after a removal (a project folder may be moving), the
-    /// removal of a folder that held a project, a creation where a folder moved in may be a repository that shows
-    /// ([`Ignorer::may_lead_to_project`]). `folders`: what was found per folder so far (cleared whenever the rules may
-    /// change).
+    /// named `.git` or inside one, a followed team folder | file ([`Env::followed_team_path`]), a rename | a creation
+    /// right after a removal (a project folder may be moving), the removal of a folder that held a project, a creation
+    /// where a folder moved in may be a repository that shows ([`Ignorer::may_lead_to_project`]). `folders`: what was
+    /// found per folder so far (cleared whenever the rules may change).
     pub(crate) fn ignored_early(
         &self,
         hint: &Pending,
@@ -127,7 +140,7 @@ impl Env<'_> {
         };
         let path = vp.as_str();
         let rel = below_root(path);
-        if rel.split('/').any(Ignorer::is_git_name) {
+        if rel.split('/').any(Ignorer::is_git_name) || self.followed_team_path(path) {
             return false;
         }
         let (Some((parent, _)), Some(dir)) = (path.rsplit_once('/'), hint.abs.parent()) else {

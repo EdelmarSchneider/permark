@@ -64,3 +64,53 @@ describe("the excerpt around a suggestion", () => {
     expect(around(quoted, 6, 7, "cell")).toEqual({ before: "teh ", after: "" });
   });
 });
+
+describe("the excerpt as the Edit view shows the text", () => {
+  /** The shown excerpt around the `nth` (from 0) `word` of `doc`, as one line: `before[word]after`. */
+  function shown(doc: string, word: string, nth = 0, kind?: "cell"): string {
+    let at = -1;
+    for (let i = 0; i <= nth; i++) at = doc.indexOf(word, at + 1);
+    const { before, after } = around(doc, at, at + word.length, kind, "shown");
+    return `${before}[${word}]${after}`;
+  }
+
+  it("leaves out the marks the Edit view draws instead of showing: quote, emphasis, code, links, headings, lists", () => {
+    const quote = "> This is **very** important and teh text was _quite_ wrong.\n";
+    expect(shown(quote, "teh")).toBe("This is very important and [teh] text was quite wrong.\n");
+    // written: as ever
+    const at = quote.indexOf("teh");
+    expect(around(quote, at, at + 3).before).toBe("> This is **very** important and ");
+    expect(shown("Some ***teh*** word ~~gone~~ here", "teh")).toBe("Some [teh] word gone here");
+    expect(shown("Run `npm i` and teh rest", "teh")).toBe("Run npm i and [teh] rest");
+    expect(shown("See [the docs](/a 'Title') and teh end", "teh")).toBe(
+      "See the docs and [teh] end",
+    );
+    expect(shown("Mail <me@x.y> or <b>bold</b> teh", "teh")).toBe("Mail me@x.y or bold [teh]");
+    expect(shown("## A teh title ##", "teh")).toBe("A [teh] title ");
+    expect(shown("- first item\n- [ ] second teh\n  more", "teh")).toBe(
+      "first item\nsecond [teh]\n  more",
+    );
+    expect(shown("> one line\n> two teh\n", "teh")).toBe("one line\ntwo [teh]\n");
+    // an escaped mark is shown as the mark
+    expect(shown("Not \\*bold\\* teh", "teh")).toBe("Not *bold* [teh]");
+  });
+
+  it("cut by size as the text is written (word edges, `…`, never past a blank line)", () => {
+    const long = `${"word ".repeat(12)}**strong** teh ${"more ".repeat(12)}`;
+    expect(shown(long, "teh")).toBe(
+      `…${"word ".repeat(5)}strong [teh] ${"more ".repeat(8).trim()}…`,
+    );
+    expect(shown("**Kept.**\n\nNew **teh** block\n\n_next_", "teh")).toBe("New [teh] block");
+    // a bold run whose start the size cuts off: its end is no mark of its own
+    const cut = `${"x ".repeat(30)}**${"bold ".repeat(10)}teh bold** end`;
+    const at = cut.indexOf("teh");
+    expect(around(cut, at, at + 3).after).toBe(" bold** end");
+    expect(shown(cut, "teh")).toBe(`…${"bold ".repeat(8)}[teh] bold end`);
+  });
+
+  it("in a table cell: the cell's own text, its marks left out", () => {
+    const doc = "| Name | Note |\n|---|---|\n| a **b** teh `c` | a \\| d teh |\n";
+    expect(shown(doc, "teh", 0, "cell")).toBe("a b [teh] c");
+    expect(shown(doc, "teh", 1, "cell")).toBe("a | d [teh]");
+  });
+});

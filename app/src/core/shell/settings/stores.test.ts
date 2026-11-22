@@ -1,9 +1,10 @@
 // The folder's shared settings are read again when they change outside the page (another window, a git pull, a hand
-// edit): the page never keeps showing what the file no longer says.
+// edit): the page never keeps showing what the file no longer says. They can't be changed while the backend would
+// refuse every change (no `.permark/`, a file that does not read).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Api, ProjectSettings } from "../../../api";
 import { createMockApi } from "../../../api/mock";
-import { projectSettings } from "./stores.svelte";
+import { projectSettings, sharedLockedOf } from "./stores.svelte";
 
 let stop: (() => void) | null = null;
 
@@ -77,5 +78,28 @@ describe("the folder's shared settings", () => {
     registered();
     await vi.waitFor(() => expect(projectSettings.state.status).toBe("ready"));
     expect(reads).toBe(1);
+  });
+
+  it("can't be changed before they are read, without .permark/, or while the file does not read", async () => {
+    const mock = createMockApi();
+    const first = await mock.projectConfigGet();
+    if (!first.ok) throw new Error("no mock project settings");
+    const fine: ProjectSettings = { ...first.value, initialized: true };
+    const lockedWith = async (settings: ProjectSettings): Promise<boolean> => {
+      await projectSettings.load({
+        ...mock,
+        projectConfigGet: () => Promise.resolve({ ok: true, value: settings }),
+      });
+      return projectSettings.sharedLocked;
+    };
+    projectSettings.state = { status: "loading" };
+    expect(projectSettings.sharedLocked).toBe(true);
+    expect(await lockedWith({ ...fine, initialized: false })).toBe(true);
+    expect(await lockedWith({ ...fine, unreadableLine: 3 })).toBe(true);
+    expect(await lockedWith({ ...fine, unreadableWhy: "tooLarge" })).toBe(true);
+    expect(await lockedWith(fine)).toBe(false);
+    expect(sharedLockedOf(null)).toBe(true);
+    expect(sharedLockedOf({ ...fine, unreadableWhy: "notText" })).toBe(true);
+    expect(sharedLockedOf(fine)).toBe(false);
   });
 });

@@ -137,6 +137,15 @@ function rootId(root: Element): string | null {
 }
 
 /**
+ * The root id the drawing's CSS may be scoped to: the one its caller made and drew with, read on the root as the page
+ * reads it; else null (no rule stays). An id taken from the drawing alone could name a page element (`#app`), and the
+ * rules "at the root" would then style it.
+ */
+function sheetRoot(root: Element, ownRoot: string | undefined): string | null {
+  return ownRoot !== undefined && ownRoot !== "" && rootId(root) === ownRoot ? ownRoot : null;
+}
+
+/**
  * A style sheet of the drawing with only the rules at its root `root` (the page applies a sheet to the whole window;
  * Mermaid starts every selector with the root's id), without what would take a part out of the flow (where the
  * figure no longer clips it, e.g. a theme's `position: fixed` over the window) or load anything; untouched when
@@ -180,16 +189,17 @@ function readsAsCleaned(markup: string, elements: number): boolean {
 /**
  * The drawing with scripts, foreign content, event handlers and references out of the drawing removed (CSS ones too),
  * its links as plain page links, its CSS unable to reach outside the drawing or take a part out of the figure's flow;
- * null when it is not SVG or would not stay one drawing on the page.
+ * null when it is not SVG or would not stay one drawing on the page. `ownRoot`: the root id the caller had the engine
+ * draw with (an id no document can guess); without it, or on a root with another id, its style sheets keep no rule.
  */
-export function sanitizeSvg(svg: string): string | null {
+export function sanitizeSvg(svg: string, ownRoot?: string): string | null {
   const doc = new DOMParser().parseFromString(declareXlink(uniqueXmlns(svg)), "image/svg+xml");
   const root = doc.documentElement;
   // an unprefixed `svg` of the SVG namespace: the root the page's HTML parse makes, so both passes see one drawing
   if (root.tagName !== "svg" || root.namespaceURI !== SVG_NS || doc.querySelector("parsererror"))
     return null;
   removeHidden(root);
-  const id = rootId(root);
+  const id = sheetRoot(root, ownRoot);
   for (const el of root.querySelectorAll("*")) {
     const name = nameOf(el);
     const loads = name === "style" && [...el.attributes].some((attr) => nameOf(attr) === "src");

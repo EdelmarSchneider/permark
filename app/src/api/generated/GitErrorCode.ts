@@ -3,4 +3,4 @@
 /**
  * Why git could not answer.
  */
-export type GitErrorCode = "timeout" | "tooLarge" | "spawn" | "failed" | "parse";
+export type GitErrorCode = "timeout" | "tooLarge" | "spawn" | "failed" | "parse" | "notLocal" | "noGit" | "stopped";

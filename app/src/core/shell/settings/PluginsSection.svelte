@@ -2,6 +2,7 @@
   // Plugins: every plugin of this build grouped by kind, each with its switch. Off leaves nothing behind (its data can
   // be removed); a plugin that is on but cannot work in this window says why in one sentence, with the fix when there
   // is one. Only the app-wide switch here: a folder's own plugin choices belong with that folder's settings.
+  import { tick } from "svelte";
   import type { PluginInfo } from "../../../api";
   import { remedyAction } from "../../commands/remedy";
   import { conditions } from "../../conditions/context.svelte";
@@ -44,11 +45,25 @@
     await pluginsStore.load();
   }
 
+  // Remove data and its question take each other's place in a row: the keyboard on the one that went goes to the one
+  // drawn now (the question: its Cancel, the safe answer), never to the page body
+  /** The question's Cancel (one question at a time). */
+  let cancelButton: HTMLButtonElement | undefined = $state();
+  /** Each row's Remove data button, by plugin. */
+  const removeButtons: Record<string, HTMLButtonElement | undefined> = $state({});
+
   /** Asks the question; the bytes the removal frees join it once the backend tells them. */
   async function askRemove(id: string): Promise<void> {
     confirming = { id, bytes: null };
+    void tick().then(() => cancelButton?.focus());
     const result = await api.pluginDataBytes(id);
     if (confirming?.id === id && result.ok) confirming = { id, bytes: result.value };
+  }
+
+  /** The question goes, the keyboard back on the row's Remove data. */
+  function closeQuestion(id: string): void {
+    confirming = null;
+    void tick().then(() => removeButtons[id]?.focus());
   }
 
   function removeQuestion(id: string, bytes: number | null): string {
@@ -59,7 +74,7 @@
   }
 
   async function removeData(info: PluginInfo): Promise<void> {
-    confirming = null;
+    closeQuestion(info.manifest.id);
     const result = await api.pluginRemoveData(info.manifest.id);
     if (result.ok) store.notifyNote(t("plugins.dataRemoved", { name: nameOf(info.manifest.id) }));
     else store.notifyNote(t("plugins.dataNotRemoved", { message: apiErrorText(result.error) }));
@@ -113,6 +128,7 @@
                 <button
                   type="button"
                   class="btn btn--ghost btn--sm"
+                  bind:this={removeButtons[id]}
                   onclick={() => void askRemove(id)}
                 >
                   {t("plugins.removeData")}
@@ -129,14 +145,16 @@
             </div>
             {#if canRemoveData(info) && confirming?.id === id}
               <div class="confirm" role="group" aria-label={t("plugins.removeData")}>
-                <span>{removeQuestion(id, confirming.bytes)}</span>
+                <!-- a folder keeping its data in its own .permark/local is reached only through its open window -->
+                <span>{removeQuestion(id, confirming.bytes)} {t("plugins.removeScope")}</span>
                 <button type="button" class="btn btn--sm" onclick={() => void removeData(info)}>
                   {t("plugins.removeYes")}
                 </button>
                 <button
                   type="button"
                   class="btn btn--ghost btn--sm"
-                  onclick={() => (confirming = null)}
+                  bind:this={cancelButton}
+                  onclick={() => closeQuestion(id)}
                 >
                   {t("common.cancel")}
                 </button>

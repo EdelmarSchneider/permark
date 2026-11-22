@@ -145,6 +145,17 @@ impl SigStore {
         );
     }
 
+    /// The bytes of a watched file whose content was never read (a new big file, [`NEW_HASH_LIMIT`]) hash to `hash`,
+    /// read while it had size and modified time `stat`. Taken only while the held signature has that size and time:
+    /// a change since is still to be told. A known hash and a window's reading stay as they are.
+    pub fn fill_hash(&self, key: &str, stat: (u64, u64), hash: u64) {
+        if let Some(held) = self.map().get_mut(key) {
+            if held.watched && held.sig.hash == 0 && (held.sig.len, held.sig.mtime_ms) == stat {
+                held.sig.hash = hash;
+            }
+        }
+    }
+
     /// A window read the file as `sig`. Kept only for a path the store holds nothing for.
     pub fn note_read(&self, key: String, shown: &str, sig: Sig) {
         self.map().entry(key).or_insert_with(|| Held {
@@ -242,6 +253,27 @@ mod tests {
         assert_eq!(store.previous("a.md", true, (4, 20)), Some(sig(4, 20, 8)));
         store.note_read("a.md".to_owned(), "a.md", sig(5, 30, 9));
         assert_eq!(store.previous("a.md", true, (5, 30)), Some(sig(4, 20, 8)));
+    }
+
+    #[test]
+    fn a_hash_fills_only_a_watched_unread_signature_of_the_same_size_and_time() {
+        let store = SigStore::default();
+        store.set("big".to_owned(), "big", sig(3, 10, 0));
+        // touched since the watch looked: that change is still to be told
+        store.fill_hash("big", (3, 11), 7);
+        store.fill_hash("big", (4, 10), 7);
+        assert_eq!(store.get("big"), Some(sig(3, 10, 0)));
+        store.fill_hash("big", (3, 10), 7);
+        assert_eq!(store.get("big"), Some(sig(3, 10, 7)));
+        // a known hash is never replaced
+        store.fill_hash("big", (3, 10), 8);
+        assert_eq!(store.get("big"), Some(sig(3, 10, 7)));
+        // a window's reading stays a reading; nothing held, nothing made
+        store.note_read("read".to_owned(), "read", sig(3, 10, 0));
+        store.fill_hash("read", (3, 10), 7);
+        assert_eq!(store.get("read"), Some(sig(3, 10, 0)));
+        store.fill_hash("none", (3, 10), 7);
+        assert_eq!(store.get("none"), None);
     }
 
     #[test]

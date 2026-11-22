@@ -99,6 +99,30 @@ describe("mock project settings", () => {
     expect(value(await api.projectConfigGet()).ignore).toEqual([]);
   });
 
+  it("a shared file that can't be read as text says why and refuses every change", async () => {
+    const api = createMockApi();
+    api.probe.shell.teamFileUnreadable(MOCK_FOLDER, "tooLarge");
+    await api.openPath(MOCK_FOLDER, "tab");
+    const settings = value(await api.projectConfigGet());
+    expect(settings.initialized).toBe(true);
+    expect(settings.unreadableWhy).toBe("tooLarge");
+    expect(settings.unreadableLine).toBeNull();
+    const refused = await api.projectConfigSet({ key: "ignore", value: ["x/"] });
+    expect(refused.ok).toBe(false);
+    if (!refused.ok && refused.error.kind === "backend") {
+      expect(refused.error.error.kind).toBe("settingsUnreadable");
+      expect(refused.error.error.detail).toBe("tooLarge");
+    }
+  });
+
+  it("says whether git tracks the folder's private folder", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "tab");
+    expect(value(await api.projectConfigGet()).privateTracked).toBe(false);
+    api.probe.shell.privateTracked(true);
+    expect(value(await api.projectConfigGet()).privateTracked).toBe(true);
+  });
+
   it("refuses a plugin of the app or one that does not exist", async () => {
     const api = createMockApi();
     await api.openPath(MOCK_FOLDER, "tab");

@@ -4,6 +4,7 @@
 
 import type { ClosingTab } from "../../api";
 import type { Overlay } from "../commands/dispatch";
+import { holdSelection, pageSelection } from "../doc/selection";
 import type { Preset } from "../search/finderModel";
 
 /** The three faces of the one overlay: Quick open, Search everywhere, the command palette. */
@@ -125,12 +126,21 @@ class UiStore {
   }
 
   openFinder(preset: FinderPreset): void {
+    // the box's field takes the focus, which ends the page selection: kept for the commands the box lists and runs.
+    // Another face of a box already open keeps what it kept (the field has the page's selection by now)
+    if (this.finder.status === "closed") holdSelection(pageSelection());
     this.#seed += 1;
     this.finder = { status: "open", preset, seed: this.#seed };
   }
 
   closeFinder(): void {
     this.finder = { status: "closed" };
+    // a command picked in the box runs right after the box closes, in the same task: it still acts on the kept
+    // selection. A box opened again meanwhile keeps its own
+    const seed = this.#seed;
+    queueMicrotask(() => {
+      if (this.#seed === seed) holdSelection(null);
+    });
   }
 
   /** The frame's tracks transition for a moment (a toggle); never while a splitter is dragged. */

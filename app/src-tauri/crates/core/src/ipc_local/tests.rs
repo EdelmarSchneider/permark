@@ -235,6 +235,17 @@ fn private_folder_rule() {
     assert!(!is_private_folder(false, 1000, 0o700, 1000));
 }
 
+/// A socket folder that cannot be closed to others (its mode change refused) is never listened in.
+#[cfg(unix)]
+#[test]
+fn a_socket_folder_that_refuses_its_mode_change_is_not_used() {
+    use std::os::unix::fs::PermissionsExt;
+    let (dir, endpoint) = endpoint();
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let listening = crate::fsx::tests::with_modes_refused(|| endpoint.listen());
+    assert!(matches!(listening, Err(IpcLocalError::Folder { .. })));
+}
+
 #[cfg(unix)]
 #[test]
 fn a_shared_folder_is_untrusted() {

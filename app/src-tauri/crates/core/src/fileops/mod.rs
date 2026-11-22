@@ -25,7 +25,6 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -49,8 +48,8 @@ use self::undo::{DocUndo, Entry, History, Journal, Op, UndoEdit, JOURNAL_FILE, M
 use crate::error::{ErrorKind, IpcError};
 use crate::format::{FormatRegistry, MarkdownFeatures};
 use crate::fsx::{
-    hash, read_regular, recycle_each, write_atomic_if_unchanged, ContentHash, FsxError, Unrecycled,
-    Zone, IDENTITY_UNKNOWN,
+    hash, now_ms, read_regular, recycle_each, write_atomic_if_unchanged, ContentHash, FsxError,
+    Unrecycled, Zone, IDENTITY_UNKNOWN,
 };
 use crate::paths::{Vault, VaultError, VaultPath};
 use crate::state::{AppDirs, StateError};
@@ -285,14 +284,18 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-}
-
 fn count(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+/// The undo journal of a [`FileOps`], held ([`FileOps::hold_journal`]): nothing is journaled until it goes.
+pub(crate) struct JournalHold<'a>(std::sync::MutexGuard<'a, Option<History>>);
+
+impl JournalHold<'_> {
+    /// The journal goes on in `store` (the project's state folder moved); the hold ends.
+    pub(crate) fn use_store(mut self, store: &crate::state::StateStore) {
+        *self.0 = History::of(store);
+    }
 }
 
 /// The file operations of one project.
@@ -427,7 +430,14 @@ impl FileOps {
 
     /// The project's state folder moved (PerMark was initialized): the journal goes on in the new one.
     pub fn use_store(&self, store: &crate::state::StateStore) {
-        *lock(&self.journal) = History::of(store);
+        self.hold_journal().use_store(store);
+    }
+
+    /// The journal held until the hold goes (or moves with [`JournalHold::use_store`]): an operation that ends meanwhile
+    /// waits to be journaled. Initialize holds it around the copy of the state folder, so no entry lands in the place
+    /// the data is leaving after the copy was made.
+    pub(crate) fn hold_journal(&self) -> JournalHold<'_> {
+        JournalHold(lock(&self.journal))
     }
 
     /// Journals an operation; its id. `None`: the journal could not be written, or no install key is usable (best

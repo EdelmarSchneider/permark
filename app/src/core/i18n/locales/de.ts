@@ -952,6 +952,8 @@ export default {
   "since.nothing": "Seit {when} hat sich nichts geändert.",
   "review.offer.one": "Geändert seit dem letzten Lesen · {n} Änderung",
   "review.offer.other": "Geändert seit dem letzten Lesen · {n} Änderungen",
+  "review.offerCommit.one": "Geändert seit dem letzten Commit · {n} Änderung",
+  "review.offerCommit.other": "Geändert seit dem letzten Commit · {n} Änderungen",
   "review.review": "Prüfen",
   "review.reviewing.one": "{n} Änderung wird geprüft",
   "review.reviewing.other": "{n} Änderungen werden geprüft",
@@ -976,6 +978,7 @@ export default {
   "review.change": "Änderung {i} von {n}, {kind}",
   "review.keptAll": "Alle Änderungen behalten",
   "review.revertedAll": "Alle Änderungen in {name} zurückgenommen",
+  "review.endedMixed": "Einige Änderungen in {name} behalten, andere zurückgenommen",
   "review.undo": "Rückgängig",
   "review.undoStale": "Rückgängig nicht möglich: {name} hat sich seitdem geändert.",
   "review.allDone": "Alle Änderungen sind geprüft",
@@ -1036,6 +1039,10 @@ export default {
   "git.why.tooLarge": "Die Antwort von Git war zu lang zum Lesen.",
   "git.why.spawn": "Git konnte nicht gestartet werden.",
   "git.why.parse": "Die Antwort von Git war nicht verständlich.",
+  "git.why.notLocal":
+    "Der Git-Ordner dieses Repositorys führt aus diesem Computer hinaus oder über eine Verknüpfung, daher öffnet PerMark es nicht.",
+  "git.why.noGit": "Dieser Ordner hat kein .git, das zu einem Repository führt.",
+  "git.why.stopped": "Git wurde angehalten, bevor es geantwortet hat.",
   "git.why.failed": "Details: {detail}",
   "git.errorHint":
     "Öffne die Einstellungen, um ein anderes Git zu wählen (das eingebaute braucht kein Vertrauen).",
@@ -1496,7 +1503,7 @@ export default {
   "agent.title": "Agentenverbindung",
   "agent.switch": "Diesen Ordner mit Agenten teilen",
   "agent.switchHint":
-    "Ein verbundener Agent (ein KI-Werkzeug mit MCP-Unterstützung, etwa Claude Code oder Cursor) sieht, was gerade angezeigt wird und was sich geändert hat, kann die Dateien dieses Ordners suchen und lesen, Kommentare und geteilte Notizen lesen und eine Stelle zeigen. Nur auf diesem Computer. Dateien, die in .aiignore stehen, bleiben außer Reichweite. So verbundene Agenten lesen nur und bearbeiten nie Dateien über PerMark; damit ein Agent Änderungen vorschlagen kann, den Assistenten verwenden. Das gilt nur für das, was Agenten von PerMark bekommen: Ein Agent kann Dateien auf diesem Computer weiterhin selbst öffnen.",
+    "Ein verbundener Agent (ein KI-Werkzeug mit MCP-Unterstützung, etwa Claude Code oder Cursor) sieht, was gerade angezeigt wird und was sich geändert hat, kann die Dateien dieses Ordners suchen und lesen, Kommentare und geteilte Notizen lesen und eine Stelle zeigen. Nur auf diesem Computer. Dateien, die in .aiignore stehen, bleiben außer Reichweite. So verbundene Agenten bearbeiten nie Dateien über PerMark: Sie lesen und markieren Kommentare nur dann als erledigt, wenn du es erlaubst. Damit ein Agent Änderungen vorschlagen kann, den Assistenten verwenden. Das gilt nur für das, was Agenten von PerMark bekommen: Ein Agent kann Dateien auf diesem Computer weiterhin selbst öffnen.",
   "agent.folderReplaced":
     "Dieser Ordner hat sich geändert, seit Sie ihn verbunden haben. Schalten Sie die Verbindung wieder ein, um hier Agenten zuzulassen.",
   "agent.groups": "Was Agenten dürfen",
@@ -1747,6 +1754,8 @@ export default {
     "Deine Wahl für jedes Plugin in diesem Ordner. „Für alle aus“ wird in .permark/config.toml gespeichert und gilt für alle, die den Ordner öffnen.",
   "plugins.removeConfirm": "Daten von {name} entfernen?",
   "plugins.removeConfirmBytes": "Daten von {name} entfernen? Das gibt {size} frei.",
+  "plugins.removeScope":
+    "Ordner, die ihre Daten in ihrem eigenen .permark-Ordner aufbewahren, werden nur bereinigt, solange sie geöffnet sind.",
   "plugins.removeData": "Daten entfernen",
   "plugins.removeYes": "Entfernen",
   "plugins.turnOn": "{name} einschalten",
@@ -1771,6 +1780,8 @@ export default {
   "project.initConfig": "Die Einstellungen, die dieses Projekt mit dem Team teilt.",
   "project.initConfirm": "PerMark einrichten",
   "project.initFailed": "PerMark konnte in {path} nicht eingerichtet werden: {message}",
+  "project.initHeld":
+    "{path}/.permark/local enthält bereits PerMark-Daten von anderswo; es wurde nichts geändert.",
   "project.initIgnore": "Hält die privaten Ordner aus git heraus.",
   "project.initIntro": "PerMark legt hier einen Ordner .permark an mit:",
   "project.initLocal":
@@ -1812,6 +1823,18 @@ export default {
   "project.sharedFileHint": "Geteilt mit allen, die diesen Ordner öffnen.",
   "project.sharedFileUnreadable":
     "PerMark kann diese Datei in Zeile {line} nicht lesen. Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn sie korrigiert ist.",
+  "project.sharedLocked":
+    "PerMark kann .permark/config.toml nicht lesen. Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn die Datei korrigiert ist.",
+  "project.sharedLocked.line":
+    "PerMark kann .permark/config.toml in Zeile {line} nicht lesen. Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn die Datei korrigiert ist.",
+  "project.sharedLocked.notText":
+    "PerMark kann .permark/config.toml nicht lesen (sie ist kein reiner Text). Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn die Datei korrigiert ist.",
+  "project.sharedLocked.tooLarge":
+    "PerMark kann .permark/config.toml nicht lesen (sie ist zu groß). Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn die Datei korrigiert ist.",
+  "project.sharedLocked.locked":
+    "PerMark kann .permark/config.toml nicht lesen (ein anderes Programm verwendet sie). Mit „Alle“ markierte Einstellungen lassen sich erst ändern, wenn die Datei korrigiert ist.",
+  "project.privateTracked":
+    "Agenten erhalten weder Kommentare noch Aktivität dieses Ordners: Sein Git-Repository verfolgt den privaten Ordner von PerMark (.permark/local), oder PerMark konnte das nicht prüfen.",
   "settings.all": "Alle Einstellungen",
   "settings.editorPreview": "Beispiel:",
   "settings.linkUpdateHint":
@@ -2219,7 +2242,7 @@ export default {
     "Token eines Dokuments, einer Auswahl oder eines Abschnitts nach dem gewählten Tokenizer; exakt, wenn der Tokenizer öffentlich ist, sonst als Näherung (und markiert).",
   "plugin.local-ai.name": "Lokale KI",
   "plugin.local-ai.about":
-    "Kleine KI-Modelle, die offline auf diesem Computer laufen und PerMark beim Korrigieren, Übersetzen und Finden nach Bedeutung helfen. Es wird nichts heruntergeladen, bis du darum bittest.",
+    "Kleine KI-Modelle, die auf diesem Computer laufen und PerMark beim Korrigieren, Übersetzen und Finden nach Bedeutung helfen. Es wird nichts heruntergeladen, bis du darum bittest.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} Zeile",
   "config.table.rows.other": "{n} Zeilen",
@@ -2648,7 +2671,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "Lokale KI",
   "localAi.intro":
-    "Kleine KI-Modelle, die offline auf diesem Computer laufen. Heruntergeladen wird nur auf Wunsch.",
+    "Kleine KI-Modelle, die auf diesem Computer laufen. Heruntergeladen wird nur auf Wunsch.",
   "localAi.command": "Einstellungen für lokale KI öffnen",
   "localAi.loadFailed": "Die Einstellungen für lokale KI konnten nicht gelesen werden.",
   "localAi.retry": "Erneut versuchen",
@@ -2720,8 +2743,8 @@ export default {
   "localAi.models.details.size": "Downloadgröße",
   "localAi.models.details.restriction": "Wer es nutzen darf",
   "localAi.models.comingSoon": "Demnächst",
-  "localAi.models.needs.newer": "Braucht eine neuere Version der KI-Engine.",
-  "localAi.models.needs.missing": "Braucht eine KI-Engine, die PerMark noch nicht hat.",
+  "localAi.models.needs.newer": "Dieses Modell braucht eine spätere Version von PerMark.",
+  "localAi.models.needs.missing": "PerMark kann diese Art von Modell noch nicht ausführen.",
   "localAi.dl.waiting": "Wartet…",
   "localAi.dl.cancelLabel": "Laden von {name} abbrechen",
   "localAi.dl.progress": "{done} von {total}",

@@ -949,6 +949,8 @@ export default {
   "since.nothing": "{when} 以降、変更はありません。",
   "review.offer.one": "前回読んだ後に変更されました · {n} 件の変更",
   "review.offer.other": "前回読んだ後に変更されました · {n} 件の変更",
+  "review.offerCommit.one": "最後のコミット以降に変更されました · {n} 件の変更",
+  "review.offerCommit.other": "最後のコミット以降に変更されました · {n} 件の変更",
   "review.review": "レビュー",
   "review.reviewing.one": "{n} 件の変更をレビュー中",
   "review.reviewing.other": "{n} 件の変更をレビュー中",
@@ -973,6 +975,7 @@ export default {
   "review.change": "変更 {i}/{n}（{kind}）",
   "review.keptAll": "すべての変更を保持しました",
   "review.revertedAll": "{name} のすべての変更を元に戻しました",
+  "review.endedMixed": "{name} の変更の一部を保持し、残りを元に戻しました",
   "review.undo": "元に戻す",
   "review.undoStale": "元に戻せません：その後 {name} が変更されました。",
   "review.allDone": "すべての変更をレビューしました",
@@ -1032,6 +1035,10 @@ export default {
   "git.why.tooLarge": "Git の応答が長すぎて読み取れませんでした。",
   "git.why.spawn": "Git を起動できませんでした。",
   "git.why.parse": "Git の応答を解釈できませんでした。",
+  "git.why.notLocal":
+    "このリポジトリの git フォルダーはこのコンピューターの外、またはリンクを経由した場所を指しているため、PerMark は開きません。",
+  "git.why.noGit": "このフォルダーには、リポジトリにつながる .git がありません。",
+  "git.why.stopped": "Git は応答する前に停止されました。",
   "git.why.failed": "詳細：{detail}",
   "git.errorHint":
     "設定を開いて別の git を選択してください（内蔵の git では信頼の設定は不要です）。",
@@ -1486,7 +1493,7 @@ export default {
   "agent.title": "エージェント接続",
   "agent.switch": "このフォルダーをエージェントと共有",
   "agent.switchHint":
-    "接続したエージェント（Claude Code や Cursor など、MCP に対応した AI ツール）は、表示中の内容や変更点の確認、このフォルダーのファイルの検索と読み取り、コメントと共有したメモの読み取り、特定の場所の表示ができます。このコンピューター上でのみ動作します。.aiignore に記載したファイルはエージェントから見えません。この方法で接続したエージェントは読み取りだけを行い、PerMark を通じてファイルを編集することはありません。エージェントに編集を提案させるには、アシスタントを使ってください。これは PerMark からエージェントに渡る情報だけが対象です。エージェントは、コンピューター上のファイルを独自に開くこともできます。",
+    "接続したエージェント（Claude Code や Cursor など、MCP に対応した AI ツール）は、表示中の内容や変更点の確認、このフォルダーのファイルの検索と読み取り、コメントと共有したメモの読み取り、特定の場所の表示ができます。このコンピューター上でのみ動作します。.aiignore に記載したファイルはエージェントから見えません。この方法で接続したエージェントが PerMark を通じてファイルを編集することはありません。読み取りを行い、コメントを完了にするのは許可した場合だけです。エージェントに編集を提案させるには、アシスタントを使ってください。これは PerMark からエージェントに渡る情報だけが対象です。エージェントは、コンピューター上のファイルを独自に開くこともできます。",
   "agent.folderReplaced":
     "接続した後にこのフォルダーが変わりました。ここでエージェントを許可するには、接続をもう一度オンにしてください。",
   "agent.groups": "エージェントに許可すること",
@@ -1736,6 +1743,8 @@ export default {
     "このフォルダーでの各プラグインの選択です。「全員に対してオフ」は .permark/config.toml に保存され、このフォルダーを開く全員に適用されます。",
   "plugins.removeConfirm": "{name} のデータを削除しますか？",
   "plugins.removeConfirmBytes": "{name} のデータを削除しますか？{size} が空きます。",
+  "plugins.removeScope":
+    "自身の .permark フォルダーにデータを保存しているフォルダーでは、開いている間だけデータが削除されます。",
   "plugins.removeData": "データを削除",
   "plugins.removeYes": "削除",
   "plugins.turnOn": "{name} をオンにする",
@@ -1760,6 +1769,8 @@ export default {
   "project.initConfig": "このプロジェクトがチームと共有する設定。",
   "project.initConfirm": "PerMark を初期化",
   "project.initFailed": "{path} で PerMark を初期化できませんでした：{message}",
+  "project.initHeld":
+    "{path}/.permark/local には別の場所からの PerMark データが既にあります。何も変更していません。",
   "project.initIgnore": "非公開のフォルダーを git の対象から外します。",
   "project.initIntro": "PerMark はここに .permark フォルダーを作成し、次のものを置きます：",
   "project.initLocal":
@@ -1801,6 +1812,18 @@ export default {
   "project.sharedFileHint": "このフォルダーを開く全員と共有されます。",
   "project.sharedFileUnreadable":
     "PerMark はこのファイルの {line} 行目を読み取れません。修正されるまで「全員」の設定は変更できません。",
+  "project.sharedLocked":
+    "PerMark は .permark/config.toml を読み取れません。修正されるまで「全員」の設定は変更できません。",
+  "project.sharedLocked.line":
+    "PerMark は .permark/config.toml の {line} 行目を読み取れません。修正されるまで「全員」の設定は変更できません。",
+  "project.sharedLocked.notText":
+    "PerMark は .permark/config.toml を読み取れません（プレーンテキストではありません）。修正されるまで「全員」の設定は変更できません。",
+  "project.sharedLocked.tooLarge":
+    "PerMark は .permark/config.toml を読み取れません（ファイルが大きすぎます）。修正されるまで「全員」の設定は変更できません。",
+  "project.sharedLocked.locked":
+    "PerMark は .permark/config.toml を読み取れません（別のプログラムが使用しています）。修正されるまで「全員」の設定は変更できません。",
+  "project.privateTracked":
+    "エージェントはこのフォルダーのコメントもアクティビティも受け取りません。git リポジトリが PerMark の非公開フォルダー (.permark/local) を追跡しているか、PerMark がそれを確認できませんでした。",
   "settings.all": "すべての設定",
   "settings.editorPreview": "例：",
   "settings.linkUpdateHint": "ファイルの移動や名前の変更時に、リンクをどうするかを指定します。",
@@ -2197,7 +2220,7 @@ export default {
     "選んだトークナイザーで数えた、ドキュメント、選択範囲、セクションのトークン数。トークナイザーが公開されていれば正確に、公開されていなければ概算で（印付きで）表示します。",
   "plugin.local-ai.name": "ローカル AI",
   "plugin.local-ai.about":
-    "このコンピューター上でオフラインで動く小さな AI モデルです。PerMark の校正、翻訳、意味による検索を助けます。求められるまで何もダウンロードしません。",
+    "このコンピューター上で動く小さな AI モデルです。PerMark の校正、翻訳、意味による検索を助けます。求められるまで何もダウンロードしません。",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} 行",
   "config.table.rows.other": "{n} 行",
@@ -2623,7 +2646,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "ローカル AI",
   "localAi.intro":
-    "このコンピューター上でオフラインで動く小さな AI モデルです。指示するまで何もダウンロードされません。",
+    "このコンピューター上で動く小さな AI モデルです。指示するまで何もダウンロードされません。",
   "localAi.command": "ローカル AI の設定を開く",
   "localAi.loadFailed": "ローカル AI の設定を読み込めませんでした。",
   "localAi.retry": "再試行",
@@ -2696,8 +2719,8 @@ export default {
   "localAi.models.details.size": "ダウンロードサイズ",
   "localAi.models.details.restriction": "利用できる人",
   "localAi.models.comingSoon": "近日対応",
-  "localAi.models.needs.newer": "新しいバージョンの AI エンジンが必要です。",
-  "localAi.models.needs.missing": "PerMark にまだない AI エンジンが必要です。",
+  "localAi.models.needs.newer": "このモデルには、より新しいバージョンの PerMark が必要です。",
+  "localAi.models.needs.missing": "PerMark はまだこの種類のモデルを実行できません。",
   "localAi.dl.waiting": "待機中…",
   "localAi.dl.cancelLabel": "{name} の入手をキャンセル",
   "localAi.dl.progress": "{done} / {total}",

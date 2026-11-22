@@ -297,6 +297,44 @@ describe("the choice with its scope", () => {
     await until(() => tokens.projectList.length === 0, "the project's list is emptied");
   });
 
+  it("the folder's choice can't be changed while its file does not read; the app's still can", async () => {
+    await api.projectInit(workspace.root);
+    await api.projectConfigSet({ key: "tokenizers", value: ["gemini", "claude"] });
+    mock.probe.shell.teamFileBroken(workspace.root, 3);
+    await projectSettings.load(mock);
+    expect(tokens.projectCanChoose).toBe(true);
+    expect(tokens.projectLocked).toBe(true);
+    // the folder's list stays the one in use, shown as it is
+    expect(tokens.chosen.map((info) => info.id)).toEqual(["gemini", "claude"]);
+    component = mount(TokenProject, { target });
+    flushSync();
+    const boxes = (): HTMLInputElement[] =>
+      Array.from(target.querySelectorAll<HTMLInputElement>("input[type=checkbox]"));
+    expect(boxes().length).toBe(6);
+    expect(boxes().every((box) => box.disabled)).toBe(true);
+    expect(byText<HTMLButtonElement>("button", "Make primary").disabled).toBe(true);
+    expect(target.querySelector(".shared.off")).not.toBeNull();
+    expect(text()).not.toContain("Initialize PerMark to share this with everyone");
+    expect(text()).toContain("PerMark can't read .permark/config.toml");
+    await unmount(component);
+    component = null;
+
+    // without a list of its own, the status popover's chooser edits the app's choice
+    mock.probe.shell.forgetInit();
+    await api.projectInit(workspace.root);
+    mock.probe.shell.teamFileBroken(workspace.root, 3);
+    await projectSettings.load(mock);
+    component = mount(TokenChoice, { target, props: { mode: "both" } });
+    flushSync();
+    const own = byText<HTMLLabelElement>("label", "A choice for this folder only").querySelector(
+      "input",
+    ) as HTMLInputElement;
+    expect(own.disabled).toBe(true);
+    expect(
+      Array.from(target.querySelectorAll<HTMLInputElement>("li input")).every((b) => !b.disabled),
+    ).toBe(true);
+  });
+
   it("the folder's page: for everyone; without .permark/ greyed beside the offer to set PerMark up", async () => {
     await projectSettings.load(mock);
     component = mount(TokenProject, { target });

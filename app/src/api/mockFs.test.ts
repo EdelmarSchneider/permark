@@ -67,6 +67,37 @@ describe("mock names", () => {
   });
 });
 
+// backend parity: `tree/category.rs` may_open_with_default_app on tree nodes and document views
+describe("mock tells which files the default app may open", () => {
+  it("marks tree nodes: never a folder, code or a picture that may hold script", async () => {
+    const api = createMockApi();
+    api.probe.project.files.set("docs/img/chart.svg", "<svg/>");
+    const nodes = api.probe.project.list({
+      show: "everything",
+      categories: [],
+      patterns: "",
+      assetsNearDocsOnly: false,
+      hideEmptyDirs: false,
+      showHidden: false,
+      showIgnored: false,
+    });
+    const opens = (path: string): boolean | undefined =>
+      nodes.find((n) => n.path === path)?.opensOutside;
+    expect(opens("docs")).toBe(false);
+    expect(opens("src/main.rs")).toBe(false);
+    expect(opens("docs/img/chart.svg")).toBe(false);
+    expect(opens("docs/img/logo.png")).toBe(true);
+    expect(opens("README.md")).toBe(true);
+  });
+
+  it("marks document views, the rendered fixtures included", async () => {
+    const api = createMockApi();
+    expect(value(await api.openDocument("README.md", [])).opensOutside).toBe(true);
+    expect(value(await api.openDocument("package.json", [])).opensOutside).toBe(true);
+    expect(value(await api.openDocument("src/main.rs", [])).opensOutside).toBe(false);
+  });
+});
+
 // backend parity: `fileops/ops.rs` check_moves | check_deletes, `fileops/mod.rs` create | plan_links
 describe("mock file operations refuse what the backend refuses", () => {
   it("creates with the backend's name rules", async () => {

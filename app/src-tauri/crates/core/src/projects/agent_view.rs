@@ -34,8 +34,9 @@ pub const PRIVATE_FOLDERS: [&str; 2] = [".permark", ".git"];
 pub const PRIVATE_FILES: [&str; 1] = [AI_IGNORE];
 /// A folder's team settings file, as a rule file is named in a [`RulesProblem`].
 pub const CONFIG_FILE: &str = ".permark/config.toml";
-/// The profile file keeping the last good rules of a project's rule files ([`LastGood`]).
-pub const LAST_GOOD_FILE: &str = "agent-rules.json";
+/// The profile file keeping the last good rules of a project's rule files ([`LastGood`]); state owns the name so its
+/// profile-only list needs nothing from projects.
+pub use crate::state::LAST_GOOD_FILE;
 /// Most rule files whose last good rules a project keeps (the oldest written make room): far more than a project
 /// holds, so members never push each other out (each would rewrite the store at every load).
 const MAX_KEPT_FILES: usize = 256;
@@ -556,10 +557,12 @@ impl Scope {
 
 impl Guard {
     /// The rules of a call from the folder's `.aiignore` (read checked; unreadable: closed, as no last good rules are
-    /// at hand) and `deny_paths` as given: a seam for tests, which set the team rules themselves. Calls for an agent
-    /// read the team file too: [`Guard::checked`], [`Guard::checked_alone`].
+    /// at hand) and `deny_paths` as given, the team file never read: a seam for tests (this crate's and the plugins'),
+    /// which set the team rules themselves. Calls for an agent read the team file too: [`Guard::checked`],
+    /// [`Guard::checked_alone`].
+    #[doc(hidden)]
     #[must_use]
-    pub fn new(root: &Root, deny_paths: &[String]) -> Self {
+    pub fn for_tests(root: &Root, deny_paths: &[String]) -> Self {
         let mut rules = folder_rules(root.path(), "", ConfigRead::Absent, None);
         match matcher(root.path(), deny_paths.iter().map(String::as_str)) {
             Ok(_) => rules.deny_paths = deny_paths.to_vec(),
@@ -632,7 +635,7 @@ impl Guard {
         self.deny_group.as_deref()
     }
 
-    /// The folder's own `[agent] deny` groups as [`Guard::checked`] read them (none for [`Guard::new`]).
+    /// The folder's own `[agent] deny` groups as [`Guard::checked`] read them (none for [`Guard::for_tests`]).
     #[must_use]
     pub fn denied_groups(&self) -> &BTreeSet<String> {
         &self.denied_groups
@@ -785,7 +788,7 @@ mod tests {
         }
         std::fs::write(base.join("outside.md"), "# Out\n").unwrap();
         let root = Root::open(&proj).unwrap();
-        let guard = Guard::new(&root, &[]);
+        let guard = Guard::for_tests(&root, &[]);
         assert_eq!(
             guard.file("docs/a.md").unwrap(),
             ("docs/a.md".to_owned(), proj.join("docs").join("a.md"))
@@ -807,7 +810,7 @@ mod tests {
     fn machinery_folders_at_any_depth_are_hidden_and_key_files_are_not() {
         let dir = tempfile::tempdir().unwrap();
         let root = Root::open(dir.path()).unwrap();
-        let guard = Guard::new(&root, &[]);
+        let guard = Guard::for_tests(&root, &[]);
         for path in [
             ".git/config",
             "sub/.git/config",
@@ -845,7 +848,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("sub")).unwrap();
         std::fs::write(dir.path().join("sub").join(".aiignore"), "notes/\n").unwrap();
         let root = Root::open(dir.path()).unwrap();
-        let guard = Guard::new(&root, &[]);
+        let guard = Guard::for_tests(&root, &[]);
         for path in [".aiignore", "sub/.aiignore", "a/b/.aiignore"] {
             assert!(guard.hidden(path, false), "{path}");
         }

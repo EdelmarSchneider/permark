@@ -11,9 +11,10 @@ const svg = (inner: string): string =>
 /**
  * The cleaned drawing as the page builds it: `{@html}` parses the markup as HTML, not as XML. Checked by attributes,
  * never by an `a[href]` selector: jsdom matches that selector on a link that has only `xlink:href`, Chromium does not.
+ * `ownRoot`: the root id the engine was asked to draw with.
  */
-function onPage(dirty: string): Element {
-  const clean = sanitizeSvg(dirty);
+function onPage(dirty: string, ownRoot?: string): Element {
+  const clean = sanitizeSvg(dirty, ownRoot);
   if (clean === null) throw new Error("refused");
   const template = document.createElement("template");
   template.innerHTML = clean;
@@ -264,6 +265,7 @@ describe("sanitizeSvg", () => {
   it("a style whose CDATA holds a closing tag stays text on the page", () => {
     const page = onPage(
       `<svg id="d" xmlns="${SVG_NS}"><style><![CDATA[#d .a{content:"</style><img src=x onerror=alert(1)>"}]]></style><rect width="1" height="1"/></svg>`,
+      "d",
     );
     expect(tags(page)).toEqual(["style", "rect"]);
     expect(page.querySelector("style")?.textContent).toContain("<img");
@@ -317,7 +319,7 @@ describe("sanitizeSvg CSS", () => {
     drawing(`<style>${css}</style><g><rect class="node" width="10" height="10"/></g>`, rootStyle);
   const sheet = (page: Element): string | null | undefined =>
     page.querySelector("style")?.textContent;
-  const styled = (css: string): Element => onPage(scoped(css));
+  const styled = (css: string): Element => onPage(scoped(css), ID);
 
   it("a style reaches only the drawing: a rule for anything outside its root goes", () => {
     const cases: [string, string][] = [
@@ -383,7 +385,17 @@ describe("sanitizeSvg CSS", () => {
     );
     // the page's HTML parse lowercases attribute names: two of them would be one id there
     const twice = `<svg id="${ID}" ID="app" xmlns="${SVG_NS}"><style>${R} .a{fill:red}</style><g/></svg>`;
-    expect(sheet(onPage(twice))).toBe("");
+    expect(sheet(onPage(twice, ID))).toBe("");
+  });
+
+  it("a style keeps rules only at the root id its caller drew with", () => {
+    // a drawing can name its own root after a page element: its rules would reach that element
+    const named = `<svg id="app" xmlns="${SVG_NS}"><style>#app p{color:red}</style><g/></svg>`;
+    expect(sheet(onPage(named))).toBe("");
+    expect(sheet(onPage(named, "pm-mermaid-2-x"))).toBe("");
+    expect(sheet(onPage(named, "app"))).toBe("#app p{color:red}");
+    const blank = `<svg id="" xmlns="${SVG_NS}"><style>.a{fill:red}</style><g/></svg>`;
+    expect(sheet(onPage(blank, ""))).toBe("");
   });
 
   it("a theme's CSS that would lift the drawing over the window loses its position, nothing else", () => {
@@ -393,6 +405,7 @@ describe("sanitizeSvg CSS", () => {
         `#${ID}{position:fixed;inset:0;background:red}#${ID} .node{fill:#eee;}`,
         "max-width: 80px; position: fixed; top: 0",
       ),
+      ID,
     );
     expect(sheet(page)).toBe(`#${ID}{inset:0;background:red}#${ID} .node{fill:#eee;}`);
     expect(page.getAttribute("style")).toBe("max-width: 80px; top: 0");
@@ -418,6 +431,7 @@ describe("sanitizeSvg CSS", () => {
         drawing(
           `<style>${R} .a{${written}}</style><rect class="a" style="${written}" width="1" height="1"/>`,
         ),
+        ID,
       );
       expect(sheet(page), written).toBe(`${R} .a{}`);
       expect(page.querySelector("rect")?.getAttribute("style"), written).toBe("");
@@ -493,7 +507,7 @@ describe("sanitizeSvg CSS", () => {
         `#${ID} .edge{marker-end:url(#${ID}_flowchart-v2-pointEnd);content:"{";}@keyframes dash{to{stroke-dashoffset:0;}}` +
         `@media (prefers-reduced-motion){#${ID} .edge{animation:none;position:static}}`,
     );
-    expect(sanitizeSvg(own)).toBe(own);
+    expect(sanitizeSvg(own, ID)).toBe(own);
   });
 });
 

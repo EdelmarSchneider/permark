@@ -949,6 +949,8 @@ export default {
   "since.nothing": "Şu zamandan beri hiçbir şey değişmedi: {when}.",
   "review.offer.one": "Son okumanızdan beri değişti · {n} değişiklik",
   "review.offer.other": "Son okumanızdan beri değişti · {n} değişiklik",
+  "review.offerCommit.one": "Son commit'ten beri değişti · {n} değişiklik",
+  "review.offerCommit.other": "Son commit'ten beri değişti · {n} değişiklik",
   "review.review": "Gözden geçir",
   "review.reviewing.one": "{n} değişiklik gözden geçiriliyor",
   "review.reviewing.other": "{n} değişiklik gözden geçiriliyor",
@@ -973,6 +975,7 @@ export default {
   "review.change": "Değişiklik {i} / {n}, {kind}",
   "review.keptAll": "Tüm değişiklikler korundu",
   "review.revertedAll": "{name} içindeki tüm değişiklikler geri çevrildi",
+  "review.endedMixed": "{name} içindeki değişikliklerin bir kısmı korundu, diğerleri geri çevrildi",
   "review.undo": "Geri al",
   "review.undoStale": "Geri alınamıyor: {name} o zamandan beri değişti.",
   "review.allDone": "Tüm değişiklikler gözden geçirildi",
@@ -1033,6 +1036,10 @@ export default {
   "git.why.tooLarge": "Git'in yanıtı okunamayacak kadar uzundu.",
   "git.why.spawn": "Git başlatılamadı.",
   "git.why.parse": "Git'in yanıtı anlaşılamadı.",
+  "git.why.notLocal":
+    "Bu deponun git klasörü bu bilgisayarın dışına ya da bir bağlantı üzerinden yönlendiriyor; bu yüzden PerMark onu açmıyor.",
+  "git.why.noGit": "Bu klasörde bir depoya götüren .git yok.",
+  "git.why.stopped": "Git yanıt vermeden önce durduruldu.",
   "git.why.failed": "Ayrıntılar: {detail}",
   "git.errorHint": "Başka bir Git seçmek için ayarları açın (yerleşik Git güven gerektirmez).",
   "git.folderChanged.one": "İçinde {n} değişen dosya var",
@@ -1478,7 +1485,7 @@ export default {
   "agent.title": "Ajan bağlantısı",
   "agent.switch": "Bu klasörü ajanlarla paylaş",
   "agent.switchHint":
-    "Bağladığınız bir ajan (Claude Code veya Cursor gibi MCP destekleyen bir yapay zeka aracı) neye baktığınızı ve neyin değiştiğini görebilir, bu klasörün dosyalarında arama yapıp okuyabilir, yorumlarınızı ve paylaştığınız notları okuyabilir ve size bir yer gösterebilir. Yalnızca bu bilgisayarda. .aiignore dosyasında listelenen dosyalar ajanların erişiminin dışında kalır. Bu şekilde bağlanan ajanlar yalnızca okur ve PerMark aracılığıyla asla dosya düzenlemez; bir ajanın düzenleme önermesine izin vermek için Asistan'ı kullanın. Bu yalnızca ajanların PerMark'tan aldıklarını kapsar: bir ajan, bilgisayarınızdaki dosyaları yine de kendi başına açabilir.",
+    "Bağladığınız bir ajan (Claude Code veya Cursor gibi MCP destekleyen bir yapay zeka aracı) neye baktığınızı ve neyin değiştiğini görebilir, bu klasörün dosyalarında arama yapıp okuyabilir, yorumlarınızı ve paylaştığınız notları okuyabilir ve size bir yer gösterebilir. Yalnızca bu bilgisayarda. .aiignore dosyasında listelenen dosyalar ajanların erişiminin dışında kalır. Bu şekilde bağlanan ajanlar PerMark aracılığıyla asla dosya düzenlemez: okur ve yorumlarınızı yalnızca siz izin verirseniz tamamlandı olarak işaretler. Bir ajanın düzenleme önermesine izin vermek için Asistan'ı kullanın. Bu yalnızca ajanların PerMark'tan aldıklarını kapsar: bir ajan, bilgisayarınızdaki dosyaları yine de kendi başına açabilir.",
   "agent.folderReplaced":
     "Bu klasör, bağladığınızdan beri değişti. Ajanlara burada izin vermek için bağlantıyı yeniden açın.",
   "agent.groups": "Ajanların yapabilecekleri",
@@ -1725,6 +1732,8 @@ export default {
     'Bu klasördeki her eklenti için seçiminiz. "Herkes için kapalı" .permark/config.toml içinde tutulur ve klasörü açan herkes için geçerlidir.',
   "plugins.removeConfirm": "{name} verileri kaldırılsın mı?",
   "plugins.removeConfirmBytes": "{name} verileri kaldırılsın mı? Bu işlem {size} yer açar.",
+  "plugins.removeScope":
+    "Verilerini kendi .permark klasöründe tutan klasörler yalnızca açıkken temizlenir.",
   "plugins.removeData": "Verileri kaldır",
   "plugins.removeYes": "Kaldır",
   "plugins.turnOn": "{name} eklentisini aç",
@@ -1749,6 +1758,8 @@ export default {
   "project.initConfig": "Bu projenin ekibiyle paylaştığı ayarlar.",
   "project.initConfirm": "PerMark'ı başlat",
   "project.initFailed": "PerMark, {path} konumunda başlatılamadı: {message}",
+  "project.initHeld":
+    "{path}/.permark/local içinde başka bir yerden gelmiş PerMark verileri zaten var; hiçbir şey değiştirilmedi.",
   "project.initIgnore": "Özel klasörleri Git'in dışında tutar.",
   "project.initIntro": "PerMark burada şunları içeren bir .permark klasörü oluşturur:",
   "project.initLocal":
@@ -1790,6 +1801,18 @@ export default {
   "project.sharedFileHint": "Bu klasörü açan herkesle paylaşılır.",
   "project.sharedFileUnreadable":
     "PerMark bu dosyayı {line}. satırda okuyamıyor; dosya düzeltilene kadar Herkes olarak işaretli ayarlar değiştirilemez.",
+  "project.sharedLocked":
+    "PerMark .permark/config.toml dosyasını okuyamıyor; dosya düzeltilene kadar Herkes olarak işaretli ayarlar değiştirilemez.",
+  "project.sharedLocked.line":
+    "PerMark .permark/config.toml dosyasını {line}. satırda okuyamıyor; dosya düzeltilene kadar Herkes olarak işaretli ayarlar değiştirilemez.",
+  "project.sharedLocked.notText":
+    "PerMark .permark/config.toml dosyasını okuyamıyor (düz metin değil); dosya düzeltilene kadar Herkes olarak işaretli ayarlar değiştirilemez.",
+  "project.sharedLocked.tooLarge":
+    "PerMark .permark/config.toml dosyasını okuyamıyor (çok büyük); dosya düzeltilene kadar Herkes olarak işaretli ayarlar değiştirilemez.",
+  "project.sharedLocked.locked":
+    "PerMark .permark/config.toml dosyasını okuyamıyor (başka bir program kullanıyor); dosya düzeltilene kadar Herkes olarak işaretli ayarlar değiştirilemez.",
+  "project.privateTracked":
+    "Ajanlar bu klasörün yorumlarını ve etkinliğini almaz: klasörün git deposu PerMark'ın özel klasörünü (.permark/local) izliyor ya da PerMark bunu denetleyemedi.",
   "settings.all": "Tüm ayarlar",
   "settings.editorPreview": "Örnek:",
   "settings.linkUpdateHint":
@@ -2189,7 +2212,7 @@ export default {
     "Seçtiğiniz tokenizer'a göre bir belgenin, seçimin veya bölümün token'ları; tokenizer herkese açıksa kesin, değilse yaklaşık (ve işaretli).",
   "plugin.local-ai.name": "Yerel yapay zeka",
   "plugin.local-ai.about":
-    "PerMark'ın düzeltme, çeviri ve anlama göre bulma işlerine yardım etmek için bu bilgisayarda, çevrimdışı çalışan küçük yapay zeka modelleri. Siz istemeden hiçbir şey indirilmez.",
+    "PerMark'ın düzeltme, çeviri ve anlama göre bulma işlerine yardım etmek için bu bilgisayarda çalışan küçük yapay zeka modelleri. Siz istemeden hiçbir şey indirilmez.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} satır",
   "config.table.rows.other": "{n} satır",
@@ -2614,7 +2637,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "Yerel yapay zeka",
   "localAi.intro":
-    "Bu bilgisayarda çevrimdışı çalışan küçük yapay zeka modelleri. Siz istemeden hiçbir şey indirilmez.",
+    "Bu bilgisayarda çalışan küçük yapay zeka modelleri. Siz istemeden hiçbir şey indirilmez.",
   "localAi.command": "Yerel yapay zeka ayarlarını aç",
   "localAi.loadFailed": "Yerel yapay zeka ayarları okunamadı.",
   "localAi.retry": "Yeniden dene",
@@ -2686,8 +2709,8 @@ export default {
   "localAi.models.details.size": "İndirme boyutu",
   "localAi.models.details.restriction": "Kimler kullanabilir",
   "localAi.models.comingSoon": "Yakında",
-  "localAi.models.needs.newer": "Yapay zeka motorunun daha yeni bir sürümünü gerektiriyor.",
-  "localAi.models.needs.missing": "PerMark'ta henüz bulunmayan bir yapay zeka motoru gerektiriyor.",
+  "localAi.models.needs.newer": "Bu model PerMark'ın daha yeni bir sürümünü gerektiriyor.",
+  "localAi.models.needs.missing": "PerMark bu tür bir modeli henüz çalıştıramıyor.",
   "localAi.dl.waiting": "Bekleniyor…",
   "localAi.dl.cancelLabel": "{name} indirmesini iptal et",
   "localAi.dl.progress": "{done} / {total}",
