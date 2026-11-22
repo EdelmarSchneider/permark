@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { RepoSummary } from "../../api";
 import type { RepoState } from "../../api/generated/RepoState";
+import { language } from "../../core/i18n";
 import {
   CHANGED_CAP,
   STATE_KEYS,
@@ -224,6 +225,27 @@ describe("the expanded row's line", () => {
       "Details: fatal: bad object HEAD.",
     );
     expect(gitErrorText("failed", "")).toBe("");
+  });
+
+  it("PerMark's own refusals in the window's words, never as git's details", async () => {
+    expect(gitErrorText("notLocal", "")).toBe(
+      "This repository's git folder leads off this computer or through a link, so PerMark doesn't open it.",
+    );
+    expect(gitErrorText("noGit", "")).toBe("This folder has no .git that leads to a repository.");
+    expect(gitErrorText("stopped", "")).toBe("Git was stopped before it answered.");
+    // another git would open none of them: no way out offered
+    expect(gitProblemHint("notLocal", "")).toBe(gitErrorText("notLocal", ""));
+    await language.choose("pt-BR", []);
+    try {
+      for (const code of ["notLocal", "noGit", "stopped"] as const) {
+        const words = gitErrorText(code, "");
+        expect(words).not.toBe("");
+        expect(words).not.toMatch(/Details|Detalhes|PerMark doesn't/);
+      }
+      expect(gitErrorText("stopped", "")).toBe("O Git foi interrompido antes de responder.");
+    } finally {
+      await language.choose("en", []);
+    }
   });
 
   it("the status bar's problem: why, then the way out only where another git can help", () => {

@@ -137,7 +137,7 @@ describe("Decorator embeds", () => {
       }
       const decorator = new Decorator(createMockApi());
       const told: (string | null)[] = [];
-      decorator.mounted = (element) => told.push(element.getAttribute("data-info"));
+      decorator.onMounted((element) => told.push(element.getAttribute("data-info")));
       decorator.setEmbeds((language) =>
         language === "broken" ? () => Promise.resolve({ default: Broken }) : probe,
       );
@@ -162,13 +162,30 @@ describe("Decorator embeds", () => {
   it("tells each element an embed mounted in, never one whose library failed", async () => {
     const decorator = new Decorator(createMockApi());
     const told: (string | null)[] = [];
-    decorator.mounted = (element) => told.push(element.getAttribute("data-info"));
+    decorator.onMounted((element) => told.push(element.getAttribute("data-info")));
     decorator.setEmbeds((language) =>
       language === "broken" ? () => Promise.reject(new Error("no library")) : probe,
     );
     decorator.near(block("rust", "broken", "js"));
     await decorator.idle();
     expect(told.sort()).toEqual(["js", "rust"]);
+    decorator.dispose();
+  });
+
+  it("tells every listener (the reading view's and the editor's tables), none that stopped listening", async () => {
+    const decorator = new Decorator(createMockApi());
+    decorator.setEmbeds(() => probe);
+    const page: (string | null)[] = [];
+    const editor: (string | null)[] = [];
+    decorator.onMounted((element) => page.push(element.getAttribute("data-info")));
+    const off = decorator.onMounted((element) => editor.push(element.getAttribute("data-info")));
+    decorator.near(block("rust"));
+    await decorator.idle();
+    off();
+    decorator.near(block("js"));
+    await decorator.idle();
+    expect(page).toEqual(["rust", "js"]);
+    expect(editor).toEqual(["rust"]);
     decorator.dispose();
   });
 

@@ -44,6 +44,8 @@ describe("the plugin", () => {
     expect(viewer?.claims("data/team.toon")).toBe(true);
     expect(viewer?.claims("data/team.json")).toBe(false);
     expect(registry.of("embed").map((e) => e.language)).toEqual(["toon"]);
+    // Edit labels the block's corner as the reading view does
+    expect(registry.of("embed")[0]?.label?.("toon")).toBe("TOON");
     expect(host.disable("fmt-toon")).toBe(0);
     expect(registry.items).toHaveLength(0);
   });

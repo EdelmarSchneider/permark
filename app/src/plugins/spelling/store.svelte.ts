@@ -278,15 +278,25 @@ export class SpellingStore {
     return this.#pass(false);
   }
 
-  /** Replaces marked word `index` with `text` (one undo step). `false`: nothing changed (composing, the text moved). */
+  /** Replaces marked word `index` with `text` (one undo step), the caret right after it and the keyboard in the
+   *  editor, whether the pick came from the keyboard or the pointer. `false`: nothing changed (composing, the text
+   *  moved). */
   replace(index: number, text: string): boolean {
     const word = this.misspelled[index];
     if (word === undefined) return false;
-    const done = this.#session.apply([
-      { from: word.from, to: word.to, insert: text, expect: word.word },
-    ]);
-    if (done) this.menuAt = null;
-    return done;
+    const session = this.#session;
+    const done = session.apply([{ from: word.from, to: word.to, insert: text, expect: word.word }]);
+    if (!done) return false;
+    this.menuAt = null;
+    // Edit remakes the word's whole block, which moves a caret inside it past the block; Source changes only the word
+    // and keeps its caret (revealing there would scroll the line to the middle)
+    const end = word.from + text.length;
+    if (session.mode === "edit") session.reveal({ from: end, to: end });
+    // the editor writes its own selection back into the page now: the page selection it left while the menu held the
+    // keyboard is stale after the edit, and an editor focused by a plain element focus takes that selection as the
+    // person's (a whole paragraph after a keyboard pick)
+    session.focus();
+    return true;
   }
 
   /** Accepts `word` in every document from now on (the person's own words, kept in the profile). */

@@ -5,6 +5,7 @@
 
 import { tick } from "svelte";
 import type { WindowView, WorkspaceView } from "../../api";
+import { sendToPane } from "../doc/paneFocus";
 import { reading } from "../doc/reading.svelte";
 import { t } from "../i18n";
 import { windowStore } from "../window.svelte";
@@ -172,10 +173,14 @@ export function documentPane(): HTMLElement | null {
  *  (no page: what holds it lets go). */
 export function focusPage(): void {
   const page = pageRegion();
-  const target =
-    page?.querySelector<HTMLElement>("[contenteditable='true'], .cm-content") ??
-    documentPane() ??
-    page;
+  const editor = page?.querySelector<HTMLElement>("[contenteditable='true'], .cm-content") ?? null;
+  const pane = documentPane();
+  if (editor === null && pane !== null) {
+    // sent there: the pane shows it holds the keyboard
+    sendToPane(pane);
+    return;
+  }
+  const target = editor ?? page;
   if (target) target.focus({ preventScroll: true });
   else if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 }

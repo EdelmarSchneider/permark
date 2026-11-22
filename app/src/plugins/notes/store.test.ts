@@ -536,6 +536,33 @@ describe("loose files", () => {
     expect(editing.path).toBe(path);
   });
 
+  it("holds the window's editors off a file a crash left text for while attached, until the person chooses", async () => {
+    const { store, api, editing } = await setup();
+    const crashed = api.probe.plugins.notes.loose({
+      name: "draft.md",
+      folder: "C:/Downloads",
+      text: "# On disk\n",
+      state: "unsaved",
+    });
+    const other = api.probe.plugins.notes.loose({
+      name: "later.md",
+      folder: "C:/Downloads",
+      text: "# On disk\n",
+      state: "unsaved",
+    });
+    await store.refresh();
+    expect(editing.blockedBy(crashed)).not.toBeNull();
+    expect(editing.blockedBy(FIRST)).toBeNull();
+    // Reload: the person chose, the file is editable again
+    await store.reloadFile(crashed);
+    await settle();
+    expect(editing.blockedBy(crashed)).toBeNull();
+    expect(editing.blockedBy(other)).not.toBeNull();
+    // the Notes leave the window: nothing of theirs holds an editor any more
+    for (const off of offs.splice(0)) off();
+    expect(editing.blockedBy(other)).toBeNull();
+  });
+
   it("Keep mine on the file shown lets its editor go when the editor has no conflict of its own", async () => {
     const { store, api, editing, documents } = await setup();
     const path = api.probe.plugins.notes.loose({

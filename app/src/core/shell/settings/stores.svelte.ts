@@ -25,6 +25,17 @@ export function problemOf(error: ApiError): string {
   return error.error.detail ?? "other";
 }
 
+/** The folder's shared rows can't be changed now: not read yet, no `.permark/` yet, or its `config.toml` is there but
+ *  does not read (the backend refuses every change to it until it is fixed by hand). */
+export function sharedLockedOf(settings: ProjectSettings | null): boolean {
+  return settings === null || !settings.initialized || unreadableOf(settings);
+}
+
+/** The shared file is there but does not read: not TOML, too large, not text, locked by another program. */
+function unreadableOf(settings: ProjectSettings): boolean {
+  return settings.unreadableLine !== null || settings.unreadableWhy !== null;
+}
+
 /** The shared settings of the project this window shows (`.permark/config.toml`). */
 class ProjectSettingsStore {
   state = $state.raw<ProjectState>({ status: "idle" });
@@ -105,6 +116,16 @@ class ProjectSettingsStore {
   clearProblem(): void {
     this.problem = null;
     this.sharingError = null;
+  }
+
+  /** The shared rows show greyed and write nothing (`sharedLockedOf` what was read). */
+  get sharedLocked(): boolean {
+    return sharedLockedOf(this.state.status === "ready" ? this.state.settings : null);
+  }
+
+  /** The folder's shared file is there but does not read: the locked rows say so instead of offering Initialize. */
+  get unreadable(): boolean {
+    return this.state.status === "ready" && unreadableOf(this.state.settings);
   }
 
   /** The shared file sets plugin key `key` (`<id>.<key>`), which no plugin reads: the person's own value applies. */

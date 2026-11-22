@@ -32,6 +32,22 @@ describe("t", () => {
     );
   });
 
+  // agents connected over MCP may also mark comments done, but only once the person allows it (off by default)
+  it("says agents read, and mark comments done only when allowed", () => {
+    const hint = t("agent.switchHint");
+    expect(hint).not.toContain("only read");
+    expect(hint).toContain("mark your comments done only if you allow it");
+    expect(hint).toContain("never edit files through PerMark");
+  });
+
+  // models run on this computer; "offline" would promise a state the app does not check
+  it("says Local AI runs on this computer, without calling it offline", () => {
+    for (const key of ["localAi.intro", "plugin.local-ai.about"] as const) {
+      expect(t(key)).toContain("on this computer");
+      expect(t(key)).not.toMatch(/offline/i);
+    }
+  });
+
   it("fills placeholders", () => {
     expect(t("status.version", { version: "1.2.3" })).toBe("Version 1.2.3");
   });

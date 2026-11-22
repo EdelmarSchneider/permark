@@ -121,7 +121,7 @@ function key(el: HTMLElement, name: string, init: KeyboardEventInit = {}): void 
 
 describe("the review bar", () => {
   it("the offer floats over the top of the page: the page under it never moves when it appears", () => {
-    review.state = { status: "offer", path: "docs/guide.md", count: 3 };
+    review.state = { status: "offer", path: "docs/guide.md", count: 3, since: "read" };
     flushSync();
     const offer = target.querySelector<HTMLElement>(".bar");
     expect(offer?.textContent).toContain("Changed since you last read");
@@ -129,6 +129,14 @@ describe("the review bar", () => {
     const anchor = offer?.parentElement;
     expect(anchor?.classList.contains("overlay")).toBe(true);
     expect(offer?.classList.contains("floating")).toBe(true);
+  });
+
+  it("the offer of a document never read names the last commit, not a reading that never was", () => {
+    review.state = { status: "offer", path: "docs/guide.md", count: 1, since: "commit" };
+    flushSync();
+    const offer = target.querySelector<HTMLElement>(".bar");
+    expect(offer?.textContent).toContain("Changed since the last commit · 1 change");
+    expect(offer?.textContent).not.toContain("you last read");
   });
 
   it("opened from the palette (the keyboard went back to the file list): the keyboard goes to the bar", () => {

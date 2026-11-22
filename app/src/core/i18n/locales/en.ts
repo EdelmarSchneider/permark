@@ -927,6 +927,8 @@ const en = {
   "since.nothing": "Nothing changed since {when}.",
   "review.offer.one": "Changed since you last read · {n} change",
   "review.offer.other": "Changed since you last read · {n} changes",
+  "review.offerCommit.one": "Changed since the last commit · {n} change",
+  "review.offerCommit.other": "Changed since the last commit · {n} changes",
   "review.review": "Review",
   "review.reviewing.one": "Reviewing {n} change",
   "review.reviewing.other": "Reviewing {n} changes",
@@ -951,6 +953,7 @@ const en = {
   "review.change": "Change {i} of {n}, {kind}",
   "review.keptAll": "All changes kept",
   "review.revertedAll": "All changes reverted in {name}",
+  "review.endedMixed": "Some changes kept, others reverted in {name}",
   "review.undo": "Undo",
   "review.undoStale": "Can't undo: {name} changed since.",
   "review.allDone": "All changes reviewed",
@@ -1007,6 +1010,10 @@ const en = {
   "git.why.tooLarge": "Git's answer was too long to read.",
   "git.why.spawn": "Git couldn't be started.",
   "git.why.parse": "Git's answer couldn't be understood.",
+  "git.why.notLocal":
+    "This repository's git folder leads off this computer or through a link, so PerMark doesn't open it.",
+  "git.why.noGit": "This folder has no .git that leads to a repository.",
+  "git.why.stopped": "Git was stopped before it answered.",
   "git.why.failed": "Details: {detail}",
   "git.errorHint": "Open the settings to choose another git (the built-in one needs no trust).",
   "git.folderChanged.one": "{n} changed file inside",
@@ -1450,7 +1457,7 @@ const en = {
   "agent.title": "Agent connection",
   "agent.switch": "Share this folder with agents",
   "agent.switchHint":
-    "An agent you connect (an AI tool that supports MCP, such as Claude Code or Cursor) can see what you're looking at and what changed, search and read this folder's files, read your comments and the notes you share, and show you a place. Only on this computer. Files listed in .aiignore stay out of their reach. Agents connected this way only read and never edit files through PerMark; to let an agent propose edits, use the Assistant. This covers only what agents get from PerMark: an agent can still open files on your computer by itself.",
+    "An agent you connect (an AI tool that supports MCP, such as Claude Code or Cursor) can see what you're looking at and what changed, search and read this folder's files, read your comments and the notes you share, and show you a place. Only on this computer. Files listed in .aiignore stay out of their reach. Agents connected this way never edit files through PerMark: they read, and mark your comments done only if you allow it. To let an agent propose edits, use the Assistant. This covers only what agents get from PerMark: an agent can still open files on your computer by itself.",
   "agent.folderReplaced":
     "This folder changed since you connected it. Turn the connection on again to allow agents here.",
   "agent.groups": "What agents may do",
@@ -1692,6 +1699,8 @@ const en = {
     "Your choice for each plugin in this folder. Off for everyone is kept in .permark/config.toml and applies to whoever opens the folder.",
   "plugins.removeConfirm": "Remove the data of {name}?",
   "plugins.removeConfirmBytes": "Remove the data of {name}? This frees {size}.",
+  "plugins.removeScope":
+    "Folders that keep their data in their own .permark folder are cleaned only while they are open.",
   "plugins.removeData": "Remove data",
   "plugins.removeYes": "Remove",
   "plugins.turnOn": "Turn on {name}",
@@ -1716,6 +1725,8 @@ const en = {
   "project.initConfig": "The settings this project shares with its team.",
   "project.initConfirm": "Initialize PerMark",
   "project.initFailed": "Couldn't initialize PerMark in {path}: {message}",
+  "project.initHeld":
+    "{path}/.permark/local already holds PerMark data from elsewhere; nothing was changed.",
   "project.initIgnore": "Keeps the private folders out of git.",
   "project.initIntro": "PerMark creates a .permark folder here with:",
   "project.initLocal":
@@ -1757,6 +1768,18 @@ const en = {
   "project.sharedFileHint": "Shared with whoever opens this folder.",
   "project.sharedFileUnreadable":
     "PerMark can't read this file at line {line}, so settings marked Everyone can't be changed until it's fixed.",
+  "project.sharedLocked":
+    "PerMark can't read .permark/config.toml, so settings marked Everyone can't be changed until it's fixed.",
+  "project.sharedLocked.line":
+    "PerMark can't read .permark/config.toml at line {line}, so settings marked Everyone can't be changed until it's fixed.",
+  "project.sharedLocked.notText":
+    "PerMark can't read .permark/config.toml (it isn't plain text), so settings marked Everyone can't be changed until it's fixed.",
+  "project.sharedLocked.tooLarge":
+    "PerMark can't read .permark/config.toml (it's too large), so settings marked Everyone can't be changed until it's fixed.",
+  "project.sharedLocked.locked":
+    "PerMark can't read .permark/config.toml (another program is using it), so settings marked Everyone can't be changed until it's fixed.",
+  "project.privateTracked":
+    "Agents don't get this folder's comments or activity: its git repository tracks PerMark's private folder (.permark/local), or PerMark could not check that.",
   "settings.all": "All settings",
   "settings.editorPreview": "Example:",
   "settings.linkUpdateHint": "What happens to links when a file is moved or renamed.",
@@ -2141,7 +2164,7 @@ const en = {
     "Tokens of a document, a selection or a section by the tokenizer you choose; exact where the tokenizer is public, approximate (and marked) where it is not.",
   "plugin.local-ai.name": "Local AI",
   "plugin.local-ai.about":
-    "Small AI models that run on this computer, offline, to help PerMark correct, translate and find by meaning. Nothing is downloaded until you ask.",
+    "Small AI models that run on this computer to help PerMark correct, translate and find by meaning. Nothing is downloaded until you ask.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} row",
   "config.table.rows.other": "{n} rows",
@@ -2560,7 +2583,7 @@ const en = {
   // ---- Local AI settings page
   "localAi.section": "Local AI",
   "localAi.intro":
-    "Small AI models that run on this computer, offline. Nothing is downloaded until you ask.",
+    "Small AI models that run on this computer. Nothing is downloaded until you ask.",
   "localAi.command": "Open Local AI settings",
   "localAi.loadFailed": "Couldn't read the Local AI settings.",
   "localAi.retry": "Try again",
@@ -2631,8 +2654,8 @@ const en = {
   "localAi.models.details.size": "Download size",
   "localAi.models.details.restriction": "Who may use it",
   "localAi.models.comingSoon": "Coming soon",
-  "localAi.models.needs.newer": "Needs a newer version of the AI engine.",
-  "localAi.models.needs.missing": "Needs an AI engine that PerMark doesn't have yet.",
+  "localAi.models.needs.newer": "This model needs a later version of PerMark.",
+  "localAi.models.needs.missing": "PerMark can't run this kind of model yet.",
   "localAi.dl.waiting": "Waiting…",
   "localAi.dl.cancelLabel": "Cancel getting {name}",
   "localAi.dl.progress": "{done} of {total}",

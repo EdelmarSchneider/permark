@@ -8,8 +8,17 @@ import { nameOf, rootOf } from "../explorer/list";
 export const FILE: NodeKind = { type: "file", category: "markdown" };
 export const DIR: NodeKind = { type: "dir", unlisted: null };
 
+/** Every made-up file opens outside; a test about that rule sets `opensOutside` itself. */
 export function treeNode(path: string, kind: NodeKind = FILE): TreeNode {
-  return { path, name: nameOf(path), kind, hidden: false, ignored: false, forced: false };
+  return {
+    path,
+    name: nameOf(path),
+    kind,
+    hidden: false,
+    ignored: false,
+    forced: false,
+    opensOutside: kind.type === "file",
+  };
 }
 
 /** Small deterministic random (tests repeat). */

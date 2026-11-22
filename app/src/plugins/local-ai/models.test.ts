@@ -308,14 +308,16 @@ describe("a model the AI engine cannot run", () => {
   it("says Coming soon and why in words, offers no Get, keeps Details", async () => {
     await openPage();
     expect(text(LFM)).toContain("Coming soon");
-    expect(text(LFM)).toContain("Needs a newer version of the AI engine.");
+    // plain words: what the person can do about it (a later PerMark), no engine jargon
+    expect(text(LFM)).toContain("This model needs a later version of PerMark.");
+    expect(text(LFM)).not.toContain("AI engine");
     expect(action(LFM, "get")).toBeNull();
     expect(action(LFM, "terms")).toBeNull();
     expect(row(LFM).querySelector(".fit"), "no fit hint for what cannot run").toBeNull();
     expect(row(LFM).querySelector("details summary")?.getAttribute("aria-label")).toBe(
       "Details of LFM3 1.7B",
     );
-    expect(text(WHISPER)).toContain("Needs an AI engine that PerMark doesn't have yet.");
+    expect(text(WHISPER)).toContain("PerMark can't run this kind of model yet.");
     expect(action(WHISPER, "get")).toBeNull();
     // installed earlier: listed, Remove only (no Test, no Ready)
     expect(text(EMBED)).toContain("Coming soon");

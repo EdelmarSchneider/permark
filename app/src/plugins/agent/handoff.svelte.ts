@@ -104,8 +104,13 @@ export class HandOffStore {
       checked,
     });
     if (!result.ok) {
+      // the refusal may be the activity turning withheld while the dialog was open: ask again, so the dialog says
+      // why instead of a bare failure
+      const again = await this.#client.call("agent.handOffPreview", { checked });
       const now = this.state;
-      if (now.status === "open") this.state = { ...now, phase: "failed" };
+      if (now.status !== "open") return;
+      if (again.ok && again.value.state === "withheld") this.state = { status: "withheld" };
+      else this.state = { ...now, phase: "failed" };
       return;
     }
     this.state = { status: "closed" };

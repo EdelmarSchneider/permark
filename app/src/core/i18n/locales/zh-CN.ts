@@ -904,6 +904,8 @@ export default {
   "since.nothing": "自 {when} 以来没有任何更改。",
   "review.offer.one": "自上次阅读后有更改 · {n} 处",
   "review.offer.other": "自上次阅读后有更改 · {n} 处",
+  "review.offerCommit.one": "自上次提交后有更改 · {n} 处",
+  "review.offerCommit.other": "自上次提交后有更改 · {n} 处",
   "review.review": "审阅",
   "review.reviewing.one": "正在审阅 {n} 处更改",
   "review.reviewing.other": "正在审阅 {n} 处更改",
@@ -928,6 +930,7 @@ export default {
   "review.change": "第 {i} 处，共 {n} 处，{kind}",
   "review.keptAll": "已保留全部更改",
   "review.revertedAll": "已在 {name} 中还原全部更改",
+  "review.endedMixed": "已在 {name} 中保留部分更改，其余已还原",
   "review.undo": "撤销",
   "review.undoStale": "无法撤销：{name} 在此之后又改过。",
   "review.allDone": "更改已全部审阅",
@@ -981,6 +984,9 @@ export default {
   "git.why.tooLarge": "Git 的响应太长，无法读取。",
   "git.why.spawn": "无法启动 Git。",
   "git.why.parse": "无法理解 Git 的响应。",
+  "git.why.notLocal": "此仓库的 git 文件夹指向此电脑之外或经过链接，因此 PerMark 不会打开它。",
+  "git.why.noGit": "此文件夹中没有指向仓库的 .git。",
+  "git.why.stopped": "Git 在应答前已被停止。",
   "git.why.failed": "详细信息：{detail}",
   "git.errorHint": "打开设置以选择其他 Git（内置 Git 无需信任）。",
   "git.folderChanged.one": "内有 {n} 个已更改文件",
@@ -1413,7 +1419,7 @@ export default {
   "agent.title": "智能体连接",
   "agent.switch": "与智能体共享此文件夹",
   "agent.switchHint":
-    "你连接的智能体（支持 MCP 的 AI 工具，例如 Claude Code 或 Cursor）可以看到你正在查看的内容和变更，搜索和阅读此文件夹的文件，阅读你的批注和你共享的笔记，并向你展示某个位置。仅限本机。列在 .aiignore 中的文件不会交给智能体。以这种方式连接的智能体只读取文件，从不通过 PerMark 编辑文件；如需让智能体提出修改，请使用助手。这只涉及智能体从 PerMark 获得的内容：智能体仍可自行打开你电脑上的文件。",
+    "你连接的智能体（支持 MCP 的 AI 工具，例如 Claude Code 或 Cursor）可以看到你正在查看的内容和变更，搜索和阅读此文件夹的文件，阅读你的批注和你共享的笔记，并向你展示某个位置。仅限本机。列在 .aiignore 中的文件不会交给智能体。以这种方式连接的智能体从不通过 PerMark 编辑文件：它们读取内容，只有在你允许时才会将你的批注标记为已完成。如需让智能体提出修改，请使用助手。这只涉及智能体从 PerMark 获得的内容：智能体仍可自行打开你电脑上的文件。",
   "agent.folderReplaced": "自你连接以来，此文件夹已发生变化。要在此允许智能体，请重新开启连接。",
   "agent.groups": "智能体可以做什么",
   "agent.group.context": "查看你正在看的内容",
@@ -1646,6 +1652,7 @@ export default {
     "你在此文件夹中对每个插件的选择。“为所有人关闭”保存在 .permark/config.toml 中，适用于打开此文件夹的每个人。",
   "plugins.removeConfirm": "移除 {name} 的数据？",
   "plugins.removeConfirmBytes": "删除 {name} 的数据？将释放 {size}。",
+  "plugins.removeScope": "将数据保存在自身 .permark 文件夹中的文件夹，只有在打开时才会被清理。",
   "plugins.removeData": "移除数据",
   "plugins.removeYes": "移除",
   "plugins.turnOn": "开启 {name}",
@@ -1670,6 +1677,7 @@ export default {
   "project.initConfig": "此项目与团队共享的设置。",
   "project.initConfirm": "初始化 PerMark",
   "project.initFailed": "无法在 {path} 中初始化 PerMark：{message}",
+  "project.initHeld": "{path}/.permark/local 中已有来自别处的 PerMark 数据；未做任何更改。",
   "project.initIgnore": "让私有文件夹不进入 git。",
   "project.initIntro": "PerMark 会在这里创建 .permark 文件夹，其中包含：",
   "project.initLocal":
@@ -1710,6 +1718,18 @@ export default {
   "project.sharedFileHint": "与打开此文件夹的每个人共享。",
   "project.sharedFileUnreadable":
     "PerMark 无法读取此文件的第 {line} 行，因此在修复之前无法更改标为“所有人”的设置。",
+  "project.sharedLocked":
+    "PerMark 无法读取 .permark/config.toml，因此在修复之前无法更改标为“所有人”的设置。",
+  "project.sharedLocked.line":
+    "PerMark 无法读取 .permark/config.toml 的第 {line} 行，因此在修复之前无法更改标为“所有人”的设置。",
+  "project.sharedLocked.notText":
+    "PerMark 无法读取 .permark/config.toml（它不是纯文本），因此在修复之前无法更改标为“所有人”的设置。",
+  "project.sharedLocked.tooLarge":
+    "PerMark 无法读取 .permark/config.toml（文件过大），因此在修复之前无法更改标为“所有人”的设置。",
+  "project.sharedLocked.locked":
+    "PerMark 无法读取 .permark/config.toml（另一个程序正在使用它），因此在修复之前无法更改标为“所有人”的设置。",
+  "project.privateTracked":
+    "智能体不会获得此文件夹的批注或活动：其 git 仓库跟踪了 PerMark 的私有文件夹 (.permark/local)，或 PerMark 无法检查这一点。",
   "settings.all": "全部设置",
   "settings.editorPreview": "示例：",
   "settings.linkUpdateHint": "移动或重命名文件时链接如何处理。",
@@ -2079,7 +2099,7 @@ export default {
     "按所选分词器统计文档、所选内容或章节的 token；分词器公开时为精确值，否则为近似值（并会标明）。",
   "plugin.local-ai.name": "本地 AI",
   "plugin.local-ai.about":
-    "在这台电脑上离线运行的小型 AI 模型，帮助 PerMark 校对、翻译和按含义查找。在你要求之前，不会下载任何内容。",
+    "在这台电脑上运行的小型 AI 模型，帮助 PerMark 校对、翻译和按含义查找。在你要求之前，不会下载任何内容。",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} 行",
   "config.table.rows.other": "{n} 行",
@@ -2475,7 +2495,7 @@ export default {
   "projects.vocabulary.addAs": "将以“{name}”添加（小写，用连字符代替空格）。",
   // ---- Local AI settings page
   "localAi.section": "本地 AI",
-  "localAi.intro": "在这台电脑上离线运行的小型 AI 模型。在你要求之前，不会下载任何内容。",
+  "localAi.intro": "在这台电脑上运行的小型 AI 模型。在你要求之前，不会下载任何内容。",
   "localAi.command": "打开本地 AI 设置",
   "localAi.loadFailed": "无法读取本地 AI 设置。",
   "localAi.retry": "重试",
@@ -2545,8 +2565,8 @@ export default {
   "localAi.models.details.size": "下载大小",
   "localAi.models.details.restriction": "谁可以使用",
   "localAi.models.comingSoon": "即将推出",
-  "localAi.models.needs.newer": "需要更新版本的 AI 引擎。",
-  "localAi.models.needs.missing": "需要 PerMark 尚未提供的 AI 引擎。",
+  "localAi.models.needs.newer": "此模型需要更高版本的 PerMark。",
+  "localAi.models.needs.missing": "PerMark 暂时无法运行这类模型。",
   "localAi.dl.waiting": "等待中…",
   "localAi.dl.cancelLabel": "取消获取 {name}",
   "localAi.dl.progress": "{done} / {total}",

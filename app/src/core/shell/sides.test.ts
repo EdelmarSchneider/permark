@@ -428,6 +428,7 @@ describe("closing a view", () => {
         mtimeMs: 1,
         editable: { editable: "surgical" },
         notes: [],
+        opensOutside: true,
       },
       deleted: null,
       fresh: true,
@@ -453,5 +454,43 @@ describe("closing a view", () => {
     togglePanel(LIVE_VIEW);
     closeView("gone.panel");
     expect(closedNotices()).toEqual([]);
+  });
+});
+
+const { focusPage } = await import("./sides");
+const { SENT } = await import("../doc/paneFocus");
+
+describe("the keyboard given to the page", () => {
+  /** The page region of a window with its document pane (and an editor in it, when asked). */
+  function page(editor: boolean): { scroller: HTMLElement; editable: HTMLElement | null } {
+    const region = document.createElement("div");
+    region.dataset["region"] = "page";
+    const scroller = document.createElement("div");
+    scroller.dataset["scroller"] = "";
+    scroller.tabIndex = -1;
+    region.append(scroller);
+    let editable: HTMLElement | null = null;
+    if (editor) {
+      editable = document.createElement("div");
+      editable.setAttribute("contenteditable", "true");
+      scroller.append(editable);
+    }
+    document.body.append(region);
+    return { scroller, editable };
+  }
+  afterEach(() => document.body.replaceChildren());
+
+  it("sent to the document pane (a side hidden): the pane takes it, marked to show it holds the keyboard", () => {
+    const { scroller } = page(false);
+    focusPage();
+    expect(document.activeElement).toBe(scroller);
+    expect(scroller.hasAttribute(SENT)).toBe(true);
+  });
+
+  it("an editor open in the page takes it: the pane is not marked", () => {
+    const { scroller, editable } = page(true);
+    focusPage();
+    expect(document.activeElement).toBe(editable);
+    expect(scroller.hasAttribute(SENT)).toBe(false);
   });
 });

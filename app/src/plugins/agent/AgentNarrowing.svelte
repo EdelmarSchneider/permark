@@ -1,8 +1,8 @@
 <script lang="ts">
   // What the folder itself never allows agents, for everyone who opens it: groups and paths in `.permark/config.toml`.
   // A folder can only narrow what each person allows (the switch and the groups above stay the person's own). Without
-  // `.permark/` the rows show greyed beside the offer to set PerMark up: nothing is written before.
-  import { conditions } from "../../core/conditions/context.svelte";
+  // `.permark/` the rows show greyed beside the offer to set PerMark up: nothing is written before. A shared file that
+  // does not read greys them too (the backend refuses every change to it until it is fixed by hand).
   import Card from "../../core/shell/settings/Card.svelte";
   import ListEditor from "../../core/shell/settings/ListEditor.svelte";
   import { problemKey } from "../../core/shell/settings/problems";
@@ -15,7 +15,7 @@
   const settings = $derived(
     projectSettings.state.status === "ready" ? projectSettings.state.settings : null,
   );
-  const off = $derived(conditions.current.permark !== "initialized");
+  const off = $derived(projectSettings.sharedLocked);
   const problem = $derived(projectSettings.problem);
 
   function toggle(group: string, deny: boolean): void {
@@ -79,8 +79,10 @@
 {/if}
 
 <style>
-  /* without .permark/ the shared rows only show what they would hold */
-  .limits-rows.off {
+  /* without .permark/ (or with a shared file that does not read) the shared rows only show what they hold
+     (their fields grey; their buttons grey by their own disabled look): labels and hints keep their contrast */
+  .limits-rows.off :global(input),
+  .limits-rows.off :global(select) {
     opacity: 0.6;
   }
   .groups {

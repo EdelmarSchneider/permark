@@ -2,6 +2,7 @@
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../../api/mock";
+import { t } from "../i18n";
 import { WindowStore } from "../window.svelte";
 import Notices from "./Notices.svelte";
 
@@ -63,6 +64,43 @@ describe("the notices", () => {
       (b) => b.textContent?.trim() === "Undo",
     );
     expect(undo?.tabIndex).toBe(0);
+  });
+
+  it("tell screen readers the shortcut that does what a button does, on that button only", () => {
+    const { store, target } = shown(0);
+    store.notifyAction(
+      "Deleted a.md",
+      { label: "Undo", run: () => {}, keys: "Control+Z" },
+      { label: "Open", run: () => {} },
+    );
+    flushSync();
+    const button = (label: string): HTMLButtonElement | undefined =>
+      Array.from(target.querySelectorAll("button")).find((b) => b.textContent?.trim() === label);
+    expect(button("Undo")?.getAttribute("aria-keyshortcuts")).toBe("Control+Z");
+    expect(button("Open")?.hasAttribute("aria-keyshortcuts")).toBe(false);
+  });
+
+  it("say which folder a refused Initialize left as it was", async () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    const store = new WindowStore({
+      ...createMockApi(),
+      projectInit: () =>
+        Promise.resolve({
+          ok: false,
+          error: {
+            kind: "backend",
+            command: "project_init",
+            error: { kind: "conflict", subject: "C:/a/b/.permark/local", detail: "bothHoldData" },
+          },
+        }),
+    });
+    component = mount(Notices, { target, props: { store } });
+    expect(await store.initProject("C:/a/b")).toBe(false);
+    flushSync();
+    expect(target.querySelector(".notice .text")?.textContent).toBe(
+      t("project.initHeld", { path: "C:/a/b" }),
+    );
   });
 });
 

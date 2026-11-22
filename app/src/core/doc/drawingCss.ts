@@ -449,9 +449,9 @@ export function cleanCss(css: string): string {
 }
 
 /**
- * A drawing's style sheet as `clean` keeps it, `root` being the id the page reads on the drawing's root (null: none;
- * no rule stays). The page applies a sheet to the whole window, wherever the `<style>` sits: only rules at that root
- * reach nothing else.
+ * A drawing's style sheet as `clean` keeps it, `root` being the id the page reads on the drawing's root, one its
+ * caller made (null: none; no rule stays). The page applies a sheet to the whole window, wherever the `<style>` sits:
+ * only rules at that root reach nothing else.
  */
 export function cleanSheet(css: string, root: string | null): string {
   const sheet = { root };

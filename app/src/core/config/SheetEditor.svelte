@@ -32,10 +32,16 @@
   /** The last edit sent: the next one waits for its answer, so it starts from the text that answer made (two edits
    *  sent at once would both start from the same text, and the later answer would drop the other edit). */
   let queue: Promise<unknown> = Promise.resolve();
+  /** The document edited (kept once the editor is gone: an edit already in line still goes out from its text). */
+  let file = "";
+  /** The `seq` of the content on screen; `null` once the editor is gone (another one holds the document's text). */
+  let attached: number | null = null;
 
   // The editor of this content: its text, its first sheet, its place in the session.
   $effect(() => {
     const current = content;
+    file = current.path;
+    attached = current.seq;
     text = current.text;
     body = null;
     failed = false;
@@ -45,9 +51,10 @@
       if (result.ok && result.value.kind === "sheet") {
         body = result.value;
         if (result.value.sheet.kind === "ignore") matches.request(current.path, text, true);
-        // the editor opens where it was asked to (a mode switch keeps the place; line 1 is where a sheet opens)
+        // the editor opens where it was asked to (a mode switch keeps the place; line 1 is where a sheet opens); a place
+        // asked for (a search hit) is tinted as the page tints it
         const line = asked ?? current.line;
-        const tinted = asked !== null;
+        const tinted = asked !== null || current.located;
         asked = null;
         if (line > 1 || tinted) {
           void tick().then(() => {
@@ -59,6 +66,8 @@
     const detach = session.attach(current.seq, {
       kind: "edit",
       text: () => text,
+      // a mode switch | rename takes the text over once the edits sent are back in it
+      settle: () => queue.then(() => undefined),
       changes: (base) => changedRuns(base, text),
       topLine: () => shown?.topLine() ?? current.line,
       showLine: (line) => {
@@ -70,6 +79,7 @@
     });
     return () => {
       gone = true;
+      attached = null;
       detach();
       matches.stop();
     };
@@ -89,11 +99,15 @@
   }
 
   async function send(edit: ConfigEdit): Promise<string | null> {
-    const path = content.path;
+    const path = file;
+    const seq = attached;
     const result = await api.configEdit(path, text, edit);
-    if (content.path !== path) return null;
-    if (!result.ok) return wordOf(result);
+    const here = seq !== null && attached === seq;
+    if (!result.ok) return here ? wordOf(result) : null;
+    // the next edit in line was made on top of this one: it starts from this text, on screen or not
     text = result.value.text;
+    // the editor is gone (a reload, a mode switch): the answer reaches neither its sheet nor the session
+    if (!here) return null;
     body = result.value.body;
     session.changed();
     if (result.value.body.kind === "sheet" && result.value.body.sheet.kind === "ignore") {

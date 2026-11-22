@@ -980,6 +980,9 @@ export default {
   "review.offer.one": "Modificat de la ultima citire · {n} modificare",
   "review.offer.few": "Modificat de la ultima citire · {n} modificări",
   "review.offer.other": "Modificat de la ultima citire · {n} de modificări",
+  "review.offerCommit.one": "Modificat de la ultimul commit · {n} modificare",
+  "review.offerCommit.few": "Modificat de la ultimul commit · {n} modificări",
+  "review.offerCommit.other": "Modificat de la ultimul commit · {n} de modificări",
   "review.review": "Revizuiește",
   "review.reviewing.one": "Se revizuiește {n} modificare",
   "review.reviewing.few": "Se revizuiesc {n} modificări",
@@ -1006,6 +1009,7 @@ export default {
   "review.change": "Modificarea {i} din {n}, {kind}",
   "review.keptAll": "Toate modificările au fost păstrate",
   "review.revertedAll": "Toate modificările din {name} au fost respinse",
+  "review.endedMixed": "Unele modificări din {name} au fost păstrate, altele respinse",
   "review.undo": "Anulează",
   "review.undoStale": "Nu se poate anula: {name} s-a modificat între timp.",
   "review.allDone": "Toate modificările au fost revizuite",
@@ -1070,6 +1074,10 @@ export default {
   "git.why.tooLarge": "Răspunsul Git a fost prea lung pentru a fi citit.",
   "git.why.spawn": "Git nu a putut fi pornit.",
   "git.why.parse": "Răspunsul Git nu a putut fi înțeles.",
+  "git.why.notLocal":
+    "Dosarul git al acestui depozit duce în afara acestui computer sau printr-un link, așa că PerMark nu îl deschide.",
+  "git.why.noGit": "Acest dosar nu are un .git care să ducă la un depozit.",
+  "git.why.stopped": "Git a fost oprit înainte să răspundă.",
   "git.why.failed": "Detalii: {detail}",
   "git.errorHint":
     "Deschide setările pentru a alege alt git (cel integrat nu are nevoie de încredere).",
@@ -1549,7 +1557,7 @@ export default {
   "agent.title": "Conexiunea cu agenții",
   "agent.switch": "Partajează acest dosar cu agenții",
   "agent.switchHint":
-    "Un agent pe care îl conectezi (un instrument AI compatibil cu MCP, cum ar fi Claude Code sau Cursor) poate vedea ce ai pe ecran și ce s-a modificat, poate căuta și citi fișierele acestui dosar, îți poate citi comentariile și notele pe care le partajezi și îți poate arăta un loc. Doar pe acest computer. Fișierele listate în .aiignore rămân în afara accesului lor. Agenții conectați astfel doar citesc și nu editează niciodată fișiere prin PerMark; ca un agent să poată propune modificări, folosește Asistentul. Acest lucru acoperă doar ce primesc agenții de la PerMark: un agent poate deschide în continuare singur fișiere de pe computerul tău.",
+    "Un agent pe care îl conectezi (un instrument AI compatibil cu MCP, cum ar fi Claude Code sau Cursor) poate vedea ce ai pe ecran și ce s-a modificat, poate căuta și citi fișierele acestui dosar, îți poate citi comentariile și notele pe care le partajezi și îți poate arăta un loc. Doar pe acest computer. Fișierele listate în .aiignore rămân în afara accesului lor. Agenții conectați astfel nu editează niciodată fișiere prin PerMark: citesc și îți marchează comentariile ca rezolvate doar dacă le permiți. Ca un agent să poată propune modificări, folosește Asistentul. Acest lucru acoperă doar ce primesc agenții de la PerMark: un agent poate deschide în continuare singur fișiere de pe computerul tău.",
   "agent.folderReplaced":
     "Acest folder s-a schimbat de când l-ai conectat. Activează din nou conexiunea pentru a permite agenți aici.",
   "agent.groups": "Ce pot face agenții",
@@ -1805,6 +1813,8 @@ export default {
     "Alegerea ta pentru fiecare plugin din acest dosar. „Dezactivat pentru toți” se păstrează în .permark/config.toml și se aplică oricui deschide dosarul.",
   "plugins.removeConfirm": "Elimini datele pluginului {name}?",
   "plugins.removeConfirmBytes": "Elimini datele pluginului {name}? Se eliberează {size}.",
+  "plugins.removeScope":
+    "Dosarele care își păstrează datele în propriul dosar .permark sunt curățate doar cât timp sunt deschise.",
   "plugins.removeData": "Elimină datele",
   "plugins.removeYes": "Elimină",
   "plugins.turnOn": "Activează {name}",
@@ -1829,6 +1839,8 @@ export default {
   "project.initConfig": "Setările pe care acest proiect le partajează cu echipa sa.",
   "project.initConfirm": "Inițializează PerMark",
   "project.initFailed": "PerMark nu a putut fi inițializat în {path}: {message}",
+  "project.initHeld":
+    "{path}/.permark/local conține deja date PerMark din altă parte; nu s-a schimbat nimic.",
   "project.initIgnore": "Ține dosarele private în afara git.",
   "project.initIntro": "PerMark creează aici un dosar .permark cu:",
   "project.initLocal":
@@ -1871,6 +1883,18 @@ export default {
   "project.sharedFileHint": "Partajat cu oricine deschide acest dosar.",
   "project.sharedFileUnreadable":
     "PerMark nu poate citi acest fișier la linia {line}, așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
+  "project.sharedLocked":
+    "PerMark nu poate citi .permark/config.toml, așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
+  "project.sharedLocked.line":
+    "PerMark nu poate citi .permark/config.toml la linia {line}, așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
+  "project.sharedLocked.notText":
+    "PerMark nu poate citi .permark/config.toml (nu este text simplu), așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
+  "project.sharedLocked.tooLarge":
+    "PerMark nu poate citi .permark/config.toml (este prea mare), așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
+  "project.sharedLocked.locked":
+    "PerMark nu poate citi .permark/config.toml (un alt program îl folosește), așa că setările marcate cu Toată lumea nu pot fi schimbate până când nu este reparat.",
+  "project.privateTracked":
+    "Agenții nu primesc comentariile și nici activitatea acestui dosar: depozitul său git urmărește dosarul privat al PerMark (.permark/local) sau PerMark nu a putut verifica acest lucru.",
   "settings.all": "Toate setările",
   "settings.editorPreview": "Exemplu:",
   "settings.linkUpdateHint": "Ce se întâmplă cu linkurile când un fișier este mutat sau redenumit.",
@@ -2296,7 +2320,7 @@ export default {
     "Tokenii unui document, ai unei selecții sau ai unei secțiuni, după tokenizerul ales; exact acolo unde tokenizerul este public, aproximativ (și marcat ca atare) unde nu este.",
   "plugin.local-ai.name": "AI local",
   "plugin.local-ai.about":
-    "Modele AI mici care rulează pe acest computer, offline, pentru a ajuta PerMark să corecteze, să traducă și să găsească după sens. Nu se descarcă nimic până nu ceri.",
+    "Modele AI mici care rulează pe acest computer pentru a ajuta PerMark să corecteze, să traducă și să găsească după sens. Nu se descarcă nimic până nu ceri.",
 
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} rând",
@@ -2750,7 +2774,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "AI local",
   "localAi.intro":
-    "Modele AI mici care rulează pe acest computer, fără internet. Nu se descarcă nimic până nu ceri.",
+    "Modele AI mici care rulează pe acest computer. Nu se descarcă nimic până nu ceri.",
   "localAi.command": "Deschide setările AI local",
   "localAi.loadFailed": "Setările AI local nu au putut fi citite.",
   "localAi.retry": "Încearcă din nou",
@@ -2821,8 +2845,8 @@ export default {
   "localAi.models.details.size": "Mărimea descărcării",
   "localAi.models.details.restriction": "Cine îl poate folosi",
   "localAi.models.comingSoon": "În curând",
-  "localAi.models.needs.newer": "Are nevoie de o versiune mai nouă a motorului AI.",
-  "localAi.models.needs.missing": "Are nevoie de un motor AI pe care PerMark încă nu îl are.",
+  "localAi.models.needs.newer": "Acest model are nevoie de o versiune mai nouă a PerMark.",
+  "localAi.models.needs.missing": "PerMark nu poate rula încă acest tip de model.",
   "localAi.dl.waiting": "În așteptare…",
   "localAi.dl.cancelLabel": "Anulează descărcarea {name}",
   "localAi.dl.progress": "{done} din {total}",

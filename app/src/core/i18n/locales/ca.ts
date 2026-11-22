@@ -953,6 +953,8 @@ export default {
   "since.nothing": "No ha canviat res des de {when}.",
   "review.offer.one": "Ha canviat des de la vostra última lectura · {n} canvi",
   "review.offer.other": "Ha canviat des de la vostra última lectura · {n} canvis",
+  "review.offerCommit.one": "Ha canviat des de l'últim commit · {n} canvi",
+  "review.offerCommit.other": "Ha canviat des de l'últim commit · {n} canvis",
   "review.review": "Revisa",
   "review.reviewing.one": "Revisió: {n} canvi",
   "review.reviewing.other": "Revisió: {n} canvis",
@@ -977,6 +979,7 @@ export default {
   "review.change": "Canvi {i} de {n}, {kind}",
   "review.keptAll": "S'han conservat tots els canvis",
   "review.revertedAll": "S'han revertit tots els canvis a {name}",
+  "review.endedMixed": "Alguns canvis s'han conservat i altres s'han revertit a {name}",
   "review.undo": "Desfés",
   "review.undoStale": "No es pot desfer: {name} ha canviat des de llavors.",
   "review.allDone": "S'han revisat tots els canvis",
@@ -1034,6 +1037,10 @@ export default {
   "git.why.tooLarge": "La resposta del Git era massa llarga per llegir-la.",
   "git.why.spawn": "No s'ha pogut iniciar el Git.",
   "git.why.parse": "No s'ha pogut entendre la resposta del Git.",
+  "git.why.notLocal":
+    "La carpeta git d'aquest repositori porta fora d'aquest ordinador o passa per un enllaç, així que el PerMark no l'obre.",
+  "git.why.noGit": "Aquesta carpeta no té cap .git que porti a un repositori.",
+  "git.why.stopped": "El Git s'ha aturat abans de respondre.",
   "git.why.failed": "Detalls: {detail}",
   "git.errorHint":
     "Obriu la configuració per a triar un altre Git (l'integrat no necessita aquesta confiança).",
@@ -1486,7 +1493,7 @@ export default {
   "agent.title": "Connexió amb agents",
   "agent.switch": "Comparteix aquesta carpeta amb agents",
   "agent.switchHint":
-    "Un agent que connecteu (una eina d'IA compatible amb MCP, com ara Claude Code o Cursor) pot veure el que esteu mirant i què ha canviat, cercar i llegir els fitxers d'aquesta carpeta, llegir els vostres comentaris i les notes que compartiu, i mostrar-vos un lloc. Només en aquest ordinador. Els fitxers que llista .aiignore queden fora del seu abast. Els agents connectats d'aquesta manera només llegeixen i mai no editen fitxers a través del PerMark; per a deixar que un agent proposi edicions, feu servir l'Assistent. Això només cobreix el que els agents obtenen del PerMark: un agent encara pot obrir fitxers del vostre ordinador pel seu compte.",
+    "Un agent que connecteu (una eina d'IA compatible amb MCP, com ara Claude Code o Cursor) pot veure el que esteu mirant i què ha canviat, cercar i llegir els fitxers d'aquesta carpeta, llegir els vostres comentaris i les notes que compartiu, i mostrar-vos un lloc. Només en aquest ordinador. Els fitxers que llista .aiignore queden fora del seu abast. Els agents connectats d'aquesta manera mai no editen fitxers a través del PerMark: llegeixen, i només marquen els vostres comentaris com a fets si ho permeteu. Per a deixar que un agent proposi edicions, feu servir l'Assistent. Això només cobreix el que els agents obtenen del PerMark: un agent encara pot obrir fitxers del vostre ordinador pel seu compte.",
   "agent.folderReplaced":
     "Aquesta carpeta ha canviat des que la vau connectar. Torneu a activar la connexió per permetre-hi agents.",
   "agent.groups": "Què poden fer els agents",
@@ -1738,6 +1745,8 @@ export default {
     "La vostra elecció per a cada connector en aquesta carpeta. «Desactivat per a tothom» es desa a .permark/config.toml i s'aplica a qui obri la carpeta.",
   "plugins.removeConfirm": "Voleu eliminar les dades de {name}?",
   "plugins.removeConfirmBytes": "Voleu eliminar les dades de {name}? Això allibera {size}.",
+  "plugins.removeScope":
+    "Les carpetes que desen les seves dades a la seva pròpia carpeta .permark només es netegen mentre estan obertes.",
   "plugins.removeData": "Elimina les dades",
   "plugins.removeYes": "Elimina",
   "plugins.turnOn": "Activa {name}",
@@ -1762,6 +1771,8 @@ export default {
   "project.initConfig": "La configuració que aquest projecte comparteix amb el seu equip.",
   "project.initConfirm": "Inicialitza el PerMark",
   "project.initFailed": "No s'ha pogut inicialitzar el PerMark a {path}: {message}",
+  "project.initHeld":
+    "{path}/.permark/local ja conté dades del PerMark d'un altre lloc; no s'ha canviat res.",
   "project.initIgnore": "Manté les carpetes privades fora del Git.",
   "project.initIntro": "El PerMark crea aquí una carpeta .permark amb:",
   "project.initLocal":
@@ -1804,6 +1815,18 @@ export default {
   "project.sharedFileHint": "Compartit amb qui obri aquesta carpeta.",
   "project.sharedFileUnreadable":
     "El PerMark no pot llegir aquest fitxer a la línia {line}, de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
+  "project.sharedLocked":
+    "El PerMark no pot llegir .permark/config.toml, de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
+  "project.sharedLocked.line":
+    "El PerMark no pot llegir .permark/config.toml a la línia {line}, de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
+  "project.sharedLocked.notText":
+    "El PerMark no pot llegir .permark/config.toml (no és text pla), de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
+  "project.sharedLocked.tooLarge":
+    "El PerMark no pot llegir .permark/config.toml (és massa gran), de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
+  "project.sharedLocked.locked":
+    "El PerMark no pot llegir .permark/config.toml (un altre programa l'està fent servir), de manera que la configuració marcada amb Tothom no es pot canviar fins que s'arregli.",
+  "project.privateTracked":
+    "Els agents no reben els comentaris ni l'activitat d'aquesta carpeta: el seu repositori git fa el seguiment de la carpeta privada del PerMark (.permark/local), o el PerMark no ho ha pogut comprovar.",
   "settings.all": "Tota la configuració",
   "settings.editorPreview": "Exemple:",
   "settings.linkUpdateHint":
@@ -2206,7 +2229,7 @@ export default {
     "Tokens d'un document, d'una selecció o d'una secció segons el tokenitzador que trieu; exactes quan el tokenitzador és públic, aproximats (i marcats) quan no ho és.",
   "plugin.local-ai.name": "IA local",
   "plugin.local-ai.about":
-    "Models d'IA petits que funcionen en aquest ordinador, sense connexió, perquè PerMark ajudi a corregir, traduir i trobar pel significat. No es baixa res fins que ho demaneu.",
+    "Models d'IA petits que funcionen en aquest ordinador perquè PerMark ajudi a corregir, traduir i trobar pel significat. No es baixa res fins que ho demaneu.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} fila",
   "config.table.rows.other": "{n} files",
@@ -2635,7 +2658,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "IA local",
   "localAi.intro":
-    "Models d'IA petits que funcionen en aquest ordinador, sense connexió. No es baixa res fins que ho demaneu.",
+    "Models d'IA petits que funcionen en aquest ordinador. No es baixa res fins que ho demaneu.",
   "localAi.command": "Obre la configuració de la IA local",
   "localAi.loadFailed": "No s'ha pogut llegir la configuració de la IA local.",
   "localAi.retry": "Torna-ho a provar",
@@ -2708,8 +2731,8 @@ export default {
   "localAi.models.details.size": "Mida de la baixada",
   "localAi.models.details.restriction": "Qui el pot fer servir",
   "localAi.models.comingSoon": "Aviat",
-  "localAi.models.needs.newer": "Necessita una versió més nova del motor d'IA.",
-  "localAi.models.needs.missing": "Necessita un motor d'IA que PerMark encara no té.",
+  "localAi.models.needs.newer": "Aquest model necessita una versió posterior del PerMark.",
+  "localAi.models.needs.missing": "El PerMark encara no pot executar aquest tipus de model.",
   "localAi.dl.waiting": "En espera…",
   "localAi.dl.cancelLabel": "Cancel·la la baixada de {name}",
   "localAi.dl.progress": "{done} de {total}",

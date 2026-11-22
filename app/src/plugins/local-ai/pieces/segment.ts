@@ -178,6 +178,51 @@ export function restore(
   return back;
 }
 
+// marks the Edit view draws as a look, not as text: a block's (with the spaces after it) | an inline run's
+const BLOCK_MARKS = new Set(["QuoteMark", "HeaderMark", "ListMark", "TaskMarker"]);
+const INLINE_MARKS = new Set([
+  "EmphasisMark",
+  "StrikethroughMark",
+  "CodeMark",
+  "LinkMark",
+  "LinkLabel",
+  "HTMLTag",
+  "Comment",
+]);
+
+/** Ranges of `text` (whole lines of a document, read alone) the Edit view does not show as text: quote | heading |
+ *  list marks and a task box with the spaces after them, emphasis | strike | code marks, a link's brackets, its
+ *  destination with its title, a reference's label, an autolink's angle brackets, HTML tags and comments, the
+ *  backslash of an escape. In no set order; they may overlap. */
+export function shownMarks(text: string): Scope[] {
+  const found: Scope[] = [];
+  markdownParser()
+    .parse(text)
+    .iterate({
+      enter(ref) {
+        const { name, from, to } = ref;
+        if (BLOCK_MARKS.has(name)) {
+          let end = to;
+          while (text[end] === " " || text[end] === "\t") end += 1;
+          found.push({ from, to: end });
+        } else if (INLINE_MARKS.has(name)) {
+          found.push({ from, to });
+        } else if (name === "Escape") {
+          found.push({ from, to: from + 1 });
+        } else if (name === "Link" || name === "Image") {
+          for (let child = ref.node.firstChild; child; child = child.nextSibling) {
+            if (child.name === "LinkMark" && text[child.from] === "(") {
+              found.push({ from: child.from, to });
+              break;
+            }
+          }
+        }
+        return undefined;
+      },
+    });
+  return found;
+}
+
 /** `text` with its markers out: the words alone (what a length | a script is measured on). */
 export function unmarked(text: string): string {
   return text.replace(MARKER, "");

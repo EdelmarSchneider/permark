@@ -1600,12 +1600,19 @@ if (typeof location !== "undefined") {
 }
 
 // `dev:mock` opened with `?teamFile=broken`: the mock folder's shared settings file is not TOML from line 7 on (a
-// merge conflict left in it): Settings > This folder says so, and every change of a shared setting is refused
-if (
-  typeof location !== "undefined" &&
-  new URLSearchParams(location.search).get("teamFile") === "broken"
-) {
-  mockApi.probe.shell.teamFileBroken(MOCK_FOLDER, 7);
+// merge conflict left in it); `?teamFile=tooLarge|notText|locked`: it can't be read as text. Settings > This folder
+// says so, and every change of a shared setting is refused
+if (typeof location !== "undefined") {
+  const teamFile = new URLSearchParams(location.search).get("teamFile");
+  if (teamFile === "broken") mockApi.probe.shell.teamFileBroken(MOCK_FOLDER, 7);
+  if (teamFile === "tooLarge" || teamFile === "notText" || teamFile === "locked")
+    mockApi.probe.shell.teamFileUnreadable(MOCK_FOLDER, teamFile);
+}
+
+// `dev:mock` opened with `?privateTracked`: git tracks the mock folder's private folder, so Settings > This folder
+// says why agents get none of its comments or activity
+if (typeof location !== "undefined" && new URLSearchParams(location.search).has("privateTracked")) {
+  mockApi.probe.shell.privateTracked(true);
 }
 
 // `dev:mock` opened with `?crash` starts as after a crash: the first view offers the last run's report

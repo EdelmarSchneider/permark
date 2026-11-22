@@ -256,6 +256,32 @@ describe("checked edits in the Edit-mode editor", () => {
     expect(core.view.state.doc).toBe(before);
   });
 
+  it("a selection in a block an edit remakes stays there: the block kept as written after it is not selected", async () => {
+    const text = "One here.\n\nTwo there.\n\nMath $x_1\ny$ here.\n";
+    await load(text);
+    const view = core.view;
+    view.focus();
+    // a whole block's text replaced while a review shows it selected (a translation)
+    const block = wordAt(text, "Two there.");
+    expect(selectRange(view, now(), block)).toBe(true);
+    expect(
+      applyEdits(core, now(), [{ ...block, insert: "Deux là-bas.", expect: "Two there." }]),
+    ).toBe(true);
+    const { selection, doc } = view.state;
+    expect(selection).toBeInstanceOf(TextSelection);
+    expect(selection.empty).toBe(true);
+    // the caret right after the new text
+    expect(selection.$head.parent).toBe(doc.child(1));
+    expect(selection.$head.parentOffset).toBe(doc.child(1).content.size);
+    // nothing drawn as selected over what the locked block shows (its outline, the page's highlight)
+    expect(view.dom.querySelector(".ProseMirror-selectednode")).toBeNull();
+    const locked = view.nodeDOM(doc.child(0).nodeSize + doc.child(1).nodeSize);
+    const page = document.getSelection();
+    expect(locked).toBeInstanceOf(HTMLElement);
+    expect(page?.anchorNode && locked?.contains(page.anchorNode)).toBeFalsy();
+    expect(page?.focusNode && locked?.contains(page.focusNode)).toBeFalsy();
+  });
+
   it("refuses a fix that would make its block read as something else", async () => {
     const text = "A list:\n\nSee r here.\n\n[r]: http://x\n";
     await load(text);

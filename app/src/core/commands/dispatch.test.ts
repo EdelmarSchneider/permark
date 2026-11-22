@@ -370,7 +370,16 @@ describe("the listener", () => {
     let now: KeyEnv = held;
     const stop = installKeys(window, () => now);
     const findKey = { key: "f", code: "KeyF", ctrlKey: true };
-    const keys = [findKey, { key: "F3" }, { key: "F3", shiftKey: true }, { key: "F7" }];
+    const nextKey = { key: "g", code: "KeyG", ctrlKey: true };
+    const previousKey = { key: "G", code: "KeyG", ctrlKey: true, shiftKey: true };
+    const keys = [
+      findKey,
+      { key: "F3" },
+      { key: "F3", shiftKey: true },
+      { key: "F7" },
+      nextKey,
+      previousKey,
+    ];
     // no document open | Welcome | a dialog owns the input | nobody holds the keys
     for (const state of [
       held,
@@ -401,19 +410,34 @@ describe("the listener", () => {
     source?.addEventListener("keydown", own);
     expect(from("source", findKey).defaultPrevented).toBe(true);
     expect(from("source", { key: "F3" }).defaultPrevented).toBe(true);
-    expect(own).toHaveBeenCalledTimes(2);
+    // CodeMirror's go to line is on Mod+G: it still gets the key first
+    expect(from("source", nextKey).defaultPrevented).toBe(true);
+    expect(own).toHaveBeenCalledTimes(3);
     expect(find).toHaveBeenCalledOnce();
     source?.removeEventListener("keydown", own);
-    // only those keys: Alt+F | Ctrl+Alt+F | Ctrl+F3 nobody holds stay the webview's
+    // only those keys: Alt+F | Ctrl+Alt+F | Ctrl+F3 | Alt+G nobody holds stay the webview's
     now = env([], {});
     expect(from("words", { ...findKey, ctrlKey: false, altKey: true }).defaultPrevented).toBe(
       false,
     );
     expect(from("words", { ...findKey, altKey: true }).defaultPrevented).toBe(false);
     expect(from("words", { key: "F3", ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(from("words", { ...nextKey, ctrlKey: false, altKey: true }).defaultPrevented).toBe(
+      false,
+    );
+    // macOS: Cmd+G | Cmd+Shift+G, not Control
+    now = { ...env([], {}), mac: true };
+    expect(from("words", { ...nextKey, ctrlKey: false, metaKey: true }).defaultPrevented).toBe(
+      true,
+    );
+    expect(from("words", { ...previousKey, ctrlKey: false, metaKey: true }).defaultPrevented).toBe(
+      true,
+    );
+    expect(from("words", nextKey).defaultPrevented).toBe(false);
     stop();
     expect(from("words", findKey).defaultPrevented).toBe(false);
     expect(from("words", { key: "F7" }).defaultPrevented).toBe(false);
+    expect(from("words", nextKey).defaultPrevented).toBe(false);
   });
 
   it("never leaves select-all to the webview where no text has the keyboard: the key is taken and nothing runs", () => {

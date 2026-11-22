@@ -141,14 +141,13 @@ export class Decorator {
   #marked = new Map<HTMLAnchorElement, string | null>();
   /** Embeds whose library is still loading (each settles once mounted, cancelled or failed). */
   #loading = new Set<Promise<void>>();
+  /** Told once an embed mounted in an element (`onMounted`). */
+  readonly #listeners = new Set<(element: HTMLElement) => void>();
   /** The theme every embed draws in, whatever the page shows; undefined: embeds follow the page. */
   readonly #theme: "light" | "dark" | undefined;
 
   /** Read when a reference is marked (its tooltip says what a click does). */
   refSetup: RefSetup = () => ({ editorSet: false, mod: "Ctrl" });
-
-  /** Told once an embed mounted in `element` (what it holds changed size: a table around it measures again). */
-  mounted: (element: HTMLElement) => void = () => {};
 
   /**
    * `theme` fixes the theme of every embed (a copy of the page drawn off screen in a look of its own, e.g. light
@@ -168,6 +167,16 @@ export class Decorator {
   async idle(): Promise<void> {
     // embeds started while waiting count too
     while (this.#loading.size > 0) await Promise.allSettled(this.#loading);
+  }
+
+  /**
+   * `listener` is told once an embed mounted in an element (what it holds changed size: a table around it measures
+   * again). More than one listens: the reading view's tables and the editor's share this decorator's embeds. Returns
+   * what stops telling it.
+   */
+  onMounted(listener: (element: HTMLElement) => void): () => void {
+    this.#listeners.add(listener);
+    return () => void this.#listeners.delete(listener);
   }
 
   setDocument(path: string | null): void {
@@ -293,7 +302,7 @@ export class Decorator {
             element.className = record.className;
             return;
           }
-          this.mounted(element);
+          for (const listener of this.#listeners) listener(element);
         },
         () => {
           // the library did not load: the plain text stays

@@ -9,7 +9,12 @@
 
 import { closeHistory } from "@milkdown/kit/prose/history";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import { TextSelection, type EditorState, type Transaction } from "@milkdown/kit/prose/state";
+import {
+  Selection,
+  TextSelection,
+  type EditorState,
+  type Transaction,
+} from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import type { EditScope, TextEdit, TextRange } from "../session.svelte";
 import { checkEdits } from "../textEdits";
@@ -342,7 +347,25 @@ export function editsTr(
   for (const { from, to, node } of replaced.sort((a, b) => b.from - a.from)) {
     tr.replaceWith(from, to, node);
   }
+  keepCaretIn(tr, state.selection, replaced);
   return closeHistory(tr);
+}
+
+/**
+ * A selection with an end inside a block `replaced` remade: the caret at the end of that block's new text. Mapped as
+ * ProseMirror maps it, a position inside a replaced range goes past it, into the next block; a block kept as written
+ * there would end up selected as a whole (its outline, the page's selection painted over what it draws).
+ */
+function keepCaretIn(
+  tr: Transaction,
+  selection: Selection,
+  replaced: readonly { from: number; to: number; node: PMNode }[],
+): void {
+  const holding = (pos: number) => replaced.find((r) => r.from < pos && pos < r.to);
+  const block = holding(selection.head) ?? holding(selection.anchor);
+  if (block === undefined) return;
+  const start = tr.mapping.map(block.from, -1);
+  tr.setSelection(Selection.near(tr.doc.resolve(start + block.node.nodeSize - 1), -1));
 }
 
 /** An edit of `range` would go in as the document stands: the range lies in one block the editor writes itself

@@ -182,6 +182,27 @@ describe("the Comments tab", () => {
     expect(target.textContent).not.toContain("Other words");
   });
 
+  it("names the folder of an included project on its line, none on the opened folder's", async () => {
+    await open();
+    component = mount(CommentsPanel, { target });
+    flushSync();
+    const organizing = mock.probe.plugins.organizing;
+    const removed = [{ path: "docs/guide.md", quote: "Back to the readme", text: "One", line: 3 }];
+    organizing.setAside(removed, false);
+    organizing.setAside([{ ...removed[0]!, text: "Two" }], false, {
+      uid: "aaaaaaaaaa",
+      folder: "notes/sub a",
+    });
+    await until(() => target.querySelectorAll("[data-aside]").length === 2, "both lines");
+    const own = target.querySelector<HTMLElement>('[data-aside=""]')!;
+    const member = target.querySelector<HTMLElement>('[data-aside="aaaaaaaaaa"]')!;
+    expect(own.querySelector(".aside-folder")).toBeNull();
+    expect(member.querySelector(".aside-folder")?.textContent).toBe("notes/sub a");
+    expect(member.getAttribute("aria-label")).toBe(
+      "1 comment was removed outside PerMark. notes/sub a",
+    );
+  });
+
   it("scrolls to and marks the comment a click in the margin asked for", async () => {
     await open();
     const id = await addComment("docs/guide.md", "Back to the readme", "Say it better");

@@ -423,6 +423,7 @@
       made = await loaded.createCore({
         host: target,
         scroller,
+        embedMounted: (told) => documents.decorator.onMounted(told),
         label: t("edit.documentText"),
         locked: {
           render: (node) => book.get(node),

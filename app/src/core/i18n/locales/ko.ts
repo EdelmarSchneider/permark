@@ -928,6 +928,8 @@ export default {
   "since.nothing": "{when} 이후 변경된 내용이 없습니다.",
   "review.offer.one": "마지막으로 읽은 후 변경됨 · 변경 {n}건",
   "review.offer.other": "마지막으로 읽은 후 변경됨 · 변경 {n}건",
+  "review.offerCommit.one": "마지막 커밋 이후 변경됨 · 변경 {n}건",
+  "review.offerCommit.other": "마지막 커밋 이후 변경됨 · 변경 {n}건",
   "review.review": "검토",
   "review.reviewing.one": "변경 {n}건 검토 중",
   "review.reviewing.other": "변경 {n}건 검토 중",
@@ -952,6 +954,7 @@ export default {
   "review.change": "변경 {n}건 중 {i}번째, {kind}",
   "review.keptAll": "모든 변경 내용 유지됨",
   "review.revertedAll": "{name}의 모든 변경 내용을 되돌림",
+  "review.endedMixed": "{name}의 변경 내용 중 일부는 유지하고 나머지는 되돌림",
   "review.undo": "실행 취소",
   "review.undoStale": "실행 취소할 수 없음: 그 후 {name} 파일이 변경되었습니다.",
   "review.allDone": "모든 변경 내용 검토 완료",
@@ -1009,6 +1012,10 @@ export default {
   "git.why.tooLarge": "Git의 응답이 너무 길어 읽을 수 없습니다.",
   "git.why.spawn": "Git을 시작할 수 없습니다.",
   "git.why.parse": "Git의 응답을 이해할 수 없습니다.",
+  "git.why.notLocal":
+    "이 저장소의 git 폴더가 이 컴퓨터 밖을 가리키거나 링크를 거치므로 PerMark에서 열지 않습니다.",
+  "git.why.noGit": "이 폴더에는 저장소로 이어지는 .git이 없습니다.",
+  "git.why.stopped": "Git이 응답하기 전에 중지되었습니다.",
   "git.why.failed": "세부 정보: {detail}",
   "git.errorHint": "설정을 열어 다른 Git을 선택하세요(기본 제공 Git은 신뢰 설정이 필요 없습니다).",
   "git.folderChanged.one": "변경된 파일 {n}개 포함",
@@ -1450,7 +1457,7 @@ export default {
   "agent.title": "에이전트 연결",
   "agent.switch": "이 폴더를 에이전트와 공유",
   "agent.switchHint":
-    "연결한 에이전트(Claude Code나 Cursor처럼 MCP를 지원하는 AI 도구)가 지금 보고 있는 내용과 변경된 내용을 확인하고, 이 폴더의 파일을 검색하고 읽으며, 댓글과 공유한 메모를 읽고, 특정 위치를 보여 줄 수 있습니다. 이 컴퓨터에서만 작동합니다. .aiignore에 적은 파일은 에이전트에게 전달되지 않습니다. 이렇게 연결한 에이전트는 읽기만 하며 PerMark를 통해 파일을 편집하지 않습니다. 에이전트가 편집을 제안하게 하려면 어시스턴트를 사용하세요. 이는 에이전트가 PerMark에서 받는 내용에만 해당합니다. 에이전트는 여전히 컴퓨터의 파일을 직접 열 수 있습니다.",
+    "연결한 에이전트(Claude Code나 Cursor처럼 MCP를 지원하는 AI 도구)가 지금 보고 있는 내용과 변경된 내용을 확인하고, 이 폴더의 파일을 검색하고 읽으며, 댓글과 공유한 메모를 읽고, 특정 위치를 보여 줄 수 있습니다. 이 컴퓨터에서만 작동합니다. .aiignore에 적은 파일은 에이전트에게 전달되지 않습니다. 이렇게 연결한 에이전트는 PerMark를 통해 파일을 편집하지 않습니다. 내용을 읽고, 허용한 경우에만 댓글을 완료로 표시합니다. 에이전트가 편집을 제안하게 하려면 어시스턴트를 사용하세요. 이는 에이전트가 PerMark에서 받는 내용에만 해당합니다. 에이전트는 여전히 컴퓨터의 파일을 직접 열 수 있습니다.",
   "agent.folderReplaced":
     "연결한 후 이 폴더가 바뀌었습니다. 여기에서 에이전트를 허용하려면 연결을 다시 켜세요.",
   "agent.groups": "에이전트가 할 수 있는 작업",
@@ -1691,6 +1698,8 @@ export default {
     "이 폴더에서 각 플러그인에 대한 선택입니다. '모두에게 꺼짐'은 .permark/config.toml에 저장되며 이 폴더를 여는 모든 사람에게 적용됩니다.",
   "plugins.removeConfirm": "{name}의 데이터를 제거할까요?",
   "plugins.removeConfirmBytes": "{name}의 데이터를 제거할까요? {size}이(가) 확보됩니다.",
+  "plugins.removeScope":
+    "자체 .permark 폴더에 데이터를 보관하는 폴더는 열려 있는 동안에만 정리됩니다.",
   "plugins.removeData": "데이터 제거",
   "plugins.removeYes": "제거",
   "plugins.turnOn": "{name} 켜기",
@@ -1715,6 +1724,8 @@ export default {
   "project.initConfig": "이 프로젝트가 팀과 공유하는 설정입니다.",
   "project.initConfirm": "PerMark 초기화",
   "project.initFailed": "{path}에서 PerMark를 초기화할 수 없습니다: {message}",
+  "project.initHeld":
+    "{path}/.permark/local에 이미 다른 곳에서 온 PerMark 데이터가 있습니다. 아무것도 변경하지 않았습니다.",
   "project.initIgnore": "비공개 폴더를 Git에서 제외합니다.",
   "project.initIntro": "PerMark가 여기에 다음 내용이 담긴 .permark 폴더를 만듭니다:",
   "project.initLocal":
@@ -1755,6 +1766,18 @@ export default {
   "project.sharedFileHint": "이 폴더를 여는 모든 사람과 공유됩니다.",
   "project.sharedFileUnreadable":
     "PerMark가 이 파일의 {line}번째 줄을 읽을 수 없습니다. 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
+  "project.sharedLocked":
+    "PerMark가 .permark/config.toml을 읽을 수 없습니다. 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
+  "project.sharedLocked.line":
+    "PerMark가 .permark/config.toml의 {line}번째 줄을 읽을 수 없습니다. 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
+  "project.sharedLocked.notText":
+    "PerMark가 .permark/config.toml을 읽을 수 없습니다(일반 텍스트가 아닙니다). 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
+  "project.sharedLocked.tooLarge":
+    "PerMark가 .permark/config.toml을 읽을 수 없습니다(파일이 너무 큽니다). 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
+  "project.sharedLocked.locked":
+    "PerMark가 .permark/config.toml을 읽을 수 없습니다(다른 프로그램이 사용 중입니다). 파일을 고칠 때까지 '모두'로 표시된 설정은 바꿀 수 없습니다.",
+  "project.privateTracked":
+    "에이전트는 이 폴더의 댓글과 활동 내역을 받지 않습니다. 이 폴더의 git 저장소가 PerMark의 비공개 폴더(.permark/local)를 추적하고 있거나 PerMark가 이를 확인할 수 없었습니다.",
   "settings.all": "모든 설정",
   "settings.editorPreview": "예:",
   "settings.linkUpdateHint": "파일을 이동하거나 이름을 바꿀 때 링크를 어떻게 처리할지 정합니다.",
@@ -2140,7 +2163,7 @@ export default {
     "선택한 토크나이저로 문서, 선택 영역 또는 섹션의 토큰을 셉니다. 토크나이저가 공개된 경우 정확하게, 그렇지 않으면 근사치로(표시와 함께) 셉니다.",
   "plugin.local-ai.name": "로컬 AI",
   "plugin.local-ai.about":
-    "이 컴퓨터에서 오프라인으로 실행되는 작은 AI 모델로, PerMark가 교정하고 번역하고 의미로 찾도록 돕습니다. 요청하기 전에는 아무것도 내려받지 않습니다.",
+    "이 컴퓨터에서 실행되는 작은 AI 모델로, PerMark가 교정하고 번역하고 의미로 찾도록 돕습니다. 요청하기 전에는 아무것도 내려받지 않습니다.",
   // ---- TOON data and the converter
   "config.table.rows.one": "행 {n}개",
   "config.table.rows.other": "행 {n}개",
@@ -2560,7 +2583,7 @@ export default {
   // ---- Local AI settings page
   "localAi.section": "로컬 AI",
   "localAi.intro":
-    "이 컴퓨터에서 오프라인으로 실행되는 작은 AI 모델입니다. 요청하기 전에는 아무것도 다운로드하지 않습니다.",
+    "이 컴퓨터에서 실행되는 작은 AI 모델입니다. 요청하기 전에는 아무것도 다운로드하지 않습니다.",
   "localAi.command": "로컬 AI 설정 열기",
   "localAi.loadFailed": "로컬 AI 설정을 읽지 못했습니다.",
   "localAi.retry": "다시 시도",
@@ -2632,8 +2655,8 @@ export default {
   "localAi.models.details.size": "다운로드 크기",
   "localAi.models.details.restriction": "사용할 수 있는 사람",
   "localAi.models.comingSoon": "곧 제공",
-  "localAi.models.needs.newer": "더 새로운 버전의 AI 엔진이 필요합니다.",
-  "localAi.models.needs.missing": "PerMark에 아직 없는 AI 엔진이 필요합니다.",
+  "localAi.models.needs.newer": "이 모델을 사용하려면 이후 버전의 PerMark가 필요합니다.",
+  "localAi.models.needs.missing": "PerMark는 아직 이런 종류의 모델을 실행할 수 없습니다.",
   "localAi.dl.waiting": "대기 중…",
   "localAi.dl.cancelLabel": "{name} 받기 취소",
   "localAi.dl.progress": "{done} / {total}",

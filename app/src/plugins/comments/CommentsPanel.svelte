@@ -64,8 +64,17 @@
 
   {#each comments.lines as line (line.project)}
     {@const text = tn("comments.aside.line", line.count)}
-    <div class="aside" role="group" aria-label={text} data-aside={line.project}>
-      <span class="aside-text">{text}</span>
+    <!-- an included project's line names its folder as it is, so lines of several projects can be told apart -->
+    <div
+      class="aside"
+      role="group"
+      aria-label={line.folder === "" ? text : `${text} ${line.folder}`}
+      data-aside={line.project}
+    >
+      <span class="aside-text">
+        {text}
+        {#if line.folder !== ""}<span class="aside-folder">{line.folder}</span>{/if}
+      </span>
       <button type="button" class="btn btn--sm" onclick={() => void comments.restore(line.project)}>
         {t("comments.aside.restore")}
       </button>
@@ -176,6 +185,11 @@
     flex: 1 1 14em;
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  .aside-folder {
+    display: block;
+    color: var(--muted);
+    font-size: var(--fs-ui-xs);
   }
   .body {
     flex: 1;

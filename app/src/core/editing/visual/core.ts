@@ -368,6 +368,12 @@ export type CoreOptions = {
   looks?: LooksHost;
   /** The pane that scrolls the editor: its tables are measured as they come near its view. */
   scroller?: HTMLElement;
+  /**
+   * Tells `told` once an embed (a formula, highlighted code) mounted in an element of the page; returns what stops
+   * telling. A table around that element is measured again: its columns were read from the source text, which is
+   * far wider than a formula.
+   */
+  embedMounted?: (told: (element: HTMLElement) => void) => () => void;
   /** Before the stock plugins (keys and pastes seen first). */
   first?: Parameters<Editor["use"]>[0][];
   /** After the stock plugins. */
@@ -446,6 +452,10 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     const serializer = ctx.get(serializerCtx);
     const remark = ctx.get(remarkCtx);
     const written = new WeakMap<PMNode, string>();
+    const unlisten = options.embedMounted?.((element) => {
+      const table = element.closest("table");
+      if (table) tables.redrawn(table);
+    });
     const core: Core = {
       editor,
       view,
@@ -482,6 +492,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
         view.setProps({});
       },
       destroy: async () => {
+        unlisten?.();
         tables.stop();
         await editor.destroy();
       },

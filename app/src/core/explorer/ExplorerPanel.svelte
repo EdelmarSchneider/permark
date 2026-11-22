@@ -27,6 +27,7 @@
   import ProjectStrip from "../projects/ProjectStrip.svelte";
   import Badge from "../shell/Badge.svelte";
   import { rowFit } from "../shell/rowFit";
+  import { returnFocus } from "../shell/sides";
   import ContextMenu from "./ContextMenu.svelte";
   import FilterPopover from "./FilterPopover.svelte";
   import { withShow } from "./filter";
@@ -63,6 +64,8 @@
   let list: HTMLElement | undefined = $state();
   let scrollTop = $state(0);
   let viewport = $state(400);
+  /** Rows PageDown | PageUp move: the rows in sight less one, so the row left stays in sight. */
+  const page = $derived(Math.max(1, Math.floor(viewport / ROW) - 1));
   let filterOpen = $state(false);
   /** An open menu; `anchor`: the header button it opened from (a press on it closes it). */
   let menu = $state.raw<{
@@ -504,16 +507,10 @@
     const targets = store.targets();
     const many = targets.length > 1;
     const isDir = node.kind.type === "dir";
-    const category = node.kind.type === "file" ? node.kind.category : null;
     const entries: MenuEntry[] = [];
     if (!many) {
-      if (
-        !isDir &&
-        category !== null &&
-        category !== "other" &&
-        category !== "code" &&
-        !node.name.toLowerCase().endsWith(".svg")
-      ) {
+      // the backend's rule (scripts, programs, macro carriers never); it still refuses such an open itself
+      if (node.opensOutside) {
         entries.push({
           kind: "item",
           label: t("menu.openDefaultApp"),
@@ -636,6 +633,12 @@
       case "End":
         store.moveTo("last", e.shiftKey);
         break;
+      case "PageDown":
+      case "PageUp":
+        // with Ctrl | Cmd | Alt the key is the window's (tabs, notes)
+        if (e.ctrlKey || e.metaKey || e.altKey) handled = false;
+        else store.move(e.key === "PageDown" ? page : -page, e.shiftKey);
+        break;
       case "Enter":
         if (store.focus !== null) void store.activate(store.focus);
         break;
@@ -685,6 +688,8 @@
       case "ArrowUp":
       case "Home":
       case "End":
+      case "PageDown":
+      case "PageUp":
         // the event goes on to the tree, which moves among the rows
         list?.focus();
         break;
@@ -775,6 +780,16 @@
     store.geometry = importFolderAt;
     return () => {
       store.geometry = null;
+    };
+  });
+
+  // the store can give the keyboard back to the list when nothing holds it (a notice's button went with its notice)
+  $effect(() => {
+    store.takeKeyboard = () => {
+      if (list) returnFocus(list);
+    };
+    return () => {
+      store.takeKeyboard = null;
     };
   });
 

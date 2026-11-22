@@ -99,6 +99,7 @@ function showOutline(): void {
     mtimeMs: 1,
     editable: { editable: "surgical" },
     notes: [],
+    opensOutside: true,
   };
   documents.state = { status: "ready", view: shown, deleted: null, fresh: true };
   flushSync();

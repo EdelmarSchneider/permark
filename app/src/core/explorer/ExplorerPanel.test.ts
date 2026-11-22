@@ -10,8 +10,10 @@ import { NO_REQUIREMENT } from "../conditions/available";
 import { neutralContext } from "../conditions/context.svelte";
 import { conditions } from "../conditions/context.svelte";
 import { ContributionRegistry } from "../plugins/registry.svelte";
+import Notices from "../shell/Notices.svelte";
+import { WindowStore } from "../window.svelte";
 import ExplorerPanel from "./ExplorerPanel.svelte";
-import { ExplorerStore } from "./store.svelte";
+import { ExplorerStore, type ExplorerHost } from "./store.svelte";
 
 type Fx = {
   api: ReturnType<typeof createMockApi>;
@@ -26,7 +28,11 @@ type Fx = {
 
 let mounted: (() => void)[] = [];
 
-async function render(link: LinkUpdate = "never", more: string[] = []): Promise<Fx> {
+async function render(
+  link: LinkUpdate = "never",
+  more: string[] = [],
+  told: ExplorerHost["note"] = () => {},
+): Promise<Fx> {
   const api = createMockApi();
   await api.openPath(MOCK_FOLDER, "thisTab");
   for (const path of more) api.probe.project.add(path, "x");
@@ -35,7 +41,10 @@ async function render(link: LinkUpdate = "never", more: string[] = []): Promise<
   const inits: { path: string; name: string }[] = [];
   const store = new ExplorerStore(api, 1, {
     fail: (e) => failures.push(e),
-    note: (t) => notes.push(t),
+    note: (t, ...actions) => {
+      notes.push(t);
+      told(t, ...actions);
+    },
     view: () => "main",
     linkUpdate: () => link,
     openProject: () => {},
@@ -488,6 +497,7 @@ describe("what a screen reader hears", () => {
         hidden: false,
         ignored: false,
         forced: false,
+        opensOutside: true,
       },
     ];
     flushSync();
@@ -554,6 +564,84 @@ describe("keyboard", () => {
     await vi.waitFor(() => expect(store.nodes.map((n) => n.path)).toContain("pkg.json"));
     await vi.waitFor(() => expect(notes.at(-1)).toBe("Undone."));
     expect(api.probe.project.files.has("pkg.json")).toBe(true);
+  });
+
+  it("PageDown | PageUp move a page of rows (the row left stays in sight), Shift extends; with Ctrl | Alt | Cmd the key is the window's", async () => {
+    const more = Array.from({ length: 40 }, (_, n) => `page${String(n).padStart(2, "0")}.md`);
+    const { root, store } = await render("never", more);
+    const keys = (): string[] =>
+      store.rows.flatMap((r) => (r.type === "node" ? [r.node.path] : []));
+    expect(keys().length).toBeGreaterThan(40);
+    // a 400 px list of 26 px rows shows 15: a page is 14, so the row the keyboard left is still in sight
+    store.moveTo("first", false);
+    flushSync();
+    expect(key(root, "PageDown").defaultPrevented).toBe(true);
+    expect(store.focus).toBe(keys()[14]);
+    expect([...store.selection]).toEqual([keys()[14]]);
+    key(root, "PageDown", { shiftKey: true });
+    expect(store.focus).toBe(keys()[28]);
+    expect(new Set(store.selection)).toEqual(new Set(keys().slice(14, 29)));
+    expect(key(root, "PageUp").defaultPrevented).toBe(true);
+    expect(store.focus).toBe(keys()[14]);
+    expect([...store.selection]).toEqual([keys()[14]]);
+    key(root, "PageUp", { shiftKey: true });
+    expect(new Set(store.selection)).toEqual(new Set(keys().slice(0, 15)));
+    // the ends hold
+    key(root, "PageUp");
+    expect(store.focus).toBe(keys()[0]);
+    store.moveTo("last", false);
+    flushSync();
+    key(root, "PageDown");
+    expect(store.focus).toBe(keys().at(-1));
+    // Ctrl | Cmd + PageDown switch tabs, Alt + PageDown walks notes: never the tree's
+    store.moveTo("first", false);
+    flushSync();
+    for (const init of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+      expect(key(root, "PageDown", init).defaultPrevented).toBe(false);
+      expect(key(root, "PageUp", init).defaultPrevented).toBe(false);
+      expect(store.focus).toBe(keys()[0]);
+    }
+  });
+
+  it("Undo in the notice of a delete gives the keyboard back to the tree, on a row", async () => {
+    const shell = new WindowStore(createMockApi());
+    const { root, store } = await render("never", [], (text, ...actions) =>
+      shell.notifyKeyed("fileOp", text, ...actions),
+    );
+    const place = document.createElement("div");
+    document.body.append(place);
+    const notices = mount(Notices, { target: place, props: { store: shell } });
+    mounted.push(() => void unmount(notices));
+    const tree = root.querySelector<HTMLElement>('[role="tree"]');
+    if (!tree) throw new Error("no tree");
+    tree.focus();
+    store.select("README.md", "single");
+    key(root, "Delete");
+    const undoButton = (): HTMLButtonElement | undefined =>
+      Array.from(place.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Undo");
+    await vi.waitFor(() => {
+      flushSync();
+      expect(undoButton()).toBeDefined();
+    });
+    expect(store.nodes.map((n) => n.path)).not.toContain("README.md");
+    const undo = undoButton();
+    if (!undo) throw new Error("no Undo");
+    // the Tab order reaches the notices last: what had the keyboard just before is some other control of the window
+    const before = document.createElement("button");
+    document.body.append(before);
+    before.focus();
+    undo.focus();
+    undo.click();
+    await vi.waitFor(() => expect(store.nodes.map((n) => n.path)).toContain("README.md"));
+    await vi.waitFor(() => expect(document.activeElement).toBe(tree));
+    // the notices, done with their own steps after the action, leave it there
+    await new Promise((done) => setTimeout(done, 0));
+    flushSync();
+    expect(document.activeElement).toBe(tree);
+    const named = tree.getAttribute("aria-activedescendant");
+    expect(named === null ? null : document.getElementById(named)?.getAttribute("role")).toBe(
+      "treeitem",
+    );
   });
 
   it("Cmd+Z works on macOS as well, and plain z does not undo", async () => {
@@ -795,6 +883,35 @@ describe("context menu", () => {
     expect(document.querySelector('[role="menu"]')?.textContent).not.toContain(
       "Open with default app",
     );
+  });
+
+  it("offers the system program only for files the backend would open with it (an old Word file never)", async () => {
+    const { root, store } = await render("never", ["old.doc", "a.pdf"]);
+    await store.setFilter({ ...store.filter, show: "everything" });
+    await tick();
+    // the backend's answer for an old binary Office file: an office document it never hands to Office from a click
+    store.nodes = store.nodes.map((n) =>
+      n.path === "old.doc"
+        ? { ...n, kind: { type: "file", category: "office" }, opensOutside: false }
+        : n,
+    );
+    await tick();
+    const menuOf = async (path: string): Promise<string> => {
+      row(root, path).dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+      );
+      await tick();
+      const text = document.querySelector('[role="menu"]')?.textContent ?? "";
+      document
+        .querySelector('[role="menu"]')
+        ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await tick();
+      return text;
+    };
+    const old = await menuOf("old.doc");
+    expect(old).not.toContain("Open with default app");
+    expect(old).toContain("Show in file manager");
+    expect(await menuOf("a.pdf")).toContain("Open with default app");
   });
 
   it("a multi-selection offers delete for all and nothing about one file", async () => {

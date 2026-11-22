@@ -17,6 +17,7 @@ import {
 import { BlockHost } from "./blocks";
 import { decideRef, inApp, refLabel } from "./codeRefs";
 import { outsideTarget } from "./outside";
+import { sendToPane } from "./paneFocus";
 import { Decorator, codeRefOf, type CodeRefTarget, type EmbedLookup } from "./decorate";
 import { enhanceBlock, type EnhanceEnv } from "./enhance";
 import { currentIndex } from "./outline";
@@ -195,10 +196,10 @@ export class DocumentController {
       mod: this.#hooks.modKey(),
     });
     // a formula | highlighted code drawn in a table cell after the table was measured: its columns are measured again
-    this.decorator.mounted = (element) => {
+    this.decorator.onMounted((element) => {
       const table = element.closest("table");
       if (table) this.tables.redrawn(table);
-    };
+    });
   }
 
   bind(hooks: Hooks): void {
@@ -498,9 +499,10 @@ export class DocumentController {
     this.#blocksOf = view.path;
     this.decorator.setDocument(view.path);
     const blocks = transform(body.blocks, view);
-    // the blocks of a page that is there are updated, not built again (the place stays)
+    // the blocks of a page that is there are updated, not built again (the place stays); the same version made again
+    // (a plugin's blocks came or went: a review opened | closed) changed no passage of the document, nobody is told
     const fresh = s.fresh && !again;
-    const before = fresh ? null : this.host.ids();
+    const before = fresh || again ? null : this.host.ids();
     const applied = this.host.apply(blocks, fresh);
     if (applied.missing.length > 0) {
       // the window was told it holds blocks it does not: ask again for everything
@@ -796,7 +798,8 @@ export class DocumentController {
 
   /** The keyboard goes to the page that shows what a link | reference opened (the link goes away with the page). */
   #toPage(): void {
-    this.host.scroller?.focus({ preventScroll: true });
+    const pane = this.host.scroller;
+    if (pane) sendToPane(pane);
   }
 
   /** The single file's folder: where it is and its name. */

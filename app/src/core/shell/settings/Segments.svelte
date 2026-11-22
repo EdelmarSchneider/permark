@@ -1,6 +1,7 @@
 <script lang="ts" generics="V extends string">
-  // A row of exclusive choices (a radio group drawn as segments). Arrows move the choice (and the focus) like any
-  // radio group; only a plain arrow does: Alt+Left (back) and the like pass by, and focus alone never changes it.
+  // A row of exclusive choices (a radio group drawn as segments). Arrows | Home | End move the choice (and the focus)
+  // like any radio group; only the plain key does: Alt+Left (back) and the like pass by, and focus alone never changes
+  // it.
   import { tick } from "svelte";
 
   /** `title`: tooltip; `why`: why the choice is off (tooltip + its accessible description). */
@@ -29,6 +30,12 @@
   let group: HTMLElement | undefined = $state();
   const uid = $props.id();
 
+  /** The choice at `n` can be taken (it exists and is not off here). */
+  function isOn(n: number): boolean {
+    const option = options[n];
+    return option !== undefined && !disabledValues.includes(option.value);
+  }
+
   function onkeydown(e: KeyboardEvent): void {
     if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const step =
@@ -37,13 +44,20 @@
         : e.key === "ArrowLeft" || e.key === "ArrowUp"
           ? -1
           : 0;
-    if (step === 0 || disabled) return;
+    const end = e.key === "Home" || e.key === "End";
+    if ((step === 0 && !end) || disabled) return;
     e.preventDefault();
     const at = options.findIndex((o) => o.value === value);
     let to = at;
-    for (let n = 0; n < options.length; n += 1) {
-      to = (to + step + options.length) % options.length;
-      if (!disabledValues.includes(options[to]?.value as V)) break;
+    if (end) {
+      // as any radio group: Home | End take the first | last choice that can be taken
+      const order = options.map((_, n) => n);
+      to = (e.key === "Home" ? order : order.reverse()).find(isOn) ?? at;
+    } else {
+      for (let n = 0; n < options.length; n += 1) {
+        to = (to + step + options.length) % options.length;
+        if (isOn(to)) break;
+      }
     }
     const next = options[to];
     if (!next || to === at) return;

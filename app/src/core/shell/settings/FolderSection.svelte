@@ -6,12 +6,13 @@
   // only described, never written over);
   // where the person's data for the folder is kept while it is not in the folder's `.permark/` (Move stays here after
   // Keep); the folder's own card where it holds projects. Nothing is written into the folder until the person answers
-  // the Initialize question | presses Move. A shared file that is not TOML is said here with its line: the backend
-  // refuses every change to it until it is fixed by hand.
+  // the Initialize question | presses Move. A shared file that is not TOML is said here with its line, one that can't be
+  // read as text with why: the backend refuses every change to it until it is fixed by hand. Under what git sees: why
+  // agents get none of the folder's comments | activity while git tracks PerMark's private folder (or can't tell).
   import type { Sharing } from "../../../api";
   import { conditions } from "../../conditions/context.svelte";
   import { documents } from "../../doc/document.svelte";
-  import { apiErrorText } from "../../errors";
+  import { apiErrorText, ipcErrorText } from "../../errors";
   import { t, type MessageKey } from "../../i18n";
   import { projects } from "../../projects/instance.svelte";
   import { windowStore, type ProjectView } from "../../window.svelte";
@@ -57,6 +58,19 @@
   const unreadableLine = $derived(
     projectSettings.state.status === "ready" ? projectSettings.state.settings.unreadableLine : null,
   );
+  /** Why the shared file can't be read as text, in the words of a settings file refusal (`null`: it reads, or is not
+   *  read yet). */
+  const unreadableText = $derived.by((): string | null => {
+    if (projectSettings.state.status !== "ready") return null;
+    const why = projectSettings.state.settings.unreadableWhy;
+    return why === null
+      ? null
+      : ipcErrorText({ kind: "settingsUnreadable", subject: SHARED_FILE, detail: why });
+  });
+  /** Git tracks PerMark's private folder here (or can't tell): agents get none of what it keeps. */
+  const privateTracked = $derived(
+    projectSettings.state.status === "ready" && projectSettings.state.settings.privateTracked,
+  );
   const SHARING: { value: Exclude<Sharing, "custom">; label: MessageKey }[] = [
     { value: "shared", label: "project.shareGitOn" },
     { value: "private", label: "project.shareGitOff" },
@@ -86,6 +100,8 @@
             <span class="problem" role="alert">
               {t("project.sharedFileUnreadable", { line: unreadableLine })}
             </span>
+          {:else if unreadableText !== null}
+            <span class="problem" role="alert">{unreadableText}</span>
           {/if}
         {/snippet}
       </SettingRow>
@@ -119,6 +135,9 @@
                   message: apiErrorText(projectSettings.sharingError),
                 })}
               </span>
+            {/if}
+            {#if privateTracked}
+              <span class="withheld">{t("project.privateTracked")}</span>
             {/if}
           {/snippet}
         </SettingRow>
@@ -201,6 +220,9 @@
   }
   .problem {
     color: var(--git-deleted-text);
+  }
+  .withheld {
+    display: block;
   }
   h4 {
     margin: 0 0 var(--sp-2);

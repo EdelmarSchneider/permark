@@ -60,6 +60,7 @@ function viewFor(path: string, readOnly = false): DocumentView {
     mtimeMs: Date.now(),
     editable: readOnly ? { editable: "readOnly", reason: "media" } : { editable: "surgical" },
     notes: [],
+    opensOutside: true,
   };
 }
 
@@ -168,6 +169,39 @@ describe("the chosen mode", () => {
     expect(editing.path).toBeNull();
   });
 
+  it("a document a plugin holds editors off stays in View, from the chosen mode and the switch alike", async () => {
+    chooseMode("source");
+    await flush();
+    const held = new Set(["docs/handbook.md"]);
+    const unblock = editing.block((path) => (held.has(path) ? "waiting" : null));
+    try {
+      const enter = vi.spyOn(editing, "enter");
+      switchTo("docs/handbook.md");
+      await flush();
+      expect(editBlockedReason()).toBe("waiting");
+      chooseMode("source");
+      await flush();
+      expect(enter).not.toHaveBeenCalled();
+      expect(editing.path).toBeNull();
+      // another document is not held
+      switchTo("docs/guide.md");
+      await flush();
+      expect(editing.path).toBe("docs/guide.md");
+      // the hold ends: the document opens in the chosen mode again
+      held.clear();
+      switchTo("docs/handbook.md");
+      await flush();
+      expect(editing.path).toBe("docs/handbook.md");
+      expect(editing.mode).toBe("source");
+      enter.mockRestore();
+    } finally {
+      unblock();
+    }
+    // a removed hold holds nothing
+    held.add("docs/handbook.md");
+    expect(editing.blockedBy("docs/handbook.md")).toBeNull();
+  });
+
   it("a fresh window starts in View, so nothing is opened", async () => {
     const fresh = new EditingSession(api);
     expect(fresh.mode).toBe("view");
@@ -198,6 +232,23 @@ describe("a place asked for the next document", () => {
     await flush();
     expect(editing.path).toBe("docs/handbook.md");
     expect(editing.content?.line).toBe(7);
+    // the editor shows that line tinted, as the page would
+    expect(editing.content?.located).toBe(true);
+  });
+
+  it("no place asked: the editor starts at the reading place, untinted", async () => {
+    chooseMode("source");
+    await flush();
+    switchTo("docs/handbook.md");
+    await flush();
+    expect(editing.content?.located).toBe(false);
+  });
+
+  it("a line the person picks for the mode switch (a row's Source button) is a place kept, untinted", async () => {
+    chooseMode("source", 3);
+    await flush();
+    expect(editing.content?.line).toBe(3);
+    expect(editing.content?.located).toBe(false);
   });
 });
 

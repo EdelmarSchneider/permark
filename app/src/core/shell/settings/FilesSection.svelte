@@ -2,9 +2,9 @@
   // This folder's files: what it shares with everyone in `.permark/config.toml` - which files the Explorer shows by
   // default, what is left out of search and of the live feed. Each control is kept at once, in that file only (the
   // rest of the file stays as it is). Without `.permark/` the rows show what they would hold, greyed, beside the offer
-  // to create it: nothing is written into the folder until the person answers the Initialize question.
+  // to create it: nothing is written into the folder until the person answers the Initialize question. A shared file
+  // that does not read greys them too (the backend refuses every change to it until it is fixed by hand).
   import type { TreeShow } from "../../../api";
-  import { conditions } from "../../conditions/context.svelte";
   import { t, type MessageKey } from "../../i18n";
   import Card from "./Card.svelte";
   import ListEditor from "./ListEditor.svelte";
@@ -14,7 +14,6 @@
   import ShareInit from "./ShareInit.svelte";
   import { projectSettings } from "./stores.svelte";
 
-  const initialized = $derived(conditions.current.permark === "initialized");
   const loaded = $derived(projectSettings.state);
   const problem = $derived(projectSettings.problem);
 
@@ -30,7 +29,7 @@
 
 {#if loaded.status === "ready"}
   {@const settings = loaded.settings}
-  {@const off = !initialized}
+  {@const off = projectSettings.sharedLocked}
   {#snippet problemNote(key: string)}
     {#if problem !== null && problem.key === key}
       <span class="problem" role="alert">{t(problemKey(problem.code))}</span>
@@ -127,8 +126,10 @@
     color: var(--muted);
     font-size: var(--fs-ui-sm);
   }
-  /* without .permark/ the shared rows only show what they would hold */
-  .shared.off {
+  /* without .permark/ (or with a shared file that does not read) the shared rows only show what they hold
+     (their fields grey; their buttons grey by their own disabled look): labels and hints keep their contrast */
+  .shared.off :global(input),
+  .shared.off :global(select) {
     opacity: 0.6;
   }
   .group + .group {

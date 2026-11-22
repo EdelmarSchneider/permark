@@ -91,6 +91,8 @@ export function documentTitle(path: string): { name: string; folder: string } {
 export type AsideLine = {
   /** `""`: the opened folder's comments; otherwise the included project's id (the part of an aside id before `:`). */
   project: string;
+  /** The included project's folder, relative to the opened folder; `""` for the opened folder. */
+  folder: string;
   /** Its asides, each restored | dismissed by its own id. */
   ids: readonly string[];
   /** Comments its file lacks, over all its asides. */
@@ -101,11 +103,11 @@ export type AsideLine = {
 
 /** One line per project, in the order the backend lists them (the opened folder first). */
 export function asideLines(asides: readonly CommentAside[]): AsideLine[] {
-  const lines = new Map<string, { ids: string[]; count: number; big: string[] }>();
+  const lines = new Map<string, { folder: string; ids: string[]; count: number; big: string[] }>();
   for (const aside of asides) {
     const cut = aside.id.indexOf(":");
     const project = cut < 0 ? "" : aside.id.slice(0, cut);
-    const line = lines.get(project) ?? { ids: [], count: 0, big: [] };
+    const line = lines.get(project) ?? { folder: aside.folder, ids: [], count: 0, big: [] };
     line.ids.push(aside.id);
     line.count += aside.count;
     if (aside.big) line.big.push(aside.id);

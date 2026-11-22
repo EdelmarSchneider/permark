@@ -137,7 +137,7 @@ describe("Settings > AI agents", () => {
     await until(() => text(target).includes("Off for this folder"), "state card");
     expect(text(target.querySelector(".title"))).toBe("AI agents");
     expect(text(target)).toContain(
-      "Agents connected this way only read and never edit files through PerMark",
+      "Agents connected this way never edit files through PerMark: they read, and mark your comments done only if you allow it.",
     );
     expect(text(target)).toContain("an agent can still open files on your computer by itself.");
     expect(text(target)).toContain("search and read this folder's files");
@@ -332,6 +332,31 @@ describe("Settings > AI agents", () => {
     expect(
       Array.from(target.querySelectorAll("button")).some((b) => text(b) === "Agent limits"),
     ).toBe(false);
+    mock.probe.shell.forgetInit();
+  });
+
+  it("the limits can't be changed while the folder's file does not read", async () => {
+    await open();
+    mock.probe.shell.teamFileBroken(MOCK_FOLDER, 3);
+    // the window hears of the folder being set up (its file stays broken)
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "set up");
+    mountPage(AGENT_PAGE);
+    await until(() => text(target).includes("Agent limits"), "the limits");
+    // the fold stays as the person left it last time
+    const fold = button("Agent limits");
+    if (fold.getAttribute("aria-expanded") === "false") fold.click();
+    flushSync();
+    await until(() => target.querySelector(".limits-rows") !== null, "unfolded");
+    const boxes = Array.from(
+      target.querySelectorAll<HTMLInputElement>(".limits-rows label.group input"),
+    );
+    expect(boxes.length).toBeGreaterThan(0);
+    expect(boxes.every((box) => box.disabled)).toBe(true);
+    expect(target.querySelector<HTMLInputElement>(".limits-rows .list input")?.disabled).toBe(true);
+    expect(target.querySelector(".limits-rows.off")).not.toBeNull();
+    expect(text(target)).not.toContain("Initialize PerMark to share this with everyone");
+    expect(text(target)).toContain("PerMark can't read .permark/config.toml");
     mock.probe.shell.forgetInit();
   });
 

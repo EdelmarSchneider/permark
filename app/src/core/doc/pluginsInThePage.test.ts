@@ -274,14 +274,15 @@ describe("blocks a plugin adds", () => {
     expect(target.querySelectorAll(".md-body > *").length).toBe(before + 1);
     // the added block comes first (a plugin may mark it too, e.g. a glow while it is new)
     expect(target.querySelector(".md-body > :first-child")?.classList.contains("extra")).toBe(true);
-    expect(updates.at(-1)).toEqual({ added: ["rv:test"], removed: [] });
     // the page was updated, not built again: the place stays
     expect(scroller?.scrollTop).toBe(40);
 
     on = false;
     documents.refreshBlocks();
     await until(() => target.querySelector(".extra") === null, "the block gone");
-    expect(updates.at(-1)).toEqual({ added: [], removed: [{ id: "rv:test", after: null }] });
+    // a plugin's block coming and going is no change of the document: nobody is told of a passage added | removed
+    // (a review closing would leave marks where its old text was)
+    expect(updates).toEqual([]);
     off();
   });
 

@@ -93,7 +93,7 @@
   <!-- the offer floats over the top of the page: appearing (a file changed outside) never pushes the text down -->
   <div class="overlay">
     <div class="bar floating" role="region" aria-label={t("review.bar")}>
-      <span>{tn("review.offer", shown.count)}</span>
+      <span>{tn(shown.since === "read" ? "review.offer" : "review.offerCommit", shown.count)}</span>
       <button type="button" class="btn btn--sm" onclick={() => void review.begin()}>
         {t("review.review")}
       </button>

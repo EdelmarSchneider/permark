@@ -40,17 +40,25 @@ export function markAttrs(layer: string, index: number): Record<string, string> 
   };
 }
 
+/** Any layer's mark element. */
+const MARK = "[data-mark-layer]";
+
 /** The marks holding `target`, nearest first (marks of several layers may nest). */
 function marksUnder(target: EventTarget | null): MarkHit[] {
   const hits: MarkHit[] = [];
-  let el = target instanceof Element ? target.closest("[data-mark-layer]") : null;
+  let el = target instanceof Element ? target.closest(MARK) : null;
   while (el !== null) {
     const layer = el.getAttribute("data-mark-layer");
     const index = Number(el.getAttribute("data-mark-index") ?? NaN);
     if (layer !== null && Number.isInteger(index)) hits.push({ layer, index });
-    el = el.parentElement?.closest("[data-mark-layer]") ?? null;
+    el = el.parentElement?.closest(MARK) ?? null;
   }
   return hits;
+}
+
+/** `target` is inside a mark of some layer. */
+export function onMark(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(MARK) !== null;
 }
 
 /** A click picks the clicked mark in every layer holding one there; the caret goes where the person clicked. */

@@ -41,6 +41,7 @@ function viewOf(
     mtimeMs: 1234,
     editable: { editable: "readOnly", reason: "tooLarge" },
     notes: [],
+    opensOutside: true,
   };
 }
 

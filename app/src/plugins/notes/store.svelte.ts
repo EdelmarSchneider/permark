@@ -174,6 +174,11 @@ export class NotesStore {
       if (this.#leftByACrash(path)) return;
       void this.#client.call("notes.buffer", { path, baseHash, text });
     });
+    // nor does any route open an editor on such a file (the window's chosen mode, the mode switch) before the person
+    // chooses in its bar: typing there would replace that only copy
+    const unblock = this.#editing.block((path) =>
+      this.#leftByACrash(path) ? "leftByACrash" : null,
+    );
     const offSaved = this.#editing.onSaved(() => this.#refreshSoon());
     const timer = setInterval(() => {
       // a hidden tab waits: coming back on screen reads the list (below)
@@ -229,6 +234,7 @@ export class NotesStore {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
       offSaved();
+      unblock();
       this.#editing.bindJournal(null);
       this.#workspace = null;
       this.#restored = false;

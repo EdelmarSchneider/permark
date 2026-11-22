@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { flushSync, mount, unmount } from "svelte";
+import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import Segments from "./Segments.svelte";
 
@@ -19,13 +19,16 @@ afterEach(() => {
   target.innerHTML = "";
 });
 
-function setup(disabledValues: readonly V[] = []): { chosen: V[]; radios: () => HTMLElement[] } {
+function setup(
+  disabledValues: readonly V[] = [],
+  value: V = "a",
+): { chosen: V[]; radios: () => HTMLElement[] } {
   const chosen: V[] = [];
   component = mount(Segments<V>, {
     target,
     props: {
       options,
-      value: "a",
+      value,
       label: "Pick",
       disabledValues,
       onchange: (v: V) => chosen.push(v),
@@ -70,5 +73,34 @@ describe("segments", () => {
     key(radios()[0]!, "ArrowRight");
     key(radios()[0]!, "ArrowDown");
     expect(chosen).toEqual([]);
+  });
+
+  it("Home | End take the first | last choice that is on, and the focus goes with it", async () => {
+    const last = setup(["c"]);
+    const end = key(last.radios()[0]!, "End");
+    expect(end.defaultPrevented).toBe(true);
+    expect(last.chosen).toEqual(["b"]);
+    await tick();
+    expect(document.activeElement).toBe(last.radios()[1]);
+    // already on the first choice that is on: nowhere to go
+    key(last.radios()[0]!, "Home");
+    expect(last.chosen).toEqual(["b"]);
+    if (component) unmount(component);
+    target.innerHTML = "";
+
+    const first = setup(["a"], "c");
+    key(first.radios()[2]!, "Home");
+    key(first.radios()[2]!, "End");
+    expect(first.chosen).toEqual(["b"]);
+    // with a modifier the key is not the group's (Shift+Home selects text elsewhere, Ctrl+End is the page's)
+    for (const mods of [
+      { shiftKey: true },
+      { ctrlKey: true },
+      { altKey: true },
+      { metaKey: true },
+    ]) {
+      expect(key(first.radios()[2]!, "Home", mods).defaultPrevented).toBe(false);
+    }
+    expect(first.chosen).toEqual(["b"]);
   });
 });

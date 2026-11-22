@@ -29,6 +29,19 @@ export function pageSelection(): PageSelection {
   return { text: selection.toString(), lines };
 }
 
+/** The page selection kept while a box has the keyboard: focus in its field ends the page's own (`null`: none kept). */
+let held: PageSelection = null;
+
+/** Keeps `selection` for the commands a box lists and runs (`selectionForCommand`); `null` lets it go. */
+export function holdSelection(selection: PageSelection): void {
+  held = selection;
+}
+
+/** The selection a command acts on: the page's own, else the one kept while the palette lists | runs commands. */
+export function selectionForCommand(): PageSelection {
+  return pageSelection() ?? held;
+}
+
 function blockOf(node: Node | null): Element | null {
   const element = node instanceof Element ? node : (node?.parentElement ?? null);
   return element?.closest("[data-b]") ?? null;

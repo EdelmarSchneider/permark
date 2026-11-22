@@ -78,7 +78,9 @@ describe("favorite writes", () => {
       { key: "symbolFavorites", value: favorites(["α"]) },
       { key: "symbolFavorites", value: favorites(["α"], ["greek"]) },
     ]);
-    // once news landed, the next step starts from it (another window may have changed it too)
+    // each write brings its own news; once both landed, the next step starts from the window's value (the file is
+    // read fresh for each write: another window's change rides along)
+    news(favorites(["α"]));
     news(favorites(["α", "β"], ["greek"]));
     await symbols.toggleChar({ char: "α", names: ["alpha"] });
     expect(writes.at(-1)).toEqual({
@@ -101,6 +103,48 @@ describe("favorite writes", () => {
     news(null);
     await symbols.toggleChar({ char: "β", names: [] });
     expect(writes.at(-1)).toEqual({ key: "symbolFavorites", value: favorites(["β"]) });
+  });
+
+  it("three quick toggles all stick when the news of the first lands while the second is on its way", async () => {
+    const writes: SettingChange[] = [];
+    vi.spyOn(windowStore, "trySetting").mockImplementation((change) => {
+      writes.push(change);
+      // the backend answers the first write before its news reaches the window; that news lands during the second
+      if (writes.length === 2) news(writes[0]?.key === "symbolFavorites" ? writes[0].value : null);
+      return Promise.resolve(null);
+    });
+    vi.spyOn(arrangement, "say").mockImplementation(() => {});
+    await Promise.all([
+      symbols.toggleChar({ char: "α", names: [] }),
+      symbols.toggleChar({ char: "β", names: [] }),
+      symbols.toggleChar({ char: "γ", names: [] }),
+    ]);
+    expect(writes.map((w) => w.key === "symbolFavorites" && w.value)).toEqual([
+      favorites(["α"]),
+      favorites(["α", "β"]),
+      favorites(["α", "β", "γ"]),
+    ]);
+    // once the news of every own write arrived, the window's value counts again (another window's change included)
+    news(favorites(["α", "β"]));
+    news(favorites(["α", "β", "γ", "δ"]));
+    await symbols.toggleChar({ char: "α", names: [] });
+    expect(writes.at(-1)).toEqual({
+      key: "symbolFavorites",
+      value: favorites(["β", "γ", "δ"]),
+    });
+  });
+
+  it("a quick toggle after removing the last favorite starts from none, not from the window's old value", async () => {
+    const { writes } = spies();
+    news(favorites(["α"]));
+    await Promise.all([
+      symbols.toggleChar({ char: "α", names: [] }),
+      symbols.toggleChar({ char: "β", names: [] }),
+    ]);
+    expect(writes.map((w) => w.key === "symbolFavorites" && w.value)).toEqual([
+      null,
+      favorites(["β"]),
+    ]);
   });
 
   it("a write waits for the one before it", async () => {

@@ -418,13 +418,23 @@
     gap: var(--sp-3);
     min-width: 0;
   }
+  /* an item keeps its width: squeezed, its words would wrap onto a second line of the 24 px bar, cut in half */
+  .slot > :global(*) {
+    flex-shrink: 0;
+  }
+  /* no room for every item: the ones that do not fit move to a second line the bar's height hides, whole and from
+     the end (the highest order, least important, first); one line is stretched to the bar's height: centered */
   .slot.left {
     flex: 0 1 auto;
+    flex-wrap: wrap;
+    height: var(--h-status);
     overflow: hidden;
   }
   .slot.center {
     flex: 1 1 0;
+    flex-wrap: wrap;
     justify-content: center;
+    height: var(--h-status);
     overflow: hidden;
   }
   .slot.right {

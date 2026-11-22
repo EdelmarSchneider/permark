@@ -44,8 +44,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function open(path: string, at?: number): Promise<HTMLElement> {
-  await session.enter("edit", path, "sheet", { kind: "explicit" }, at);
+async function open(path: string, at?: number, located = false): Promise<HTMLElement> {
+  await session.enter("edit", path, "sheet", { kind: "explicit" }, at, true, located);
   const content = session.content;
   if (!content) throw new Error("no content");
   component = mount(SheetEditor, { target, props: { session, content } });
@@ -216,6 +216,79 @@ describe("Edit mode of a config file", () => {
   });
 });
 
+describe("an edit on its way while the editor is made again", () => {
+  /** The next value change waits for `release` before the backend answers it. */
+  function holdNextEdit(): () => void {
+    const real = mock.configEdit;
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    vi.spyOn(mock, "configEdit").mockImplementation(async (path, text, edit) => {
+      await gate;
+      return real(path, text, edit);
+    });
+    return release;
+  }
+
+  it("a switch to Source waits for the answer: Source holds the change, unsaved", async () => {
+    await open(".env.example");
+    const base = session.base?.text ?? "";
+    const port = /PORT=(\d+)/.exec(base)?.[0] ?? "";
+    const release = holdNextEdit();
+    await type("PORT", "5001");
+    const switched = session.switchTo("source");
+    release();
+    await switched;
+    expect(session.mode).toBe("source");
+    expect(session.content?.text).toBe(base.replace(port, "PORT=5001"));
+    expect(session.state.s).toBe("dirty");
+  });
+
+  it("a rename waits for the answer: the editor made for the new path holds the change, unsaved", async () => {
+    await open(".env.example");
+    const base = session.base?.text ?? "";
+    const port = /PORT=(\d+)/.exec(base)?.[0] ?? "";
+    const release = holdNextEdit();
+    await type("PORT", "5001");
+    // another program moves the file while the answer is on its way (the mock's files are back as they were after)
+    const files = mock.probe.edit.files;
+    const raw = files.get(".env.example") ?? "";
+    files.delete(".env.example");
+    files.set("config/.env.example", raw);
+    try {
+      session.onDocumentChanged({
+        window: "main",
+        path: ".env.example",
+        change: "deleted",
+        movedTo: "config/.env.example",
+      });
+      release();
+      await vi.waitFor(() => expect(session.content?.path).toBe("config/.env.example"));
+      expect(session.content?.text).toBe(base.replace(port, "PORT=5001"));
+      expect(session.state.s).toBe("dirty");
+    } finally {
+      files.delete("config/.env.example");
+      files.set(".env.example", raw);
+    }
+  });
+
+  it("an answer that comes after the editor is gone reaches neither its sheet nor the session", async () => {
+    await open(".gitignore");
+    const base = session.base?.text ?? "";
+    const release = holdNextEdit();
+    target.querySelector<HTMLButtonElement>("button[aria-label='Delete this line']")?.click();
+    await tick();
+    // the editor goes (a reload, a switch); the ignore file's counts are no longer wanted
+    if (component) void unmount(component);
+    component = null;
+    const asked = vi.spyOn(mock, "ignoreMatches");
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(asked).not.toHaveBeenCalled();
+    expect(session.text).toBe(base);
+    expect(session.state.s).toBe("clean");
+  });
+});
+
 describe("the line of a sheet in Edit mode", () => {
   const ROW = 30;
 
@@ -277,6 +350,23 @@ describe("the line of a sheet in Edit mode", () => {
     release();
     await vi.waitFor(() => expect(rowAt(40)?.classList.contains("pm-located")).toBe(true));
     expect(target.scrollTop).toBe(ROW * 39 - 100);
+  });
+
+  it("opens tinted at a line a place asked for (a search hit in another file)", async () => {
+    pane();
+    await open(".env.example", 7, true);
+    await vi.waitFor(() => expect(rowAt(7)?.classList.contains("pm-located")).toBe(true));
+    expect(target.scrollTop).toBe(ROW * 6 - 100);
+    // a switch to Source keeps the place, not the tint
+    await session.switchTo("source");
+    expect(session.content?.located).toBe(false);
+  });
+
+  it("opens untinted at a line kept, not asked for", async () => {
+    pane();
+    await open(".env.example", 7);
+    await vi.waitFor(() => expect(target.scrollTop).toBe(ROW * 6));
+    expect(rowAt(7)?.classList.contains("pm-located")).toBe(false);
   });
 
   it("opens at the line it starts at, and tells the line at the top of the pane", async () => {

@@ -9,6 +9,8 @@ type Init = {
   gantt?: { useWidth?: number; fontSize?: number; sectionFontSize?: number };
   sankey?: { labelStyle?: string };
   themeCSS?: string;
+  arrowMarkerAbsolute?: boolean;
+  secure?: string[];
 };
 const initialized: Init[] = [];
 const XLINK = "http://www.w3.org/1999/xlink";
@@ -29,6 +31,12 @@ vi.mock("mermaid", () => ({
     render: (id: string, source: string) => {
       rendered += 1;
       if (source.includes("click")) return Promise.resolve({ svg: LINKED });
+      // Mermaid scopes its CSS to the root id it draws with; a drawing may name its root after a page element
+      const root = source.includes("renamed") ? "app" : id;
+      if (source.includes("styled"))
+        return Promise.resolve({
+          svg: `<svg xmlns="http://www.w3.org/2000/svg" id="${root}"><style>#${root} .node{fill:red}</style><g/></svg>`,
+        });
       const background = initialized.at(-1)?.themeVariables.background ?? "";
       return Promise.resolve({
         svg: `<svg xmlns="http://www.w3.org/2000/svg" id="${id}" data-bg="${background}"></svg>`,
@@ -132,6 +140,38 @@ describe("mermaid palette", () => {
     document.documentElement.dataset["theme"] = "dark";
     await drawMermaid("sankey\na,b,1", "dark", false);
     expect(initialized.at(-1)?.themeCSS).toMatch(/\.link\s*\{[^}]*mix-blend-mode:\s*normal/);
+  });
+});
+
+describe("mermaid security", () => {
+  it("a diagram's directive cannot turn arrow markers into absolute addresses", async () => {
+    await drawMermaid("graph TD; A-->B", "light", true);
+    const config = initialized.at(-1);
+    expect(config?.arrowMarkerAbsolute).toBe(false);
+    // Mermaid's own secure keys stay listed: a version may replace its list with this one
+    expect(config?.secure).toEqual([
+      "secure",
+      "securityLevel",
+      "startOnLoad",
+      "maxTextSize",
+      "suppressErrorRendering",
+      "maxEdges",
+      "arrowMarkerAbsolute",
+      "dompurifyConfig",
+      "htmlLabels",
+    ]);
+  });
+
+  it("the drawing keeps its CSS only at the root id it was asked to draw with", async () => {
+    const sheet = (svg: string | null): string | undefined => {
+      const template = document.createElement("template");
+      template.innerHTML = svg ?? "";
+      return template.content.querySelector("style")?.textContent ?? undefined;
+    };
+    expect(sheet(await drawMermaid("graph TD; styled", "light", true))).toMatch(
+      /^#pm-mermaid-\d+-[a-z0-9]+ \.node\{fill:red\}$/,
+    );
+    expect(sheet(await drawMermaid("graph TD; styled renamed", "light", true))).toBe("");
   });
 });
 

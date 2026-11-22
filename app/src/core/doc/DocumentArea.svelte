@@ -110,6 +110,17 @@
     scroller ? pageFinder(scroller, (again) => documents.onPainted(again)) : null,
   );
   const finder = $derived(editingNow ? editing.finder : pageFind);
+  // a save that failed or met a change on disk: the file's time would read as "saved" beside the bar saying otherwise
+  const saveFailed = $derived.by(() => {
+    if (!editingNow) return false;
+    const state = editing.state.s === "unsavedPrompt" ? editing.state.back : editing.state;
+    return state.s === "saveError" || state.s === "conflict";
+  });
+  const savedMs = $derived(saveFailed ? null : (view?.mtimeMs ?? null));
+  // the system's programs: only for files of a project; its default program never for a script, program or macro
+  // carrier (the backend refuses those opens too)
+  const canOpenSystem = $derived(workspace.kind === "project");
+  const opensOutside = $derived(canOpenSystem && view !== null && view.opensOutside);
 
   $effect(() => {
     documents.bind({
@@ -325,12 +336,13 @@
       <div class="chrome-inner">
         <DocHeader
           path={headerPath(view?.path ?? documents.path)}
-          savedMs={view?.mtimeMs ?? null}
+          {savedMs}
           role={view?.role ?? null}
           template={store.referenceTemplate}
           hasOutline={outline.length > 0}
           onFind={openFind}
-          canOpenSystem={workspace.kind === "project"}
+          {canOpenSystem}
+          {opensOutside}
           modes={view !== null && view.body.kind !== "media" ? modes : undefined}
           extra={editExtra(
             editing.mode !== "view" && editing.policy.kind === "explicit",
@@ -418,7 +430,7 @@
             notice={view.body.notice}
             name={view.name}
             path={view.path}
-            canOpenSystem={workspace.kind === "project"}
+            canOpenSystem={opensOutside}
           />
         {:else if editingNow}
           <!-- the editor shows instead -->
@@ -515,8 +527,9 @@
   .scroller:focus {
     outline: none;
   }
-  /* the keyboard sent here (a review closed, a side hidden): the page shows it holds the keyboard */
-  .scroller:focus-visible {
+  /* the keyboard sent here on purpose (a side hidden, a link followed: `paneFocus.ts`): the page shows it holds the
+     keyboard; one that fell back here (a review ended, a comment saved) draws nothing (the mark is set by script) */
+  .scroller:global([data-focus-sent]):focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
   }

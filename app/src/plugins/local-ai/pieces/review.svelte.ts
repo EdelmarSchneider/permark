@@ -566,6 +566,13 @@ export class PieceReview {
     this.state = { ...review, at };
   }
 
+  /** `s` with its excerpt as the editor on screen shows the text: Edit draws Markdown's marks as looks, so they are
+   *  left out; Source shows them, so the excerpt stays as written. */
+  shown(s: Found): Found {
+    if (this.#session.mode !== "edit") return s;
+    return { ...s, ...around(this.#known, s.from, s.to, s.within, "shown") };
+  }
+
   /** The current suggestion selected in the text (the bar's excerpt), the keyboard to the editor. */
   show(): void {
     this.sync();

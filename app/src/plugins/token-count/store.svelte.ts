@@ -11,7 +11,7 @@ import {
   type VocabEntry,
 } from "../../api";
 import { pluginClient, type PluginClient } from "../../core/plugins/client";
-import { projectSettings } from "../../core/shell/settings/stores.svelte";
+import { projectSettings, sharedLockedOf } from "../../core/shell/settings/stores.svelte";
 import { windowStore } from "../../core/window.svelte";
 import { effective, infoOf, type TokenizerId, type TokenizerInfo } from "./tokenizers";
 
@@ -105,6 +105,12 @@ export class TokenStore {
   /** This project can keep a choice of its own: it has `.permark/`. */
   get projectCanChoose(): boolean {
     return this.#project?.initialized ?? false;
+  }
+
+  /** The project's own choice can't be changed now: no `.permark/`, or its file does not read (the list in use stays
+   *  as last read, shown, never written). */
+  get projectLocked(): boolean {
+    return sharedLockedOf(this.#project);
   }
 
   /** The tokenizers in use, first = primary. */
