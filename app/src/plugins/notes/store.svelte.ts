@@ -166,6 +166,12 @@ export class NotesStore {
 
   /** The window shows the Notes: the reading side knows the workspace, the list is read, the editor follows. */
   attach(workspace: Extract<WorkspaceView, { kind: "notes" }>): () => void {
+    // the page attaches from its effect: what the reading side and the editor read here (the editor shown, through the
+    // reading place) must not become that effect's dependency, or the editor opening would attach again and again
+    return untrack(() => this.#attach(workspace));
+  }
+
+  #attach(workspace: Extract<WorkspaceView, { kind: "notes" }>): () => void {
     this.#workspace = workspace;
     this.#documents.setWorkspace(workspace);
     this.#editing.bindJournal((path, baseHash, text) => {

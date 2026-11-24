@@ -1543,14 +1543,16 @@ fn initializing_an_open_project_moves_its_state_and_restarts_its_plugins() {
     assert_eq!(core.state_location(), StateLocation::Profile);
     let env = f.registry.env().clone();
     crate::state::init_project(&env.dirs, core.root()).unwrap();
-    // nothing changes until the core is told: the plugins still hold the old folder
-    assert_eq!(core.state_location(), StateLocation::Profile);
+    // the watch also asks for a read when the team folder arrives, so the moment before the explicit read is not
+    // asserted, and that read may come after the watch's own restart: whole restarts count, not exactly one
     core.reload_state(&env);
     f.registry.refresh();
     assert_eq!(core.state_location(), StateLocation::Project);
-    assert_eq!(
-        take(&f.log),
-        ["stop:unread", "stop:git", "start:git", "start:unread"]
+    let restart = ["stop:unread", "stop:git", "start:git", "start:unread"];
+    let log = take(&f.log);
+    assert!(
+        !log.is_empty() && log.chunks(restart.len()).all(|run| run == restart),
+        "{log:?}"
     );
     let names: Vec<String> = f.sink.take().iter().map(|e| e.name().to_owned()).collect();
     assert!(names.contains(&"window-changed".to_owned()), "{names:?}");
