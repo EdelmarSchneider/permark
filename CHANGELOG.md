@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-11-24
+
 ### Fixed
 - **Notes opens again.** In 0.18.0, opening Notes could freeze the window: notes could not be clicked, and **New note** created empty notes without opening them. PerMark also kept the processor busy until it was closed. A new note, including the very first one, now always opens ready for typing. <!-- f: notes -->
 
