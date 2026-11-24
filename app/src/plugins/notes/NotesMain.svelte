@@ -1,6 +1,7 @@
 <script lang="ts">
   // The page of the Notes window: the strips over the note (crash recovery, the state of a loose file), the note in its
   // editor, and the dialogs. The window follows the Notes workspace for as long as this page exists.
+  import { untrack } from "svelte";
   import DocumentArea from "../../core/doc/DocumentArea.svelte";
   import { t } from "../../core/i18n";
   import { dropFlow } from "../../core/shell/dropView.svelte";
@@ -16,10 +17,15 @@
 
   let { workspace }: WorkspaceViewProps = $props();
 
+  // only another Notes workspace attaches again: the same one told anew (its folder made by the first note) keeps the
+  // page and the editor open on it
+  const workspaceId = $derived(workspace.id);
+
   // the window follows the Notes: the list, the polling, the editor's journal; a dropped text file becomes a loose
   // file (pictures over the editor go into the note, folders and other files open as tabs)
   $effect(() => {
-    const stop = store.attach(workspace);
+    void workspaceId;
+    const stop = untrack(() => store.attach(workspace));
     dropFlow.notes = { takes: isLooseFile, open: (paths) => store.openFiles(paths) };
     return () => {
       stop();
