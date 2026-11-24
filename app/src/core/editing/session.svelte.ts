@@ -2,6 +2,7 @@
 // effects. The text lives in the editor on screen (`ActiveEditor`); the machine holds the version the edits are
 // based on. One session per window; it holds at most one document.
 
+import { untrack } from "svelte";
 import {
   api as defaultApi,
   type Api,
@@ -234,9 +235,11 @@ export class EditingSession {
   /** Keeps editors off the documents `blocker` names, whatever route opens them (the mode chosen in the window,
    *  the mode switch, its keys). Returns its removal. */
   block(blocker: EditBlocker): () => void {
-    this.#blockers = [...this.#blockers, blocker];
+    // callers set holds up from an effect (a page attaching): reading the list there would make that effect depend on
+    // the list it writes, and it would run again without end
+    this.#blockers = [...untrack(() => this.#blockers), blocker];
     return () => {
-      this.#blockers = this.#blockers.filter((b) => b !== blocker);
+      this.#blockers = untrack(() => this.#blockers).filter((b) => b !== blocker);
     };
   }
 
