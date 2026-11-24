@@ -3383,7 +3383,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "permark"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "block2",
  "gtk",
@@ -3454,7 +3454,7 @@ dependencies = [
 
 [[package]]
 name = "permark-core"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "ammonia",
  "chrono",
@@ -3485,7 +3485,7 @@ dependencies = [
 
 [[package]]
 name = "permark-engine"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "libc",
  "llama-cpp-2",
@@ -3498,7 +3498,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-acp"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "agent-client-protocol-schema",
  "ignore",
@@ -3512,7 +3512,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-agent"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "chrono",
  "dunce",
@@ -3528,7 +3528,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-broken-links"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3540,7 +3540,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-comments"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3552,7 +3552,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-convert"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "csv",
  "permark-core",
@@ -3567,7 +3567,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-correction"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
  "permark-plugin-local-ai",
@@ -3579,7 +3579,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-export"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
  "serde",
@@ -3590,35 +3590,35 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-fmt-dotenv"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-fmt-ignore"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-fmt-ini"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-fmt-properties"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-fmt-toml"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
  "toml_edit 0.25.17+spec-1.1.0",
@@ -3626,7 +3626,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-fmt-toon"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
  "serde",
@@ -3636,21 +3636,21 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-fmt-yaml"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-follow"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-frontmatter-card"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
  "toml_edit 0.25.17+spec-1.1.0",
@@ -3658,7 +3658,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-git"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "dirs",
  "dunce",
@@ -3675,28 +3675,28 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-graphviz"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-highlight"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-json-view"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-live-feed"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
  "serde",
@@ -3707,7 +3707,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-local-ai"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
  "permark-engine",
@@ -3723,35 +3723,35 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-math"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-md-family"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-media"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-mermaid"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-notes"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "chrono",
  "dirs",
@@ -3765,21 +3765,21 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-plantuml"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-prompt-blocks"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-quiet"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3791,7 +3791,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-review"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "dunce",
  "git2",
@@ -3807,7 +3807,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-shell-integration"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3819,7 +3819,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-spelling"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
  "serde",
@@ -3835,14 +3835,14 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-symbols"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-tags"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3854,14 +3854,14 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-text-view"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-token-count"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "base64 0.22.1",
  "permark-core",
@@ -3875,7 +3875,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-translation"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
  "permark-plugin-local-ai",
@@ -3887,7 +3887,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-unread"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3899,7 +3899,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-updates"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
  "serde",
@@ -3909,7 +3909,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-word-count"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
  "serde",
@@ -3918,14 +3918,14 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-xml-view"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-shell"
-version = "0.18.0"
+version = "0.18.1"
 dependencies = [
  "static_vcruntime",
  "windows",
